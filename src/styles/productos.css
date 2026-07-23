@@ -1,0 +1,1183 @@
+/**
+ * Paso 2 · Seleccionar productos — diseño nuevo.
+ * Namespaceado bajo `.productos-v2`: los componentes compartidos (tabla, panel de stock,
+ * buscador) conservan su aspecto anterior en los pasos de venta y remito.
+ */
+
+.productos-v2 {
+  --p-bg-card: #ffffff;
+  --p-bg-input: #f4f5f7;
+  --p-border: #e4e7ec;
+  --p-text-main: #1f2937;
+  --p-text-secondary: #667085;
+  --p-primary: #0052cc;
+  --p-primary-hover: #0043a6;
+  --p-success: #00c875;
+  --p-danger: #e44258;
+  --p-step-purple: #7c3aed;
+  --p-radius-md: 8px;
+  --p-radius-lg: 12px;
+  --p-shadow-soft: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  max-width: 1480px;
+  margin: 0 auto;
+  /* Sin padding arriba: la barra de contexto arranca pegada al borde del panel. */
+  padding: 0 24px;
+  color: var(--p-text-main);
+  font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.productos-v2 input,
+.productos-v2 button,
+.productos-v2 select {
+  font-family: inherit;
+}
+
+/* Los selectores viven en la barra de contexto (.paso-header, en components.css). */
+
+/* El stepper (tamaños, colores y línea) es común: vive en components.css. */
+
+/* ===== Cards ===== */
+.productos-v2 .card {
+  background: var(--p-bg-card);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-lg);
+  padding: 24px;
+  box-shadow: var(--p-shadow-soft);
+  margin-bottom: 0;
+}
+
+/* ===== Búsqueda y filtros ===== */
+.productos-v2 .search-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.productos-v2 .search-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  position: relative;
+}
+.productos-v2 .search-input-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.productos-v2 .search-input-wrapper > i {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--p-text-secondary);
+  font-size: 16px;
+}
+.productos-v2 .search-input {
+  width: 100%;
+  padding: 12px 20px 12px 48px;
+  font-size: 15px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-md);
+  background: var(--p-bg-input);
+  outline: none;
+  transition: all 0.2s;
+  color: var(--p-text-main);
+}
+.productos-v2 .search-input:focus {
+  border-color: var(--p-primary);
+  background: var(--p-bg-card);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.productos-v2 .search-input::placeholder {
+  color: var(--p-text-secondary);
+}
+/* Resultados del buscador: se anclan al ancho del input, no al de la fila. */
+.productos-v2 .results {
+  right: auto;
+  width: 100%;
+  border-radius: var(--p-radius-md);
+  border-color: var(--p-border);
+  max-height: 260px;
+}
+.productos-v2 .search-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-danger);
+}
+
+.productos-v2 .filters-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.productos-v2 .filter-select {
+  padding: 8px 32px 8px 16px;
+  border: 1px solid var(--p-border);
+  border-radius: 20px;
+  background-color: var(--p-bg-card);
+  color: var(--p-text-main);
+  font-size: 13px;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
+  cursor: pointer;
+  outline: none;
+}
+.productos-v2 .chips-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: 16px;
+  border-left: 1px solid var(--p-border);
+  padding-left: 16px;
+}
+.productos-v2 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f0f4f8;
+  color: var(--p-text-main);
+}
+.productos-v2 .chip-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--p-primary);
+  flex-shrink: 0;
+}
+.productos-v2 .chip-close {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--p-text-secondary);
+  font-size: 11px;
+}
+.productos-v2 .chip-close:hover {
+  color: var(--p-text-main);
+}
+.productos-v2 .chips-empty {
+  font-size: 12px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .btn-link {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--p-primary);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0 8px;
+}
+
+/* ===== Producto seleccionado ===== */
+.productos-v2 .selected-product-box {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: #ffffff;
+  border: 1px dashed var(--p-primary);
+  border-radius: var(--p-radius-md);
+  padding: 20px 24px;
+  margin-top: 8px;
+}
+/* Sin producto elegido el box sigue en su lugar, apagado: el layout no salta. */
+.productos-v2 .selected-product-box--vacio {
+  border-color: var(--p-border);
+  background: #fcfcfd;
+}
+.productos-v2 .selected-product-box--vacio .product-name {
+  color: var(--p-text-secondary);
+  font-weight: 600;
+}
+/* La búsqueda no encontró nada: el mismo lugar lo explica, sin sacar el box de su sitio. */
+.productos-v2 .selected-product-box--aviso {
+  border-color: var(--p-danger);
+  background: #fff8f9;
+}
+.productos-v2 .selected-product-box--aviso .product-name {
+  color: var(--p-danger);
+  font-weight: 700;
+}
+.productos-v2 .selected-product-box--aviso .product-name i {
+  margin-right: 8px;
+}
+.productos-v2 .stock-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 16px;
+  border-top: 1px dashed var(--p-border);
+  color: var(--p-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+.productos-v2 .stock-placeholder i {
+  font-size: 16px;
+  opacity: 0.7;
+}
+.productos-v2 .product-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.productos-v2 .product-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.productos-v2 .product-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+.productos-v2 .product-meta {
+  font-size: 12px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .controls-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+.productos-v2 .control-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+.productos-v2 .control-item > label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.productos-v2 .qty-input-group {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.productos-v2 .qty-btn {
+  background: var(--p-bg-card);
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--p-text-secondary);
+  font-weight: 600;
+}
+.productos-v2 .qty-btn:hover:not(:disabled) {
+  background: var(--p-bg-input);
+}
+.productos-v2 .qty-btn:disabled,
+.productos-v2 .qty-val:disabled,
+.productos-v2 .std-input:disabled {
+  background: var(--p-bg-input);
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+.productos-v2 .qty-val {
+  width: 40px;
+  border: none;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  border-left: 1px solid var(--p-border);
+  border-right: 1px solid var(--p-border);
+  outline: none;
+  padding: 8px 0;
+  -moz-appearance: textfield;
+}
+.productos-v2 .qty-val::-webkit-outer-spin-button,
+.productos-v2 .qty-val::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.productos-v2 .std-input {
+  width: 110px;
+  padding: 8px 12px;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  outline: none;
+  color: var(--p-text-main);
+  background: #fff;
+}
+.productos-v2 .std-input[readonly] {
+  background: var(--p-bg-input);
+  cursor: default;
+}
+/* Ancho para un decimal con su sufijo: «1,5 %» entra sin recortarse. */
+.productos-v2 .std-input.small {
+  width: 88px;
+  padding-right: 28px;
+}
+.productos-v2 .desc-wrapper {
+  position: relative;
+}
+.productos-v2 .desc-suffix {
+  position: absolute;
+  right: 12px;
+  top: 9px;
+  color: var(--p-text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+}
+/* Tope de descuento alcanzado: no se puede seguir aumentando. */
+.productos-v2 .desc-wrapper--tope .std-input,
+.productos-v2 .desc-wrapper--tope .desc-suffix {
+  color: var(--p-danger);
+}
+.productos-v2 .desc-wrapper--tope .std-input {
+  border-color: var(--p-danger);
+  background: #fff5f6;
+}
+.productos-v2 .desc-tope {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--p-danger);
+  white-space: nowrap;
+  display: none;
+}
+.productos-v2 .desc-tope.on {
+  display: block;
+}
+/* 100%: no es un error, es un producto bonificado por completo. */
+.productos-v2 .desc-tope--gratis {
+  color: var(--p-success);
+}
+.productos-v2 .desc-wrapper--tope .std-input:focus {
+  border-color: var(--p-danger);
+}
+
+/* ===== Botones ===== */
+.productos-v2 .btn-primary {
+  background: var(--p-primary);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.productos-v2 .btn-primary:hover:not(:disabled) {
+  background: var(--p-primary-hover);
+}
+.productos-v2 .btn-primary:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+.productos-v2 .btn-outline {
+  background: var(--p-bg-card);
+  border: 1px solid var(--p-border);
+  padding: 12px 24px;
+  border-radius: var(--p-radius-md);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--p-text-main);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+.productos-v2 .btn-outline:hover:not(:disabled) {
+  background: var(--p-bg-input);
+}
+.productos-v2 .btn-outline:disabled {
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+
+/* ===== Stock y cobertura ===== */
+.productos-v2 .stock {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  font-size: 13px;
+}
+/* Sólo en el preview del producto elegido: filete punteado contra los controles. */
+.productos-v2 .selected-product-box .stock {
+  padding-top: 16px;
+  border-top: 1px dashed var(--p-border);
+}
+.productos-v2 .stock-prov {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+.productos-v2 .stock-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+  margin-bottom: 0;
+}
+.productos-v2 .stock-prov-cod {
+  font-size: 16px;
+  color: var(--p-primary);
+  font-weight: 700;
+  margin-bottom: 0;
+}
+.productos-v2 .stock-prov-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--p-text-main);
+  margin-bottom: 0;
+}
+/* El tipo de mercadería se lee más que el resto del bloque: 5px más grande. */
+.productos-v2 .stock-tipo {
+  font-size: 16px;
+  color: var(--p-text-secondary);
+  margin-top: 6px;
+}
+.productos-v2 .stock-tipo b {
+  color: var(--p-text-main);
+}
+/* Consignada: se distingue en dorado, no es mercadería propia. */
+.productos-v2 .stock-tipo--consignada b {
+  color: #b58200;
+}
+.productos-v2 .stock-main {
+  flex: 1;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  min-width: 0;
+}
+/* `min-width: 0` en los dos bloques: si no, las cards imponen su ancho mínimo y le
+   comen el espacio a la barra de cobertura. */
+.productos-v2 .stock-boxes {
+  display: flex;
+  gap: 12px;
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+}
+/* El ícono se ancla a la esquina: el texto de la card no lo mueve ni lo deforma. */
+.productos-v2 .stock-box {
+  position: relative;
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  padding: 10px 44px 10px 16px;
+  min-height: 62px;
+  background: var(--p-bg-card);
+}
+.productos-v2 .stock-box-t {
+  font-size: 11px;
+  color: var(--p-text-secondary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.productos-v2 .stock-box-v {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+/* El ícono va suelto, sin la pastilla de fondo del diseño anterior. */
+.productos-v2 .stock-box-ic {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
+  background: none !important;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.productos-v2 .cov-wrap {
+  flex: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.productos-v2 .cov-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  margin-bottom: 12px;
+}
+/* Pista de la barra de temperatura: la escala completa, apagada, siempre visible.
+   En bloque, no en flex: como item flexible el relleno se encogía a cero. */
+.productos-v2 .cov-bar {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #d7f4e5 0%, #fdf1c4 50%, #fbd8de 100%);
+}
+.productos-v2 .cov-fill {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: none !important;
+  transition: width 0.35s ease;
+}
+/* Degradado escalado al ancho de la pista: la punta del relleno marca la temperatura. */
+.productos-v2 .cov-heat {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--p-success) 0%, #ffcb00 50%, var(--p-danger) 100%);
+  transition: width 0.35s ease;
+}
+.productos-v2 .cov-track {
+  height: 14px;
+}
+.productos-v2 .cov-needle {
+  font-size: 17px;
+  top: -5px;
+  transition: left 0.35s ease, color 0.35s ease;
+}
+.productos-v2 .cov-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--p-text-main);
+  font-weight: 500;
+}
+.productos-v2 .cov-alerta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--p-danger);
+}
+/* Al pasarse de lo disponible la barra late, para que no se lea como un tope normal. */
+.productos-v2 .cov-wrap--excede .cov-bar {
+  animation: cov-pulso 1.6s ease-in-out infinite;
+}
+@keyframes cov-pulso {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(228, 66, 88, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(228, 66, 88, 0.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .productos-v2 .cov-wrap--excede .cov-bar {
+    animation: none;
+  }
+  .productos-v2 .cov-fill,
+  .productos-v2 .cov-heat,
+  .productos-v2 .cov-needle {
+    transition: none;
+  }
+}
+
+/* ===== Tabla ===== */
+.productos-v2 .tablec {
+  background: var(--p-bg-card);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-lg);
+  box-shadow: var(--p-shadow-soft);
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 8px 24px 16px;
+  overflow-x: auto;
+}
+.productos-v2 .thtitle {
+  padding: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  border-bottom: none;
+  background: none;
+}
+.productos-v2 .tablec th {
+  padding: 12px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+  border-bottom: 1px solid var(--p-border);
+  white-space: nowrap;
+}
+.productos-v2 .tablec td {
+  padding: 16px 18px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--p-border);
+  vertical-align: middle;
+}
+/* Los importes no se parten ni se pegan entre sí: hay lugar para millones ($ 1.456.789). */
+.productos-v2 .tablec td.ta-r,
+.productos-v2 .tablec th.ta-r {
+  white-space: nowrap;
+  min-width: 132px;
+}
+.productos-v2 .tablec td.ta-c,
+.productos-v2 .tablec th.ta-c {
+  white-space: nowrap;
+}
+/* La rentabilidad cambia de ancho con cada descuento ("99%" → "99,39%" → "-100%") y, al
+   hacerlo, corría todas las columnas de al lado. El ancho se fija al del peor caso, así
+   editar el descuento no mueve nada de la fila. */
+.productos-v2 .tablec td.col-rent,
+.productos-v2 .tablec th.col-rent {
+  width: 104px;
+  min-width: 104px;
+}
+/* El nombre del producto es lo único que cede ancho cuando falta espacio. */
+.productos-v2 .tablec tbody td:nth-child(3) {
+  min-width: 260px;
+}
+.productos-v2 .tablec tbody tr:hover {
+  background: #f9fafb;
+}
+.productos-v2 .tablec .rexp:hover,
+.productos-v2 .tablec .rexp {
+  background: #f9fafb;
+}
+.productos-v2 .expd {
+  border-radius: var(--p-radius-md);
+  border-color: var(--p-border);
+  margin: 10px 12px 16px 44px;
+}
+
+/* Descuento editable en la fila, con el mismo lenguaje que la cantidad. */
+/* Sin `overflow: hidden`: el aviso del tope se posiciona debajo del campo y con el recorte
+   quedaba invisible. El input no tiene borde ni fondo propios, así que no hay nada que
+   recortar contra el borde redondeado. */
+.productos-v2 .dbox {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.productos-v2 .dbox:focus-within {
+  border-color: var(--p-primary);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.productos-v2 .dbox input {
+  width: 46px;
+  border: none;
+  outline: none;
+  padding: 7px 2px 7px 8px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  background: none;
+}
+.productos-v2 .dbox-suf {
+  padding: 0 8px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+}
+/* Fuera de rango (de 0% al máximo, o 100% de bonificación): no se aplica hasta corregirlo. */
+.productos-v2 .dbox--error {
+  border-color: var(--p-danger);
+  background: #fff5f6;
+}
+.productos-v2 .dbox--error input,
+.productos-v2 .dbox--error .dbox-suf {
+  color: var(--p-danger);
+}
+/* El motivo del rechazo, debajo del campo y sin empujar la fila. */
+.productos-v2 .dbox {
+  position: relative;
+}
+.productos-v2 .dbox-aviso {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--p-danger);
+  white-space: nowrap;
+}
+
+/* Cantidad editable en la fila: mismo lenguaje que el control de la carga de producto. */
+.productos-v2 .qbox {
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.productos-v2 .qbox:focus-within {
+  border-color: var(--p-primary);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.productos-v2 .qbox input {
+  width: 46px;
+  padding: 7px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  border-right: 1px solid var(--p-border);
+}
+.productos-v2 .qbox .qbtns button {
+  background: var(--p-bg-card);
+  color: var(--p-text-secondary);
+  width: 24px;
+  height: 16px;
+  font-size: 10px;
+}
+.productos-v2 .qbox .qbtns button:hover:not(:disabled) {
+  background: var(--p-bg-input);
+}
+.productos-v2 .qbox .qbtns button:first-child {
+  border-bottom: 1px solid var(--p-border);
+}
+
+/* ===== Totales ===== */
+.productos-v2 .totals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1.5fr;
+  gap: 16px;
+}
+.productos-v2 .kpi-card {
+  background: var(--p-bg-card);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-lg);
+  padding: 24px;
+  box-shadow: var(--p-shadow-soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.productos-v2 .subtotal-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.productos-v2 .sub-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--p-text-main);
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 1px solid var(--p-border);
+}
+.productos-v2 .rent-lbl {
+  font-size: 12px;
+  color: var(--p-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+/* Rentabilidad y crédito en una sola tarjeta: dos anillos y el detalle de importes. */
+.productos-v2 .indicadores-layout {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.productos-v2 .indicadores-layout .credit-details {
+  min-width: 200px;
+}
+.productos-v2 .credit-layout {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-top: 8px;
+}
+.productos-v2 .donut-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.productos-v2 .donut-chart {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.productos-v2 .donut-inner {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--p-bg-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.productos-v2 .donut-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--p-text-main);
+  line-height: 1;
+}
+.productos-v2 .donut-lbl {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--p-text-secondary);
+  margin-top: 4px;
+}
+.productos-v2 .donut-footer {
+  font-size: 11px;
+  color: var(--p-text-secondary);
+  margin-top: 12px;
+  font-weight: 500;
+}
+.productos-v2 .credit-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+.productos-v2 .credit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  border-bottom: 1px solid var(--p-border);
+  padding-bottom: 8px;
+}
+.productos-v2 .credit-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.productos-v2 .c-lbl {
+  font-size: 11px;
+  color: var(--p-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.productos-v2 .c-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--p-text-main);
+  white-space: nowrap;
+}
+
+/* ===== Footer ===== */
+.productos-v2 .page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-top: 8px;
+  margin-top: 16px;
+  margin-bottom: 48px;
+}
+.productos-v2 .actions-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.productos-v2 .footer-err {
+  color: var(--p-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ===================================================================
+   Selección desde documentos pendientes (venta, factura y remito).
+   Misma gramática que la carga desde catálogo: cards blancas de 12px,
+   buscador ancho, tabla clara y acciones al pie.
+   =================================================================== */
+/* Sin separación entre el panel de documentos y la lista de productos: los dos bloques van
+   pegados y comparten el filete, así el panel no deja aire muerto a su derecha.
+
+   Los dos miden lo mismo y ese alto NO depende del contenido: filtrar, buscar o llevarse
+   productos a la venta no puede mover el resto de la página. Lo que sobra scrollea adentro. */
+.productos-v2 .pend-grid {
+  --pend-alto: 660px;
+
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: 16px;
+  margin-bottom: 0;
+  align-items: start;
+}
+
+/* --- Panel de documentos (presupuestos / remitos / ventas) --- */
+/* Pegado a la lista de productos: el filete de la derecha lo pone ella, y las esquinas de ese
+   lado quedan rectas para que los dos bloques se lean como una sola pieza. */
+.productos-v2 .presup-panel {
+  background: var(--p-bg-card);
+  border: 1px solid var(--p-border);
+  border-right: none;
+  border-radius: var(--p-radius-lg) 0 0 var(--p-radius-lg);
+  box-shadow: var(--p-shadow-soft);
+  overflow: hidden;
+  /* Alto fijo, el mismo que la lista de productos. La cabecera y el pie no se mueven; la
+     lista de cards de al medio es la que scrollea cuando hay más documentos de los que entran. */
+  height: var(--pend-alto);
+  max-height: none;
+}
+.productos-v2 .presup-head {
+  padding: 20px 20px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--p-text-main);
+  border-bottom: none;
+  background: none;
+}
+/* Las cards ocupan todo el ancho del panel: sin padding lateral, van de borde a borde. */
+.productos-v2 .presup-list {
+  padding: 4px 0 12px;
+  gap: 0;
+}
+/* El cliente no tiene documentos asociados: sin ellos no se puede seguir, va en rojo. */
+.productos-v2 .presup-vacio {
+  padding: 28px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  /* Neutro mientras se consulta; el rojo queda para el impedimento real. */
+  color: var(--p-text-secondary);
+}
+.productos-v2 .presup-vacio--alerta {
+  color: var(--p-danger);
+}
+.productos-v2 .tablec-empty--alerta {
+  color: var(--p-danger);
+  font-weight: 600;
+}
+.productos-v2 .presup-foot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--p-border);
+  font-size: 12px;
+  color: var(--p-text-secondary);
+  background: none;
+}
+
+/* Card de documento: se comporta como filtro, y al elegirla queda punteada en azul. */
+/* A todo el ancho del panel: sin bordes laterales ni esquinas redondeadas, cada card se lee
+   como una fila de la lista. El filete de abajo es lo que las separa entre sí. */
+.productos-v2 .pcard {
+  width: 100%;
+  background: var(--p-bg-card);
+  border: none;
+  border-bottom: 1px solid var(--p-border);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  padding: 14px 20px 14px 17px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.productos-v2 .presup-list .pcard:last-child {
+  border-bottom: none;
+}
+.productos-v2 .pcard:hover {
+  background: #f8f9fb;
+  border-left-color: var(--p-border);
+}
+/* Elegida como filtro: se marca con el filete de la izquierda, no con un contorno. */
+.productos-v2 .pcard.sel {
+  background: #f2f7ff;
+  border-left-color: var(--p-primary);
+  box-shadow: none;
+}
+.productos-v2 .pcard-id {
+  color: var(--p-primary);
+  font-weight: 700;
+  font-size: 14px;
+}
+.productos-v2 .pbadge {
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.productos-v2 .pcol-l {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  letter-spacing: 0.5px;
+}
+.productos-v2 .pcol-v {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+.productos-v2 .fac-nest {
+  border-radius: 6px;
+}
+
+/* La lista de productos cierra el bloque por la derecha: sus esquinas de ese lado son las
+   únicas redondeadas, y su filete izquierdo es el que separa del panel de documentos.
+
+   Alto fijo, igual al del panel. Título, buscador y acciones quedan quietos; la zona de filas
+   toma el resto y scrollea. Así la altura no cambia al filtrar por card, al buscar por nombre
+   ni al ir llevándose productos a la venta. */
+.productos-v2 .pend-grid .tablec {
+  border-radius: 0 var(--p-radius-lg) var(--p-radius-lg) 0;
+  height: var(--pend-alto);
+  display: flex;
+  flex-direction: column;
+  /* El scroll lo maneja `.pend-scroll`; acá sobra y daría una segunda barra. */
+  overflow: hidden;
+}
+/* Ocupa lo que queda del alto fijo, en vez de un tope propio. */
+.productos-v2 .pend-grid .pend-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* --- Lista de productos pendientes --- */
+.productos-v2 .pend-hint {
+  padding: 0 24px;
+  font-size: 13px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .pend-hint i {
+  color: var(--p-primary);
+}
+.productos-v2 .pend-search {
+  padding: 16px 24px 0;
+  gap: 12px;
+}
+.productos-v2 .pend-search .iw {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.productos-v2 .pend-search .fa-search {
+  left: 18px;
+  color: var(--p-text-secondary);
+  font-size: 15px;
+}
+.productos-v2 .pend-search .sinput {
+  height: 46px;
+  padding: 12px 20px 12px 48px;
+  font-size: 15px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-md);
+  background: var(--p-bg-input);
+  transition: all 0.2s;
+}
+.productos-v2 .pend-search .sinput:focus {
+  border-color: var(--p-primary);
+  background: var(--p-bg-card);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.productos-v2 .pend-scroll {
+  max-height: 420px;
+  padding: 0 12px;
+  margin-top: 12px;
+}
+.productos-v2 .pend-table th {
+  padding: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+  border-bottom: 1px solid var(--p-border);
+}
+.productos-v2 .pend-table td {
+  padding: 14px 12px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--p-border);
+  vertical-align: middle;
+}
+.productos-v2 .pend-row:hover {
+  background: #f9fafb;
+}
+.productos-v2 .pend-row.sel {
+  background: #eef4ff;
+}
+.productos-v2 .pend-row.dt-added {
+  background: #f6fbf8;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .pend-origen {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  background: #f0f4f8;
+  border-radius: 16px;
+  padding: 4px 10px;
+}
+.productos-v2 .estado-cell {
+  font-size: 13px;
+}
+.productos-v2 .pend-acts {
+  padding: 16px 24px;
+  border-top: 1px solid var(--p-border);
+  background: none;
+}
+/* El confirmar hereda el primario del paso, no el azul viejo de `.btn`. */
+.productos-v2 .pend-acts .btn-primary {
+  height: 46px;
+}
+
+/* --- Totales de dos columnas (factura: sin rentabilidad) --- */
+/* Dos tarjetas: la de indicadores necesita ancho para los dos anillos y los importes. */
+.productos-v2 .totals-grid--2 {
+  grid-template-columns: 1fr 1.8fr;
+}
+/* Fila con control dentro de una tarjeta de totales (¿es con envío?). */
+.productos-v2 .kpi-control {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  margin-top: 8px;
+  border-top: 1px solid var(--p-border);
+}
+.productos-v2 .kpi-control label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.productos-v2 .kpi-control select {
+  padding: 8px 12px;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  outline: none;
+  cursor: pointer;
+}
+.productos-v2 .kpi-control select:focus {
+  border-color: var(--p-primary);
+}

@@ -1,0 +1,704 @@
+/**
+ * Paso 3 · Cierre de venta — diseño nuevo.
+ * Namespaceado bajo `.cobro-v2`, con los mismos márgenes y la misma gramática de cards que
+ * el paso de productos (`.productos-v2`): el contenido queda centrado en el mismo eje.
+ */
+
+.cobro-v2 {
+  --c-bg-card: #ffffff;
+  --c-bg-panel: #f7f8fa;
+  --c-bg-input: #ffffff;
+  --c-border: #e4e7ec;
+  --c-text-main: #1f2937;
+  --c-text-secondary: #667085;
+  --c-primary: #0052cc;
+  --c-primary-hover: #0043a6;
+  --c-success: #00c875;
+  --c-danger: #e44258;
+  /* Violeta de la ficha del cliente: es el color con el que ya se muestra la condición. */
+  --c-cond: #6c4cf1;
+  --c-radius-md: 8px;
+  --c-radius-lg: 12px;
+  --c-shadow-soft: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  /* Mismos márgenes laterales y ancho máximo que el paso de productos. */
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 0 24px;
+  color: var(--c-text-main);
+  font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+.cobro-v2 input,
+.cobro-v2 button,
+.cobro-v2 select {
+  font-family: inherit;
+}
+.cobro-v2 .paso-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cobro-v2 .header-section {
+  margin-bottom: 0;
+}
+
+/* ===== Panel global del cobro =====
+   Una sola card: la barra de título que despliega y, pegadas sin margen, las sub-cards de
+   "Tipo de cobro" y "Registrar cobro". El borde y el radio los pone el panel; las sub-cards
+   sólo se separan entre sí con un filete. */
+.cobro-v2 .cobro-acc {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius-lg);
+  box-shadow: var(--c-shadow-soft);
+  /* Recorta las sub-cards contra las esquinas redondeadas del panel. */
+  overflow: hidden;
+}
+/* Barra de título del panel: contiene el toggle, la decisión de cobrar y el tilde. */
+.cobro-v2 .cobro-acc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--c-bg-card);
+}
+/* El plegado es el chevron junto al título; los controles de al lado quedan afuera. */
+.cobro-v2 .cobro-acc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.cobro-v2 .cobro-acc-toggle:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+/* Sin cuerpo que plegar, el título es sólo un rótulo. */
+.cobro-v2 .cobro-acc-toggle:disabled {
+  cursor: default;
+}
+.cobro-v2 .cobro-acc-toggle:disabled .cobro-acc-chev {
+  visibility: hidden;
+}
+
+/* --- SI / NO: un solo control segmentado, para que se lean como alternativas --- */
+.cobro-v2 .cobro-sino {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius-md);
+  overflow: hidden;
+}
+.cobro-v2 .cobro-sino-btn {
+  min-width: 52px;
+  padding: 7px 14px;
+  border: none;
+  background: var(--c-bg-card);
+  color: var(--c-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.cobro-v2 .cobro-sino-btn + .cobro-sino-btn {
+  border-left: 1px solid var(--c-border);
+}
+.cobro-v2 .cobro-sino-btn:hover:not(:disabled):not(.is-on) {
+  background: #f4f5f7;
+  color: var(--c-text-main);
+}
+/* La opción vigente se llena: no alcanza con el borde para leerla de un vistazo. */
+.cobro-v2 .cobro-sino-btn.is-on {
+  background: var(--c-primary);
+  color: #fff;
+}
+.cobro-v2 .cobro-sino-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.cobro-v2 .cobro-sino-btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+}
+.cobro-v2 .cobro-acc-chev {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  color: var(--c-text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cobro-v2 .cobro-acc-chev.open {
+  transform: rotate(180deg);
+}
+.cobro-v2 .cobro-acc-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--c-text-main);
+}
+.cobro-v2 .cobro-tipo-nota {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .cobro-acc-head .cobro-ok {
+  margin-left: auto;
+}
+/* Plegado animado sobre `height`: el alto real lo mide la vista y lo pasa inline, porque
+   `auto` no interpola. El overflow oculta el contenido mientras se cierra. */
+.cobro-v2 .cobro-acc-clip {
+  min-height: 0;
+  overflow: hidden;
+  transition: height 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Sin gap ni padding: las sub-cards van pegadas una a la otra y al ras del panel, para que
+   el bloque se lea como una sola unidad operativa. */
+.cobro-v2 .cobro-acc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cobro-v2 .cobro-acc-clip,
+  .cobro-v2 .cobro-acc-chev {
+    transition: none;
+  }
+}
+
+/* ===== Sub-card 1 · "Tipo de cobro": contexto de la operación y los tres números ===== */
+/* Va pegada bajo la barra de título. El filete de arriba hace de separador y se va con ella
+   al plegar; los costados no llevan borde porque el panel ya los pone. */
+.cobro-v2 .cobro-cab {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  width: 100%;
+  background: var(--c-bg-panel);
+  border: 0 solid var(--c-border);
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+  border-radius: 0;
+  padding: 16px 24px;
+}
+.cobro-v2 .cobro-cab-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 44px;
+  background: var(--c-border);
+}
+.cobro-v2 .cobro-cab-cli,
+.cobro-v2 .cobro-cab-mets {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.cobro-v2 .cobro-cab-mets {
+  margin-left: auto;
+}
+.cobro-v2 .cobro-cab-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cobro-v2 .cobro-cab-lbl {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .cobro-cab-lbl--met {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cobro-v2 .cobro-cab-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--c-text-main);
+}
+/* Mismo tratamiento que el KPI "Condición de pago" de la ficha del cliente. */
+.cobro-v2 .cobro-cab-cond {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--c-cond);
+}
+.cobro-v2 .cobro-cab-num {
+  font-size: 20px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+/* Aclara la cuenta: lo cobrado más esto es lo que cancela la venta. */
+.cobro-v2 .cobro-cab-nota {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
+.cobro-v2 .cobro-cab-num--azul {
+  color: var(--c-text-main);
+}
+.cobro-v2 .cobro-cab-num--verde {
+  color: var(--c-success);
+}
+.cobro-v2 .cobro-cab-num--rojo {
+  color: var(--c-danger);
+}
+/* Pastilla del icono: identifica la métrica sin competir con la cifra. */
+.cobro-v2 .cobro-cab-ic,
+.cobro-v2 .cobro-cab-av {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+/* El avatar del cliente abre la fila: se dimensiona contra el bloque rótulo + nombre para
+   que los tres queden en el mismo eje. */
+.cobro-v2 .cobro-cab-av {
+  width: 48px;
+  height: 48px;
+  font-size: 19px;
+  background: #e8effc;
+  color: var(--c-primary);
+}
+.cobro-v2 .cobro-cab-ic--azul {
+  background: #e8effc;
+  color: var(--c-primary);
+}
+.cobro-v2 .cobro-cab-ic--verde {
+  background: #e2f8ee;
+  color: #039855;
+}
+.cobro-v2 .cobro-cab-ic--rojo {
+  background: #fdeaec;
+  color: var(--c-danger);
+}
+.cobro-v2 .cobro-cab-ic--gris {
+  background: #eef0f4;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .cobro-cab-met,
+.cobro-v2 .cobro-imp-met {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cobro-v2 .cobro-cab-cli .cobro-cab-campo + .cobro-cab-campo {
+  margin-left: 8px;
+}
+
+/* ===== Sub-card 2 · "Registrar cobro": formulario + tabla + acción ===== */
+/* Pegada bajo "Tipo de cobro", sin borde ni radio propios: el panel global ya los aporta. */
+.cobro-v2 .cobro-card {
+  width: 100%;
+  background: var(--c-bg-card);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 24px;
+}
+.cobro-v2 .cobro-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-text-main);
+  margin: 0 0 20px;
+}
+.cobro-v2 .cobro-card-sub {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-main);
+  margin: 24px 0 8px;
+}
+
+/* --- Formulario de carga --- */
+/* Es un <fieldset> para poder apagarlo entero con `disabled` una vez registrado el cobro. */
+.cobro-v2 .cobro-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+/* Registrado: los campos quedan como dato, no como control apagado a medias. */
+.cobro-v2 .cobro-form:disabled {
+  opacity: 0.55;
+}
+.cobro-v2 .cobro-form:disabled .cobro-in,
+.cobro-v2 .cobro-form:disabled .cobro-desc-box {
+  background: #f4f5f7;
+  cursor: not-allowed;
+}
+.cobro-v2 .cobro-form-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cobro-v2 .cobro-form-campo label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .cobro-form-campo--forma {
+  flex: 0 0 186px;
+}
+.cobro-v2 .cobro-form-campo--importe {
+  flex: 0 0 186px;
+}
+.cobro-v2 .cobro-form-campo--desc {
+  flex: 0 0 96px;
+}
+.cobro-v2 .cobro-form-campo--final {
+  flex: 0 0 150px;
+}
+/* Calculado, no editable: se lee como dato y no acepta foco. */
+.cobro-v2 .cobro-in--calc {
+  background: #f4f5f7;
+  font-weight: 700;
+  cursor: default;
+}
+.cobro-v2 .cobro-form-campo--ref {
+  flex: 0 0 210px;
+}
+.cobro-v2 .cobro-form-campo--cheque {
+  flex: 0 0 186px;
+  position: relative;
+}
+.cobro-v2 .cobro-form-campo--accion {
+  flex: 0 0 auto;
+}
+.cobro-v2 .cobro-in {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius-md);
+  background: var(--c-bg-input);
+  color: var(--c-text-main);
+  font-size: 14px;
+}
+.cobro-v2 .cobro-in:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.cobro-v2 .cobro-in::placeholder {
+  color: #98a2b3;
+}
+.cobro-v2 .cobro-in--error {
+  border-color: var(--c-danger);
+}
+.cobro-v2 .cobro-in-err {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-danger);
+}
+/* El % es sufijo del campo, no un carácter que se tipee. */
+.cobro-v2 .cobro-desc-box {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius-md);
+  overflow: hidden;
+  background: var(--c-bg-input);
+}
+.cobro-v2 .cobro-desc-in {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 0 12px;
+  background: none;
+  color: var(--c-text-main);
+  font-size: 14px;
+}
+.cobro-v2 .cobro-desc-in:focus {
+  outline: none;
+}
+.cobro-v2 .cobro-desc-suf {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #f4f5f7;
+  border-left: 1px solid var(--c-border);
+  color: var(--c-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Tabla de cobros registrados --- */
+.cobro-v2 .cobro-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cobro-v2 .cobro-tabla th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  border-bottom: 1px solid var(--c-border);
+}
+.cobro-v2 .cobro-tabla td {
+  text-align: left;
+  padding: 14px 12px;
+  color: var(--c-text-main);
+  border-bottom: 1px solid #f0f1f4;
+}
+.cobro-v2 .cobro-tabla .ta-r {
+  text-align: right;
+}
+.cobro-v2 .cobro-tabla-vacia td {
+  color: var(--c-text-secondary);
+  font-style: italic;
+}
+.cobro-v2 .cobro-tabla-del {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg-card);
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+.cobro-v2 .cobro-tabla-del:hover {
+  color: var(--c-danger);
+  border-color: var(--c-danger);
+}
+/* --- Acción del panel: cierra el bloque, abajo a la derecha del impacto --- */
+.cobro-v2 .cobro-card-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 10px;
+}
+.cobro-v2 .cobro-err {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-danger);
+}
+
+/* ===== Impacto en cuenta corriente =====
+   Última banda del panel global: mismo ancho que la cabecera y la card de registro, pegada
+   a ellas y sin margen al pie. El filete de arriba es su único separador. */
+.cobro-v2 .cobro-imp {
+  width: 100%;
+  margin: 0;
+  background: var(--c-bg-panel);
+  border: 0 solid var(--c-border);
+  border-top-width: 1px;
+  border-radius: 0;
+  /* Sin padding abajo: la acción que lleva adentro cierra la banda. */
+  padding: 16px 24px 0;
+}
+.cobro-v2 .cobro-imp-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--c-text-main);
+  margin: 0 0 14px;
+}
+.cobro-v2 .cobro-imp-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.cobro-v2 .cobro-imp-met {
+  flex: 1 1 auto;
+}
+.cobro-v2 .cobro-imp-num {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--c-text-main);
+  white-space: nowrap;
+}
+.cobro-v2 .cobro-imp-num--verde {
+  color: var(--c-success);
+}
+/* El saldo que queda es la conclusión del paso: pesa más que el resto. */
+.cobro-v2 .cobro-imp-num--total {
+  font-size: 22px;
+  font-weight: 800;
+}
+.cobro-v2 .cobro-imp-num--total.is-over {
+  color: var(--c-danger);
+}
+
+/* ===== Avisos y pie ===== */
+.cobro-v2 .cobro-aviso {
+  margin: 0;
+}
+.cobro-v2 .cobro-bloqueo {
+  margin: 0;
+}
+.cobro-v2 .footer-acts {
+  padding-top: 8px;
+  padding-bottom: 48px;
+}
+.cobro-v2 .cobro-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.cobro-v2 .cobro-btn--primary {
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+}
+.cobro-v2 .cobro-btn--primary:hover:not(:disabled) {
+  background: var(--c-primary-hover);
+}
+.cobro-v2 .cobro-btn--green {
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  padding: 12px 24px;
+}
+.cobro-v2 .cobro-btn--green:hover:not(:disabled) {
+  background: var(--c-primary-hover);
+}
+.cobro-v2 .cobro-btn--out {
+  background: var(--c-bg-card);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-main);
+  padding: 12px 24px;
+  border-radius: var(--c-radius-md);
+}
+.cobro-v2 .cobro-btn--out:hover {
+  background: #f4f5f7;
+}
+.cobro-v2 .cobro-btn:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  border-color: #e6e9ef;
+  cursor: not-allowed;
+}
+
+
+/* --- Transferencia: cuenta bancaria del cliente y medio usado --- */
+/* Ocupa su propia línea debajo del formulario: son campos condicionales, no parte de la
+   fila principal de carga. */
+.cobro-v2 .cobro-transf {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--c-border);
+}
+.cobro-v2 .cobro-form-campo--cuenta {
+  flex: 0 0 280px;
+}
+.cobro-v2 .cobro-form-campo--medio {
+  flex: 0 0 180px;
+}
+/* Espera corta: un spinner al ras alcanza, sin bloquear el resto del formulario. */
+.cobro-v2 .cobro-transf-cargando {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .cobro-transf-cargando i {
+  color: var(--c-primary);
+}
+
+/* --- Detalle plegable de cada pago --- */
+.cobro-v2 .cobro-fila-1a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cobro-v2 .cobro-fila-chev {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--c-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cobro-v2 .cobro-fila-chev i {
+  transition: transform 0.2s ease;
+}
+.cobro-v2 .cobro-fila-chev i.open {
+  transform: rotate(90deg);
+}
+/* El efectivo no despliega: el hueco mantiene las fechas en un mismo eje. */
+.cobro-v2 .cobro-fila-chev--vacio {
+  cursor: default;
+}
+.cobro-v2 .cobro-fila--abierta > td {
+  border-bottom-color: transparent;
+}
+.cobro-v2 .cobro-fila-detalle > td {
+  background: var(--c-bg-panel);
+  padding: 14px 12px 14px 40px;
+}
+.cobro-v2 .cobro-detalle-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+  margin: 0;
+}
+.cobro-v2 .cobro-detalle-item dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  margin-bottom: 2px;
+}
+.cobro-v2 .cobro-detalle-item dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text-main);
+}
+
+/* El overlay de espera es global (`.modal-cargando`, en components.css): lo usan varios
+   pasos, no sólo el cobro. */

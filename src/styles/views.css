@@ -1,0 +1,2428 @@
+/* Estilos propios de cada vista del flujo */
+
+/* ===== VISTA CLIENTE · vendedor + buscador en un mismo box ===== */
+.cliente-setup {
+  display: flex;
+  align-items: stretch;
+  gap: 28px;
+  margin-top: 16px;
+}
+.setup-vendedor {
+  flex: 0 0 300px;
+}
+/* Filete que separa el vendedor del buscador. */
+.setup-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--tint-input-bd);
+}
+.setup-buscar {
+  flex: 1;
+  min-width: 0;
+}
+/* Buscador fijado a la mitad de ancho, en píxeles. */
+.setup-buscar .iw {
+  flex: 0 0 380px;
+  max-width: 100%;
+}
+
+/* ===== VISTA CLIENTE · estado de la búsqueda ===== */
+/* Ocupa el lugar donde iría la ficha; acotado y centrado (no a todo el ancho). */
+.cliente-estado {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  width: 420px;
+  max-width: 100%;
+  margin: 24px auto 0;
+  padding: 40px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(20, 30, 60, 0.06);
+  color: var(--text-gray);
+  font-size: 15px;
+  font-weight: 500;
+}
+.cliente-estado i {
+  font-size: 34px;
+  color: var(--primary-blue);
+}
+.cliente-estado--error {
+  background: #fff5f6;
+  border-color: #ffccd1;
+  color: var(--red);
+  font-weight: 600;
+}
+.cliente-estado--error i {
+  color: var(--red);
+}
+
+/* ===== VISTA CLIENTE · ficha ===== */
+/* Card limpia: blanco nítido, esquinas suaves y sombra sutil (sin el tono crema anterior). */
+.cliente-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid #e8eaf1;
+  border-radius: 4px;
+  padding: 26px 28px;
+  margin-top: 16px;
+  box-shadow: 0 6px 22px rgba(20, 30, 60, 0.07);
+}
+/* Estado comercial, en la esquina superior derecha. El crédito ahora queda a la izquierda,
+   así que no se superponen. */
+.cliente-badges {
+  position: absolute;
+  top: 22px;
+  right: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+/* Cabecera: código, nombre y dirección. El padding derecho evita chocar con los badges. */
+.cliente-cab {
+  padding-right: 160px;
+}
+/* Todos los datos del cliente en una única línea horizontal, en orden. */
+.cliente-linea {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+/* Tags y rótulos compactos para que toda la línea entre sin cortarse. */
+.cliente-linea .tag {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.cliente-linea .fin-t {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+/* Cada métrica: rótulo arriba, valor abajo (condición de pago, saldo, límite, disponible). */
+.metrica {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+/* Separación extra a la izquierda del saldo: corta visualmente las tags del bloque de crédito. */
+.metrica--sep {
+  margin-left: 20px;
+}
+/* Aviso cuando el cliente no tiene línea de crédito (no se calcula). */
+.cred-nota {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-gray);
+  background: var(--tint-neutral);
+  border: 1px solid var(--tint-neutral-bd);
+  border-radius: 8px;
+  padding: 10px 14px;
+  max-width: 320px;
+}
+.cred-nota i {
+  color: var(--primary-blue);
+}
+/* Separador y datos del presupuesto, debajo. */
+.cliente-sep {
+  height: 1px;
+  background: #ececf2;
+  margin: 22px 0;
+}
+.cliente-datos-t {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-gray);
+  margin-bottom: 12px;
+}
+.cliente-datos-grid {
+  max-width: 560px;
+}
+/* Donuts de uso de crédito: más grandes, son datos importantes y deben verse bien. */
+.cliente-linea .donuts {
+  gap: 14px;
+}
+.cliente-linea .circle {
+  width: 72px;
+  height: 72px;
+}
+.cliente-linea .circle-in {
+  width: 54px;
+  height: 54px;
+}
+.cliente-linea .circle-v {
+  font-size: 17px;
+}
+.cliente-linea .circle-l {
+  font-size: 11px;
+}
+.cliente-linea .prog-txt {
+  font-size: 11px;
+}
+.cliente-linea .cond-pago {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+/* Saldo pendiente / límite / disponible: 3px más grandes que el resto (gana a `.fin-v`). */
+.fin-v.fin-v--num {
+  font-size: 19px;
+}
+/* Lista de precio faltante: se resalta en rojo para indicar que hay que asignarla. */
+.tag--falta {
+  background: #ffe9ec;
+  color: var(--red);
+  border: 1px solid #ffc2cc;
+  font-weight: 700;
+}
+
+.chead {
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.cid {
+  color: var(--primary-blue);
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.cname {
+  font-size: 30px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.caddr {
+  font-size: 14px;
+  color: var(--text-gray);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.caddr i {
+  color: var(--primary-blue);
+}
+.status-c {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.sbadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+.fin-wrap {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8%;
+}
+.fin {
+  display: flex;
+  gap: 40px;
+  align-items: center;
+}
+.fin-t {
+  font-size: 13px;
+  color: var(--text-gray);
+  margin-bottom: 8px;
+}
+.fin-v {
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Valor categórico entre importes: se distingue como chip, no como cifra. */
+.cond-pago {
+  background: var(--tag-bg);
+  color: var(--primary-blue);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.donuts {
+  display: flex;
+  gap: 32px;
+}
+.donut {
+  text-align: center;
+}
+
+/* ===== Config de venta (tipo venta / entrega) ===== */
+.venta-cfg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.cfgbox {
+  background: var(--tint-config);
+  border: 1.5px solid var(--purple);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 1px 3px rgba(98, 0, 238, 0.06);
+}
+.cfg-ic {
+  width: 44px;
+  height: 44px;
+  background: var(--purple);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.cfg-c {
+  flex: 1;
+}
+.cfg-l {
+  font-size: 12px;
+  color: var(--text-gray);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.cfg-sel {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-dark);
+  outline: none;
+  cursor: pointer;
+}
+.cfg-sel--ph {
+  color: var(--text-gray);
+  font-weight: 500;
+}
+.cfg-sel:disabled {
+  cursor: not-allowed;
+}
+
+/* ===== VISTA PRODUCTOS ===== */
+/* Título de la vista (sin card): código arriba; nombre y límite (destacado) al lado. */
+.prod-cliente-titulo {
+  margin-top: 34px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pct-code {
+  display: block;
+  color: var(--primary-blue);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+/* Nombre y límite en la misma línea, separados por un filete. */
+.pct-nameline {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.pct-name {
+  font-size: 26px;
+  font-weight: 700;
+}
+.pct-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 38px;
+  background: var(--border);
+}
+.pct-limite {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.pct-limite-l {
+  font-size: 12px;
+  color: var(--text-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* Dato importante: más grande y destacado. */
+.pct-limite-v {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-dark);
+}
+
+.filters {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.fgroup {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+}
+.fgroup .ig {
+  flex: 1;
+}
+.tags-area {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+}
+.tags-area > label {
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 12px;
+  display: block;
+  font-size: 12px;
+}
+.tags-empty {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.searchc {
+  display: flex;
+  gap: 12px;
+  position: relative;
+}
+.results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 120px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+}
+.ritem {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f1f4;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ritem:hover {
+  background: #f8f9fa;
+}
+.ritem-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.ritem-code {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--primary-blue);
+}
+.results-empty {
+  padding: 16px;
+  color: var(--text-gray);
+  text-align: center;
+  font-size: 13px;
+}
+/* Carga de línea: parte de la card de búsqueda, separada por un filete. */
+.carga {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--tint-input-bd);
+}
+.selrow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.prodbox {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 38px;
+  padding: 0 12px;
+  background: #fafbfc;
+  color: var(--text-gray);
+  font-size: 14px;
+  width: 100%;
+}
+.prodbox.has {
+  background: #fff;
+  color: var(--text-dark);
+  border-color: var(--primary-blue);
+}
+.prodbox-code {
+  font-weight: 700;
+  color: var(--primary-blue);
+  margin-right: 8px;
+}
+.prodbox-name {
+  font-weight: 600;
+}
+.descbox {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 38px;
+  padding: 0 12px;
+  background: #fff;
+  width: 80px;
+  justify-content: space-between;
+}
+.descbox input {
+  border: none;
+  height: 100%;
+  width: 35px;
+  text-align: center;
+  outline: none;
+  font-weight: 600;
+  background: none;
+}
+.descbox span {
+  color: var(--text-gray);
+  font-weight: 600;
+}
+/* Tope de descuento alcanzado: no se puede seguir aumentando. */
+.descbox--tope {
+  border-color: var(--red);
+  background: #fff5f6;
+}
+.descbox--tope input,
+.descbox--tope span {
+  color: var(--red);
+}
+/* El aviso flota: no debe empujar la altura de la columna ni desalinear la fila. */
+.ig--desc {
+  position: relative;
+}
+.desc-tope {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--red);
+  white-space: nowrap;
+  display: none;
+}
+.desc-tope.on {
+  display: block;
+}
+.stockprev {
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.rexp {
+  background: #fbfcff;
+}
+.expd {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 10px 20px 20px 50px;
+  padding: 20px;
+}
+
+/* Panel de stock / proveedor */
+.stock {
+  display: flex;
+  gap: 40px;
+  font-size: 13px;
+}
+.stock-prov {
+  min-width: 180px;
+}
+.stock-lbl {
+  font-size: 12px;
+  color: var(--text-gray);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.stock-prov-cod {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary-blue);
+  margin-bottom: 4px;
+}
+.stock-prov-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.stock-tipo {
+  font-size: 13px;
+  color: var(--text-gray);
+}
+.stock-tipo b {
+  color: var(--text-dark);
+  font-weight: 700;
+}
+.stock-main {
+  flex: 1;
+}
+.stock-boxes {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stock-box {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+}
+.stock-box-t {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.stock-box-v {
+  font-size: 22px;
+  font-weight: 700;
+}
+.stock-box-ic {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cov-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.cov-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--border);
+}
+.cov-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.2s, background 0.2s;
+}
+/* Carril de la aguja: se desplaza con la cantidad elegida. */
+.cov-track {
+  position: relative;
+  height: 12px;
+}
+.cov-needle {
+  position: absolute;
+  top: -3px;
+  transform: translateX(-50%);
+  font-size: 15px;
+  transition: left 0.2s, color 0.2s;
+}
+.cov-note {
+  font-size: 11px;
+  color: var(--text-dark);
+  font-weight: 500;
+}
+
+/* Footer de totales */
+/*
+ * Resumen + rentabilidad: banda al pie de la tabla de productos. Va a sangre
+ * (sin márgenes laterales ni inferior) y sólo deja aire contra el header.
+ */
+.footbox {
+  display: flex;
+  align-items: stretch;
+  background: var(--tint-summary);
+  border: none;
+  border-radius: 0;
+  margin: 20px 0 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+/* Los títulos arrancan arriba, así todas las secciones los alinean a la misma altura. */
+.fsec {
+  padding: 9px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.fsec:not(:last-child) {
+  border-right: 1px solid var(--tint-summary-bd);
+}
+/* Ancho fijo: así rentabilidad/crédito arrancan pegados, sin un hueco grande en el medio. */
+.f-res {
+  flex: 0 0 300px;
+  min-width: 0;
+}
+/* Subtotal / IVA / total: compactos y a la izquierda, no estirados a todo el ancho. */
+.f-res .srow,
+.f-res .stotal {
+  max-width: 252px;
+}
+.f-rent {
+  flex: 2;
+  min-width: 380px;
+}
+.fsec h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.srow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.stotal {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tint-summary-bd);
+  font-weight: 700;
+  font-size: 15px;
+}
+/* Dato que no forma parte del total (comisión). */
+.srow--extra {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+/* Ocupa el alto restante bajo el título; los valores arrancan a la izquierda. */
+.rent-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  justify-content: flex-start;
+}
+.rent-kpi {
+  text-align: center;
+  min-width: 90px;
+}
+.rent-kpi h3 {
+  font-size: 28px;
+  color: var(--green-dark);
+  margin-bottom: 2px;
+}
+.rent-kpi p {
+  font-size: 11px;
+  color: var(--text-gray);
+}
+.rent-sep {
+  width: 1px;
+  height: 40px;
+  background: var(--border);
+}
+/*
+ * Toma sólo el 35% del espacio libre (65% más angosta): con la suma de flex-grow
+ * por debajo de 1, el sobrante queda sin repartir y la sección conserva su ancho.
+ */
+.rent-cred {
+  flex: 0.35;
+}
+.rent-cred-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+.rent-cred-l {
+  font-size: 13px;
+  font-weight: 600;
+}
+.rent-cred-v {
+  font-size: 15px;
+  margin-left: 6px;
+}
+.rent-cred-p {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ===== VISTA EMISIÓN ===== */
+.grow1 {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: stretch;
+}
+/* Visor del PDF (columna tipo file) reducido un 30% en la emisión del presupuesto. */
+.emision-grid .pdfv {
+  width: 70%;
+}
+/* Loading mientras se traen los contactos del cliente desde Monday. */
+.contactos-cargando {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 4px;
+  color: var(--text-gray);
+  font-size: 13px;
+  font-weight: 500;
+}
+.contactos-cargando i {
+  color: var(--primary-blue);
+}
+/* El cliente no tiene contactos en Monday: sin ellos el envío no puede ocurrir. */
+.envio-sin-contactos {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  background: #fff8e8;
+  border: 1px solid #ffdf9e;
+  border-radius: 10px;
+}
+.envio-sin-contactos > i {
+  font-size: 20px;
+  color: var(--yellow);
+  margin-top: 2px;
+}
+.envio-sin-contactos-t {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 4px;
+}
+.envio-sin-contactos p {
+  font-size: 13px;
+  color: var(--text-gray);
+  line-height: 1.5;
+}
+.grow2 {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 16px;
+  align-items: stretch;
+}
+.drow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 15px;
+  align-items: center;
+  padding: 4px 0;
+}
+.dl {
+  color: var(--text-gray);
+}
+.dv {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dv.green {
+  color: var(--green);
+  font-weight: 600;
+  font-size: 17px;
+}
+.divi {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 12px 0;
+}
+.mini-ava {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+  font-size: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Visor PDF */
+.pdfv {
+  position: relative;
+  background: #323338;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+}
+
+/* PDF real (generado por Make.com) embebido en lugar de la maqueta. */
+.pdfframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #525659;
+  min-height: 400px;
+}
+/* Visor vacío: la columna file_mkse56g9 todavía no tiene archivo. */
+.pdf-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #525659;
+  color: #a9aab0;
+  text-align: center;
+  padding: 24px;
+  min-height: 400px;
+}
+.pdf-empty i {
+  font-size: 44px;
+  opacity: 0.7;
+}
+.pdf-empty p {
+  font-size: 14px;
+  max-width: 300px;
+}
+.pdf-open {
+  color: #b0b1b6;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pdf-open:hover {
+  color: #fff;
+}
+
+/* Loading / error superpuesto al visor mientras se genera el PDF. */
+.pdf-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(50, 51, 56, 0.82);
+  backdrop-filter: blur(2px);
+}
+.pdf-overlay-icon {
+  font-size: 40px;
+  color: #fff;
+}
+.pdf-overlay-msg {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  max-width: 320px;
+}
+.pdf-overlay--error .pdf-overlay-icon {
+  color: var(--yellow, #ffcb00);
+}
+.pdftool {
+  background: #323338;
+  color: #b0b1b6;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  border-bottom: 1px solid #4a4c54;
+}
+.pdftool > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pdfscroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  min-height: 400px;
+}
+.pdfdoc {
+  background: #fff;
+  padding: 40px;
+  border-radius: 2px;
+  width: 100%;
+  max-width: 700px;
+  height: fit-content;
+}
+.pdfh {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.pdfh-left {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.pdfh-left h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.pdfh-right {
+  text-align: right;
+}
+.pdfh-right h2 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+.pdflogo {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: conic-gradient(
+    #00ca72 0 90deg,
+    #ffcb00 90deg 180deg,
+    #0073ea 180deg 270deg,
+    #575ce5 270deg
+  );
+  position: relative;
+  flex-shrink: 0;
+}
+.pdflogo::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  background: #fff;
+  border-radius: 50%;
+}
+.pdf-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.pdf-meta-t {
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.pdftab {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-bottom: 24px;
+}
+.pdftab th,
+.pdftab td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+.pdftab th {
+  color: var(--text-gray);
+}
+.pdftab-empty {
+  text-align: center;
+  color: var(--text-gray);
+  padding: 16px;
+}
+.pdf-tot {
+  width: 200px;
+  float: right;
+}
+.pdf-tot-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pdf-tot-final {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 16px;
+}
+.clearfix {
+  clear: both;
+}
+
+/* Envío */
+.toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 120px;
+  overflow: hidden;
+}
+.tbtn {
+  flex: 1;
+  text-align: center;
+  padding: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #fff;
+}
+.tbtn.active {
+  background: #e5f9f0;
+  color: var(--green);
+  font-weight: 600;
+}
+.send-row {
+  justify-content: flex-start;
+  gap: 30px;
+  font-size: 14px;
+}
+/* La pregunta encabeza la card: 2px más que el resto de la fila y en negrita. */
+.send-pregunta {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+.igp {
+  margin-bottom: 14px;
+  position: relative;
+}
+.igp label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.full {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.full:focus {
+  outline: none;
+  border-color: #575ce5;
+}
+/* Anchos fijos del bloque de envío: medidos sobre el layout y congelados en px. */
+.w-medio {
+  width: 172px;
+}
+.w-contactos {
+  width: 337px;
+}
+.sc {
+  position: relative;
+}
+.sc-caret {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--text-gray);
+}
+.ddc {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #575ce5;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.dda {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.btxt {
+  background: none;
+  border: none;
+  color: var(--primary-blue);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.btxt:hover {
+  text-decoration: underline;
+}
+.cddlist {
+  list-style: none;
+}
+.cddlist li {
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid #fcfcfc;
+}
+.cddlist li:hover {
+  background: var(--purple-light);
+  color: var(--purple);
+}
+.ccode {
+  font-size: 11px;
+  color: var(--text-gray);
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-family: monospace;
+}
+.nores {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-gray);
+  text-align: center;
+}
+.selc {
+  margin-top: 16px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.citem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.cinfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cava {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+/* Le falta el dato del medio elegido: el envío no puede llegarle. */
+.citem--sin-dato {
+  background: #fff5f6;
+  border-left: 3px solid var(--red);
+  padding-left: 10px;
+  margin-left: -10px;
+  border-radius: 4px;
+}
+.citem--sin-dato .citem-name {
+  color: var(--red);
+}
+.citem-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.citem-sub {
+  font-size: 14px;
+  color: var(--text-gray);
+}
+.citem-sub--falta {
+  color: var(--red);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.citem-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cbadge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 6px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.cbadge.ok {
+  background: #e5f9f0;
+  color: #00a25b;
+}
+.cbadge.no {
+  background: #ffeced;
+  color: #e2445c;
+}
+.del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-gray);
+  font-size: 16px;
+  padding: 4px;
+}
+.del:hover {
+  color: var(--red);
+}
+
+/* Log */
+.log-card {
+  background: var(--tint-config);
+  border: 1px solid var(--tint-config-bd);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 40px;
+}
+.timeline {
+  position: relative;
+  padding-left: 20px;
+  margin-top: 16px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.tli {
+  position: relative;
+  margin-bottom: 22px;
+  padding-left: 20px;
+}
+.tli:last-child {
+  margin-bottom: 0;
+}
+.tlic {
+  position: absolute;
+  left: -26px;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #fff;
+}
+.i-ok {
+  background: var(--green);
+}
+.i-err {
+  background: var(--red);
+}
+.i-info {
+  background: #575ce5;
+}
+.tlc h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.tlc p {
+  font-size: 12px;
+  color: var(--text-gray);
+  line-height: 1.4;
+}
+.log-empty {
+  padding: 30px 10px;
+  text-align: center;
+  color: var(--text-gray);
+  font-size: 13px;
+}
+
+/* ===== VISTA FACTURA ===== */
+.factura-grid {
+  margin-top: 58px;
+}
+.fact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.fact-lbl {
+  color: var(--text-gray);
+}
+.fact-val {
+  font-weight: 600;
+  text-align: right;
+}
+.fact-row--total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tint-summary-bd);
+  font-size: 15px;
+  font-weight: 700;
+}
+.fact-sel,
+.fact-input {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  padding: 3px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+  outline: none;
+  min-width: 150px;
+}
+.fact-sel:focus,
+.fact-input:focus {
+  border-color: var(--primary-blue);
+}
+.fact-err {
+  margin-top: 10px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ===== VISTA COBRO ===== */
+/* El primer bloque después del stepper abre la vista. */
+.stepper + .cobro-aviso,
+.stepper + .cobro-acc {
+  margin-top: 58px;
+}
+/* Aviso al ras, sin caja: sólo icono y texto. */
+.cobro-aviso {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+/* Desplegable del cobro: cerrado es una barra fina; abierto contiene todo. */
+.cobro-acc {
+  background: var(--tint-neutral);
+  border: 1px solid var(--tint-neutral-bd);
+  border-radius: 8px;
+  margin-top: 15px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.cobro-acc-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  position: relative;
+}
+/* Con el trackeo plegado hay que dejarle alto: está fuera del flujo. */
+.cobro-acc-head--track {
+  min-height: 62px;
+}
+/* El SI/NO va pegado a la pregunta; el estado queda contra el borde. */
+.cobro-acc-head .cobro-ok {
+  margin-left: auto;
+}
+/* Selector de tipo de pago + pregunta/nota, en la cabecera del cobro. */
+.cobro-tipo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cobro-tipo select {
+  width: auto;
+  min-width: 180px;
+}
+/* No editable: se muestra como dato fijo, no como control deshabilitado. */
+.cobro-tipo select:disabled {
+  opacity: 1;
+  color: var(--text-dark);
+  background: #f4f6fb;
+  cursor: default;
+  font-weight: 600;
+}
+.cobro-tipo-nota {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-gray);
+}
+.cobro-tipo-nota i {
+  color: var(--primary-blue);
+}
+.cobro-ask {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cobro-acc-chev {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-gray);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.cobro-acc-chev i {
+  transition: transform 0.2s;
+}
+.cobro-acc-chev i.open {
+  transform: rotate(180deg);
+}
+.cobro-acc-body {
+  padding: 0 16px 16px;
+}
+.cobro-confirmar {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 16px;
+}
+/* Se pone en verde cuando el cobro quedó bien registrado. */
+.cobro-ok {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e6e9ef;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.cobro-ok.on {
+  background: var(--green);
+}
+/* Formulario + tabla: un solo bloque, sin caja propia, a todo el ancho. */
+.cobro-carga {
+  margin-bottom: 16px;
+}
+/* Aire contra la pregunta de la cabecera. */
+.cobro-carga .selrow {
+  margin-top: 13px;
+}
+/* Tabla de movimientos con los totales y el trackeo apilados al costado. */
+.cobro-fila {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 27px;
+}
+.cobro-col-der {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-left: 30px;
+}
+.cobro-carga .selrow .ctrl {
+  width: 100%;
+}
+.cobro-carga .selrow .ig {
+  flex: 1;
+  min-width: 150px;
+}
+/* Importe y descuento no necesitan tanto ancho como el resto. */
+.cobro-carga .selrow .ig--corto {
+  flex: 0 0 110px;
+  min-width: 0;
+}
+/* La fecha es fija: le alcanza con lo justo. */
+.cobro-carga .selrow .ig--fecha {
+  flex: 0 0 102px;
+  min-width: 0;
+}
+.cobro-carga .selrow .ig--forma {
+  flex: 0 0 199px;
+  min-width: 0;
+}
+.cobro-carga .selrow .ig--ref {
+  flex: 0 0 173px;
+  min-width: 0;
+}
+/* El botón no necesita acompañar el ancho de los campos. */
+.cobro-carga .selrow .ig--accion {
+  flex: 0 0 166px;
+  min-width: 0;
+}
+.cobro-carga .selrow .ig--accion .btn {
+  width: 166px;
+}
+/* El selector toma el color de la forma de pago elegida. */
+.forma-sel {
+  color: #fff;
+  font-weight: 600;
+}
+.forma-sel option {
+  background: #fff;
+  color: var(--text-dark);
+  font-weight: 500;
+}
+/* Totales + detalle del cobro + cta. cte., lado a lado y separados por un filete. */
+.cobro-detalle {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 0;
+}
+.cobro-det-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Filete de separación entre columnas contiguas. */
+.cobro-tot-col + .cobro-det-col,
+.cobro-det-col + .cobro-det-col {
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+  margin-left: 24px;
+}
+/* Totales de la venta a la izquierda del detalle: dos métricas apiladas y centradas. */
+.cobro-tot-col {
+  flex: 0 0 190px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+.cobro-tot-item .tk-num {
+  margin-top: 6px;
+}
+/* Campo y valor más juntos: la fila no se estira a toda la columna. */
+.cobro-detalle .drow {
+  max-width: 340px;
+  font-size: 13px;
+  margin-bottom: 2px;
+  padding: 1px 0;
+}
+/* Card compacta: menos altura sin perder legibilidad. */
+.cobro-detalle {
+  padding: 14px 20px;
+}
+.cobro-detalle .ctitle {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.cobro-detalle .cta-resultante {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.pago-badge {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.cobro-tabla {
+  width: 778px;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+/* Encabezado y dato centrados: quedan en el mismo eje de su columna. */
+.cobro-tabla th,
+.cobro-tabla td {
+  text-align: center;
+}
+
+/* Totales de la venta + trackeo del cobro */
+.tk-card {
+  flex: 0 0 196px;
+  background: #fff;
+  border: 2px solid var(--tint-neutral-bd);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+}
+/* El trackeo comparte los elementos, pero no el formato de card. */
+.tk-card--graf {
+  width: 427px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+/* Trackeo plegado: mismo gráfico a escala chica, centrado en el item.
+   Va absoluto para que el centro no dependa de cuánto ocupan el texto y el toggle. */
+.tk-card--mini {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  margin: 0;
+}
+.tk-card--mini .stbar {
+  height: 14px;
+  border-radius: 7px;
+  font-size: 9px;
+}
+.tk-card--mini .tk-legs {
+  gap: 12px;
+  margin-top: 5px;
+}
+.tk-card--mini .tk-dot {
+  width: 7px;
+  height: 7px;
+}
+.tk-card--mini .tk-leg-v {
+  font-size: 11px;
+}
+.tk-card--mini .tk-leg-l {
+  font-size: 10px;
+}
+.tk-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tk-ic {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.tk-ic--azul {
+  background: #e5f0ff;
+  color: var(--primary-blue);
+}
+.tk-ic--verde {
+  background: #e6f9f0;
+  color: var(--green-dark);
+}
+.tk-ic--naranja {
+  background: #fff3df;
+  color: #b46f00;
+}
+.tk-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.tk-chip {
+  margin-left: auto;
+  background: #e6f9f0;
+  color: var(--green-dark);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.tk-num {
+  font-size: 18px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+.tk-pie {
+  font-size: 10px;
+  color: var(--text-gray);
+  margin-top: 3px;
+}
+.tk-legs {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+/* Cuadrado de color · importe · (etiqueta y porcentaje) */
+.tk-leg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tk-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.tk-leg-v {
+  font-size: 14px;
+  font-weight: 700;
+}
+.tk-leg-l {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.cta-resultante {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-weight: 700;
+}
+.cta-resultante .dl,
+.cta-resultante .dv {
+  font-weight: 700;
+}
+.cobro-bloqueo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff5f6;
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.ctrl--error {
+  border-color: var(--red);
+  background: #fff5f6;
+}
+
+/* ===== VISTA CARGAR VENTA ===== */
+.venta-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+/* Resumen de documentos (cards) a la izquierda + lista plana de productos a la derecha. */
+.pend-grid {
+  display: grid;
+  /* minmax(0,1fr): deja que la columna encoja por debajo del ancho de la tabla, que scrollea. */
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+/* La tabla de pendientes arranca al ras del panel de cards, sin el margen propio de `.tablec`. */
+.pend-grid .tablec {
+  margin-top: 0;
+}
+.pend-grid .presup-panel {
+  max-height: 620px;
+}
+/* Listado y detalle a la misma altura: el listado scrollea por dentro. */
+.venta-grid--par {
+  align-items: stretch;
+}
+.venta-grid--par .presup-panel {
+  max-height: none;
+}
+.presup-panel {
+  background: var(--tint-neutral);
+  border: 1px solid var(--tint-neutral-bd);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 560px;
+}
+.presup-head {
+  padding: 16px 18px;
+  font-weight: 600;
+  font-size: 16px;
+  border-bottom: 1px solid var(--tint-neutral-bd);
+  background: #fff;
+}
+.presup-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.presup-vacio {
+  padding: 24px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-gray);
+}
+.presup-foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--tint-neutral-bd);
+  font-size: 13px;
+  color: var(--text-gray);
+  background: #fff;
+}
+.pcard {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  transition: 0.15s;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}
+.pcard:hover {
+  border-color: #9db4d0;
+}
+.pcard.sel {
+  border: 2px solid var(--primary-blue);
+  box-shadow: 0 2px 8px rgba(0, 115, 234, 0.12);
+}
+.pcard-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.pcard-id {
+  color: var(--primary-blue);
+  font-weight: 700;
+  font-size: 15px;
+}
+.pbadge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.pbadge.disp {
+  background: #c4f1d4;
+  color: #008f39;
+}
+.pbadge.venc {
+  background: #ffe5e5;
+  color: var(--red);
+}
+.pbadge.comp {
+  background: #c4f1d4;
+  color: #008f39;
+}
+.pbadge.parc {
+  background: #fff3df;
+  color: #b46f00;
+}
+.pcard-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.pcol-l {
+  font-size: 10px;
+  color: var(--text-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+.pcol-l--plain {
+  text-transform: none;
+}
+.pcol-v {
+  font-weight: 700;
+  font-size: 14px;
+}
+.detail-panel {
+  background: var(--tint-neutral);
+  border: 1px solid var(--tint-neutral-bd);
+  border-radius: 8px;
+  padding: 20px;
+  position: relative;
+  min-height: 560px;
+}
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 520px;
+  color: var(--text-gray);
+  text-align: center;
+  gap: 12px;
+}
+.detail-empty i {
+  font-size: 32px;
+  opacity: 0.4;
+}
+.dt-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: var(--text-gray);
+  cursor: pointer;
+  font-size: 18px;
+  background: none;
+  border: none;
+}
+.dt-id {
+  color: var(--primary-blue);
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.dt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.dt-val {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dt-uso {
+  color: var(--orange);
+  font-weight: 700;
+  font-size: 20px;
+  margin-top: 2px;
+}
+.stbar {
+  display: flex;
+  width: 100%;
+  height: 20px;
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 11px;
+  color: #fff;
+  font-weight: 700;
+}
+.stbar div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stleg {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-gray);
+  flex-wrap: wrap;
+}
+.stleg span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stleg i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.dt-prods-t {
+  margin-top: 16px;
+}
+.dt-prods-t {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.dt-prods-t span {
+  color: var(--text-gray);
+  font-weight: 400;
+}
+.estado-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Detalle: selección de líneas para llevar a la venta */
+.dt-hint {
+  font-size: 12px;
+  color: var(--text-gray);
+  margin-bottom: 10px;
+}
+.dt-added {
+  background: #f4faf6;
+  color: var(--text-gray);
+}
+.dt-acts {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+/* Igual que `.footbox` en presupuestar: banda a sangre al pie de la tabla. */
+.vsum-band {
+  background: var(--tint-summary);
+  margin-top: 20px;
+  padding: 12px 24px;
+}
+.vsummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+/* Dos bloques: datos de la venta y cuenta corriente del cliente, bien separados. */
+.vsum-metrics {
+  display: flex;
+  gap: 72px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.vsum-group {
+  display: flex;
+  gap: 36px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.vsum-l {
+  display: block;
+  font-size: 10px;
+  color: var(--text-gray);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.vsum-v {
+  font-size: 19px;
+  font-weight: 700;
+}
+.vsum-cred {
+  min-width: 170px;
+}
+.vsum-cred .vsum-v {
+  font-size: 15px;
+}
+.vsum-detail {
+  font-size: 10px;
+  color: var(--text-gray);
+  margin-top: 3px;
+}
+
+/* ===== Operación REMITO ===== */
+
+/* Aclaración del tipo de emisión, al pie del selector de configuración. */
+.cfg-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-gray);
+  background: #eef1f6;
+  border-radius: 8px;
+  padding: 8px 14px;
+  flex: 1 1 260px;
+}
+.cfg-hint i {
+  color: var(--primary-blue);
+}
+
+/* POSTERIOR: aviso de que la venta queda pendiente de facturar. */
+.remito-aviso {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff1f2;
+  border: 1px solid #ffccd1;
+  color: var(--red);
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 16px 0;
+}
+.remito-aviso strong {
+  font-weight: 800;
+}
+
+.tablec-empty {
+  text-align: center;
+  color: var(--text-gray);
+  font-size: 13px;
+  padding: 22px 8px;
+}
+
+/* Factura anidada dentro de la card de venta pendiente de entregar. */
+.fac-nest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #eef6ff;
+  border: 1px dashed #b8d6f5;
+}
+.fac-nest > i {
+  color: var(--primary-blue);
+  font-size: 15px;
+}
+.fac-nest-main {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: left;
+}
+.fac-nest-nro {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--text-dark);
+}
+.fac-nest-sub {
+  font-size: 10.5px;
+  color: var(--text-gray);
+}
+.fac-nest-tot {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--green-dark);
+}
+
+/* ¿Quién entrega?: tres opciones; al elegir una, las otras quedan anuladas. */
+.entrega-opts {
+  display: flex;
+  gap: 12px;
+}
+.entrega-opt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: 0.15s;
+}
+.entrega-opt:hover:not(:disabled):not(.active) {
+  border-color: #9db4d0;
+}
+.entrega-opt.active {
+  border: 2px solid var(--primary-blue);
+  box-shadow: 0 2px 8px rgba(0, 115, 234, 0.12);
+}
+.entrega-opt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.entrega-opt-ic {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #eef2f9;
+  color: var(--primary-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.entrega-opt.active .entrega-opt-ic {
+  background: var(--primary-blue);
+  color: #fff;
+}
+.entrega-opt-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.entrega-opt-l {
+  font-weight: 700;
+  font-size: 14px;
+}
+.entrega-opt-d {
+  font-size: 11.5px;
+  color: var(--text-gray);
+}
+/* Formulario del responsable elegido + botón de confirmar la entrega. */
+.entrega-form {
+  margin-top: 16px;
+}
+.entrega-confirmar {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 16px;
+}
+/* Resumen de la entrega en la cabecera cuando el item queda plegado. */
+.entrega-resumen {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-gray);
+  background: #eef2f9;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+/* Generación del COT: botón azul + input que se rellena automáticamente. */
+.cot-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.cot-row .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cot-row input {
+  font-family: monospace;
+  letter-spacing: 0.5px;
+  background: #fafbfc;
+}
+.envio-dest-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f0f6ff;
+}
+.envio-dest-card i {
+  color: var(--primary-blue);
+  margin-top: 2px;
+}
+.envio-dest-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+.envio-dest-dir {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.envio-transp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f4f6fb;
+  margin-bottom: 12px;
+}
+.envio-transp-l {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.envio-transp-v {
+  font-weight: 700;
+  font-size: 13px;
+}
+.pdf-remito-nota {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 10.5px;
+  color: var(--text-gray);
+  font-style: italic;
+}
+
+/* ===== Modal / ventana emergente ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 40, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: modal-fade 0.15s ease-out;
+}
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+}
+.modal-box {
+  position: relative;
+  background: #fff;
+  border-radius: 14px;
+  padding: 30px 32px 24px;
+  width: 460px;
+  max-width: 100%;
+  box-shadow: 0 24px 64px rgba(20, 30, 60, 0.3);
+  text-align: center;
+}
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-gray);
+  font-size: 16px;
+}
+.modal-close:hover {
+  color: var(--text-dark);
+}
+.modal-icon {
+  font-size: 36px;
+  color: var(--red);
+  margin-bottom: 14px;
+}
+.modal-title {
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.modal-body {
+  font-size: 14px;
+  color: var(--text-gray);
+  line-height: 1.55;
+}
+.modal-body strong {
+  color: var(--text-dark);
+  font-weight: 600;
+}
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+/* Advertencia: el flujo se frena por datos incompletos, no por un error del sistema. */
+.modal-icon--warn {
+  color: var(--yellow);
+}
+/* Detalle de lo que falta, debajo del mensaje. */
+.modal-faltantes {
+  list-style: none;
+  margin: 16px auto 0;
+  padding: 14px 16px;
+  text-align: left;
+  background: #fff7f8;
+  border: 1px solid #ffd7dd;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.modal-faltantes i {
+  color: var(--red);
+  margin-right: 6px;
+}

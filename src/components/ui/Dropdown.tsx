@@ -1,0 +1,62 @@
+import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useClickOutside } from '@/hooks/useClickOutside'
+
+interface DropdownProps<T> {
+  /** Texto del botón cerrado. */
+  label: ReactNode
+  items: readonly T[]
+  itemKey: (item: T) => string
+  renderItem: (item: T) => ReactNode
+  onSelect: (item: T) => void
+  /** Clase extra para cada opción (p. ej. `dditem--strong`). */
+  itemClassName?: string
+}
+
+/** Selector con menú desplegable, usado para operación y vendedor. */
+export function Dropdown<T>({
+  label,
+  items,
+  itemKey,
+  renderItem,
+  onSelect,
+  itemClassName = '',
+}: DropdownProps<T>) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => setOpen(false), [])
+  useClickOutside(ref, close, open)
+
+  return (
+    <div className="dd dd--bare selbox--fix" ref={ref}>
+      <button
+        type="button"
+        className="selbox selbox--fix selbox--btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {label}
+        <i className="fas fa-chevron-down" />
+      </button>
+
+      {open && (
+        <div className="ddmenu" role="listbox">
+          {items.map((item) => (
+            <div
+              key={itemKey(item)}
+              role="option"
+              aria-selected={false}
+              className={`dditem ${itemClassName}`}
+              onClick={() => {
+                onSelect(item)
+                setOpen(false)
+              }}
+            >
+              {renderItem(item)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

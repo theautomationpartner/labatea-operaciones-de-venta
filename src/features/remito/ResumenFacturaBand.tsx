@@ -1,0 +1,73 @@
+import { money, pct } from '@/lib/format'
+import type { ResumenFactura } from '@/lib/selectors'
+
+/** Totales de la factura e impacto en el crédito, en dos tarjetas. */
+export function ResumenFacturaBand({ resumen }: { resumen: ResumenFactura }) {
+  const colorCredito = resumen.critico ? 'var(--p-danger)' : 'var(--p-success)'
+  const usado = Math.min(Math.max(resumen.usadoPct, 0), 100)
+
+  return (
+    <div className="totals-grid totals-grid--2" aria-label="Resumen de la facturación">
+      <div className="kpi-card">
+        <div className="subtotal-lines">
+          <div className="sub-row">
+            <span>Importe subtotal</span>
+            <span>{money(resumen.subtotal)}</span>
+          </div>
+          <div className="sub-row">
+            <span>Descuento</span>
+            <span style={resumen.descuento > 0 ? { color: 'var(--p-danger)' } : undefined}>
+              {resumen.descuento > 0 ? `- ${money(resumen.descuento)}` : money(0)}
+            </span>
+          </div>
+          <div className="total-row">
+            <span>NETO A FACTURAR</span>
+            <span>{money(resumen.neto)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="kpi-card">
+        <span className="rent-lbl">Crédito disponible</span>
+        <div className="credit-layout">
+          <div className="donut-container">
+            <div
+              className="donut-chart"
+              role="meter"
+              aria-valuenow={Math.round(usado)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Uso del límite de crédito"
+              style={{
+                background: `conic-gradient(${colorCredito} 0% ${usado}%, var(--p-border) ${usado}% 100%)`,
+              }}
+            >
+              <div className="donut-inner">
+                <span className="donut-val">{pct(resumen.usadoPct)}</span>
+                <span className="donut-lbl">Utilizado</span>
+              </div>
+            </div>
+            <div className="donut-footer">Del límite de crédito</div>
+          </div>
+
+          <div className="credit-details">
+            <div className="credit-row">
+              <span className="c-lbl">Límite asignado</span>
+              <span className="c-val">{money(resumen.limite)}</span>
+            </div>
+            {/* Crédito que le queda al cliente con esta factura incluida: baja al sumar productos. */}
+            <div className="credit-row">
+              <span className="c-lbl">Crédito disponible</span>
+              <span
+                className="c-val"
+                style={{ color: resumen.resultante < 0 ? 'var(--p-danger)' : colorCredito }}
+              >
+                {money(resumen.resultante)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

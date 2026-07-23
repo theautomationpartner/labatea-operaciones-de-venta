@@ -1,0 +1,867 @@
+================================================================================
+DOCUMENTO DE ESPECIFICACIÓN FUNCIONAL, NO FUNCIONAL Y DE VALIDACIONES
+Sistema de Operaciones de Venta — La Batea
+================================================================================
+Versión: 1.0
+Fecha: 20/07/2026
+Base documental: "Documento Maestro de Requerimientos Funcionales - La Batea"
+                 (v4.0 - Arquitectura Monday.com)
+
+--------------------------------------------------------------------------------
+ALCANCE
+--------------------------------------------------------------------------------
+El Documento Maestro describe todo el ecosistema de La Batea (Personas, Productos,
+Configuraciones, Stock, Cuenta Corriente, Comisiones, Dashboards, integraciones
+AFIP/ARBA, etc.). Este documento se concentra en el PROCESO DE OPERACIONES DE
+VENTA: el trámite que realiza un vendedor para generar Presupuestos,
+Ventas/Facturas y Remitos de punta a punta, con sus reglas de negocio,
+requerimientos y validaciones.
+
+El documento está redactado en términos de proceso y de negocio. No describe la
+tecnología ni la construcción interna del sistema; describe QUÉ debe hacer el
+sistema, en qué orden, bajo qué reglas y qué debe validarse.
+
+
+================================================================================
+1. CONCEPTOS Y ENTIDADES DEL PROCESO
+================================================================================
+
+1.1 Operación
+    El trámite que se da de alta. Tres tipos: PRESUPUESTAR, CARGAR VENTA y REMITO.
+    Nada viene preseleccionado: el vendedor elige todo explícitamente.
+
+1.2 Vendedor
+    Persona que realiza la operación. Se elige al inicio y queda asignada al
+    documento resultante (presupuesto, venta o remito).
+
+1.3 Cliente
+    Entidad del padrón sobre la que se opera. Datos relevantes al proceso:
+    identificación y CUIT, tipo de persona (física/jurídica), condición frente al
+    IVA, lista de precios asignada, retenciones aplicables, condición de pago
+    habitual (contado / cuenta corriente 30 / cuenta corriente 60), límite de
+    crédito, saldo pendiente, actividad (activo/inactivo) y situación comercial
+    (Liberado con crédito / Liberado sin crédito / Bloqueado).
+
+1.4 Producto
+    Ítem del catálogo. Datos relevantes: código, nombre, precio, rentabilidad,
+    proveedor, tipo/modalidad, unidad de medida y tres niveles de stock: físico,
+    comercial y disponible.
+
+1.5 Presupuesto
+    Cotización comercial que no afecta stock ni cuenta corriente. Tiene estado
+    (En uso / Vencido / Completado) y, por cada línea, la cantidad presupuestada,
+    la ya vendida y la pendiente de vender (tope al llevarla a una venta).
+
+1.6 Remito pendiente de facturar
+    Salida de mercadería que todavía no se facturó. Estados: Sin facturar,
+    Pendiente de facturar, Facturado (este último no se lista: no hay nada por
+    facturar). Es el origen de la venta directa con entrega anterior.
+
+1.7 Venta con entrega pendiente
+    Venta ya facturada cuya mercadería falta entregar. Estados de entrega:
+    Pendiente de entregar, Parcialmente entregada, Entregada (sólo las dos
+    primeras se remiten). Es el origen del remito de emisión anterior.
+
+1.8 Cobro
+    Registro de los valores que cancelan la venta. El tipo de pago es SIMULTÁNEO
+    (contado) o POSTERIOR (cuenta corriente), derivado de la condición de pago del
+    cliente. Cada movimiento tiene forma de pago (efectivo, cheque, transferencia,
+    tarjeta débito, tarjeta crédito), importe, referencia y —si es cheque—
+    vencimiento.
+
+1.9 Factura
+    Comprobante legal de la venta. Datos: moneda (pesos/dólares) y tipo de cambio,
+    punto de venta, letra (A/B/C), condición de IVA del receptor, fechas,
+    observaciones y totales. En La Batea, Venta = Factura.
+
+1.10 Remito (operación de despacho)
+    Documento de salida física de mercadería. Tipo de emisión POSTERIOR o
+    ANTERIOR. Define quién entrega (flota propia La Batea, comisionista, o el
+    cliente que retira) y, para la flota propia, destino, chofer, vehículo y COT.
+
+1.11 Entidades logísticas
+    Destino de entrega (por cliente), Chofer, Vehículo y Comisionista de
+    transporte. El transportista propio es siempre "La Batea S.A.".
+
+1.12 Contacto
+    Persona de contacto del cliente, con su medio (email/teléfono) y su
+    clasificación de si acepta o no recibir cada tipo de documento.
+
+
+================================================================================
+2. PROCESO DE PUNTA A PUNTA
+================================================================================
+
+2.0 PASO INICIAL
+    El vendedor elige TIPO DE OPERACIÓN y VENDEDOR. Ambos son obligatorios para
+    iniciar. Los selectores de operación y vendedor están disponibles a lo largo
+    de todo el trámite; si se cambia la operación, el sistema reubica al usuario
+    en el paso equivalente del nuevo flujo, conservando cliente y configuración
+    cuando corresponde.
+
+--------------------------------------------------------------------------------
+2.1 PROCESO PRESUPUESTAR (3 pasos)
+--------------------------------------------------------------------------------
+Pasos: Seleccionar cliente -> Seleccionar productos -> Emisión y envío.
+
+PASO 1 - Seleccionar cliente
+  - Se busca el cliente por código, nombre o CUIT.
+  - Al confirmarlo se muestra su ficha: identificación, condición frente al IVA,
+    lista de precios, retenciones, actividad, situación, condición de pago y salud
+    de crédito (saldo pendiente, límite, disponible y porcentaje utilizado).
+  - Datos del presupuesto: fecha de emisión (el día de hoy, no editable), días de
+    vigencia (editable, 14 por defecto) y fecha de vencimiento derivada
+    (emisión + vigencia).
+  - Si el cliente está BLOQUEADO, no se puede continuar.
+
+PASO 2 - Seleccionar productos
+  - Se filtra y busca el producto en el catálogo.
+  - Por cada línea: producto, cantidad (mínimo 1), precio unitario (informativo,
+    de la lista) y descuento por renglón, limitado a un tope máximo (5%).
+  - Se muestra el stock del producto (físico/comercial/disponible) y una barra de
+    cobertura que indica cuánto del disponible consumiría la cantidad. Es
+    informativa: NO bloquea la carga por falta de stock.
+  - Se calcula subtotal, IVA (21%), total y rentabilidad ponderada, y se proyecta
+    el impacto en el crédito del cliente. Nada de esto bloquea el presupuesto.
+  - Acciones: guardar sin emitir, o continuar a emisión.
+
+PASO 3 - Emisión y envío
+  - Se genera el documento del presupuesto (con la fecha de vencimiento
+    destacada).
+  - Se decide si se envía (sí/no), por qué medio (email/WhatsApp/ambos) y a qué
+    contactos. Al confirmar, el sistema envía a los contactos que aceptan el
+    documento y omite (con aviso) a los que no lo aceptan, dejando registro del
+    resultado.
+  - El presupuesto no afecta stock ni cuenta corriente.
+
+--------------------------------------------------------------------------------
+2.2 PROCESO CARGAR VENTA (4 pasos)
+--------------------------------------------------------------------------------
+En La Batea, Venta = Factura. La configuración de la venta determina de dónde
+salen los productos y qué reglas de stock y crédito aplican.
+
+Configuración (en el paso 1):
+  - Tipo de venta: PRESUPUESTADA o DIRECTA.
+  - Tipo de entrega: POSTERIOR o SIMULTÁNEA (ambos tipos de venta), y ANTERIOR
+    (sólo venta directa). ANTERIOR significa que la mercadería ya salió por un
+    remito y la venta sólo la factura.
+
+Origen de los productos (paso 2), según configuración:
+  a) PRESUPUESTADA: líneas pendientes de los presupuestos EN USO del cliente.
+  b) DIRECTA + POSTERIOR/SIMULTÁNEA: armado desde el catálogo.
+  c) DIRECTA + ANTERIOR: líneas pendientes de facturar de los remitos del cliente.
+
+PASO 1 - Seleccionar cliente (igual que en presupuesto) + configuración de la
+  venta. Se exige elegir tipo de venta y tipo de entrega para continuar.
+
+PASO 2 - Cargar / seleccionar productos (según a, b o c).
+  - En los orígenes "por pendientes" (a y c): se selecciona cada línea, se ajusta
+    la cantidad a llevar —nunca superior a lo pendiente— y se confirma para
+    incorporarla a la venta. Se puede filtrar por documento de origen y buscar por
+    nombre o código.
+  - Se muestra total, comisión (según tipo de venta), rentabilidad y el impacto en
+    el crédito del cliente.
+
+PASO 3 - Cierre de venta (Cobro)
+  - El tipo de pago se deriva de la condición de pago del cliente y no es editable:
+      * SIMULTÁNEO (contado): el cobro es obligatorio para poder facturar.
+      * POSTERIOR (cuenta corriente): el cobro es opcional (se pregunta si se
+        registra un pago ahora).
+  - Se cargan movimientos con forma de pago, importe, referencia y —si es cheque—
+    vencimiento. Cada forma de pago aplica su descuento por pronto pago (efectivo
+    5%, transferencia 3%, resto 0%) y el sistema imputa a la venta el importe neto
+    de descuento.
+  - Un cheque debe vencer después de la fecha de la factura.
+  - Si el cliente es agente de retención, no se puede emitir la factura proforma
+    desde este proceso: las retenciones se calculan en otra instancia.
+  - Se muestra el trackeo del cobro (a cobrar / cobrado / pendiente) y cómo queda
+    la cuenta corriente. El cobro debe confirmarse explícitamente; cualquier
+    cambio en los movimientos reabre la confirmación.
+
+PASO 4 - Emitir factura
+  - Ficha de la factura: razón social y CUIT del cliente, moneda (con tipo de
+    cambio sólo si es en dólares), punto de venta, letra, condición de IVA del
+    receptor (derivada del cliente), condición de venta, fechas, observaciones y
+    totales.
+  - Secuencia obligatoria: Registrar la ficha -> Emitir en AFIP -> Cerrar venta.
+    Cada paso habilita el siguiente. Editar cualquier dato de la ficha invalida el
+    registro y la emisión.
+  - Bloque de envío de la factura al cliente (mismo mecanismo que el presupuesto).
+
+Reglas de stock según tipo de entrega:
+  - SIMULTÁNEA: baja stock físico y comercial al instante; no genera remito.
+  - POSTERIOR: baja stock comercial; genera pendiente de entrega (obliga un remito
+    futuro). Bloquea la venta si el total supera el crédito disponible.
+  - ANTERIOR: la mercadería ya salió por remito; sólo afecta cuenta corriente.
+
+--------------------------------------------------------------------------------
+2.3 PROCESO REMITO (4 pasos)
+--------------------------------------------------------------------------------
+Configuración (en el paso 1): tipo de emisión POSTERIOR o ANTERIOR.
+  - POSTERIOR: se remite mercadería que quedará pendiente de facturar (la factura
+    se emite más adelante). Los productos se arman desde el catálogo.
+  - ANTERIOR: se remite mercadería de una venta ya facturada con entrega
+    pendiente. Los productos salen de las ventas con entrega pendiente del cliente.
+
+PASO 1 - Seleccionar cliente + tipo de emisión.
+PASO 2 - Productos a remitar (POSTERIOR: catálogo) / Seleccionar venta (ANTERIOR:
+         productos pendientes de entregar, con tope en lo pendiente).
+PASO 3 - Especificación del envío: ¿quién entrega la mercadería?
+         * La Batea (flota propia): destino del cliente, chofer, vehículo y
+           generación del COT (código de operación de traslado, 16 dígitos,
+           automático).
+         * Comisionista: se elige el comisionista responsable del traslado.
+         * Cliente responsable: nombre de quien retira.
+         Al elegir un responsable, las demás opciones quedan deshabilitadas;
+         cambiarlo limpia los datos cargados. La entrega se confirma explícitamente.
+PASO 4 - Emitir remito: resumen, documento del remito (sin precios) y envío al
+         cliente.
+
+Reglas del remito:
+  - Remito POSTERIOR: genera la venta pendiente de facturar; baja stock físico y
+    comercial.
+  - Remito ANTERIOR: baja el pendiente de entrega de la venta; no vuelve a tocar
+    stock (ya se descontó en la venta).
+  - COT/ARBA: cuando corresponde, el código se solicita agrupando los ítems en
+    nomencladores genéricos y se incrusta en el documento del remito, que nunca
+    muestra precios.
+
+
+================================================================================
+3. REQUERIMIENTOS FUNCIONALES (RF)
+================================================================================
+
+--- 3.1 Selección de operación y vendedor ---
+RF-01  Permitir elegir una operación (PRESUPUESTAR, CARGAR VENTA, REMITO) y un
+       vendedor antes de iniciar el flujo.
+RF-02  No permitir avanzar del paso inicial hasta que operación y vendedor estén
+       ambos seleccionados.
+RF-03  Mantener disponibles los selectores de operación y vendedor en todos los
+       pasos; al cambiar la operación, reubicar al usuario en el paso equivalente
+       del nuevo flujo, preservando cliente y configuración cuando apliquen.
+RF-04  Rotular el vendedor según la operación (asignado al presupuesto / a la
+       venta / al remito).
+
+--- 3.2 Cliente ---
+RF-05  Permitir buscar clientes por código, nombre o CUIT.
+RF-06  Ante búsqueda vacía o sin resultados, informarlo sin seleccionar cliente.
+RF-07  Al seleccionar un cliente, mostrar su ficha: identificación, CUIT, tipo de
+       persona, condición frente al IVA, lista de precios, retenciones, actividad,
+       situación, condición de pago y salud de crédito (saldo, límite, disponible
+       y porcentaje utilizado).
+RF-08  Calcular el crédito disponible como límite menos saldo pendiente y
+       clasificar el nivel de uso con un semáforo.
+RF-09  Al cambiar de cliente, invalidar y reiniciar el presupuesto/venta/remito en
+       curso y su cobro.
+RF-10  Impedir operar sobre un cliente en situación Bloqueado.
+
+--- 3.3 Configuración de la operación ---
+RF-11  En CARGAR VENTA, exigir tipo de venta (PRESUPUESTADA/DIRECTA) y tipo de
+       entrega antes de continuar.
+RF-12  Ofrecer el tipo de entrega ANTERIOR sólo para la venta DIRECTA; para la
+       PRESUPUESTADA sólo POSTERIOR y SIMULTÁNEA.
+RF-13  Al cambiar el tipo de venta, limpiar el tipo de entrega si deja de ser
+       válido.
+RF-14  En REMITO, exigir tipo de emisión (POSTERIOR/ANTERIOR) y explicar el efecto
+       de cada opción.
+RF-15  Al cambiar el tipo de emisión, reiniciar los productos ya cargados en el
+       remito.
+
+--- 3.4 Presupuesto ---
+RF-16  Traer por defecto la lista de precios asignada al cliente y el precio
+       unitario de la lista (informativo).
+RF-17  Permitir agregar líneas con cantidad (mínimo 1) y descuento por renglón.
+RF-18  No permitir que el descuento por renglón supere el tope máximo (5%);
+       topearlo automáticamente.
+RF-19  Calcular subtotal, IVA (21%), total y rentabilidad ponderada por importe.
+RF-20  Mostrar el stock y una barra de cobertura informativos, sin bloquear la
+       carga por falta de stock.
+RF-21  Mostrar la proyección de impacto en el crédito, sin bloquear la creación
+       del presupuesto.
+RF-22  Fijar la fecha de emisión en el día (no editable); permitir editar los días
+       de vigencia (14 por defecto) y derivar el vencimiento de emisión + vigencia.
+RF-23  Permitir "guardar sin emitir" y "continuar a emisión".
+
+--- 3.5 Emisión y envío de documentos ---
+RF-24  Generar el documento (presupuesto/factura/remito) para su revisión.
+RF-25  Permitir decidir si se envía, elegir el medio (email/WhatsApp/ambos) y
+       gestionar los contactos destino.
+RF-26  Al confirmar el envío, enviar sólo a los contactos que aceptan ese tipo de
+       documento y omitir (con aviso) a los que no lo aceptan, dejando registro.
+RF-27  Si no hay contactos seleccionados, informarlo como error.
+
+--- 3.6 Venta desde presupuestos ---
+RF-28  Listar las líneas pendientes de todos los presupuestos EN USO del cliente,
+       indicando presupuestada/vendida/pendiente y el estado de avance.
+RF-29  Permitir seleccionar líneas y ajustar la cantidad a vender, sin superar lo
+       pendiente.
+RF-30  No permitir agregar dos veces la misma línea de origen.
+RF-31  Tomar precio y rentabilidad del presupuesto; del catálogo, sólo el stock.
+RF-32  Calcular total, comisión (según tipo de venta), rentabilidad e impacto en
+       el crédito.
+
+--- 3.7 Venta directa con entrega anterior ---
+RF-33  Listar las líneas pendientes de facturar de los remitos del cliente
+       (estados Sin facturar / Pendiente de facturar) con sus cantidades.
+RF-34  Permitir seleccionar y ajustar la cantidad a facturar, con tope en lo
+       pendiente.
+RF-35  Aplicar el descuento del remito sobre el importe a facturar, sólo si hay
+       algo que facturar.
+
+--- 3.8 Cobro ---
+RF-36  Derivar el tipo de pago de la condición de pago del cliente
+       (contado -> simultáneo; cuenta corriente -> posterior) y no permitir
+       editarlo.
+RF-37  En pago simultáneo, exigir el cobro para poder facturar.
+RF-38  En pago posterior, dejar el cobro opcional.
+RF-39  Permitir cargar múltiples movimientos con forma de pago, importe,
+       referencia y (para cheque) vencimiento.
+RF-40  Aplicar el descuento por forma de pago (efectivo 5%, transferencia 3%,
+       resto 0%) e imputar el importe neto de descuento.
+RF-41  Exigir que el cheque venza después de la fecha de la factura.
+RF-42  Exigir confirmación explícita del cobro; cualquier cambio en los
+       movimientos invalida la confirmación.
+RF-43  Si el cliente es agente de retención, impedir la emisión de la factura
+       proforma desde este proceso y avisar que las retenciones se cargan aparte.
+RF-44  Mostrar el trackeo del cobro y la proyección de la cuenta corriente.
+
+--- 3.9 Factura ---
+RF-45  Derivar del cliente la condición de IVA del receptor y la letra del
+       comprobante (A si Responsable Inscripto; B en otro caso), permitiendo
+       sobrescribir.
+RF-46  Permitir elegir moneda; con dólares, exigir tipo de cambio.
+RF-47  Calcular subtotal, IVA y total según el origen de las líneas.
+RF-48  Encadenar la emisión: Registrar -> Emitir en AFIP -> Cerrar venta; cada
+       paso habilita el siguiente.
+RF-49  Invalidar el registro y la emisión al editar cualquier dato de la ficha.
+RF-50  Habilitar "cerrar venta" sólo con la factura emitida.
+
+--- 3.10 Remito y logística ---
+RF-51  En emisión posterior, armar la mercadería desde el catálogo, advirtiendo
+       que la venta quedará pendiente de facturar.
+RF-52  En emisión anterior, listar los productos pendientes de entregar de las
+       ventas facturadas del cliente, con tope en lo pendiente.
+RF-53  Exigir definir quién entrega (La Batea / comisionista / cliente); al elegir
+       uno, deshabilitar los otros y limpiar sus datos.
+RF-54  Para La Batea, exigir destino, chofer y vehículo, y permitir generar el COT
+       (16 dígitos) automáticamente.
+RF-55  Para comisionista, exigir su selección; para cliente, el nombre del
+       responsable que retira.
+RF-56  Exigir confirmar la entrega antes de continuar a la emisión.
+RF-57  No mostrar precios en el documento del remito.
+
+--- 3.11 Reglas transversales de negocio ---
+RF-58  Límite de crédito: 0 = Ilimitado, 1 = Bloqueado, N = tope financiero.
+RF-59  Comisión: PRESUPUESTADA (Activa) 4%; DIRECTA (Pasiva) 1,5%; sobre el neto.
+RF-60  La modalidad del producto (común/consignado) define el punto de venta AFIP;
+       no se pueden mezclar modalidades en un mismo comprobante.
+RF-61  Packs/fraccionados: al facturar/remitir, descontar el stock de los
+       componentes base, no del nombre del pack.
+RF-62  Comisiones: pasan a "A liquidar" sólo con cobro total confirmado y antes de
+       60 días desde la emisión; si no, "Caducada".
+
+
+================================================================================
+4. REQUERIMIENTOS NO FUNCIONALES (RNF)
+================================================================================
+
+--- 4.1 Usabilidad y experiencia ---
+RNF-01 Navegación por pasos con un indicador de avance visible que muestre el paso
+       actual y el total de cada flujo.
+RNF-02 Cada paso debe presentarse desde el inicio del contenido (sin arrastrar la
+       posición del paso anterior).
+RNF-03 Los avances deben quedar inhabilitados hasta cumplir las precondiciones del
+       paso, y explicar el motivo cuando corresponda (p. ej. "cliente bloqueado").
+RNF-04 Uso consistente de un semáforo (verde/amarillo/rojo) para crédito y
+       cobertura, con umbrales estables en todo el sistema.
+RNF-05 Recalcular en vivo totales, crédito y cobertura ante cada cambio.
+RNF-06 Mostrar con claridad el resultado de las acciones irreversibles (registrar,
+       emitir, cerrar, confirmar).
+
+--- 4.2 Accesibilidad ---
+RNF-07 Los controles y las barras de progreso deben ser operables y comprensibles
+       por lectores de pantalla (etiquetas, estados y valores).
+RNF-08 Los errores deben señalarse con un mensaje textual, no sólo con color.
+RNF-09 La operación básica del flujo debe poder realizarse por teclado.
+
+--- 4.3 Consistencia y confiabilidad de datos ---
+RNF-10 Los cálculos (crédito, comisiones, totales, cobro, cobertura) deben ser
+       reproducibles y consistentes entre pasos y vistas.
+RNF-11 Al cambiar un dato de origen, deben invalidarse los estados dependientes
+       (editar la ficha reabre registro y emisión; cambiar el responsable de
+       envío limpia sus datos; cambiar el cliente reinicia toda la operación).
+RNF-12 Las cantidades deben ser números no negativos y los importes deben ignorar
+       caracteres no numéricos.
+RNF-13 El formateo y el redondeo monetario deben ser uniformes en todo el sistema.
+RNF-14 La rentabilidad forzada y los descuentos fuera de rango sólo deben ser
+       editables por perfiles administradores (control de roles).
+
+--- 4.4 Integraciones y configuración ---
+RNF-15 El sistema debe integrarse con AFIP (comprobante/PDF de factura), ARBA
+       (COT) y AFIP (autocompletado de domicilio/situación IVA por CUIT).
+RNF-16 Las variables globales (tipo de cambio, topes de descuento, tasas,
+       vigencia) deben leerse de una configuración central, sin fijarlas en el
+       proceso.
+RNF-17 El COT debe generarse como un identificador de 16 dígitos.
+
+--- 4.5 Rendimiento y robustez ---
+RNF-18 Las acciones que dependen de procesos externos (cierre/emisión) deben dar
+       feedback de "procesando" sin bloquear la interfaz.
+RNF-19 El sistema no debe permitir disparar dos veces una misma acción en curso.
+RNF-20 Ante error de una integración, no debe perderse el estado de la operación.
+
+
+================================================================================
+5. VALIDACIONES DE REQUERIMIENTOS FUNCIONALES
+================================================================================
+Formato: Debe hacer / NO debe permitir / Justificación.
+
+--------------------------------------------------------------------------------
+5.1 NIVEL UNITARIO (reglas de negocio aisladas)
+--------------------------------------------------------------------------------
+
+TC-U01: Interpretación del límite de crédito
+  Debe hacer: Interpretar límite 0 como "Ilimitado", 1 como "Bloqueado" y
+    cualquier otro valor N como tope financiero; calcular disponible = límite -
+    saldo pendiente y su semáforo (verde <50%, amarillo 50-90%, rojo >=90% de uso).
+  NO debe permitir: Que un cliente en situación "Bloqueado" avance en el flujo.
+  Justificación: RF-08, RF-10, RF-58.
+
+TC-U02: Tope de descuento por renglón
+  Debe hacer: Permitir descuentos por línea hasta el tope máximo (5%), topeando
+    automáticamente al escribir un valor mayor.
+  NO debe permitir: Guardar una línea con descuento superior al tope.
+  Justificación: RF-18.
+
+TC-U03: Cálculo de totales y rentabilidad ponderada
+  Debe hacer: Calcular subtotal (suma de precio x cantidad x (1 - descuento)),
+    IVA al 21%, total y rentabilidad ponderada por el importe de cada línea.
+  NO debe permitir: Que el IVA o la rentabilidad usen una base distinta del
+    subtotal con descuentos aplicados.
+  Justificación: RF-19.
+
+TC-U04: Tolerancia de estados en el presupuesto
+  Debe hacer: Mostrar crédito y cobertura de stock de forma informativa.
+  NO debe permitir: Bloquear la creación/continuación del presupuesto por falta de
+    stock o por deuda.
+  Justificación: RF-20, RF-21.
+
+TC-U05: Comisión según tipo de venta
+  Debe hacer: Calcular 4% para venta PRESUPUESTADA (Activa) y 1,5% para DIRECTA
+    (Pasiva), sobre el neto.
+  NO debe permitir: Aplicar la alícuota cruzada (4% a una directa, 1,5% a una
+    presupuestada).
+  Justificación: RF-59.
+
+TC-U06: Descuento por forma de pago en el cobro
+  Debe hacer: Aplicar efectivo 5%, transferencia 3%, y 0% en cheque y tarjetas;
+    imputar a la venta el importe menos el descuento.
+  NO debe permitir: Aplicar descuento de pronto pago a cheques o tarjetas.
+  Justificación: RF-40.
+
+TC-U07: Vencimiento del presupuesto
+  Debe hacer: Derivar el vencimiento como emisión + días de vigencia (14 por
+    defecto), con la emisión fijada en la fecha de hoy y no editable.
+  NO debe permitir: Editar la fecha de emisión ni desligar el vencimiento de la
+    vigencia.
+  Justificación: RF-22.
+
+TC-U08: Tope de cantidad en selección de pendientes
+  Debe hacer: Al seleccionar una línea pendiente, iniciar la cantidad en lo
+    pendiente y permitir sólo bajarla (piso 1, techo = lo pendiente).
+  NO debe permitir: Elegir una cantidad a vender/facturar/remitar mayor que lo
+    pendiente.
+  Justificación: RF-29, RF-34, RF-52.
+
+TC-U09: Derivación de letra y condición de IVA de la factura
+  Debe hacer: Derivar del cliente la condición de IVA del receptor y la letra
+    (A sólo entre Responsables Inscriptos; B en otro caso), permitiendo
+    sobrescribir.
+  NO debe permitir: Emitir factura A por defecto a un receptor que no es
+    Responsable Inscripto.
+  Justificación: RF-45.
+
+--------------------------------------------------------------------------------
+5.2 NIVEL DE INTEGRACIÓN (flujos y bloqueos de estado)
+--------------------------------------------------------------------------------
+
+TC-I01: Cobro obligatorio en pago simultáneo
+  Debe hacer: Con condición contado (simultáneo), exigir al menos un movimiento de
+    cobro para poder continuar a emitir la factura.
+  NO debe permitir: Avanzar a "emitir factura" sin cobro registrado cuando el pago
+    es simultáneo.
+  Justificación: RF-36, RF-37.
+
+TC-I02: Cobro opcional en pago posterior
+  Debe hacer: Con condición cuenta corriente (posterior), permitir continuar sin
+    registrar pago, o registrar uno si se elige hacerlo.
+  NO debe permitir: Forzar un cobro cuando la condición de pago es posterior.
+  Justificación: RF-38.
+
+TC-I03: Bloqueo por agente de retención
+  Debe hacer: Detectar clientes agentes de retención y avisar que las retenciones
+    se calculan aparte.
+  NO debe permitir: Emitir la factura proforma desde este proceso para un agente
+    de retención.
+  Justificación: RF-43.
+
+TC-I04: Validez temporal del cheque
+  Debe hacer: Aceptar un cheque sólo si su vencimiento es posterior a la fecha de
+    la factura.
+  NO debe permitir: Agregar/confirmar un cobro con un cheque vencido antes o el
+    mismo día de la factura.
+  Justificación: RF-41.
+
+TC-I05: Secuencia de emisión de la factura
+  Debe hacer: Habilitar "emitir en AFIP" sólo tras "registrar", y "cerrar venta"
+    sólo tras "emitir en AFIP".
+  NO debe permitir: Emitir sin registrar, ni cerrar la venta sin emisión.
+  Justificación: RF-48, RF-50.
+
+TC-I06: Invalidación por edición de la ficha
+  Debe hacer: Al editar cualquier campo de la ficha de factura, resetear el
+    registro y la emisión.
+  NO debe permitir: Conservar una emisión válida tras cambiar datos que la afectan.
+  Justificación: RF-49.
+
+TC-I07: Origen de productos por configuración de venta
+  Debe hacer: Definir el origen de las líneas según tipo de venta y de entrega:
+    presupuestos en uso (presupuestada), catálogo (directa posterior/simultánea) o
+    remitos pendientes (directa anterior).
+  NO debe permitir: Traer líneas de una fuente que no corresponde a la
+    configuración elegida.
+  Justificación: RF-28, RF-33, RF-47.
+
+TC-I08: Reinicio por cambio de cliente
+  Debe hacer: Al cambiar de cliente, reiniciar líneas, venta, facturación, cobro y
+    remito en curso.
+  NO debe permitir: Que datos del cliente anterior sobrevivan a un cambio de
+    cliente.
+  Justificación: RF-09.
+
+TC-I09: Exclusividad del responsable de entrega
+  Debe hacer: Al elegir un responsable de entrega, deshabilitar los otros y
+    limpiar sus datos y la confirmación.
+  NO debe permitir: Confirmar una entrega con datos residuales de otro responsable.
+  Justificación: RF-53.
+
+TC-I10: Confirmación de entrega antes de emitir el remito
+  Debe hacer: Exigir datos completos según responsable (La Batea:
+    destino + chofer + vehículo; comisionista: comisionista; cliente: nombre) y
+    confirmación explícita para continuar.
+  NO debe permitir: Avanzar a la emisión del remito sin entrega confirmada.
+  Justificación: RF-53, RF-56.
+
+TC-I11: Reinicio del remito por cambio de tipo de emisión
+  Debe hacer: Al cambiar el tipo de emisión, reiniciar los ítems del remito.
+  NO debe permitir: Mezclar productos cargados bajo un tipo de emisión con otro.
+  Justificación: RF-15.
+
+TC-I12: Envío selectivo por aceptación del contacto
+  Debe hacer: Enviar el documento sólo a los contactos que aceptan ese tipo de
+    documento y registrar a quiénes se envió y a quiénes se omitió.
+  NO debe permitir: Enviar a un contacto marcado como "no acepta"; ni confirmar
+    envío sin al menos un contacto.
+  Justificación: RF-26, RF-27.
+
+TC-I13: Descuento del remito sólo si hay base
+  Debe hacer: Aplicar el descuento del remito al facturar sólo si el subtotal es
+    positivo, topeado al subtotal.
+  NO debe permitir: Generar un neto negativo por un descuento mayor que el
+    subtotal.
+  Justificación: RF-35.
+
+--------------------------------------------------------------------------------
+5.3 REGLAS DE NEGOCIO A VALIDAR CON EL RESTO DEL ECOSISTEMA
+--------------------------------------------------------------------------------
+
+TC-I14: Bloqueo de venta POSTERIOR por crédito
+  Debe hacer: En entrega posterior, permitir facturar sólo si el total es menor o
+    igual al crédito disponible.
+  NO debe permitir: Emitir una venta posterior si el total supera el disponible
+    (alerta y bloqueo).
+  Justificación: Doc Maestro Req 2.6 y 4.6.
+
+TC-I15: Bifurcación de facturación por modalidad (común vs. consignado)
+  Debe hacer: Direccionar a puntos de venta AFIP distintos según la modalidad del
+    producto.
+  NO debe permitir: Un único comprobante que mezcle productos de ambas modalidades.
+  Justificación: Doc Maestro Req 2.3, RF-60.
+
+TC-I16: Sin doble imputación de stock en remito posterior de venta ya bajada
+  Debe hacer: El remito de una venta posterior baja el pendiente de entrega.
+  NO debe permitir: Volver a descontar stock ya descontado en la venta.
+  Justificación: Doc Maestro Req 2.6 y 2.7.
+
+TC-I17: Desensamble de packs/fraccionados
+  Debe hacer: Al facturar/remitir un pack, descontar el stock de sus componentes
+    base.
+  NO debe permitir: Descontar sobre el nombre del pack dejando intacto el
+    inventario de los componentes.
+  Justificación: Doc Maestro Req 2.4, RF-61.
+
+TC-I18: Liquidación de comisiones contra cobranza
+  Debe hacer: Pasar la comisión a "A liquidar" sólo con cobro total confirmado y
+    dentro de los 60 días.
+  NO debe permitir: Liquidar con pagos parciales, sin cobro, o pasados 60 días
+    (estado "Caducada").
+  Justificación: Doc Maestro Req 2.9, RF-62.
+
+
+================================================================================
+6. VALIDACIONES DE UX (INTERFAZ)
+================================================================================
+Formato: Debe hacer / NO debe permitir / Justificación.
+
+TC-S01: No avanzar sin operación y vendedor en el inicio
+  Debe hacer: Mantener el botón de confirmar deshabilitado hasta elegir operación
+    y vendedor.
+  NO debe permitir: Continuar al paso de cliente sin ambos definidos.
+  Justificación: RF-02.
+
+TC-S02: No continuar sin cliente seleccionado
+  Debe hacer: No habilitar el botón de continuar hasta confirmar un cliente válido.
+  NO debe permitir: Pasar a la selección/carga de productos sin cliente.
+  Justificación: RF-05, RF-07.
+
+TC-S03: No continuar sin configurar la operación
+  Debe hacer: En CARGAR VENTA exigir tipo de venta y de entrega; en REMITO exigir
+    tipo de emisión, antes de habilitar "continuar".
+  NO debe permitir: Avanzar con la configuración incompleta.
+  Justificación: RF-11, RF-14.
+
+TC-S04: Cliente bloqueado sin operación
+  Debe hacer: Deshabilitar el avance e informar "cliente bloqueado · no disponible".
+  NO debe permitir: Iniciar un flujo operativo sobre un cliente bloqueado.
+  Justificación: RF-10.
+
+TC-S05: Selector de tipo de entrega dependiente del tipo de venta
+  Debe hacer: Deshabilitar el selector de entrega hasta elegir tipo de venta, y
+    ofrecer sólo las entregas válidas para ese tipo.
+  NO debe permitir: Elegir ANTERIOR en una venta PRESUPUESTADA.
+  Justificación: RF-12.
+
+TC-S06: Feedback de tope de descuento
+  Debe hacer: Señalar el "máximo 5%" cuando el descuento llega al tope y no
+    permitir seguir aumentándolo.
+  NO debe permitir: Que el campo acepte valores por encima del tope.
+  Justificación: RF-18.
+
+TC-S07: Agregar línea sólo con producto elegido
+  Debe hacer: Deshabilitar "agregar" mientras no haya un producto seleccionado.
+  NO debe permitir: Agregar una línea vacía.
+  Justificación: RF-17.
+
+TC-S08: Cantidad mínima 1 en la carga de línea
+  Debe hacer: Mantener la cantidad en un mínimo de 1.
+  NO debe permitir: Cargar una línea con cantidad 0 o negativa.
+  Justificación: RF-17.
+
+TC-S09: Marcado de cantidad que excede lo pendiente
+  Debe hacer: En la tabla de la venta permitir teclear la cantidad, pero marcarla
+    como error si supera el tope pendiente, y frenar los botones de aumento en el
+    tope.
+  NO debe permitir: Presentar como válido superar lo pendiente.
+  Justificación: RF-29.
+
+TC-S10: Selección de pendientes con tope
+  Debe hacer: Permitir marcar cada línea, abrir el ajuste de cantidad al marcarla,
+    y limitar el techo a lo pendiente y el piso a 1.
+  NO debe permitir: Marcar líneas ya agregadas o sin pendiente.
+  Justificación: RF-29, RF-30.
+
+TC-S11: Confirmación de selección deshabilitada sin marcas
+  Debe hacer: Deshabilitar "confirmar productos" mientras no haya nada marcado.
+  NO debe permitir: Confirmar una selección vacía.
+  Justificación: RF-28, RF-33.
+
+TC-S12: Continuar a cobro sólo con productos en la venta
+  Debe hacer: Deshabilitar el avance a cobro hasta que la venta tenga al menos un
+    producto.
+  NO debe permitir: Ir a cobro con una venta vacía.
+  Justificación: RF-32.
+
+TC-S13: Tipo de pago no editable
+  Debe hacer: Mostrar el tipo de pago (simultáneo/posterior) derivado del cliente,
+    con su nota explicativa.
+  NO debe permitir: Cambiar a mano el tipo de pago.
+  Justificación: RF-36.
+
+TC-S14: Agregar movimiento sólo con importe válido
+  Debe hacer: Habilitar "agregar" un pago sólo con importe mayor a 0 y —si es
+    cheque— vencimiento válido; señalar el error del cheque cuando corresponde.
+  NO debe permitir: Agregar un pago sin importe o con cheque inválido.
+  Justificación: RF-39, RF-41.
+
+TC-S15: Confirmación del cobro
+  Debe hacer: Habilitar "registrar cobro" sólo si es confirmable; al registrarlo,
+    reflejar su estado y mostrar el trackeo resumido.
+  NO debe permitir: Confirmar un cobro no confirmable, ni marcarlo registrado sin
+    la acción explícita.
+  Justificación: RF-42.
+
+TC-S16: Aviso y bloqueo de cobro visibles
+  Debe hacer: Mostrar el aviso de agente de retención y el motivo de bloqueo del
+    cobro (cheque inválido, o cobro simultáneo sin registrar) de forma textual.
+  NO debe permitir: Habilitar "continuar a emitir factura" cuando hay bloqueo.
+  Justificación: RF-37, RF-43.
+
+TC-S17: Secuencia visual Registrar -> Emitir -> Cerrar
+  Debe hacer: Deshabilitar "emitir en AFIP" hasta registrar, y "cerrar venta"
+    hasta emitir; reflejar el estado alcanzado en cada botón.
+  NO debe permitir: Saltear un estado previo de la secuencia.
+  Justificación: RF-48, RF-50.
+
+TC-S18: Feedback de procesamiento al cerrar la venta
+  Debe hacer: Al cerrar, mostrar "procesando" y luego el resultado, deshabilitando
+    el botón durante el proceso.
+  NO debe permitir: Disparar el cierre dos veces.
+  Justificación: RNF-18, RNF-19.
+
+TC-S19: Exclusividad visual del responsable de entrega
+  Debe hacer: Al elegir un responsable, resaltarlo y deshabilitar los otros;
+    mostrar el formulario específico de ese responsable.
+  NO debe permitir: Tener dos responsables activos a la vez.
+  Justificación: RF-53.
+
+TC-S20: Generación y visualización del COT
+  Debe hacer: Generar el COT (16 dígitos) al solicitarlo y mostrarlo en un campo
+    de sólo lectura.
+  NO debe permitir: Editar el COT a mano.
+  Justificación: RF-54, RNF-17.
+
+TC-S21: Confirmar entrega sólo con datos completos
+  Debe hacer: Habilitar "confirmar entrega" sólo con todos los datos del
+    responsable elegido; luego habilitar el avance a la emisión.
+  NO debe permitir: Confirmar/continuar con datos faltantes.
+  Justificación: RF-56.
+
+TC-S22: Continuar a envío sólo con ítems en el remito
+  Debe hacer: Deshabilitar el avance hasta cargar al menos un producto en el
+    remito.
+  NO debe permitir: Avanzar con un remito sin ítems.
+  Justificación: RF-51, RF-52.
+
+TC-S23: Envío condicionado a "¿desea enviar?"
+  Debe hacer: Habilitar el envío sólo si se eligió enviar; exigir medio de envío.
+  NO debe permitir: Ejecutar un envío con la respuesta en "no".
+  Justificación: RF-25.
+
+TC-S24: Persistencia de la selección al filtrar
+  Debe hacer: Conservar las líneas ya marcadas aunque se filtre por documento o
+    por buscador.
+  NO debe permitir: Perder la selección al cambiar el filtro visible.
+  Justificación: RF-28.
+
+TC-S25: Indicador de avance por paso
+  Debe hacer: Reflejar el paso actual en el indicador de avance y presentar cada
+    paso desde el inicio del contenido.
+  NO debe permitir: Entrar a un paso conservando la posición del paso anterior.
+  Justificación: RNF-01, RNF-02.
+
+
+================================================================================
+7. VALIDACIONES NO FUNCIONALES
+================================================================================
+Formato: Debe hacer / NO debe permitir / Justificación.
+
+TC-NF01: Consistencia de los cálculos
+  Debe hacer: Producir los mismos resultados de crédito, comisión, totales, cobro
+    y cobertura en todos los pasos y vistas donde aparezcan.
+  NO debe permitir: Que un mismo indicador dé valores distintos según la pantalla.
+  Justificación: RNF-10.
+
+TC-NF02: Consistencia de umbrales de semáforo
+  Debe hacer: Usar umbrales de crédito (50/90/95%) y de cobertura (60/80%)
+    consistentes en todo el sistema.
+  NO debe permitir: Umbrales distintos para el mismo indicador según la vista.
+  Justificación: RNF-04.
+
+TC-NF03: Accesibilidad de controles e indicadores
+  Debe hacer: Exponer etiquetas, estados y valores en controles, tablas y barras.
+  NO debe permitir: Señalar errores o estados sólo con color.
+  Justificación: RNF-07, RNF-08.
+
+TC-NF04: Sanitización de entradas numéricas
+  Debe hacer: Interpretar importes y cantidades como números no negativos,
+    ignorando caracteres no numéricos.
+  NO debe permitir: Aceptar cantidades negativas o importes con caracteres no
+    numéricos.
+  Justificación: RNF-12.
+
+TC-NF05: Propagación de invalidaciones de estado
+  Debe hacer: Al cambiar un dato de origen, invalidar los estados dependientes
+    (ficha -> registro/emisión; responsable -> datos/confirmación;
+    movimientos -> confirmación del cobro; cliente -> toda la operación).
+  NO debe permitir: Conservar un estado "confirmado/emitido" tras cambiar sus
+    insumos.
+  Justificación: RNF-11.
+
+TC-NF06: Formateo y redondeo monetario uniforme
+  Debe hacer: Formatear importes de forma uniforme y redondear la comisión a
+    entero.
+  NO debe permitir: Formatos o redondeos divergentes entre vistas.
+  Justificación: RNF-13.
+
+TC-NF07: Configuración sin valores fijos en el proceso
+  Debe hacer: Leer tipo de cambio, topes de descuento, tasas y vigencia desde la
+    configuración central.
+  NO debe permitir: Fijar esas variables dentro del proceso de operación.
+  Justificación: RNF-16.
+
+TC-NF08: Integraciones externas robustas
+  Debe hacer: Integrar AFIP, ARBA y el autocompletado por CUIT con feedback de
+    "procesando" y manejo de demoras/errores.
+  NO debe permitir: Bloquear la interfaz durante las llamadas externas ni perder
+    el estado de la operación ante un error.
+  Justificación: RNF-15, RNF-18, RNF-20.
+
+TC-NF09: Control de roles para excepciones comerciales
+  Debe hacer: Restringir la edición de rentabilidad forzada y descuentos fuera de
+    rango a perfiles administradores.
+  NO debe permitir: Que un vendedor común altere esas variables.
+  Justificación: RNF-14.
+
+
+================================================================================
+8. MATRIZ DE TRAZABILIDAD (RESUMEN)
+================================================================================
+Proceso / Paso              -> RF principales        -> Validaciones
+--------------------------------------------------------------------------------
+Inicio                      -> RF-01..04             -> TC-S01
+Cliente                     -> RF-05..10, RF-58      -> TC-U01, TC-S02/04, TC-I08
+Configuración               -> RF-11..15             -> TC-S03/05, TC-I11
+Productos (presupuesto /
+  venta directa)            -> RF-16..23             -> TC-U02/03/04/07, TC-S06..09
+Emisión / envío documento   -> RF-24..27             -> TC-I12, TC-S23
+Venta presupuestada         -> RF-28..32, RF-59      -> TC-U05/08, TC-S10..12/24
+Venta directa anterior      -> RF-33..35             -> TC-U08, TC-I13
+Cobro                       -> RF-36..44             -> TC-U06, TC-I01..04, TC-S13..16
+Factura                     -> RF-45..50             -> TC-U09, TC-I05..07, TC-S17/18
+Remito / logística          -> RF-51..57             -> TC-I09..11, TC-S19..22
+Reglas del ecosistema       -> RF-58..62             -> TC-I14..18
+No funcionales              -> RNF-01..20            -> TC-NF01..09
+
+
+================================================================================
+9. PENDIENTES DE DEFINICIÓN
+================================================================================
+- Bloqueo total de la venta POSTERIOR por crédito: definir si el sistema impide
+  grabar cuando el total supera el disponible, o sólo lo advierte (Doc Maestro
+  Req 2.6 / 4.6).
+- Rentabilidad forzada y descuentos fuera de rango: alcance y control de roles
+  (sólo administradores) (Doc Maestro Req 2.5).
+- Modalidad común/consignado y punto de venta AFIP automático: definir la
+  derivación automática por modalidad y la prohibición de mezclar modalidades.
+- Packs/fraccionados: ensamble físico vs. virtual y momento del descuento de
+  componentes (Doc Maestro Req 2.4 y sección 5).
+- Retenciones: integración con el cálculo de retenciones previo a la emisión del
+  comprobante de un agente de retención.
+- Cuentas contables, tratamiento de CBU (carga manual vs. lectura automática) y
+  COT/ARBA por nomencladores: confirmaciones abiertas del Doc Maestro (sección 5).
+- Listas de precios L1 a L8 y su derivación por fórmulas desde la configuración
+  central.
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================

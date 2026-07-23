@@ -1,0 +1,515 @@
+/**
+ * Paso 1 · Seleccionar cliente — diseño nuevo.
+ * Todo va namespaceado bajo `.cliente-v2` para no tocar el resto de los pasos, que
+ * siguen con los estilos anteriores.
+ */
+
+.cliente-v2 {
+  --c-primary: #6c4cf1;
+  --c-primary-hover: #5a3ce0;
+  --c-step-blue: #005ac8;
+  --c-surface: #ffffff;
+  --c-text-main: #1f2937;
+  --c-text-title: #0f172a;
+  --c-text-muted: #64748b;
+  --c-border: #e2e8f0;
+  --c-success: #00c875;
+  --c-warning: #ffcb00;
+  --c-badge-blue-bg: #eef5ff;
+  --c-badge-blue-text: #2563eb;
+  --c-badge-green-bg: #eafbf2;
+  --c-badge-green-text: #16a34a;
+  --c-badge-purple-bg: #f0ebff;
+  --c-badge-purple-text: #6200ee;
+  --c-badge-gray-bg: #f1f5f9;
+  --c-badge-gray-text: #475569;
+  --c-shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
+
+  max-width: 1200px;
+  margin: 0 auto;
+  /* Sin padding arriba: la barra fija del paso arranca pegada al borde del panel. */
+  padding: 0 24px;
+  color: var(--c-text-main);
+  font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+.cliente-v2 input,
+.cliente-v2 button,
+.cliente-v2 select {
+  font-family: inherit;
+}
+
+/* Los selectores viven en la barra de contexto (.paso-header, en components.css). */
+
+/* El stepper (tamaños, colores y línea) es común: vive en components.css. */
+
+/* El encabezado del paso es común a los tres: vive en components.css. */
+
+/* ===== Cards ===== */
+.cliente-v2 .card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 16px;
+  box-shadow: var(--c-shadow-card);
+  padding: 24px;
+  margin-bottom: 12px;
+}
+.cliente-v2 .card.no-radius {
+  border-radius: 0;
+}
+
+/* ===== Toolbar: vendedor + búsqueda + confirmar ===== */
+.cliente-v2 .toolbar-wrapper {
+  margin-bottom: 12px;
+}
+.cliente-v2 .unified-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px;
+  margin-bottom: 0;
+}
+.cliente-v2 .seller-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 24px;
+  border-right: 1px solid var(--c-border);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--c-text-main);
+  height: 46px;
+  white-space: nowrap;
+}
+.cliente-v2 .seller-select .vava {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cliente-v2 .search-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cliente-v2 .search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+  height: 46px;
+}
+.cliente-v2 .search-wrapper:focus-within {
+  border-color: var(--c-primary);
+}
+.cliente-v2 .search-wrapper > svg {
+  position: absolute;
+  left: 12px;
+  color: #6366f1;
+}
+.cliente-v2 .search-input {
+  width: 100%;
+  height: 100%;
+  padding: 0 16px 0 40px;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  outline: none;
+  color: var(--c-text-main);
+}
+.cliente-v2 .search-input::placeholder {
+  color: var(--c-text-muted);
+}
+.cliente-v2 .search-input:disabled {
+  background: transparent;
+  color: var(--c-text-muted);
+}
+.cliente-v2 .search-helper {
+  font-size: 13px;
+  color: var(--c-text-muted);
+  padding-left: 4px;
+}
+.cliente-v2 .search-helper--error {
+  color: var(--red);
+  font-weight: 600;
+}
+/* Botón de búsqueda: azul sólido con la lupa, a la altura del campo. */
+.cliente-v2 .btn-buscar {
+  flex-shrink: 0;
+  height: 46px;
+  padding: 0 24px;
+  border: none;
+  border-radius: 8px;
+  background: var(--c-badge-blue-text);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+.cliente-v2 .btn-buscar:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.cliente-v2 .btn-buscar:disabled {
+  background: #9dbdf5;
+  cursor: not-allowed;
+}
+/* Varias coincidencias: el desplegable se ancla al campo, no a la fila. */
+.cliente-v2 .search-container {
+  position: relative;
+}
+.cliente-v2 .results {
+  right: auto;
+  width: 100%;
+  border-radius: 8px;
+  border-color: var(--c-border);
+  max-height: 260px;
+}
+.cliente-v2 .btn {
+  padding: 0 24px;
+  height: 46px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  gap: 8px;
+}
+.cliente-v2 .btn-primary {
+  background: var(--c-primary);
+  color: #fff;
+}
+.cliente-v2 .btn-primary:hover:not(:disabled):not(.dis) {
+  background: var(--c-primary-hover);
+}
+.cliente-v2 .btn-primary.dis,
+.cliente-v2 .btn-primary:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+
+/* ===== Estados de la búsqueda (loading / no encontrado / error) ===== */
+.cliente-v2 .cliente-estado {
+  border-radius: 16px;
+  box-shadow: var(--c-shadow-card);
+  border-color: var(--c-border);
+}
+.cliente-v2 .cliente-estado i {
+  color: var(--c-primary);
+}
+/* Mientras busca no hay dato que encuadrar: sólo el spinner y su leyenda. */
+.cliente-v2 .cliente-estado--cargando {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 32px 24px;
+  gap: 12px;
+}
+.cliente-v2 .cliente-estado--cargando i {
+  font-size: 28px;
+}
+.cliente-v2 .cliente-estado--error i {
+  color: var(--red);
+}
+
+/* ===== Ficha del cliente ===== */
+.cliente-v2 .client-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+.cliente-v2 .client-id {
+  color: var(--c-primary);
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+  display: block;
+}
+.cliente-v2 .client-name {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 4px;
+  color: var(--c-text-main);
+}
+.cliente-v2 .client-address {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--c-text-muted);
+  margin-bottom: 16px;
+}
+.cliente-v2 .status-indicators {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cliente-v2 .status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cliente-v2 .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.cliente-v2 .badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cliente-v2 .badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cliente-v2 .badge-gray {
+  background: var(--c-badge-gray-bg);
+  color: var(--c-badge-gray-text);
+}
+.cliente-v2 .badge-green {
+  background: var(--c-badge-green-bg);
+  color: var(--c-badge-green-text);
+}
+.cliente-v2 .badge-blue {
+  background: var(--c-badge-blue-bg);
+  color: var(--c-badge-blue-text);
+}
+.cliente-v2 .badge-purple {
+  background: var(--c-badge-purple-bg);
+  color: var(--c-badge-purple-text);
+}
+/* Lista de precio faltante: se resalta, sin ella no se puede avanzar. */
+.cliente-v2 .badge--falta {
+  background: #ffe9ec;
+  color: var(--red);
+  border: 1px solid #ffc2cc;
+  font-weight: 700;
+}
+.cliente-v2 .divider {
+  height: 1px;
+  background: var(--c-border);
+  border: none;
+  margin: 24px 0;
+}
+
+/* ===== KPIs financieros ===== */
+.cliente-v2 .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.cliente-v2 .kpi-card {
+  background: #f8fafc;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cliente-v2 .kpi-label {
+  font-size: 13px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+.cliente-v2 .kpi-value {
+  font-size: 20px;
+  font-weight: 800;
+}
+.cliente-v2 .kpi-card--nota {
+  grid-column: span 3;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+.cliente-v2 .kpi-card--nota i {
+  color: var(--c-primary);
+}
+
+/* ===== Uso de crédito ===== */
+.cliente-v2 .progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cliente-v2 .progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cliente-v2 .progress-header span {
+  color: var(--c-text-muted);
+}
+.cliente-v2 .progress-header strong {
+  font-size: 16px;
+  color: var(--c-text-main);
+}
+.cliente-v2 .progress-track {
+  height: 10px;
+  background: var(--c-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cliente-v2 .progress-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.3s ease;
+}
+
+/* ===== Datos del presupuesto ===== */
+.cliente-v2 .budget-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+.cliente-v2 .form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.cliente-v2 .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cliente-v2 .form-group > label {
+  font-size: 13px;
+  color: var(--c-text-muted);
+  font-weight: 500;
+}
+.cliente-v2 .input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.cliente-v2 .input-wrapper > svg {
+  position: absolute;
+  left: 12px;
+}
+.cliente-v2 .form-control {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  color: var(--c-text-main);
+  background: #fff;
+  transition: border-color 0.2s;
+}
+.cliente-v2 .form-control.with-icon {
+  padding-left: 36px;
+}
+.cliente-v2 .form-control[readonly] {
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
+/* Moneda: en su propia fila, con la aclaración del tipo de cambio al lado. */
+.cliente-v2 .moneda-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.cliente-v2 .moneda-row .form-group {
+  width: 229px;
+  flex-shrink: 0;
+}
+.cliente-v2 .moneda-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+  font-weight: 600;
+}
+.cliente-v2 .moneda-select:focus {
+  border-color: var(--c-primary);
+}
+.cliente-v2 .moneda-nota {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-end;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: #eef5ff;
+  border: 1px solid #cfe0fb;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--c-text-muted);
+  max-width: 480px;
+}
+.cliente-v2 .moneda-nota i {
+  color: var(--c-badge-blue-text);
+  flex-shrink: 0;
+}
+
+/* ===== Footer de acciones ===== */
+/* Cierra el contenido del paso: el anticipo a la izquierda y el avance a la derecha. */
+.cliente-v2 .actions-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  margin-bottom: 64px;
+}
+
+/* ===== Valores de Crédito =====
+   Las cuatro métricas de la línea de crédito, agrupadas bajo un título propio. Cuando el
+   límite no rige la operación (contado, o cliente liberado sin crédito) el grupo se apaga:
+   los datos siguen a la vista, pero se lee de un golpe que no van a usarse. */
+.cliente-v2 .credito-grupo--off .kpi-card {
+  background: #eef0f4;
+  border-color: #dcdfe6;
+}
+/* La condición de pago conserva su color, al tamaño del resto de las etiquetas. */
+.cliente-v2 .badge--cond {
+  background: #f1edfe;
+  color: var(--c-primary);
+}
+.cliente-v2 .badge--cond strong {
+  font-weight: 800;
+}
+/* Apagados: ni el verde del disponible ni el semáforo de la línea utilizada mandan acá. */
+.cliente-v2 .credito-grupo--off .kpi-value,
+.cliente-v2 .credito-grupo--off .kpi-label {
+  color: #98a2b3;
+}
+/* Texto al ras, sin caja: es una aclaración, no una alarma. */
+.cliente-v2 .credito-nota-off {
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d92d20;
+}
+/* Cliente bloqueado: la ficha entera lo avisa antes de que el usuario intente avanzar. */
+.cliente-v2 .card--bloqueado {
+  border: 2px solid #d92d20;
+}

@@ -1,0 +1,485 @@
+/**
+ * Paso 4 · Emitir y enviar factura.
+ * Namespaceado bajo `.factura-v2`, con el mismo lenguaje que el paso de emisión del
+ * presupuesto: contenedor de ancho fijo, resumen en fichas de campo a la izquierda y el
+ * trabajo del paso a la derecha.
+ */
+
+.factura-v2 {
+  --f-border: #e4e7ec;
+  --f-text-main: #1f2937;
+  --f-text-label: #64748b;
+  --f-primary: #0052cc;
+  --f-success: #00c875;
+  --f-danger: #e44258;
+  /* Dorado de la mercadería consignada: el mismo que usa la etiqueta "Consignada". */
+  --f-consignada: #b46f00;
+  --f-consignada-suave: #fff3df;
+  --f-primary-hover: #0043a6;
+  --f-bg-input: #f4f5f7;
+  --f-radius-md: 8px;
+  --f-radius: 12px;
+  --f-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  max-width: 1480px;
+  margin: 0 auto;
+  /* Sin padding arriba: la barra de contexto arranca pegada al borde del panel. */
+  padding: 0 24px;
+  color: var(--f-text-main);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Resumen a la izquierda; los comprobantes, a la derecha. Mismas medidas que el paso de
+   emisión del presupuesto, para que los dos pasos se lean igual. */
+.factura-v2 .factura-grid-v2 {
+  display: grid;
+  grid-template-columns: minmax(360px, 503px) minmax(360px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1279px) {
+  .factura-v2 .factura-grid-v2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ===== Resumen de la venta (misma ficha que el resumen del presupuesto) ===== */
+.factura-v2 .card {
+  background: #fff;
+  border: 1px solid var(--f-border);
+  border-radius: var(--f-radius);
+  box-shadow: var(--f-shadow);
+}
+.factura-v2 .resumen-venta {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+.factura-v2 .resumen-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--f-text-main);
+  margin-bottom: 20px;
+}
+.factura-v2 .rgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.factura-v2 .rsep {
+  height: 1px;
+  background: var(--f-border);
+  border: none;
+  margin: 18px 0;
+}
+.factura-v2 .rrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+}
+.factura-v2 .rlabel {
+  color: var(--f-text-label);
+  font-weight: 500;
+}
+.factura-v2 .rreq {
+  color: var(--f-danger);
+  margin-left: 2px;
+}
+.factura-v2 .rvalue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--f-text-main);
+  text-align: right;
+}
+.factura-v2 .resumen-obs {
+  margin-top: 20px;
+}
+.factura-v2 .resumen-obs label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--f-text-label);
+  margin-bottom: 6px;
+}
+/* Botón de emisión, al pie de la ficha. */
+.factura-v2 .btn-generar {
+  width: 100%;
+  margin-top: 24px;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--f-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+.factura-v2 .btn-generar:hover:not(:disabled) {
+  background: #0043a6;
+}
+.factura-v2 .btn-generar:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+
+/* ===== Comprobantes ===== */
+.factura-v2 .comprobantes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.factura-v2 .comprobantes-head .resumen-title {
+  margin-bottom: 0;
+}
+.factura-v2 .comp-vacio {
+  padding: 22px;
+  text-align: center;
+  color: var(--f-text-label);
+  font-size: 13px;
+}
+
+/* Una card por comprobante. La consignada se distingue por su borde dorado. */
+.factura-v2 .comp-card {
+  background: #fff;
+  border: 1px solid var(--f-border);
+  border-radius: var(--f-radius);
+  box-shadow: var(--f-shadow);
+  overflow: hidden;
+}
+.factura-v2 .comp-card--co {
+  border-color: var(--f-consignada);
+}
+
+/* --- Cabecera: lo que hace falta para decidir, con la card plegada --- */
+.factura-v2 .comp-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+}
+.factura-v2 .comp-card--co .comp-head {
+  background: #fffdf8;
+}
+.factura-v2 .comp-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.factura-v2 .comp-chev {
+  color: var(--f-text-label);
+  font-size: 13px;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.factura-v2 .comp-chev.open {
+  transform: rotate(180deg);
+}
+.factura-v2 .comp-tit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  font-weight: 700;
+}
+/* Proveedor de la mercadería consignada: acompaña al comprobante, sin competir con él. */
+.factura-v2 .comp-prov {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--f-consignada);
+}
+/* Datos de cabecera: productos, punto de venta e importe, alineados a la derecha. */
+.factura-v2 .comp-head-datos {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-shrink: 0;
+}
+.factura-v2 .comp-head-dato {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.factura-v2 .comp-head-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-head-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--f-text-main);
+}
+/* El importe manda sobre el resto de los datos de la cabecera. */
+.factura-v2 .comp-head-val--imp {
+  font-size: 17px;
+  font-weight: 800;
+}
+.factura-v2 .comp-estado {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.factura-v2 .comp-estado-txt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-estado-txt--ok {
+  color: var(--f-success);
+}
+.factura-v2 .comp-estado-txt--err {
+  color: var(--f-danger);
+}
+.factura-v2 .comp-ok--err {
+  background: var(--f-danger);
+}
+
+/* --- Detalle plegable --- */
+.factura-v2 .comp-body {
+  border-top: 1px solid var(--f-border);
+  padding: 4px 18px 18px;
+}
+.factura-v2 .comp-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.factura-v2 .comp-table th {
+  padding: 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--f-text-label);
+  border-bottom: 1px solid var(--f-border);
+  white-space: nowrap;
+}
+.factura-v2 .comp-table td {
+  padding: 12px 6px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--f-border);
+  white-space: nowrap;
+}
+.factura-v2 .comp-table th:first-child,
+.factura-v2 .comp-table td:first-child {
+  padding-left: 0;
+  white-space: normal;
+}
+.factura-v2 .comp-table th:last-child,
+.factura-v2 .comp-table td:last-child {
+  padding-right: 0;
+}
+.factura-v2 .comp-cod {
+  color: var(--f-primary);
+  font-weight: 700;
+  margin-right: 10px;
+}
+.factura-v2 .comp-nom {
+  font-weight: 600;
+}
+.factura-v2 .comp-total-prod {
+  font-weight: 700;
+}
+.factura-v2 .comp-tipo {
+  font-weight: 700;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-tipo--co {
+  color: var(--f-consignada);
+}
+
+/* Vencimiento a la izquierda, importes a la derecha. */
+.factura-v2 .comp-pie {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+}
+.factura-v2 .comp-venc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.factura-v2 .comp-venc-campo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Se escriben los días; la fecha de vencimiento sale al lado, como resultado. */
+.factura-v2 .comp-venc-input {
+  width: 64px;
+  border: 1px solid var(--f-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--f-text-main);
+  background: #fff;
+  outline: none;
+}
+.factura-v2 .comp-venc-suf {
+  font-size: 13px;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-venc-fecha {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--f-text-main);
+}
+.factura-v2 .comp-venc-fecha i {
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--f-text-label);
+}
+/* Sin plazo: la factura se cobra al emitirse. */
+.factura-v2 .comp-venc-contado {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--f-text-main);
+}
+.factura-v2 .comp-venc-input:focus {
+  border-color: var(--f-primary);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.factura-v2 .comp-venc-input:disabled {
+  background: #f4f5f7;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-venc-nota {
+  font-size: 11px;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-tot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+.factura-v2 .comp-tot-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--f-text-label);
+}
+.factura-v2 .comp-tot-row b {
+  color: var(--f-text-main);
+  font-weight: 700;
+}
+.factura-v2 .comp-tot-row--total {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--f-border);
+  font-size: 14px;
+}
+.factura-v2 .comp-tot-row--total b {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--f-success);
+}
+
+/* Leyenda de la mercadería consignada, debajo de los importes. */
+.factura-v2 .comp-leyenda {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--f-consignada);
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.factura-v2 .comp-leyenda i {
+  color: var(--f-consignada);
+  margin-right: 6px;
+}
+.factura-v2 .comp-leyenda strong {
+  color: var(--f-consignada);
+  font-weight: 700;
+}
+
+/* ===== Footer del paso =====
+   Mismas medidas y colores que el footer de los demás pasos (`.productos-v2` en
+   productos.css): los botones de Volver y de cierre tienen que verse idénticos en todo el
+   flujo. Se repiten acá porque aquellas reglas están namespaceadas en su propia vista. */
+.factura-v2 .page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-top: 8px;
+  margin-top: 16px;
+  margin-bottom: 48px;
+}
+.factura-v2 .btn-outline {
+  background: #fff;
+  border: 1px solid var(--f-border);
+  padding: 12px 24px;
+  border-radius: var(--f-radius-md);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--f-text-main);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+.factura-v2 .btn-outline:hover:not(:disabled) {
+  background: var(--f-bg-input);
+}
+.factura-v2 .btn-outline:disabled {
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+.factura-v2 .btn-primary {
+  background: var(--f-primary);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.factura-v2 .btn-primary:hover:not(:disabled) {
+  background: var(--f-primary-hover);
+}
+.factura-v2 .btn-primary:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}

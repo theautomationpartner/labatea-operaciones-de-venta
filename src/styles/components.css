@@ -1,0 +1,1035 @@
+/* Piezas reutilizables: selectores, stepper, cards, botones, inputs, tablas */
+
+/* ===== Selectores superiores (operación + vendedor, mismo tamaño) ===== */
+.selbox {
+  padding: 8px 14px;
+  border: 1px solid var(--primary-blue);
+  color: var(--primary-blue);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topsel {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.topsel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.topsel-lbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.selbox--fix {
+  width: 220px;
+  height: 38px;
+  box-sizing: border-box;
+  justify-content: space-between;
+}
+.selbox--btn {
+  cursor: pointer;
+}
+/* Sin valor elegido: el selector se lee como vacío, no como un dato. */
+.selbox-ph {
+  color: var(--text-gray);
+  font-weight: 500;
+}
+
+/* ===== Stepper ===== */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-gray);
+}
+/* El color del número dice en qué estado está la etapa: verde ya cumplida, azul la actual,
+   gris la que falta. */
+.step.done {
+  color: var(--text-dark);
+}
+.step.done .sic {
+  background: var(--green);
+  color: #fff;
+  border: 1px solid var(--green);
+}
+.step.cur {
+  color: var(--text-dark);
+  font-weight: 600;
+}
+.step.cur .sic {
+  background: var(--primary-blue);
+  color: #fff;
+  border: 1px solid var(--primary-blue);
+}
+.step.off .sic {
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--text-gray);
+}
+.sic {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.sline {
+  height: 3px;
+  flex: 1;
+  max-width: 120px;
+  background: var(--border);
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+/* Tramo ya transitado: se rellena de verde para simular el avance de la operación. */
+.sline.done {
+  background: var(--green);
+}
+/* Sin margen propio: el elemento siguiente define la separación. */
+.stepper--tight {
+  margin-bottom: 0;
+}
+
+/* ===== Layout de paso: header fijo · trabajo scrollable · footer fijo =====
+   El contexto (operación, vendedor, avance) y la acción principal quedan siempre visibles;
+   sólo scrollea el contenido del paso. */
+.paso-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* Los márgenes laterales negativos compensan el padding del contenedor del paso: la barra
+   llega de borde a borde, y su contenido queda alineado con el resto. */
+.paso-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ec;
+  margin: 0 -24px;
+  padding: 10px 24px;
+}
+.paso-header-in {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+/* Contexto de la transacción: presente, pero sin competir con la tarea del paso. */
+.paso-header-sel {
+  flex: 0 0 auto;
+}
+.paso-header-sel .topsel {
+  margin-bottom: 0;
+  gap: 14px;
+}
+.paso-header-sel .topsel-lbl {
+  font-size: 11px;
+  font-weight: 500;
+  color: #667085;
+}
+.paso-header-sel .selbox {
+  padding: 5px 10px;
+  border-color: #e4e7ec;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.paso-header-sel .selbox--fix {
+  width: 180px;
+  height: 32px;
+}
+.paso-header-sel .selbox i {
+  color: #98a2b3;
+}
+/* El avance toma todo el ancho que queda a la derecha de los selectores. */
+.paso-header-steps {
+  flex: 1;
+  display: flex;
+  justify-content: space-evenly;
+  min-width: 0;
+}
+.paso-header-steps .stepper {
+  flex: 1;
+  justify-content: space-between;
+  gap: 8px;
+}
+.paso-header-steps .sline {
+  flex: 1;
+  max-width: none;
+}
+
+/* Salir de la operación: acompaña al título del paso, no a la barra de contexto. */
+.btn-cancelar {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+  background: none;
+  border: none;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.btn-cancelar:hover {
+  background: #fff1f0;
+}
+
+.paso-body {
+  flex: 1;
+  padding-top: 20px;
+}
+
+/* Anticipo de la próxima etapa, o el motivo por el que todavía no se puede avanzar. */
+.paso-siguiente {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #667085;
+}
+.paso-siguiente-ic {
+  transform: rotate(90deg);
+  color: #98a2b3;
+}
+.paso-siguiente--bloqueo {
+  color: #b42318;
+  font-weight: 600;
+}
+.btn-danger {
+  background: #d92d20;
+  color: #fff;
+  padding: 10px 20px;
+}
+.btn-danger:hover {
+  background: #b42318;
+}
+
+/* ===== Encabezado de paso =====
+   Número, título y bajada. Mismo tamaño en los tres pasos del flujo. */
+.header-section {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+.step-indicator-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+/* El título manda: la salida queda al final de la misma línea. */
+.step-details-main {
+  flex: 1;
+  min-width: 0;
+}
+.step-badge-main {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0052cc;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.step-details-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.step-title-main {
+  font-size: 24px;
+  font-weight: 800;
+  color: #1f2937;
+  letter-spacing: -0.5px;
+}
+.step-desc-main {
+  font-size: 14px;
+  color: #667085;
+}
+
+/* ===== Cards ===== */
+/* Bordes rectos por defecto; sólo las cards de búsqueda (card--input) van redondeadas. */
+.card {
+  background: var(--tint-neutral);
+  border: 1px solid var(--tint-neutral-bd);
+  border-radius: 4px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+/* Diferenciación sutil por entonación de blanco (sin colores saturados) */
+.card--input {
+  background: var(--tint-input);
+  border-color: var(--tint-input-bd);
+  border-radius: 10px;
+}
+.card--data {
+  background: var(--tint-data);
+  border-color: var(--tint-data-bd);
+}
+.card--config {
+  background: var(--tint-config);
+  border-color: var(--tint-config-bd);
+}
+.card--summary {
+  background: var(--tint-summary);
+  border-color: var(--tint-summary-bd);
+}
+.card--neutral {
+  background: var(--tint-neutral);
+  border-color: var(--tint-neutral-bd);
+}
+.card--flush {
+  margin-bottom: 0;
+}
+.ctitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* ===== Dropdown genérico ===== */
+.dd {
+  position: relative;
+  width: 100%;
+}
+.dd--bare {
+  padding: 0;
+  border: none;
+}
+.vsel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #fff;
+}
+.vsel--static {
+  cursor: default;
+}
+.vinfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vava {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+}
+.vname {
+  font-weight: 500;
+}
+.ddmenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.dditem {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dditem:last-child {
+  border-bottom: none;
+}
+.dditem:hover {
+  background: var(--bg);
+}
+.dditem--strong {
+  font-weight: 600;
+}
+
+/* ===== Inputs y búsqueda ===== */
+.sgroup {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.iw {
+  position: relative;
+  flex: 1;
+}
+.iw .fa-search {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-gray);
+  font-size: 13px;
+}
+.sinput {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  height: 40px;
+}
+.sinput:focus {
+  border-color: var(--primary-blue);
+}
+.helper {
+  font-size: 11px;
+  color: #444;
+  margin-top: 8px;
+  font-weight: 500;
+}
+.fc {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+}
+.fc:focus {
+  border-color: var(--primary-blue);
+}
+/* Derivado o fijo: no se edita, y no debe parecer editable. */
+.fc--ro {
+  background: #f1f2f5;
+  cursor: default;
+}
+.fc--ro:focus {
+  border-color: var(--border);
+}
+.ctrl {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+  height: 38px;
+}
+.ctrl:focus {
+  border-color: var(--primary-blue);
+}
+/* Los precios se muestran, no se editan: el campo no debe parecer editable. */
+.ctrl[readonly] {
+  background: #f1f2f5;
+  cursor: default;
+}
+.ctrl[readonly]:focus {
+  border-color: var(--border);
+}
+.ig {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ig label {
+  font-size: 12px;
+  color: var(--text-gray);
+  font-weight: 600;
+}
+.field-ic {
+  position: relative;
+}
+.field-ic > i {
+  position: absolute;
+  left: 12px;
+  top: 13px;
+}
+.field-ic .fc {
+  padding-left: 36px;
+}
+
+/* ===== Botones ===== */
+.btn {
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  transition: 0.2s;
+}
+.btn-primary {
+  background: var(--primary-blue);
+  color: #fff;
+  padding: 10px 20px;
+}
+.btn-primary:hover {
+  background: var(--primary-blue-hover);
+}
+.btn-primary.dis,
+.btn-primary:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+.btn-purple {
+  background: var(--purple);
+  color: #fff;
+  padding: 0 24px;
+  height: 40px;
+}
+.btn-purple:hover {
+  background: #5100c4;
+}
+.btn-out {
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--text-dark);
+  padding: 10px 20px;
+}
+.btn-out:hover {
+  background: #f4f5f7;
+}
+.btn-outblue {
+  border: 1px solid var(--primary-blue);
+  color: var(--primary-blue);
+  background: #fff;
+  padding: 0 20px;
+  height: 38px;
+}
+.btn-outblue:hover {
+  background: #f0f7ff;
+}
+.btn-gray {
+  background: #e6e9ef;
+  color: var(--text-dark);
+  padding: 10px 20px;
+}
+.btn-gray:hover {
+  background: #d8dce6;
+}
+.btn-green {
+  background: var(--green);
+  color: #fff;
+  padding: 10px 20px;
+}
+.btn-green:hover {
+  background: #00b067;
+}
+.btn-green:disabled,
+.btn-gray:disabled,
+.btn-block:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn--h38 {
+  height: 38px;
+}
+.btn--block {
+  width: 100%;
+}
+.btn-block {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+/* Envío: ancho fijo, no ocupa el ancho de la card. */
+.btn-block--enviar {
+  width: 275px;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tilde-lento {
+  animation: tilde-lento 0.9s ease-out both;
+}
+@keyframes tilde-lento {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* Quien pide no animarse, no se anima. */
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .tilde-lento {
+    animation: none;
+  }
+}
+.footer-acts {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 40px;
+}
+.footer-acts--end {
+  justify-content: flex-end;
+}
+/* Acciones agrupadas a la derecha, junto al botón de continuar. */
+.footer-acts-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.footer-err {
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ===== Tags ===== */
+.tags {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tag {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.tag-gray {
+  background: #f0f0f0;
+  color: #333;
+}
+.tag-green {
+  background: #e2f5ea;
+  color: #008b46;
+}
+.tag-blue {
+  background: #e0f2ff;
+  color: var(--primary-blue);
+}
+.tag-purple {
+  background: #f0ebff;
+  color: var(--purple);
+}
+.ftag {
+  background: var(--tag-bg);
+  color: var(--primary-blue);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ftag i {
+  color: #8bbcf2;
+  cursor: pointer;
+}
+.ftag i:hover {
+  color: var(--primary-blue);
+}
+
+/* ===== Indicadores ===== */
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-green {
+  background: var(--green);
+  box-shadow: 0 0 6px 1px rgba(0, 200, 117, 0.4);
+}
+.dot-red {
+  background: var(--red);
+  box-shadow: 0 0 6px 1px rgba(226, 68, 92, 0.4);
+}
+.dot-yellow {
+  background: var(--yellow);
+  box-shadow: 0 0 6px 1px rgba(255, 203, 0, 0.4);
+}
+.dot--sm {
+  width: 8px;
+  height: 8px;
+}
+.pbar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.pfill {
+  height: 100%;
+  transition: width 0.4s, background 0.4s;
+}
+.circle {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 6px;
+}
+.circle-in {
+  width: 72px;
+  height: 72px;
+  background: #fff;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.circle-v {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.circle-l {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.prog-txt {
+  font-size: 12px;
+  color: var(--text-gray);
+}
+
+/* ===== Tablas ===== */
+.tablec {
+  background: var(--tint-neutral);
+  border: 2px solid var(--tint-neutral-bd);
+  border-radius: 4px;
+  margin-top: 38px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.thtitle {
+  padding: 16px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--tint-neutral-bd);
+  background: #fff;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th {
+  text-align: left;
+  padding: 12px 20px;
+  font-size: 12px;
+  color: var(--text-gray);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 14px 20px;
+  font-size: 13px;
+  border-bottom: 1px solid #f0f1f4;
+}
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mini-table th {
+  text-align: left;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--text-gray);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.mini-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f0f1f4;
+}
+.ta-c {
+  text-align: center;
+}
+.ta-r {
+  text-align: right;
+}
+.chev {
+  cursor: pointer;
+  color: var(--text-gray);
+  transition: transform 0.2s;
+}
+.chev.open {
+  color: var(--primary-blue);
+  transform: rotate(90deg);
+}
+.trash {
+  color: var(--red);
+  cursor: pointer;
+}
+.trash:hover {
+  color: #bd2a40;
+}
+
+/* ===== Cantidad ===== */
+.qty {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 38px;
+  background: #fff;
+  overflow: hidden;
+}
+.qty button {
+  background: #f5f6f8;
+  border: none;
+  padding: 0 14px;
+  cursor: pointer;
+  font-weight: bold;
+  height: 100%;
+}
+.qty button:hover {
+  background: #e4e6ed;
+}
+.qty input {
+  width: 50px;
+  text-align: center;
+  border: none;
+  height: 100%;
+  font-weight: 600;
+  outline: none;
+}
+.qbox {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+}
+.qbox input {
+  width: 40px;
+  text-align: center;
+  border: none;
+  outline: none;
+  padding: 4px;
+  font-size: 13px;
+  border-right: 1px solid var(--border);
+}
+.qbox .qbtns {
+  display: flex;
+  flex-direction: column;
+}
+.qbox .qbtns button {
+  border: none;
+  background: #f5f6f8;
+  cursor: pointer;
+  height: 13px;
+  line-height: 1;
+  font-size: 9px;
+  color: var(--text-gray);
+  width: 22px;
+}
+.qbox .qbtns button:hover {
+  background: #e4e6ed;
+}
+.qbox .qbtns button:first-child {
+  border-bottom: 1px solid var(--border);
+}
+.qbox .qbtns button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Venta: se pasó de lo presupuestado. Los botones frenan antes; esto avisa si se escribió. */
+.qbox--error {
+  border-color: var(--red);
+  background: #fff5f6;
+}
+.qbox--error input {
+  background: #fff5f6;
+  border-right-color: var(--red);
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ===== Lista de pendientes (selección plana de productos) ===== */
+.pend-hint {
+  padding: 12px 20px 0;
+  font-size: 12px;
+  color: var(--text-gray);
+}
+.pend-hint i {
+  color: var(--primary-blue);
+  margin-right: 6px;
+}
+/* Buscador que filtra la lista de productos en vivo. */
+.pend-search {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 20px 0;
+}
+/* Scroll vertical cuando hay muchos productos (header fijo) y horizontal si la columna es angosta. */
+.pend-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: auto;
+  margin-top: 8px;
+}
+/* Ancho mínimo legible: por debajo de esto la tabla scrollea en lugar de aplastar las columnas. */
+.pend-table {
+  min-width: 680px;
+}
+.pend-table thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+.pend-origen {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-gray);
+  background: #f0f1f4;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+/* Fila seleccionable: click en cualquier parte alterna la selección. */
+.pend-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.pend-row:hover {
+  background: #f8f9fa;
+}
+.pend-row.sel {
+  background: #eaf2ff;
+}
+/* Ya está en la tabla de seleccionados: no se puede volver a elegir. */
+.pend-row.dt-added {
+  background: #f4faf6;
+  color: var(--text-gray);
+  cursor: default;
+}
+.pend-acts {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 20px;
+  border-top: 1px solid var(--tint-neutral-bd);
+  background: #fff;
+}
+
+/* ===== Overlay de espera =====
+   Tapa la pantalla mientras se escribe en Monday, en cualquier paso. Sin namespace a
+   propósito: antes vivía bajo `.cobro-v2` y fuera del cobro el overlay quedaba sin estilos. */
+.modal-cargando {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+}
+.modal-cargando-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 380px;
+  padding: 28px 32px;
+  text-align: center;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+.modal-cargando-box i {
+  font-size: 26px;
+  color: var(--primary-blue);
+}
+.modal-cargando-box strong {
+  font-size: 15px;
+  color: #1f2937;
+}
+.modal-cargando-box span {
+  font-size: 13px;
+  color: #667085;
+}

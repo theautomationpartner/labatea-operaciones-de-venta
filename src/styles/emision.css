@@ -1,0 +1,254 @@
+/**
+ * Paso 3 · Emisión y envío — cards en blanco, resumen en fichas de campo y visor claro.
+ * Namespaceado bajo `.emision-v2`: el visor y las cards que se comparten con remito y
+ * factura conservan su aspecto anterior en esos pasos.
+ */
+
+.emision-v2 {
+  --e-border: #e4e7ec;
+  --e-text-main: #1f2937;
+  --e-text-label: #64748b;
+  --e-primary: #0052cc;
+  --e-primary-hover: #0043a6;
+  --e-success: #00c875;
+  --e-danger: #e44258;
+  --e-radius: 12px;
+  --e-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  /* Mismo contenedor que el paso de productos: el ancho, el padding lateral que compensa el
+     sangrado de la barra de contexto (`margin: 0 -24px`) y la separación entre bloques. Sin
+     esto la barra sticky se comía el título del paso. */
+  max-width: 1480px;
+  margin: 0 auto;
+  /* Sin padding arriba: la barra de contexto arranca pegada al borde del panel. */
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ===== Todas las cards del paso, en blanco ===== */
+.emision-v2 .card {
+  background: #ffffff;
+  border: 1px solid var(--e-border);
+  border-radius: var(--e-radius);
+  box-shadow: var(--e-shadow);
+}
+
+/* ===== Resumen del presupuesto ===== */
+.emision-v2 .resumen-emision {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+.emision-v2 .resumen-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--e-text-main);
+  margin-bottom: 20px;
+}
+.emision-v2 .rgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.emision-v2 .rsep {
+  height: 1px;
+  background: var(--e-border);
+  border: none;
+  margin: 18px 0;
+}
+.emision-v2 .rrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+}
+.emision-v2 .rlabel {
+  color: var(--e-text-label);
+  font-weight: 500;
+}
+/* Marca de campo que viaja al documento. */
+.emision-v2 .rreq {
+  color: var(--e-danger);
+  margin-left: 2px;
+}
+.emision-v2 .rvalue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--e-text-main);
+  text-align: right;
+}
+.emision-v2 .rvalue--green {
+  color: var(--e-success);
+}
+/* Importe total: el dato que más se mira de la ficha. */
+.emision-v2 .rvalue--total {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--e-success);
+}
+
+/* Botón de generación, al pie de la ficha. */
+.emision-v2 .btn-generar {
+  width: 100%;
+  margin-top: 24px;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--e-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+.emision-v2 .btn-generar:hover:not(:disabled) {
+  background: var(--e-primary-hover);
+}
+.emision-v2 .btn-generar:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+
+/* El título y la bajada quedan como en los demás pasos: la separación la da el `gap` del
+   contenedor, no un margen propio. */
+
+/* ===== Estructura del paso ===== */
+/* Resumen y envío apilados a la izquierda; el documento, a la derecha. */
+/* Las cards llegan a 503px cuando hay lugar y ceden ancho antes que el documento: la
+   columna del visor nunca baja de su mínimo. */
+.emision-v2 .emision-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 503px) minmax(360px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.emision-v2 .emision-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* Sin ancho para las dos columnas (503 + 360 + gap), el documento pasa abajo en vez de
+   desbordar el panel. */
+@media (max-width: 1279px) {
+  .emision-v2 .emision-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* La card de envío hereda el ancho de la columna: todo su contenido va en vertical. */
+.emision-v2 .emision-col .card {
+  margin-bottom: 0;
+}
+
+/* ===== Visor de archivos, en claro ===== */
+/* Alto fijo: si siguiera a la columna de la izquierda, el documento cambiaría de tamaño
+   con sólo responder SI o NO al envío. `align-self: start` evita que el grid lo estire. */
+/* Ocupa todo el ancho que le deja la columna. El alto lo pone el documento (ver .pdfframe),
+   no la columna de la izquierda: así responder SI o NO al envío no lo altera. */
+.emision-v2 .emision-grid .pdfv {
+  width: 100%;
+  height: auto;
+  align-self: start;
+}
+.emision-v2 .pdfv {
+  background: #ffffff;
+  border: 1px solid var(--e-border);
+  border-radius: var(--e-radius);
+  box-shadow: var(--e-shadow);
+}
+.emision-v2 .pdftool {
+  background: #ffffff;
+  color: var(--e-text-label);
+  border-bottom: 1px solid var(--e-border);
+  font-weight: 500;
+}
+.emision-v2 .pdftool i {
+  color: var(--e-danger);
+}
+.emision-v2 .pdf-open {
+  color: var(--e-primary);
+  font-weight: 600;
+}
+.emision-v2 .pdf-open:hover {
+  color: var(--e-primary-hover);
+}
+/* El alto sale del ancho: A4 es 1:1,414 y el resto es la barra del visor, así la hoja entra
+   completa sin scroll. Como el ancho no depende de la columna izquierda, el toggle SI/NO
+   tampoco mueve el alto. */
+.emision-v2 .pdfframe,
+.emision-v2 .pdf-empty {
+  height: auto;
+  flex: none;
+  aspect-ratio: 1 / 1.2;
+  min-height: 880px;
+  overflow: auto;
+}
+.emision-v2 .pdfframe {
+  background: #ffffff;
+}
+.emision-v2 .pdf-empty {
+  background: #ffffff;
+  color: #94a3b8;
+}
+/* Loading y error: velo claro, texto oscuro. */
+.emision-v2 .pdf-overlay {
+  background: rgba(255, 255, 255, 0.88);
+}
+.emision-v2 .pdf-overlay-icon {
+  color: var(--e-primary);
+}
+.emision-v2 .pdf-overlay-msg {
+  color: var(--e-text-main);
+}
+.emision-v2 .pdf-overlay--error .pdf-overlay-icon {
+  color: var(--e-danger);
+}
+
+/* ===== Estado del envío (una sola línea, dentro de la card de contactos) ===== */
+.envio-estado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.envio-estado i {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.envio-estado--enviando {
+  background: #f4f6fb;
+  border-color: #dde3ef;
+  color: var(--text-gray);
+}
+.envio-estado--enviando i {
+  color: var(--primary-blue);
+}
+.envio-estado--enviado {
+  background: #eef9f2;
+  border-color: #bfe6cf;
+  color: var(--green-dark);
+}
+.envio-estado--enviado i {
+  color: var(--green);
+}
+.envio-estado--error {
+  background: #fff5f6;
+  border-color: #ffccd1;
+  color: var(--red);
+}
