@@ -44,6 +44,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Columna derecha: comprobantes y, debajo, el envío. El envío queda con el ancho de esta
+   columna —más angosto que a todo lo ancho de la página, como estaba antes—. */
+.factura-v2 .factura-col-der {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
 
 /* ===== Resumen de la venta (misma ficha que el resumen del presupuesto) ===== */
 .factura-v2 .card {

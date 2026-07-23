@@ -128,21 +128,24 @@ export function FacturaView() {
           onEmitir={emitir}
         />
 
-        <ComprobantesAGenerar
-          comprobantes={comprobantes}
-          letra={letra}
-          puntoVenta={PUNTO_VENTA_DEFAULT}
-          fechaEmision={fechaEmision}
-          venceAPlazo={venceAPlazo}
-          dias={Object.fromEntries(comprobantes.map((c) => [c.clave, diasDe(c.clave)]))}
-          onDias={(clave, d) => setDias((v) => ({ ...v, [clave]: d }))}
-          emitidos={emitidos}
-          emitiendo={emitiendo}
-        />
-      </div>
+        {/* Columna derecha: los comprobantes y, debajo, el envío de la factura. */}
+        <div className="factura-col-der">
+          <ComprobantesAGenerar
+            comprobantes={comprobantes}
+            letra={letra}
+            puntoVenta={PUNTO_VENTA_DEFAULT}
+            fechaEmision={fechaEmision}
+            venceAPlazo={venceAPlazo}
+            dias={Object.fromEntries(comprobantes.map((c) => [c.clave, diasDe(c.clave)]))}
+            onDias={(clave, d) => setDias((v) => ({ ...v, [clave]: d }))}
+            emitidos={emitidos}
+            emitiendo={emitiendo}
+          />
 
-      {/* El estado del envío se muestra dentro de la propia card. */}
-      <EnviarDocumento documento="factura" numero={NRO_FACTURA} />
+          {/* El estado del envío se muestra dentro de la propia card. */}
+          <EnviarDocumento documento="factura" numero={NRO_FACTURA} />
+        </div>
+      </div>
 
       <footer className="page-footer">
         <button

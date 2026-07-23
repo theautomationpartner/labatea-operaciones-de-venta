@@ -4,10 +4,16 @@ import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { faltaParaMedio } from '@/lib/validaciones'
 import {
   asignarDestinatarios,
+  asignarDestinatariosFactura,
+  comprobanteFacturaGenerado,
   dispararEnvio,
+  dispararEnvioFactura,
   ENVIO_ESTADO,
+  ENVIO_FACTURA_ESTADO,
   getContactosCliente,
+  getPresupuestoPdf,
   seguirEnvio,
+  seguirEnvioFactura,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Contacto, LogEntry, MedioEnvio } from '@/types'
@@ -52,9 +58,10 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
-  const { enviar, medioEnvio, contactos, cliente, presupuestoId } = useApp()
+  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId } = useApp()
   const dispatch = useDispatch()
-  const articulo = documento === 'factura' ? 'la' : 'el'
+  const esFactura = documento === 'factura'
+  const articulo = esFactura ? 'la' : 'el'
   /* El envío no consume línea nueva: acá el bloqueo mira el estado del cliente, no un
      importe, así que alcanza con cero. */
   const bloqueo = useBloqueoCredito(0)
@@ -104,6 +111,26 @@ export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
     }
   }, [cliente, documento, dispatch])
 
+  /** Item de Monday a enviar según el documento, y contactos como ids numéricos. */
+  const contactoItemIds = () =>
+    contactos.map((c) => c.itemId).filter((id): id is string => Boolean(id))
+
+  /** Aviso de que el documento todavía no existe en su columna: no se envía sin él. */
+  const avisarSinDocumento = () => {
+    dispatch({
+      type: 'setLog',
+      entries: [
+        {
+          id: 'err-doc',
+          tipo: 'err',
+          titulo: `Todavía no hay ${documento} generada`,
+          detalle: `El PDF de la ${documento} aún no figura en Monday. Esperá a que termine de generarse y reintentá.`,
+        },
+      ],
+    })
+    setEstadoEnvio('error')
+  }
+
   const confirmar = async () => {
     if (enviando) return
     // El envío es una salida del sistema: no sale nada de un cliente bloqueado o excedido.
@@ -111,13 +138,29 @@ export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
     setEstadoEnvio('enviando')
     setEstadoMonday('')
     try {
-      if (documento === 'presupuesto' && presupuestoId) {
+      /* Antes de enviar cualquier documento se valida que el PDF EXISTA en la columna del
+         tablero que corresponde. Sin documento generado no se dispara el envío. */
+      if (esFactura && ventaId) {
+        // Factura: el PDF vive en el mirror del ítem de la venta; el envío se dispara ahí.
+        if (!(await comprobanteFacturaGenerado(ventaId))) {
+          avisarSinDocumento()
+          return
+        }
+        await asignarDestinatariosFactura(ventaId, contactoItemIds(), medioEnvio)
+        await dispararEnvioFactura(ventaId)
+        const final = await seguirEnvioFactura(ventaId, setEstadoMonday)
+        if (final === ENVIO_FACTURA_ESTADO.error) {
+          setEstadoEnvio('error')
+          return
+        }
+      } else if (documento === 'presupuesto' && presupuestoId) {
+        // Presupuesto: el PDF vive en la columna file del propio ítem (file_mkse56g9).
+        if (!(await getPresupuestoPdf(presupuestoId))) {
+          avisarSinDocumento()
+          return
+        }
         // 1) Destinatarios y medio en el ítem; 2) el estado dispara el envío.
-        await asignarDestinatarios(
-          presupuestoId,
-          contactos.map((c) => c.itemId).filter((id): id is string => Boolean(id)),
-          medioEnvio,
-        )
+        await asignarDestinatarios(presupuestoId, contactoItemIds(), medioEnvio)
         await dispararEnvio(presupuestoId)
         // 3) Se sigue la columna de estado hasta que la automatización la cierra.
         const final = await seguirEnvio(presupuestoId, setEstadoMonday)
@@ -293,7 +336,7 @@ export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
                   <>
                     <i className="fas fa-circle-xmark" />
                     <span>
-                      {estadoMonday === ENVIO_ESTADO.error
+                      {/error/i.test(estadoMonday)
                         ? 'El envío falló en Monday. Revisá los contactos y reintentá.'
                         : 'No se pudo enviar. Reintentá en unos segundos.'}
                     </span>

@@ -322,6 +322,17 @@ export const COL = {
     /** "✋Entrega": Envio / Sin Envio. Leída del board; todavía sin mapeo definido. */
     entrega: 'color_mm52jx3d',
     rentabilidad: 'numeric_mm52rk7t',
+    /** "Facturación": los comprobantes que factura esta venta. De acá cuelga el PDF espejado. */
+    facturacion: 'board_relation_mm5bvew3',
+    /** "🤖Comprobante PDF": mirror del PDF de los comprobantes conectados. Se lee para validar
+     *  que el documento existe antes de enviarlo. */
+    comprobantePdf: 'lookup_mm5bf76j',
+    /** "🤖Estado de Envio Fact": al ponerlo en "Enviar" se dispara el envío de la factura. */
+    estadoEnvioFactura: 'color_mm5bc1xy',
+    /** "👤Contactos": destinatarios del envío de la factura. */
+    contactos: 'board_relation_mm5gq7z7',
+    /** "🤖Enviar por:": dropdown Whatsapp / Email para el envío de la factura. */
+    medioEnvio: 'dropdown_mm5gkf4f',
   },
   // Un producto de la venta (subelemento de 📈Ventas).
   ventaSub: {
@@ -379,6 +390,11 @@ export const COL = {
     letra: 'dropdown_mm3kzmy5',
     /** "📈Ventas": la venta que este comprobante factura. */
     venta: 'board_relation_mm5bve7q',
+    /** "✋Comprobante": al ponerlo en "Crear Comprobante" se dispara la emisión electrónica. */
+    estadoComprobante: 'status',
+    /** "Comprobante PDF": el archivo que genera la emisión. Es el que espeja el mirror de la
+     *  venta (lookup_mm5bf76j) y el que se valida que exista antes de enviar. */
+    pdf: 'file_mm1tg5w5',
   },
   // Una línea del comprobante (subelemento de Facturación).
   facturacionSub: {
@@ -492,11 +508,32 @@ export const FACT_SUB_PROD_SERV = 'producto'
  */
 export const FACT_ALICUOTAS_IVA = [0, 2.5, 5, 10.5, 21, 27] as const
 
-/** Labels de la columna de estado de envío (color_mm48mc2p), tal cual están en el board. */
+/** Labels de la columna de estado de envío del presupuesto (color_mm48mc2p), tal cual el board. */
 export const ENVIO_ESTADO = {
   aEnviar: 'A  Enviar',
   enviando: 'Enviando',
   enviado: 'Enviado',
   error: 'Error en Envio',
   pendiente: 'Pend de Enviar',
+} as const
+
+/**
+ * Estado "Crear Comprobante" de la columna ✋Comprobante (status) del board de Facturación.
+ * Ponerlo dispara la emisión electrónica. Se escribe por índice —el id de la etiqueta en el
+ * board— y no por el texto: es lo que aguanta que le reescriban el label. Validado: "Crear
+ * Comprobante" es el id 3.
+ */
+export const FACT_CREAR_COMPROBANTE_INDEX = 3
+
+/**
+ * Estado de envío de la factura, en "🤖Estado de Envio Fact" (color_mm5bc1xy) del board de
+ * Ventas. OJO: la etiqueta que dispara el envío es "Enviar" (id 3), no "A Enviar". Se escribe
+ * por índice. Los demás labels los mueve la automatización: "Enviando" / "Enviada" / error.
+ */
+export const VENTA_ENVIO_FACTURA_INDEX = 3
+export const ENVIO_FACTURA_ESTADO = {
+  enviar: 'Enviar',
+  enviando: 'Enviando',
+  enviado: 'Enviada',
+  error: 'Error - Ver Updates',
 } as const

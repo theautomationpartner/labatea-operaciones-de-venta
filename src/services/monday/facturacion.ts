@@ -17,12 +17,15 @@ import type {
   ComprobanteEmitido,
   CondicionIVA,
   LetraComprobante,
+  MedioEnvio,
   MonedaFactura,
 } from '@/types'
 import {
   BOARDS,
   COL,
+  ENVIO_FACTURA_ESTADO,
   FACT_CONDICION_VENTA,
+  FACT_CREAR_COMPROBANTE_INDEX,
   FACT_MONEDA_LABEL,
   FACT_PUNTO_VENTA_DEFAULT,
   FACT_SIT_IVA_LABEL,
@@ -30,6 +33,8 @@ import {
   FACT_SUB_UNIDAD_MEDIDA,
   FACT_TIPO_COMPROBANTE,
   FACT_VENCIMIENTO_DIAS,
+  MEDIO_ENVIO_LABELS,
+  VENTA_ENVIO_FACTURA_INDEX,
 } from './columns'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -139,9 +144,8 @@ function columnasLinea(
   return cv
 }
 
-/** Nombre del ítem: el cliente y qué mercadería factura este comprobante. */
-const nombreComprobante = (c: ComprobanteAGenerar, cliente: Cliente): string =>
-  `${cliente.name} · ${c.titulo}`
+/** Nombre del ítem del comprobante: sólo el cliente, sin la mercadería que factura. */
+const nombreComprobante = (cliente: Cliente): string => cliente.name
 
 /**
  * Crea todos los comprobantes de la venta con sus líneas. Devuelve uno por cada grupo, con
@@ -167,7 +171,7 @@ export async function crearComprobantes(
   // 1) Todos los comprobantes en UNA sola solicitud, con alias.
   const variables: Record<string, unknown> = { boardId: BOARDS.facturacion }
   const campos = comprobantes.map((c, i) => {
-    variables[`n${i}`] = nombreComprobante(c, datos.cliente)
+    variables[`n${i}`] = nombreComprobante(datos.cliente)
     variables[`cv${i}`] = JSON.stringify(columnasComprobante(c, datos))
     return `f${i}: create_item(board_id: $boardId, item_name: $n${i}, column_values: $cv${i}) { id }`
   })
@@ -202,7 +206,54 @@ export async function crearComprobantes(
     })
   }
 
+  // 3) Con los ítems y todas sus líneas ya creados: se dispara la emisión electrónica de cada
+  //    comprobante (estado "Crear Comprobante") y se cuelgan de la venta, que es de donde el
+  //    board espeja el PDF y desde donde después se envían.
+  const ids = resultado.map((c) => c.id).filter(Boolean)
+  if (ids.length > 0) {
+    await marcarCrearComprobante(ids)
+    if (datos.ventaId) await vincularComprobantesAVenta(datos.ventaId, ids)
+  }
+
   return resultado
+}
+
+/**
+ * Pone cada comprobante en "Crear Comprobante" (✋Comprobante, por índice): es lo que dispara
+ * la emisión electrónica. Van todos en una sola solicitud, con alias.
+ */
+async function marcarCrearComprobante(itemIds: string[]): Promise<void> {
+  const variables: Record<string, unknown> = { board: BOARDS.facturacion }
+  const cv = JSON.stringify({
+    [COL.facturacion.estadoComprobante]: { index: FACT_CREAR_COMPROBANTE_INDEX },
+  })
+  const campos = itemIds.map((id, i) => {
+    variables[`item${i}`] = id
+    variables[`cv${i}`] = cv
+    return `u${i}: change_multiple_column_values(item_id: $item${i}, board_id: $board, column_values: $cv${i}) { id }`
+  })
+  const declaraciones = itemIds.map((_, i) => `$item${i}: ID!, $cv${i}: JSON!`).join(', ')
+  await mondayApi(`mutation ($board: ID!, ${declaraciones}) { ${campos.join('\n')} }`, variables)
+}
+
+/**
+ * Conecta los comprobantes creados al ítem de la venta (board_relation "Facturación"). De esa
+ * relación cuelga el mirror del PDF, así que sin este vínculo el envío no tendría documento que
+ * validar.
+ */
+async function vincularComprobantesAVenta(ventaId: string, itemIds: string[]): Promise<void> {
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    {
+      id: ventaId,
+      board: BOARDS.ventas,
+      cv: JSON.stringify({
+        [COL.venta.facturacion]: { item_ids: itemIds.map(Number).filter(Number.isFinite) },
+      }),
+    },
+  )
 }
 
 /** Las líneas de un comprobante, en tandas de una sola solicitud cada una. */
@@ -232,4 +283,126 @@ async function crearLineas(
     creadas += tanda.filter((_, i) => res[`s${desde + i}`]?.id).length
   }
   return creadas
+}
+
+/* ===== Envío de la factura ===== */
+
+const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * ¿La factura ya tiene su PDF generado? El mirror "🤖Comprobante PDF" (lookup_mm5bf76j) de la
+ * venta espeja el archivo de los comprobantes conectados, pero un mirror de archivo no siempre
+ * expone su valor por la API. Así que se valida en la fuente: los `assets` del archivo
+ * (file_mm1tg5w5) de las facturas conectadas a la venta (board_relation_mm5bvew3). Con al menos
+ * un archivo, el documento existe; sin ninguno, la emisión electrónica todavía no terminó.
+ */
+export async function comprobanteFacturaGenerado(ventaId: string): Promise<boolean> {
+  if (!mondayHabilitado()) return true
+  const data = await mondayApi<{
+    items: { column_values: { linked_items?: { assets: { id: string }[] }[] }[] }[]
+  }>(
+    `query ($ids: [ID!]) {
+      items(ids: $ids) {
+        column_values(ids: ["${COL.venta.facturacion}"]) {
+          ... on BoardRelationValue {
+            linked_items { assets(column_ids: ["${COL.facturacion.pdf}"]) { id } }
+          }
+        }
+      }
+    }`,
+    { ids: [ventaId] },
+  )
+  const facturas = data.items[0]?.column_values[0]?.linked_items ?? []
+  return facturas.some((f) => (f.assets?.length ?? 0) > 0)
+}
+
+/**
+ * Paso 1 del envío de la factura: deja en el ítem de la venta a quién y por dónde mandarla —los
+ * contactos en 👤Contactos (board_relation_mm5gq7z7) y el medio en 🤖Enviar por:
+ * (dropdown_mm5gkf4f)—. No dispara nada: eso lo hace `dispararEnvioFactura`.
+ */
+export async function asignarDestinatariosFactura(
+  ventaId: string,
+  contactoItemIds: string[],
+  medio: MedioEnvio,
+): Promise<void> {
+  if (!mondayHabilitado()) return
+  const ids = contactoItemIds.map(Number).filter((n) => Number.isFinite(n))
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    {
+      id: ventaId,
+      board: BOARDS.ventas,
+      cv: JSON.stringify({
+        [COL.venta.contactos]: { item_ids: ids },
+        [COL.venta.medioEnvio]: { labels: MEDIO_ENVIO_LABELS[medio] },
+      }),
+    },
+  )
+}
+
+/**
+ * Paso 2: pone "🤖Estado de Envio Fact" (color_mm5bc1xy) en "Enviar" (por índice: la etiqueta
+ * que dispara es "Enviar", id 3). Ese cambio es el que dispara el envío de la factura.
+ */
+export async function dispararEnvioFactura(ventaId: string): Promise<void> {
+  if (!mondayHabilitado()) return
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    {
+      id: ventaId,
+      board: BOARDS.ventas,
+      cv: JSON.stringify({ [COL.venta.estadoEnvioFactura]: { index: VENTA_ENVIO_FACTURA_INDEX } }),
+    },
+  )
+}
+
+/** Lee el estado de envío de la factura tal cual está en la columna del ítem de la venta. */
+export async function getEstadoEnvioFactura(ventaId: string): Promise<string> {
+  if (!mondayHabilitado()) return ENVIO_FACTURA_ESTADO.enviado
+  const data = await mondayApi<{ items: { column_values: { text: string | null }[] }[] }>(
+    `query ($ids: [ID!]) {
+      items(ids: $ids) { column_values(ids: ["${COL.venta.estadoEnvioFactura}"]) { text } }
+    }`,
+    { ids: [ventaId] },
+  )
+  return data.items[0]?.column_values[0]?.text?.trim() ?? ''
+}
+
+/** Estados en los que el envío de la factura ya terminó: no tiene sentido seguir consultando. */
+const ENVIO_FACTURA_FINALES: readonly string[] = [
+  ENVIO_FACTURA_ESTADO.enviado,
+  ENVIO_FACTURA_ESTADO.error,
+]
+
+/**
+ * Sigue el estado de envío de la factura hasta que la automatización lo cierra ("Enviada" o
+ * "Error - Ver Updates"). Avisa cada cambio por `onEstado`. Sin token, simula la secuencia.
+ */
+export async function seguirEnvioFactura(
+  ventaId: string,
+  onEstado: (estado: string) => void,
+  { intentos = 30, intervalo = 2000 }: { intentos?: number; intervalo?: number } = {},
+): Promise<string> {
+  if (!mondayHabilitado()) {
+    onEstado(ENVIO_FACTURA_ESTADO.enviando)
+    await esperar(1200)
+    onEstado(ENVIO_FACTURA_ESTADO.enviado)
+    return ENVIO_FACTURA_ESTADO.enviado
+  }
+  let ultimo = ''
+  for (let i = 0; i < intentos; i++) {
+    const estado = await getEstadoEnvioFactura(ventaId)
+    if (estado && estado !== ultimo) {
+      ultimo = estado
+      onEstado(estado)
+    }
+    if (ENVIO_FACTURA_FINALES.includes(estado)) return estado
+    await esperar(intervalo)
+  }
+  return ultimo
 }
