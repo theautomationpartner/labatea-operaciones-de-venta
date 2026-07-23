@@ -1,29 +1,38 @@
 /**
- * Acceso a la API de Monday por HTTP directo al endpoint GraphQL (https://api.monday.com/v2),
- * autenticado con un token de API. No usa el MCP: eso era sólo para validar durante el desarrollo.
+ * Acceso a la API de Monday por HTTP contra el endpoint GraphQL de Monday.
+ * No usa el MCP: eso era sólo para validar durante el desarrollo.
  *
- * En desarrollo se pega contra `/monday-api`, un proxy de Vite hacia api.monday.com (evita CORS).
- * En producción va directo al endpoint. El token sale de `.env.local` (VITE_MONDAY_TOKEN).
+ * - En desarrollo se pega contra `/monday-api`, proxy de Vite hacia api.monday.com (evita CORS).
+ *   El token sale de `.env.local` (VITE_MONDAY_TOKEN) y viaja en la Authorization.
+ * - En producción se pega contra `/api/monday`, una Serverless Function (ver `api/monday.ts`)
+ *   que inyecta el token del lado servidor (`MONDAY_TOKEN`). Así el token nunca se incrusta en
+ *   el bundle del navegador.
  */
 const TOKEN = (import.meta.env.VITE_MONDAY_TOKEN as string | undefined)?.trim() || undefined
 
-const ENDPOINT = import.meta.env.DEV ? '/monday-api' : 'https://api.monday.com/v2'
+const ENDPOINT = import.meta.env.DEV ? '/monday-api' : '/api/monday'
 const API_VERSION = '2024-10'
 
-/** Hay acceso real a Monday si hay un token configurado; si no, los servicios usan mock. */
-export const mondayHabilitado = (): boolean => Boolean(TOKEN)
+/**
+ * En desarrollo hay acceso real a Monday sólo si hay token local; si no, los servicios usan mock.
+ * En producción el proxy server-side siempre resuelve la autenticación, así que se asume habilitado
+ * (requiere que `MONDAY_TOKEN` esté configurado en el entorno del deploy).
+ */
+export const mondayHabilitado = (): boolean => (import.meta.env.DEV ? Boolean(TOKEN) : true)
 
 /** Host del bucket donde Monday guarda los archivos de las columnas file. */
 const FILES_HOST = 'https://files-monday-com.s3.amazonaws.com'
 
 /**
  * La `public_url` de un asset apunta a S3, que no manda cabeceras CORS: leerla desde el
- * navegador falla. En desarrollo se reescribe al proxy de Vite (`/monday-files`) para poder
- * traer los bytes; en producción se devuelve tal cual.
+ * navegador falla. Se reescribe a un proxy del mismo origen que trae los bytes:
+ * - en desarrollo, el proxy de Vite (`/monday-files`);
+ * - en producción, la Serverless Function (`/api/monday-file`, ver `api/monday-file.ts`).
  */
 export function urlArchivo(url: string): string {
-  if (!import.meta.env.DEV || !url.startsWith(FILES_HOST)) return url
-  return `/monday-files${url.slice(FILES_HOST.length)}`
+  if (!url.startsWith(FILES_HOST)) return url
+  if (import.meta.env.DEV) return `/monday-files${url.slice(FILES_HOST.length)}`
+  return `/api/monday-file?u=${encodeURIComponent(url)}`
 }
 
 interface ApiError {
