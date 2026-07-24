@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { money } from '@/lib/format'
+import { money, pctDec } from '@/lib/format'
+import { rentabilidadEfectiva } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
@@ -10,6 +11,8 @@ interface CargaLineaProps {
   /** Aviso de la búsqueda (sin resultados / error): ocupa el lugar del producto elegido. */
   aviso?: string
   onAdd: (cantidad: number, descuento: number) => void
+  /** Sólo en la venta con crédito excedido: deshabilita "Agregar" hasta bajar el importe. */
+  bloqueado?: boolean
 }
 
 /**
@@ -17,7 +20,7 @@ interface CargaLineaProps {
  * de la card de búsqueda y sólo aparece cuando hay un producto seleccionado.
  * El padre la remonta al cambiar de producto (`key`), así los campos arrancan limpios.
  */
-export function CargaLinea({ producto, aviso, onAdd }: CargaLineaProps) {
+export function CargaLinea({ producto, aviso, onAdd, bloqueado = false }: CargaLineaProps) {
   const { topesDescuento } = useApp()
   const [cantidad, setCantidad] = useState(1)
   const [descuento, setDescuento] = useState('')
@@ -39,6 +42,13 @@ export function CargaLinea({ producto, aviso, onAdd }: CargaLineaProps) {
 
   const validacion = validarDescuento(descuento, topesDescuento)
   const descuentoOk = { ...validacion, mensaje: rechazado || validacion.mensaje }
+
+  /* Rentabilidad que quedaría si se cargara la línea así: el margen de lista, ya bajado por el
+     descuento tecleado. Se usa el mismo `Number(descuento) || 0` que al agregar, así el valor
+     previsto coincide con el que termina en la lista. Se recalcula en cada tecleo/cambio. */
+  const rentabilidadPrevista = producto
+    ? rentabilidadEfectiva(producto.rentabilidad, Number(descuento) || 0)
+    : 0
 
   return (
     <div
@@ -147,14 +157,40 @@ export function CargaLinea({ producto, aviso, onAdd }: CargaLineaProps) {
           </div>
 
           <div className="control-item">
-            {/* Con un descuento fuera de rango no se puede cargar la línea. */}
+            <label htmlFor="prent">Rentabilidad</label>
+            {/* No editable: es el margen que queda tras el descuento, recalculado en vivo. Verde
+                si suma; rojo si el descuento se comió el margen (negativa). */}
+            <input
+              id="prent"
+              type="text"
+              className="std-input"
+              readOnly
+              placeholder="—"
+              value={producto ? pctDec(rentabilidadPrevista) : ''}
+              style={{
+                color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)',
+                fontWeight: 700,
+              }}
+              aria-label="Rentabilidad prevista del producto con el descuento aplicado"
+            />
+          </div>
+
+          <div className="control-item">
+            {/* No se carga con un descuento fuera de rango, ni en la venta si se excedió el
+                crédito: primero hay que bajar el importe quitando productos. */}
             <button
               type="button"
               className="btn-primary"
-              disabled={!producto || !descuentoOk.ok}
-              title={descuentoOk.ok ? '' : descuentoOk.mensaje}
+              disabled={!producto || !descuentoOk.ok || bloqueado}
+              title={
+                bloqueado
+                  ? 'Se alcanzó el límite de crédito: quitá productos para poder cargar más.'
+                  : descuentoOk.ok
+                    ? ''
+                    : descuentoOk.mensaje
+              }
               onClick={() =>
-                producto && descuentoOk.ok && onAdd(cantidad, Number(descuento) || 0)
+                producto && descuentoOk.ok && !bloqueado && onAdd(cantidad, Number(descuento) || 0)
               }
             >
               <i className="fas fa-plus" /> Agregar

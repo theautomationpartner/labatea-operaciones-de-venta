@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
@@ -75,12 +75,29 @@ export function ProductosView() {
      En el PRESUPUESTO nunca: el precio es el de la lista, tal cual. */
   const conIva = esVenta && clienteLlevaIva(cliente.status)
 
-  // Ningún ítem se crea ni se avanza si el cliente está bloqueado o se pasó de su línea.
-  // El bloqueo se mide sobre el neto, igual que el impacto de crédito que muestra el resumen.
-  const bloqueo = useBloqueoCredito(resumen.neto)
+  /* Validación de crédito, distinta según el comprobante: la VENTA frena (no se confirma ni se
+     cargan más ítems si se excedió); el PRESUPUESTO sólo avisa y deja seguir. El aviso salta al
+     hacer click en continuar (no en vivo). El cliente bloqueado siempre frena. Se mide sobre el
+     neto, igual que el impacto de crédito del resumen. */
+  const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: esVenta })
+  // Sólo en la venta: con el crédito excedido no se pueden cargar más productos.
+  const cargaBloqueada = esVenta && bloqueo.excedido
+  /* Presupuesto: el aviso de crédito no frena, pero se muestra al continuar. Como la creación
+     sigue de largo (y desmonta la vista), el modal no se alcanzaría a ver; por eso el primer
+     click con crédito excedido sólo avisa, y el siguiente ya avanza. Vuelve a avisar si el
+     importe baja de la línea y la excede de nuevo. */
+  const [creditoAvisado, setCreditoAvisado] = useState(false)
+  useEffect(() => {
+    if (!bloqueo.excedido) setCreditoAvisado(false)
+  }, [bloqueo.excedido])
 
   const agregar = (cantidad: number, descuento: number) => {
     if (!seleccionado) return
+    // En la venta con el crédito excedido no se cargan más ítems: hay que bajar el importe.
+    if (cargaBloqueada) {
+      bloqueo.frenar()
+      return
+    }
     dispatch({ type: 'addLinea', producto: seleccionado, cantidad, descuento })
     setSeleccionado(null)
     setAvisoBusqueda('')
@@ -130,7 +147,15 @@ export function ProductosView() {
       avisoSinProductos()
       return
     }
+    // Cliente bloqueado (siempre) o VENTA con crédito excedido: frena acá y muestra el aviso.
     if (bloqueo.frenar()) return
+    // PRESUPUESTO con crédito excedido: avisa (no frena). Al cerrar el modal y volver a continuar,
+    // avanza. Así el aviso salta al hacer click en continuar, sin bloquear la operación.
+    if (bloqueo.excedido && !creditoAvisado) {
+      setCreditoAvisado(true)
+      bloqueo.frenar({ avisarSiempre: true })
+      return
+    }
     if (!validarParaMonday()) return
 
     if (presupuestoId) {
@@ -199,6 +224,7 @@ export function ProductosView() {
           producto={seleccionado}
           aviso={avisoBusqueda}
           onAdd={agregar}
+          bloqueado={cargaBloqueada}
         />
       </div>
 
@@ -277,10 +303,8 @@ export function ProductosView() {
           interrumpir ni disparar dos veces. Mismo tratamiento que el cierre de la venta. */}
       {confirmando && (
         <ModalCargando
-          titulo="Confirmando el presupuesto…"
-          detalle={`Estamos creando el presupuesto y sus ${lineas.length} ${
-            lineas.length === 1 ? 'producto' : 'productos'
-          } en Monday. No cierres esta pantalla.`}
+          titulo="Registrando presupuesto..."
+          detalle="Estamos registrando el presupuesto en el sistema. Espera unos segundos"
         />
       )}
 

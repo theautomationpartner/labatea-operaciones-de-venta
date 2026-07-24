@@ -75,7 +75,7 @@ export function ClienteFicha({ cliente, children }: ClienteFichaProps) {
             {/* La condición de pago manda sobre todo el flujo: viaja con el resto de los
                 datos del cliente, con su color propio pero al tamaño de las etiquetas. */}
             <span className="badge badge--cond">
-              Condicion de Pago: <strong>{cliente.condicionPago}</strong>
+              Condicion de Pago: <strong>{cliente.condicionPago ?? 'Sin asignar'}</strong>
             </span>
             {tieneRetenciones && (
               <span className="badge badge-purple">Retenciones: {cliente.ret}</span>

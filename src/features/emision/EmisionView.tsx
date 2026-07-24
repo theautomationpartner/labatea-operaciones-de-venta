@@ -12,11 +12,13 @@ import {
   emitirPresupuesto,
   esperarPresupuestoPdf,
   mondayHabilitado,
-  type PresupuestoPdf,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
-import { PdfPreview, type EstadoPdf } from './PdfPreview'
+import { PresupuestoAGenerar } from './PresupuestoAGenerar'
 import { ResumenEmision } from './ResumenEmision'
+
+/** Estado de la emisión: idle → generando (dispara Make.com) → listo, o error. */
+type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
 
 /** Paso 3 de PRESUPUESTAR: revisión, PDF y envío a los contactos. */
 export function EmisionView() {
@@ -32,8 +34,9 @@ export function EmisionView() {
 
   /* Generación del PDF: crea el presupuesto en "Emitir" (dispara Make.com) y espera el archivo. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
-  const [pdf, setPdf] = useState<PresupuestoPdf | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // El envío se completó: junto con el PDF ya generado habilita "Finalizar Operación".
+  const [enviado, setEnviado] = useState(false)
   // Datos que faltan para escribir el presupuesto en Monday; frenan la generación.
   const [faltantes, setFaltantes] = useState<string[] | null>(null)
   // Si se sale del paso mientras se espera el PDF, no actualizamos estado desmontado.
@@ -45,9 +48,9 @@ export function EmisionView() {
     }
   }, [])
 
-  // Ni el PDF se genera si el cliente está bloqueado o la operación se pasa de su línea.
-  // El crédito se mide sobre el neto (en el presupuesto neto y total coinciden: no liquida IVA).
-  const bloqueo = useBloqueoCredito(resumen.neto)
+  // Emisión del PRESUPUESTO: el crédito NO frena (sólo la venta bloquea). Un presupuesto con el
+  // crédito agotado igual se emite, genera el PDF y se envía. El cliente bloqueado sí frena.
+  const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: false })
 
   /**
    * Generar PDF ya NO crea el presupuesto: a este paso se llega con el ítem creado desde
@@ -78,13 +81,11 @@ export function EmisionView() {
     }
     setEstado('generando')
     setError(null)
-    setPdf(null)
     try {
       await emitirPresupuesto(id)
       const generado = await esperarPresupuestoPdf(id)
       if (!activo.current) return
       if (generado) {
-        setPdf(generado)
         setEstado('listo')
       } else if (mondayHabilitado()) {
         setError('El PDF está tardando más de lo esperado. Reintentá en unos segundos.')
@@ -110,19 +111,33 @@ export function EmisionView() {
         descripcion="Revisá el resumen, generá el PDF y mandáselo a los contactos del cliente."
       />
 
-      {/* Columna izquierda: el resumen y, debajo, el envío. A la derecha, el documento. */}
+      {/* Izquierda: el resumen con el botón de emisión. Derecha: el presupuesto a registrar en un
+          desplegable y, debajo, el envío —mismo armado que el paso de factura—. */}
       <div className="emision-grid">
         <div className="emision-col">
           <ResumenEmision
             resumen={resumen}
             vencimiento={vencimiento}
             generando={estado === 'generando'}
+            emitido={estado === 'listo'}
             onGenerar={generar}
           />
-          <EnviarDocumento documento="presupuesto" numero={nroPresupuesto ?? NRO_PRESUPUESTO} />
         </div>
 
-        <PdfPreview estado={estado} pdf={pdf} error={error} onReintentar={generar} />
+        {/* Bajo `.factura-v2` para reutilizar el desplegable de comprobantes (clases `comp-*` y sus
+            variables); se neutraliza el box de página del namespace para que encaje en la columna. */}
+        <div className="factura-v2" style={{ padding: 0, maxWidth: 'none', margin: 0 }}>
+          <PresupuestoAGenerar
+            numero={nroPresupuesto ?? NRO_PRESUPUESTO}
+            lineas={lineas}
+            total={resumen.total}
+          />
+          <EnviarDocumento
+            documento="presupuesto"
+            numero={nroPresupuesto ?? NRO_PRESUPUESTO}
+            onEnviado={() => setEnviado(true)}
+          />
+        </div>
       </div>
 
       <div className="footer-acts">
@@ -133,6 +148,15 @@ export function EmisionView() {
         >
           <i className="fas fa-arrow-left" /> Volver a paso anterior
         </button>
+        {/* Cierra el presupuesto y reinicia la app. Sólo con el PDF generado y ya enviado. */}
+        <button
+          type="button"
+          className="btn btn-green"
+          disabled={!(estado === 'listo' && enviado)}
+          onClick={() => dispatch({ type: 'reset' })}
+        >
+          <i className="fas fa-flag-checkered" /> Finalizar Operación
+        </button>
       </div>
 
       {faltantes && (
@@ -142,6 +166,19 @@ export function EmisionView() {
           onClose={() => setFaltantes(null)}
         >
           No se puede generar el PDF hasta completar estos datos en Monday:
+        </AvisoModal>
+      )}
+
+      {/* La emisión ya no tiene visor: un fallo del PDF se avisa en el mismo modal reutilizado. */}
+      {estado === 'error' && error && (
+        <AvisoModal
+          titulo="No se pudo emitir el presupuesto"
+          onClose={() => {
+            setError(null)
+            setEstado('idle')
+          }}
+        >
+          {error}
         </AvisoModal>
       )}
 

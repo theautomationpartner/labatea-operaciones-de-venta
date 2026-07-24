@@ -5,15 +5,19 @@ import { faltaParaMedio } from '@/lib/validaciones'
 import {
   asignarDestinatarios,
   asignarDestinatariosFactura,
+  asignarDestinatariosRemito,
   comprobanteFacturaGenerado,
   dispararEnvio,
   dispararEnvioFactura,
+  dispararEnvioRemito,
   ENVIO_ESTADO,
   ENVIO_FACTURA_ESTADO,
   getContactosCliente,
   getPresupuestoPdf,
+  getRemitoPdf,
   seguirEnvio,
   seguirEnvioFactura,
+  seguirEnvioRemito,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Contacto, LogEntry, MedioEnvio } from '@/types'
@@ -31,9 +35,11 @@ const ICONO_MEDIO: Record<MedioEnvio, string> = {
 }
 
 interface EnviarDocumentoProps {
-  /** 'presupuesto' | 'factura': arma los textos del bloque y del log. */
+  /** 'presupuesto' | 'factura' | 'remito': arma los textos del bloque y del log. */
   documento: string
   numero: string
+  /** Se dispara cuando el envío se completó bien: habilita "Finalizar Operación" en la vista. */
+  onEnviado?: () => void
 }
 
 /** Estado del envío, que se muestra como una sola línea dentro de la card. */
@@ -57,14 +63,14 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 }
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
-export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
-  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId } = useApp()
+export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
+  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, remito } = useApp()
   const dispatch = useDispatch()
   const esFactura = documento === 'factura'
   const articulo = esFactura ? 'la' : 'el'
-  /* El envío no consume línea nueva: acá el bloqueo mira el estado del cliente, no un
-     importe, así que alcanza con cero. */
-  const bloqueo = useBloqueoCredito(0)
+  /* El envío no consume línea nueva: el bloqueo sólo mira el estado del cliente, no un importe
+     (por eso va con cero). Y el PRESUPUESTO no frena por crédito: se envía siempre. */
+  const bloqueo = useBloqueoCredito(0, { bloqueante: documento !== 'presupuesto' })
   // Estado del envío: gobierna el botón y la línea de feedback al pie de la card.
   const [estadoEnvio, setEstadoEnvio] = useState<EstadoEnvio>('idle')
   // Lo que dice la columna de estado en Monday mientras la automatización trabaja.
@@ -168,9 +174,29 @@ export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
           setEstadoEnvio('error')
           return
         }
+      } else if (documento === 'remito' && remito.remitoId) {
+        // Remito: el PDF vive en la columna file del propio ítem (file_mkwbmr11).
+        if (!(await getRemitoPdf(remito.remitoId))) {
+          avisarSinDocumento()
+          return
+        }
+        // Ventas de origen de la mercadería remitada: se aseguran en el link del remito.
+        const ventaIds = Array.from(
+          new Set(remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
+        )
+        // 1) Contactos, medio y ventas en el ítem; 2) el estado dispara el envío.
+        await asignarDestinatariosRemito(remito.remitoId, contactoItemIds(), medioEnvio, ventaIds)
+        await dispararEnvioRemito(remito.remitoId)
+        // 3) Se sigue la columna de estado hasta que la automatización la cierra.
+        const final = await seguirEnvioRemito(remito.remitoId, setEstadoMonday)
+        if (/error/i.test(final)) {
+          setEstadoEnvio('error')
+          return
+        }
       }
       dispatch({ type: 'setLog', entries: construirLog(contactos, documento, numero) })
       setEstadoEnvio('enviado')
+      onEnviado?.()
     } catch {
       dispatch({
         type: 'setLog',
@@ -295,7 +321,11 @@ export function EnviarDocumento({ documento, numero }: EnviarDocumentoProps) {
             <button
               type="button"
               className="btn-block btn-block--enviar"
-              style={{ background: '#575ce5', marginTop: 16 }}
+              /* Ya enviado: el botón pasa a verde para confirmar el éxito; violeta mientras tanto. */
+              style={{
+                background: estadoEnvio === 'enviado' ? 'var(--green)' : '#575ce5',
+                marginTop: 16,
+              }}
               disabled={contactos.length === 0 || enviando || estadoEnvio === 'enviado'}
               aria-busy={enviando}
               onClick={confirmar}

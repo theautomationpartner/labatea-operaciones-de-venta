@@ -67,8 +67,9 @@ export function VentaView() {
   // Sólo se llega acá con la venta configurada como CON PRESUPUESTO PREVIO.
   const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
   const resumen = useMemo(() => resumenVenta(ventaItems, cliente, tipo), [ventaItems, cliente, tipo])
-  // No se avanza al cierre si el cliente está bloqueado o la venta se pasa de su línea.
-  const bloqueo = useBloqueoCredito(resumen.total)
+  // Venta: bloqueante. No se avanza al cierre si el cliente está bloqueado o la venta se pasa de
+  // su línea; el aviso salta al hacer click en "Continuar a cobro".
+  const bloqueo = useBloqueoCredito(resumen.total, { bloqueante: true })
   const yaEnLaVenta = useMemo(() => new Set(ventaItems.map((it) => it.uid)), [ventaItems])
 
   // Aplanado de todos los presupuestos vigentes, con lookup uid → línea original.
@@ -100,7 +101,7 @@ export function VentaView() {
     return { pendientes: filas, prodPorUid: porUid }
   }, [presupuestos, yaEnLaVenta])
 
-  // El precio y la rentabilidad son los del presupuesto; el descuento se puede reeditar acá.
+  // El precio, la rentabilidad y el descuento son los del presupuesto; acá el descuento no se edita.
   const filas = useMemo<FilaProducto[]>(
     () =>
       ventaItems.map((it) => ({
@@ -165,18 +166,20 @@ export function VentaView() {
           mostrarTipo
           filas={pendientes}
           filtroOrigen={filtroOrigen}
+          onVerTodos={() => setFiltroOrigen(null)}
           onConfirmar={confirmar}
         />
       </div>
 
-      {/* Se llena al confirmar productos de la lista de pendientes. */}
+      {/* Se llena al confirmar productos de la lista de pendientes. En la venta presupuestada el
+          descuento queda fijo al del presupuesto: se puede editar la cantidad, pero NO el
+          descuento (por eso no se pasa `onDescuento`; la celda lo muestra en modo lectura). */}
       <TablaProductos
         titulo="Productos seleccionados para la Venta"
         filas={filas}
         comisionPct={COMISION_PCT[tipo]}
         onRemove={(uid) => dispatch({ type: 'removeVentaItem', uid })}
         onCantidad={(uid, cantidad) => dispatch({ type: 'setVentaCantidad', uid, cantidad })}
-        onDescuento={(uid, descuento) => dispatch({ type: 'setVentaDescuento', uid, descuento })}
       />
 
       <ResumenVentaCard resumen={resumen} />
@@ -202,6 +205,7 @@ export function VentaView() {
               })
               return
             }
+            // El aviso de crédito se dispara acá, al continuar a cobro, y la venta frena.
             if (bloqueo.frenar()) return
             dispatch({ type: 'goto', paso: 'cobro' })
           }}

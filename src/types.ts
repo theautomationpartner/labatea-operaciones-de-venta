@@ -63,8 +63,9 @@ export interface Cliente {
   ret: string
   /** Si es agente, la factura exige retenciones calculadas antes de emitirse. */
   agenteRetencion: boolean
-  /** Condición de pago pactada; encabeza el bloque financiero de la ficha. */
-  condicionPago: CondicionPago
+  /** Condición de pago pactada; encabeza el bloque financiero de la ficha. null = el cliente no
+   *  la tiene asignada en el board, y sin ella no se puede armar la operación. */
+  condicionPago: CondicionPago | null
   limit: number
   /** Código del cliente en el sistema (columna text_mm542r9d). Es el que se muestra. */
   codigo: string
@@ -112,6 +113,8 @@ export interface Producto {
   categoria?: string
   /** Unidad de medida: la exige el remito, que documenta cantidades. */
   um: string
+  /** Peso unitario en kg ("✋Peso (kg)" del maestro). Alimenta el peso del remito. */
+  peso?: number
   fisico: number
   comercial: number
   disponible: number
@@ -388,6 +391,18 @@ export interface VentaEntregaProducto {
   vendida: number
   entregada: number
   pendiente: number
+  /** "🤖Estado de Entrega" de la línea, tal como está en el board. */
+  estadoEntrega?: string
+  /** La línea se puede remitar. Es false para los productos "100% Entregada". */
+  seleccionable?: boolean
+  /** ID del subelemento de la venta en Monday. */
+  subitemId?: string
+  /** ID del producto conectado en el Maestro de Productos. */
+  productoId?: string
+  /** ID del ítem de la venta a la que pertenece la línea. Se linkea en el remito. */
+  ventaId?: string
+  /** Peso unitario del producto en kg. Alimenta el peso de la línea del remito. */
+  peso?: number
 }
 
 /** Venta facturada con entrega pendiente: origen del remito de emisión ANTERIOR. */
@@ -400,6 +415,22 @@ export interface VentaEntrega {
   productos: VentaEntregaProducto[]
 }
 
+/**
+ * Venta del cliente con entrega POSTERIOR todavía pendiente, leída del board de Ventas. Es el
+ * origen del remito de emisión ANTERIOR: su mercadería es lo que falta entregar.
+ */
+export interface VentaEntregaPendiente {
+  /** ID del ítem de la venta en Monday. */
+  id: string
+  /** "🤖ID VTA" del board ("VTA-016"): es el que se ve en la card. */
+  nro: string
+  /** "🤖Estado de Entrega" a nivel venta, tal cual el board. */
+  estadoEntrega: string
+  /** Fecha de la venta (dd/MM/yyyy). */
+  fecha: string
+  productos: VentaEntregaProducto[]
+}
+
 /** Línea de mercadería a remitar. El remito documenta cantidades, no importes. */
 export interface RemitoItem {
   uid: string
@@ -409,35 +440,53 @@ export interface RemitoItem {
   cantidad: number
   /** ANTERIOR: tope = unidades pendientes de entregar. POSTERIOR: sin tope. */
   max?: number
+  /** ANTERIOR: subelemento de la venta del que sale la línea. Es donde se asienta lo entregado. */
+  subitemId?: string
+  /** Id del producto en el Maestro (del subelemento de la venta o del catálogo). Se linkea
+   *  en la línea del remito. */
+  productoId?: string
+  /** ANTERIOR: unidades ya entregadas de la venta al momento de armar el remito. La cant
+   *  entregada nueva se calcula sobre este valor, así reemitir no la duplica. */
+  entregadaPrevia?: number
+  /** ANTERIOR: id de la venta de la que sale la línea. Se linkea en la cabecera del remito. */
+  ventaId?: string
+  /** Peso unitario del producto en kg. Con la cantidad, da el peso de la línea. */
+  peso?: number
 }
 
 /** Destino de entrega asociado a un cliente. */
 export interface Destino {
   id: string
-  clienteId: string
+  /** Cliente dueño del destino. Opcional: el servicio ya los trae filtrados por cliente. */
+  clienteId?: string
   nombre: string
   direccion: string
 }
 
-/** Chofer de La Batea S.A. asignable al transporte. */
+/** Chofer/transportista asignable al transporte (persona con categoría "Transportista"). */
 export interface Chofer {
   id: string
   name: string
+  /** CUIT/CUIL del transportista; puede venir vacío. */
   cuit: string
 }
 
 export interface Vehiculo {
   id: string
+  /** Nombre del ítem: es lo que se muestra al elegir el vehículo. */
+  name: string
+  /** Patente/chasis; puede venir vacío. */
   patente: string
-  descripcion: string
+  descripcion?: string
 }
 
-/** Comisionista de transporte cargado en el sistema. */
+/** Comisionista de transporte cargado en el sistema (persona categoría "Comisionista"). */
 export interface Comisionista {
   id: string
   name: string
   cuit: string
-  zona: string
+  /** Zona: sólo existe en el mock; el board de Personas no la tiene. */
+  zona?: string
 }
 
 /** Quién se hace responsable de entregar la mercadería remitida. */
@@ -448,15 +497,25 @@ export interface EnvioState {
   /** null hasta que se elige quién entrega. Al cambiarlo se limpian los datos de las otras. */
   responsable: ResponsableEntrega | null
 
-  /* La Batea (flota propia): destino, transporte y COT generado. */
+  /* La Batea (flota propia): destino, transporte y COT generado. Se guardan los datos que se
+     muestran (nombre, dirección, CUIT, patente) junto al id, porque el resumen y el PDF los
+     leen de acá y no vuelven a consultar Monday. */
   destinoId: string | null
+  destinoNombre?: string
+  destinoDireccion?: string
   choferId: string | null
+  choferNombre?: string
+  choferCuit?: string
   vehiculoId: string | null
+  vehiculoNombre?: string
+  vehiculoPatente?: string
   /** Código de Operación de Traslado; se genera automáticamente. null = sin generar. */
   cot: string | null
 
-  /* Comisionista responsable del traslado. */
+  /* Comisionista responsable del traslado. Se guardan sus datos para el resumen y el PDF. */
   comisionistaId: string | null
+  comisionistaNombre?: string
+  comisionistaCuit?: string
 
   /* Cliente responsable que retira. */
   responsableNombre: string
@@ -471,6 +530,8 @@ export interface RemitoState {
   items: RemitoItem[]
   observaciones: string
   envio: EnvioState
+  /** ID del ítem del remito ya creado en Monday. null = todavía no se creó. Evita recrearlo. */
+  remitoId: string | null
   /** Emitido: habilita el cierre del proceso. */
   emitido: boolean
 }

@@ -46,6 +46,9 @@ interface PendientesSelectorProps {
   filas: PendienteFila[]
   /** Documento seleccionado en el panel de cards; filtra la lista. null = todos. */
   filtroOrigen: string | null
+  /** Limpia el filtro por documento (vuelve a mostrar todos). Si se pasa, se muestra un
+   *  "Ver todos" en la barra del listado mientras haya un filtro activo. */
+  onVerTodos?: () => void
   onConfirmar: (seleccion: { uid: string; cantidad: number }[]) => void
 }
 
@@ -66,6 +69,7 @@ export function PendientesSelector({
   mostrarTipo = false,
   filas,
   filtroOrigen,
+  onVerTodos,
   onConfirmar,
 }: PendientesSelectorProps) {
   // Columnas de la tabla: la de tipo de mercadería sólo existe en la venta presupuestada.
@@ -131,7 +135,8 @@ export function PendientesSelector({
         <i className="fas fa-info-circle" /> {hint}
       </p>
 
-      {/* Buscador que filtra la lista en vivo por nombre o código de producto. */}
+      {/* Buscador que filtra la lista en vivo por nombre o código de producto. Con un documento
+          filtrado, "Ver todos" vuelve a mostrar los productos de todos los documentos. */}
       <div className="pend-search">
         <div className="iw">
           <i className="fas fa-search" />
@@ -145,6 +150,16 @@ export function PendientesSelector({
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
+        {onVerTodos && filtroOrigen && (
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={onVerTodos}
+            title="Mostrar los productos de todos los documentos"
+          >
+            <i className="fas fa-list-ul" /> Ver todos
+          </button>
+        )}
       </div>
 
       <div className="pend-scroll">

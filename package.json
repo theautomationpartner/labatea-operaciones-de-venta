@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:credito": "esbuild tests/credito.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/credito.test.mjs && node node_modules/.cache/credito.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -618,9 +618,9 @@ export const CHOFERES: Chofer[] = [
 ]
 
 export const VEHICULOS: Vehiculo[] = [
-  { id: 'V-1', patente: 'AE 412 RT', descripcion: 'Camión Mercedes-Benz 1114' },
-  { id: 'V-2', patente: 'AD 889 KL', descripcion: 'Furgón Iveco Daily' },
-  { id: 'V-3', patente: 'AF 205 MN', descripcion: 'Camión Ford Cargo 1722' },
+  { id: 'V-1', name: 'Camión Mercedes-Benz 1114', patente: 'AE 412 RT', descripcion: 'Camión Mercedes-Benz 1114' },
+  { id: 'V-2', name: 'Furgón Iveco Daily', patente: 'AD 889 KL', descripcion: 'Furgón Iveco Daily' },
+  { id: 'V-3', name: 'Camión Ford Cargo 1722', patente: 'AF 205 MN', descripcion: 'Camión Ford Cargo 1722' },
 ]
 
 /** Comisionistas de transporte cargados en el sistema (traslado tercerizado). */

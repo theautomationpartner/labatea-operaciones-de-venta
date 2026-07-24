@@ -19,7 +19,7 @@ export function TablaRemito({ items, onCantidad, onRemove }: TablaRemitoProps) {
           <tr>
             <th style={{ width: 20 }} />
             <th colSpan={2}>Producto</th>
-            <th className="ta-c">Cantidad entregada</th>
+            <th className="ta-c">Cantidad a entregar</th>
             <th className="ta-c">Unidad de medida</th>
             <th className="ta-c">Acc.</th>
           </tr>

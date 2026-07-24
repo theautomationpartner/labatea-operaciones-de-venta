@@ -103,6 +103,7 @@ const remitoInicial: RemitoState = {
   items: [],
   observaciones: '',
   envio: envioInicial,
+  remitoId: null,
   emitido: false,
 }
 
@@ -236,6 +237,7 @@ export type Action =
   | { type: 'setEnvioResponsable'; value: ResponsableEntrega | null }
   | { type: 'setRemitoEnvio'; patch: Partial<EnvioState> }
   | { type: 'confirmarEntrega' }
+  | { type: 'setRemitoCreado'; value: string | null }
   | { type: 'emitirRemito' }
 
 const nuevoId = (): string =>
@@ -544,12 +546,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, remito, paso }
     }
 
-    // POSTERIOR: cada alta desde el catálogo es una línea nueva del remito.
+    // POSTERIOR: cada alta desde el catálogo es una línea nueva del remito. Editar la lista
+    // invalida un remito ya creado en Monday: se vuelve a crear al confirmar la entrega.
     case 'addRemitoItemCatalogo':
       return {
         ...state,
         remito: {
           ...state.remito,
+          remitoId: null,
           items: [
             ...state.remito.items,
             {
@@ -558,6 +562,9 @@ export function reducer(state: AppState, action: Action): AppState {
               nombre: action.producto.nombre,
               um: action.producto.um,
               cantidad: action.cantidad,
+              // Del catálogo salen el id del producto (para linkearlo) y su peso unitario.
+              productoId: action.producto.id,
+              peso: action.producto.peso,
             },
           ],
         },
@@ -569,6 +576,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         remito: {
           ...state.remito,
+          remitoId: null,
           items: state.remito.items.map((it) =>
             it.uid === action.uid ? { ...it, cantidad: Math.max(0, action.cantidad) } : it,
           ),
@@ -578,7 +586,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'removeRemitoItem':
       return {
         ...state,
-        remito: { ...state.remito, items: state.remito.items.filter((it) => it.uid !== action.uid) },
+        remito: {
+          ...state.remito,
+          remitoId: null,
+          items: state.remito.items.filter((it) => it.uid !== action.uid),
+        },
       }
 
     // ANTERIOR: entran las líneas pendientes de entregar elegidas en la lista, con su cantidad.
@@ -593,19 +605,34 @@ export function reducer(state: AppState, action: Action): AppState {
           um: s.prod.um,
           cantidad: s.cantidad,
           max: s.prod.pendiente,
+          // Del subelemento de la venta salen el id donde se asienta lo entregado y su producto.
+          subitemId: s.prod.subitemId,
+          productoId: s.prod.productoId,
+          entregadaPrevia: s.prod.entregada,
+          // La venta de origen se linkea en la cabecera del remito; el peso, en la línea.
+          ventaId: s.prod.ventaId,
+          peso: s.prod.peso,
         }))
       if (nuevos.length === 0) return state
-      return { ...state, remito: { ...state.remito, items: [...state.remito.items, ...nuevos] } }
+      return {
+        ...state,
+        remito: { ...state.remito, remitoId: null, items: [...state.remito.items, ...nuevos] },
+      }
     }
 
     case 'setRemitoObservaciones':
       return { ...state, remito: { ...state.remito, observaciones: action.value } }
 
     // Cambiar (o anular) el responsable limpia los datos de las otras opciones y la confirmación.
+    // Cambia la cabecera del remito: un remito ya creado deja de reflejarla y se recrea.
     case 'setEnvioResponsable':
       return {
         ...state,
-        remito: { ...state.remito, envio: { ...envioInicial, responsable: action.value } },
+        remito: {
+          ...state.remito,
+          remitoId: null,
+          envio: { ...envioInicial, responsable: action.value },
+        },
       }
 
     // Cualquier cambio en los datos de la entrega vuelve a abrir la confirmación.
@@ -614,6 +641,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         remito: {
           ...state.remito,
+          remitoId: null,
           envio: { ...state.remito.envio, ...action.patch, confirmado: false },
         },
       }
@@ -623,6 +651,10 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         remito: { ...state.remito, envio: { ...state.remito.envio, confirmado: true } },
       }
+
+    // El remito quedó creado en Monday: se guarda su id para no recrearlo al volver a entrar.
+    case 'setRemitoCreado':
+      return { ...state, remito: { ...state.remito, remitoId: action.value } }
 
     case 'emitirRemito':
       return { ...state, remito: { ...state.remito, emitido: true } }

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { buscarClientes } from '@/services/monday'
-import { useApp, useDispatch } from '@/state/hooks'
+import { useDispatch } from '@/state/hooks'
 import type { Cliente } from '@/types'
 
 /** Estado de la búsqueda del cliente, compartido con la vista para renderizar el resultado. */
@@ -20,9 +20,9 @@ interface BuscarClienteProps {
  * vista en el lugar de la ficha, no acá.
  */
 export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
-  const { cliente } = useApp()
   const dispatch = useDispatch()
-  const [termino, setTermino] = useState(cliente ? `${cliente.codigo} - ${cliente.name}` : '')
+  // El campo arranca (y queda) vacío: no muestra el cliente elegido, para encadenar búsquedas.
+  const [termino, setTermino] = useState('')
   const [errorInput, setErrorInput] = useState('')
   const [resultados, setResultados] = useState<Cliente[]>([])
   const [abierto, setAbierto] = useState(false)
@@ -31,7 +31,8 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
   const buscando = estado === 'buscando'
 
   const elegir = (c: Cliente) => {
-    setTermino(`${c.codigo} - ${c.name}`)
+    // El campo queda vacío tras elegir: el resultado se ve en la ficha, no en el buscador.
+    setTermino('')
     setResultados([])
     setAbierto(false)
     dispatch({ type: 'setCliente', cliente: c })

@@ -1,24 +1,36 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { VENTAS_ENTREGA } from '@/data/mock'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { AVANCE_COLOR, AVANCE_LABEL_ENTREGA, avanceLinea, remitoItemUid } from '@/lib/selectors'
 import { pasosDe } from '@/lib/pasos'
+import { getVentasEntregaPendiente } from '@/services/monday'
 import { type SeleccionRemito } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { EstadoEntrega, VentaEntregaProducto } from '@/types'
+import type { VentaEntregaPendiente, VentaEntregaProducto } from '@/types'
 import { CargaProductoRemito } from './CargaProductoRemito'
 import { ResumenVentasEntrega } from './ResumenVentasEntrega'
 import { TablaRemito } from './TablaRemito'
 
-/** Sólo se remite lo que falta entregar: ventas pendientes o entregadas en parte. */
-const REMITIBLES: readonly EstadoEntrega[] = ['Pend. de Entregar', 'Parcialmente entregada']
+/** Motivo por el que un producto no se puede remitar (ya se entregó por completo). */
+const MOTIVO_NO_SELECCIONABLE = 'El producto ya está 100% entregado en la venta.'
 
 /**
- * Paso 2 de REMITO. POSTERIOR arma la mercadería desde el catálogo; ANTERIOR lista todos
- * los productos pendientes de entregar de las ventas facturadas del cliente. Tabla común.
+ * Color del estado de entrega del producto, tomado del board. Si la venta no lo trae cargado
+ * se cae al avance de la línea (entregado vs. pendiente).
+ */
+function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanceLinea>): string {
+  if (!estado) return AVANCE_COLOR[avance]
+  if (/100%/.test(estado)) return AVANCE_COLOR.completo
+  if (/parcial/i.test(estado)) return AVANCE_COLOR.parcial
+  return AVANCE_COLOR.pendiente
+}
+
+/**
+ * Paso 2 de REMITO. POSTERIOR arma la mercadería desde el catálogo; ANTERIOR trae del board de
+ * Ventas las ventas del cliente con entrega posterior pendiente y lista todos sus productos por
+ * entregar. Tabla común.
  */
 export function RemitoProductosView() {
   const { cliente, operacion, tipoVenta, tipoEntrega, remito } = useApp()
@@ -29,6 +41,36 @@ export function RemitoProductosView() {
   // Aviso al intentar avanzar sin productos en el remito.
   const [sinProductos, setSinProductos] = useState(false)
 
+  // Ventas del cliente con entrega pendiente, leídas del tablero al entrar al paso ANTERIOR.
+  const [ventas, setVentas] = useState<VentaEntregaPendiente[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!cliente || !esAnterior) {
+      setVentas([])
+      return
+    }
+    let vivo = true
+    setCargando(true)
+    setError(false)
+    getVentasEntregaPendiente(cliente.id)
+      .then((vs) => {
+        if (vivo) setVentas(vs)
+      })
+      .catch(() => {
+        if (!vivo) return
+        setVentas([])
+        setError(true)
+      })
+      .finally(() => {
+        if (vivo) setCargando(false)
+      })
+    return () => {
+      vivo = false
+    }
+  }, [cliente, esAnterior])
+
   // El remito compromete mercadería a facturar: mismo bloqueo que el resto de la operación.
   const bloqueo = useBloqueoCredito(0)
   const yaEnRemito = useMemo(() => new Set(remito.items.map((it) => it.uid)), [remito.items])
@@ -37,9 +79,7 @@ export function RemitoProductosView() {
   const { pendientes, prodPorUid } = useMemo(() => {
     const filas: PendienteFila[] = []
     const porUid = new Map<string, VentaEntregaProducto>()
-    if (!cliente) return { pendientes: filas, prodPorUid: porUid }
-    for (const v of VENTAS_ENTREGA) {
-      if (v.clienteId !== cliente.id || !REMITIBLES.includes(v.estado)) continue
+    for (const v of ventas) {
       v.productos.forEach((prod, i) => {
         const uid = remitoItemUid(v.id, i)
         const estado = avanceLinea(prod.entregada, prod.pendiente)
@@ -49,17 +89,22 @@ export function RemitoProductosView() {
           codigo: prod.codigo,
           nombre: prod.nombre,
           origen: v.id,
+          origenLabel: v.nro,
           referencia: prod.vendida,
           resuelta: prod.entregada,
           pend: prod.pendiente,
-          estadoColor: AVANCE_COLOR[estado],
-          estadoLabel: AVANCE_LABEL_ENTREGA[estado],
+          estadoColor: colorEstado(prod.estadoEntrega, estado),
+          // El board ya dice el estado de entrega de la línea; si no, se deriva del avance.
+          estadoLabel: prod.estadoEntrega || AVANCE_LABEL_ENTREGA[estado],
+          // Los productos 100% entregados se listan, pero no se pueden remitar.
+          seleccionable: prod.seleccionable !== false,
+          motivoBloqueo: MOTIVO_NO_SELECCIONABLE,
           ya: yaEnRemito.has(uid),
         })
       })
     }
     return { pendientes: filas, prodPorUid: porUid }
-  }, [cliente, yaEnRemito])
+  }, [ventas, yaEnRemito])
 
   if (!cliente) return null
 
@@ -94,14 +139,22 @@ export function RemitoProductosView() {
         /* Resumen de ventas a la izquierda; todos sus productos pendientes, a la derecha. */
         <div className="pend-grid">
           <ResumenVentasEntrega
-            clienteId={cliente.id}
+            ventas={ventas}
+            cargando={cargando}
+            error={error}
             seleccionado={filtroOrigen}
             onSelect={(id) => setFiltroOrigen((prev) => (prev === id ? null : id))}
           />
           <PendientesSelector
             titulo="Todos los productos pendientes de entregar"
             hint="Seleccioná los productos, ajustá la cantidad a remitar (no puede superar lo pendiente) y confirmalos para armar el remito."
-            vacio="Este cliente no tiene ventas con entrega pendiente."
+            vacio={
+              cargando
+                ? 'Buscando las ventas con entrega pendiente del cliente…'
+                : error
+                  ? 'No se pudieron traer los productos de las ventas. Reintentá en unos segundos.'
+                  : 'Este cliente no tiene ventas con entrega pendiente.'
+            }
             colReferencia="Vendida"
             colResuelta="Entregada"
             colPend="Pend. de entregar"

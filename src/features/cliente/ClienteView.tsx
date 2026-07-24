@@ -143,7 +143,7 @@ export function ClienteView() {
       {estadoBusqueda === 'no-encontrado' && (
         <div className="cliente-estado cliente-estado--error">
           <i className="fas fa-triangle-exclamation" />
-          <div>El cliente que buscó no existe en el sistema.</div>
+          <div>El cliente que buscó no existe o está inactivo en el sistema.</div>
         </div>
       )}
       {estadoBusqueda === 'error' && (

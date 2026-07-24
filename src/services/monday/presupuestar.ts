@@ -274,7 +274,8 @@ function mapCliente(item: MondayItem): Cliente {
     list: (c[COL.cliente.listaPrecio]?.text as ListaPrecio) || null,
     ret: agente || 'Ninguna',
     agenteRetencion: agente.trim().length > 0,
-    condicionPago: (c[COL.cliente.condPago]?.text || 'CONTADO') as CondicionPago,
+    // Sin condición de pago en el board llega null: no se asume ninguna, y el paso lo frena.
+    condicionPago: (c[COL.cliente.condPago]?.text?.trim() || null) as CondicionPago | null,
     limit: limite,
     // Ítem de Cta Cte: es el que se linkea en la deuda y donde van sus movimientos.
     ctaCteId: cta?.id,
@@ -292,10 +293,18 @@ function mapCliente(item: MondayItem): Cliente {
   }
 }
 
-/** Detecta qué ingresó el usuario: código (4 díg), CUIT/CUIL (11 díg) o nombre. */
+/**
+ * Detecta qué ingresó el usuario: código, CUIT/CUIL o nombre. El CUIT se guarda con guiones en
+ * el board ("30-70906788-1"), así que se lo reconoce aunque se escriba con separadores o incompleto:
+ * cualquier término formado sólo por dígitos y separadores, con 5 o más dígitos, se toma como
+ * CUIT/CUIL. El código es la clave corta que ve el usuario: 4 dígitos exactos.
+ */
 type TipoBusqueda = 'codigo' | 'cuit' | 'nombre'
-const tipoBusqueda = (t: string): TipoBusqueda =>
-  /^\d{4}$/.test(t) ? 'codigo' : /^\d{11}$/.test(t) ? 'cuit' : 'nombre'
+const tipoBusqueda = (t: string): TipoBusqueda => {
+  if (/^\d{4}$/.test(t)) return 'codigo'
+  if (/^[\d.\s-]+$/.test(t) && t.replace(/\D/g, '').length >= 5) return 'cuit'
+  return 'nombre'
+}
 
 const columnasCliente = Object.values(COL.cliente)
 
@@ -332,25 +341,31 @@ async function fetchClientesMonday(): Promise<Cliente[]> {
 }
 
 /**
- * Busca clientes por nombre, código de cliente (4 díg) o CUIT/CUIL (11 díg). La coincidencia
- * no es exacta: por nombre acepta ~60% de similitud y ordena por mejor match.
+ * Busca clientes por nombre, código de cliente (4 díg) o CUIT/CUIL (con o sin guiones, entero o
+ * parcial). La coincidencia no es exacta: por nombre acepta ~60% de similitud y ordena por mejor
+ * match; por CUIT compara sólo los dígitos, así "30-70906788-1" y "30709067881" dan lo mismo.
+ *
+ * Sólo devuelve clientes ACTIVOS: un cliente inactivo no puede operar, así que se filtra antes
+ * de buscar y la vista lo trata como inexistente ("no existe o está inactivo").
  */
 export async function buscarClientes(termino: string): Promise<Cliente[]> {
   const t = termino.trim()
   if (!t) return []
   const clientes = mondayHabilitado() ? await fetchClientesMonday() : CLIENTES
+  // Los inactivos no se pueden operar: quedan fuera de todo criterio de búsqueda.
+  const activos = clientes.filter((c) => c.activity === 'Activo')
   const tipo = tipoBusqueda(t)
 
   if (tipo === 'codigo') {
     // Se busca por el código del sistema (text_mm542r9d), que es el que ve el usuario.
-    return clientes.filter((c) => c.codigo === t || norm(c.codigo).includes(norm(t)))
+    return activos.filter((c) => c.codigo === t || norm(c.codigo).includes(norm(t)))
   }
   if (tipo === 'cuit') {
     const soloDigitos = (s: string) => s.replace(/\D/g, '')
-    return clientes.filter((c) => soloDigitos(c.cuit).includes(soloDigitos(t)))
+    return activos.filter((c) => soloDigitos(c.cuit).includes(soloDigitos(t)))
   }
   // Nombre: ranking por similitud, quedándonos con los que superan el umbral.
-  return clientes
+  return activos
     .map((c) => ({ c, s: similitud(t, c.name) }))
     .filter((x) => x.s >= UMBRAL_SIMILITUD)
     .sort((a, b) => b.s - a.s)
@@ -388,7 +403,9 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     rubro: valor(c[COL.producto.rubro]),
     subrubro: valor(c[COL.producto.subrubro]),
     categoria: valor(c[COL.producto.categoria]),
-    um: '',
+    // U.M. y peso los usa el remito (documenta cantidades y peso, no importes).
+    um: valor(c[COL.producto.unidadMedida]),
+    peso: numCol(c[COL.producto.peso]),
     fisico: numCol(c[COL.producto.stockFisico]),
     comercial: numCol(c[COL.producto.stockComercial]),
     disponible: numCol(c[COL.producto.stockDisponible]),
@@ -401,6 +418,8 @@ async function fetchProductosMonday(lista: ListaPrecio, conIva: boolean): Promis
     COL.producto.rubro,
     COL.producto.subrubro,
     COL.producto.categoria,
+    COL.producto.unidadMedida,
+    COL.producto.peso,
     COL.producto.stockFisico,
     COL.producto.stockComercial,
     COL.producto.stockDisponible,
@@ -459,7 +478,15 @@ function pasaFiltros(p: Producto, filtros: Filtro[]): boolean {
 }
 
 /**
- * Busca productos por nombre o código, aplicando además los filtros de Rubro/Subrubro/Categoría.
+ * Busca productos según lo que se ingrese y los filtros de Rubro/Subrubro/Categoría:
+ *
+ * - Código interno (sólo dígitos): búsqueda DIRECTA por "✋Codigo Interno" (text_mm5ghnv7). Como
+ *   el código es único por producto, NO se aplican los filtros. Los códigos van de 1 a 4 dígitos,
+ *   así que un número más largo se consulta igual pero no devuelve resultados.
+ * - Nombre (o vacío) con filtros: se combinan con AND. Primero deben pasar los filtros —AND entre
+ *   los tipos (Rubro y Subrubro y Categoría), OR dentro de un mismo tipo—, y además el nombre es
+ *   un filtro más: el producto tiene que contener el texto ingresado.
+ *
  * El precio sale de la columna de la lista del cliente (L1..L8). `conIva` agrega la alícuota
  * del producto: la pagan Monotributista, Consumidor Final y Exento, no el Resp. Inscripto.
  */
@@ -471,13 +498,15 @@ export async function buscarProductos(
 ): Promise<Producto[]> {
   const t = termino.trim()
   const base = mondayHabilitado() ? await fetchProductosMonday(lista, conIva) : PRODUCTOS
-  const esCodigo = /^\d+$/.test(t)
+  // Sólo dígitos = código interno: búsqueda directa y única, sin aplicar los filtros.
+  if (/^\d+$/.test(t)) {
+    return base.filter((p) => p.codigo.trim().includes(t))
+  }
+  // Nombre (o sin término): los filtros de taxonomía y el nombre se combinan con AND.
   return base.filter((p) => {
     if (!pasaFiltros(p, filtros)) return false
     if (!t) return true
-    return esCodigo
-      ? p.codigo.includes(t)
-      : similitud(t, p.nombre) >= UMBRAL_SIMILITUD || norm(p.nombre).includes(norm(t))
+    return similitud(t, p.nombre) >= UMBRAL_SIMILITUD || norm(p.nombre).includes(norm(t))
   })
 }
 
@@ -695,6 +724,8 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     [COL.presupuesto.diasVigencia]: String(diasVigencia),
     [COL.presupuesto.rentabilidad]: String(Math.round(rentabilidad)),
     [COL.presupuesto.vigencia]: { label: PRESUP_VIGENCIA_LABEL },
+    // Un presupuesto recién creado no vendió nada: "0% Vendido" (por índice, no por label).
+    [COL.presupuesto.estadoVenta]: { index: PRESUP_ESTADO_VENTA_INDEX.sinVender },
     // De esta columna dependen las fórmulas de subtotal: en "Dolares" se completa
     // formula_mm5f75gm ($u x prod) y en "Pesos", formula_mm58pwc ($ x prod).
     [COL.presupuesto.moneda]: { label: MONEDA_LABEL[moneda] },

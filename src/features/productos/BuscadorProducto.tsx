@@ -57,8 +57,10 @@ export function BuscadorProducto({
 
   const buscar = async () => {
     const t = termino.trim()
-    if (!t) {
-      avisar('Ingresá un nombre o código de producto.')
+    // Se puede buscar sólo por filtros: alcanza con un término O con filtros aplicados. Sin
+    // ninguno de los dos no hay nada que consultar.
+    if (!t && filtros.length === 0) {
+      avisar('Ingresá un nombre o código, o aplicá filtros para buscar.')
       return
     }
     setError('')
@@ -69,9 +71,11 @@ export function BuscadorProducto({
       const res = await buscarProductos(t, lista, conIva, filtros)
       if (res.length === 0) {
         avisar(
-          filtros.length > 0
-            ? `Sin resultados para «${t}» con los filtros aplicados.`
-            : `Sin resultados para «${t}».`,
+          t
+            ? filtros.length > 0
+              ? `Sin resultados para «${t}» con los filtros aplicados.`
+              : `Sin resultados para «${t}».`
+            : 'No hay productos que cumplan con los filtros aplicados.',
         )
         return
       }
@@ -110,7 +114,7 @@ export function BuscadorProducto({
             id="prod-search"
             type="text"
             className="search-input"
-            placeholder="Buscar por nombre, código o características..."
+            placeholder="Buscar por nombre, código o filtros aplicados"
             autoComplete="off"
             value={termino}
             disabled={cargando}

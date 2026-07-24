@@ -11,12 +11,14 @@ const vacio = (v: string | null | undefined) => !v || !v.trim()
 
 /**
  * Datos del cliente sin los que no se puede armar la operación: sin lista de precio no hay
- * precios que traer, y sin condición fiscal no se sabe si el precio lleva IVA.
+ * precios que traer, sin condición fiscal no se sabe si el precio lleva IVA, y sin condición de
+ * pago no se sabe cómo se cobra (contado / cuenta corriente), de lo que depende el resto del flujo.
  */
 export function faltantesCliente(cliente: Cliente): string[] {
   const faltan: string[] = []
   if (vacio(cliente.list)) faltan.push('Lista de precio')
   if (vacio(cliente.status)) faltan.push('Condición fiscal')
+  if (vacio(cliente.condicionPago)) faltan.push('Condición de pago')
   return faltan
 }
 

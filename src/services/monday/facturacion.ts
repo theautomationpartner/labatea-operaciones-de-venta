@@ -104,7 +104,7 @@ function columnasComprobante(
     /* Punto de venta fijo en "5" por ahora. El de la ficha ("0001"…) no existe en el board,
        así que mandarlo dejaría la columna vacía; se conecta cuando se definan los puntos. */
     [COL.facturacion.puntoVenta]: { labels: [FACT_PUNTO_VENTA_DEFAULT] },
-    [COL.facturacion.condicionVenta]: { labels: [condicionVentaDe(cliente.condicionPago)] },
+    [COL.facturacion.condicionVenta]: { labels: [condicionVentaDe(cliente.condicionPago ?? '')] },
     [COL.facturacion.letra]: { labels: [letra] },
     [COL.facturacion.observaciones]: datos.observaciones,
   }

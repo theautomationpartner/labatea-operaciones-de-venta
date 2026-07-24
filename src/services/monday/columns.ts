@@ -25,6 +25,8 @@ export const BOARDS = {
   ctasBancarias: 18421723667,
   /** "📈Ventas": la venta cerrada, con un subelemento por producto. */
   ventas: 18421035510,
+  /** "Subelementos de 📈Ventas": un producto de la venta cada uno. */
+  ventasSub: 18421035581,
   /** "🧾🚚 Remitos Ventas": la mercadería ya entregada, pendiente o no de facturar. */
   remitos: 18421035529,
   /** Subelementos del remito: un movimiento de mercadería por producto. */
@@ -33,6 +35,10 @@ export const BOARDS = {
   facturacion: 18422405731,
   /** Subelementos del comprobante: una línea de facturación por producto. */
   facturacionSub: 18422405734,
+  /** "📍Destinos": los puntos de entrega, cada uno conectado a uno o más clientes. */
+  destinos: 18421035523,
+  /** "🚛Vehículos": la flota propia de La Batea. */
+  vehiculos: 18421035528,
 } as const
 
 /** Item de config donde vive el valor de "Días de Vigencia de Presupuesto". */
@@ -47,6 +53,16 @@ export const CONFIG_TIPO_MEDIOS_PAGO_INDEX = 1
 
 /** Índice de "Activa" en "✋Estado" (color_mm57wxbx) del board de cuentas bancarias. */
 export const CTA_BANCARIA_ACTIVA_INDEX = 1
+
+/**
+ * Índice de "Transportista" en "✋Categoria" (dropdown_mm54e5ag) del board de Personas. Los
+ * choferes son personas cuya categoría —multi-valor— contiene esta etiqueta. Se filtra por
+ * índice, que aguanta que le reescriban el texto. Validado: "Transportista" es el id 3.
+ */
+export const CATEGORIA_TRANSPORTISTA_INDEX = 3
+
+/** Índice de "Comisionista" en la misma "✋Categoria". Validado: es el id 6. */
+export const CATEGORIA_COMISIONISTA_INDEX = 6
 
 /**
  * Índices de "🤖Estado" (color_mkwb727e) en "💰Fact Vtas Pends de Cobro". No siguen el orden
@@ -70,6 +86,17 @@ export const VENTA_ENTREGA_INDEX = {
   anterior: 0,
   posterior: 1,
   simultanea: 2,
+} as const
+
+/**
+ * Índices de "🤖Estado de Entrega" (color_mm58xjgj) a nivel venta, y de la misma columna a
+ * nivel producto (color_mm5bhha): en las dos, "100% Entregada" es el índice 1. Verificado
+ * contra el board. Se filtra/lee por índice, no por el texto.
+ */
+export const VENTA_ENTREGA_ESTADO_INDEX = {
+  entregadoParcialmente: 0,
+  totalmenteEntregada: 1,
+  sinEntregar: 2,
 } as const
 
 export const VENTA_COBRO_INDEX = {
@@ -101,6 +128,25 @@ export const REMITO_ESTADO_FACT_INDEX = {
   sinFacturar: 2,
 } as const
 
+/**
+ * Labels de "🤖Estado Emision Remito" (color_mkwb12n1) y "🤖Estado Envio Remito"
+ * (color_mm5gpcbj). Al emitir/enviar se escribe por ÍNDICE —el índice se resuelve leyendo la
+ * columna, no se mapea por el texto—: acá sólo viven los nombres que se buscan y los que marcan
+ * que el proceso ya terminó. Verificado: "Emitir" y "Enviar" son ambos el índice 3.
+ */
+export const REMITO_EMISION_ESTADO = {
+  emitir: 'Emitir',
+  emitiendo: 'Emitiendo',
+  emitido: 'Emitido',
+  error: 'Error Emision',
+} as const
+export const REMITO_ENVIO_ESTADO = {
+  enviar: 'Enviar',
+  enviando: 'Enviando',
+  enviado: 'Enviado',
+  error: 'Error - Ver Update',
+} as const
+
 /** Índices de "🤖 Estado Facturacion" (color_mm54wrds), a nivel producto del remito. */
 export const REMITO_SUB_ESTADO_FACT_INDEX = {
   facturacionCompleta: 0,
@@ -121,10 +167,20 @@ export const REMITO_SUB_ESTADO_NO_SELECCIONABLE = REMITO_SUB_ESTADO_FACT_INDEX.p
  */
 /**
  * Índices de "🤖Estado de Vta Gnral" (color_mm54y5vc) en el board de Presupuestos.
- * 0 = Parcialmente Vendido · 1 = 100% Vendido · 2 = 0% Vendido.
+ * 0 = Parcialmente Vendido · 1 = 100% Vendido · 2 = 0% Vendido. Verificado contra el board.
  */
 export const PRESUP_ESTADO_VENTA_INDEX = {
   parcialmenteVendido: 0,
+  totalmenteVendido: 1,
+  sinVender: 2,
+} as const
+
+/**
+ * Índices de "🤖Estado de Uso" (color_mm54j58z) del subelemento del presupuesto.
+ * 0 = Vendido Parcialmente · 1 = 100% Vendido · 2 = 0% Vendido. Verificado contra el board.
+ */
+export const PRESUP_SUB_ESTADO_USO_INDEX = {
+  vendidoParcialmente: 0,
   totalmenteVendido: 1,
   sinVender: 2,
 } as const
@@ -167,10 +223,16 @@ export const COL = {
     limite: 'lookup_mm585jgv',
   },
   producto: {
-    codigo: 'numeric_mm54mgjg',
+    /** "✋Codigo Interno": el código del producto que ve el usuario (1 a 4 dígitos), único por
+     *  producto. Es por el que se busca directo, sin aplicar los filtros de taxonomía. */
+    codigo: 'text_mm5ghnv7',
     rubro: 'dropdown_mm509v8g',
     subrubro: 'dropdown_mm51jz35',
     categoria: 'dropdown_mm50pcb8',
+    /** "✋Unidad Medida" del maestro: la etiqueta que documenta el remito. */
+    unidadMedida: 'dropdown_mm5fh71h',
+    /** "✋Peso (kg)": peso unitario del producto. Alimenta el peso del remito. */
+    peso: 'numeric_mm4d54r6',
     stockFisico: 'numeric_mm483de6',
     stockComercial: 'formula_mm4c5p89',
     stockDisponible: 'formula_mm4c96zp',
@@ -322,6 +384,10 @@ export const COL = {
     /** "✋Entrega": Envio / Sin Envio. Leída del board; todavía sin mapeo definido. */
     entrega: 'color_mm52jx3d',
     rentabilidad: 'numeric_mm52rk7t',
+    /** "🤖Estado de Entrega": cuánto de la venta ya se entregó (a nivel venta). */
+    estadoEntrega: 'color_mm58xjgj',
+    /** "🤖ID VTA": el número de venta ("VTA-016"), el que se muestra en la card. */
+    idVta: 'pulse_id_mkw8wzn1',
     /** "Facturación": los comprobantes que factura esta venta. De acá cuelga el PDF espejado. */
     facturacion: 'board_relation_mm5bvew3',
     /** "🤖Comprobante PDF": mirror del PDF de los comprobantes conectados. Se lee para validar
@@ -343,6 +409,14 @@ export const COL = {
     rentabilidad: 'numeric_mm4cmpa6',
     /** "🤖Cant Entregada Simult": sólo se llena si la entrega es simultánea a la venta. */
     cantEntregadaSimult: 'numeric_mm54fxxh',
+    /** "🤖Cant Entregada Posterior": unidades ya remitidas de una venta con entrega posterior. */
+    cantEntregadaPosterior: 'numeric_mm54v0jd',
+    /** "🤖Estado de Entrega" de la línea: 0% / Parcialmente / 100% Entregada. */
+    estadoEntrega: 'color_mm5bhha',
+    /** "🤖Unidad de Medida": mirror de la U.M. del producto conectado. Se lee por display_value. */
+    unidadMedida: 'lookup_mm5hr4p9',
+    /** "🤖Peso": mirror del peso del producto conectado (kg). Se lee por display_value. */
+    peso: 'lookup_mm5h7byp',
   },
   // Cabecera del remito de venta (board 18421035529).
   remito: {
@@ -357,6 +431,31 @@ export const COL = {
     fechaEmision: 'date_mm5144rt',
     /** ID del ítem ("RTOVTA-04"); es con lo que se renombra y lo que ve el usuario. */
     pulseId: 'pulse_id_mkwbze0n',
+    /* Entrega por La Batea: destino, transportista (chofer) y vehículo, cada uno conectado a
+       su board. Se completan con el id del ítem elegido en el paso de envío. */
+    destino: 'board_relation_mm51t0b3',
+    transportista: 'board_relation_mm5fa6em',
+    vehiculo: 'board_relation_mm59s77d',
+    /** "🤖Chofer/Comisionista": acá va el comisionista cuando la entrega es tercerizada. */
+    comisionista: 'board_relation_mm59sbre',
+    /** "🤖 Cliente Responsable": texto libre con el nombre de quien retira. */
+    clienteResponsable: 'text_mm5h9gg0',
+    /** "🤖 Peso Total": suma del peso de la mercadería remitada. */
+    pesoTotal: 'numeric_mm59hcwc',
+    /** "📈Ventas": las ventas de las que salen los productos remitados (emisión ANTERIOR). */
+    ventas: 'board_relation_mm54xs7v',
+    /** "🤖Observaciones": texto libre que se escribe al emitir el remito. */
+    observaciones: 'long_text_mm51vcrj',
+    /** "🤖Estado Emision Remito": ponerlo en "Emitir" dispara la generación del PDF. */
+    estadoEmision: 'color_mkwb12n1',
+    /** "🤖RTO PDF": el archivo que sube la automatización al emitir. */
+    pdf: 'file_mkwbmr11',
+    /** "👤Contactos": destinatarios del envío del remito (conectada a Contactos). */
+    contactos: 'board_relation_mm5g8hdv',
+    /** "🤖Enviar por:": dropdown Whatsapp / Email, igual que el presupuesto. */
+    medioEnvio: 'dropdown_mm5gqs51',
+    /** "🤖Estado Envio Remito": ponerlo en "Enviar" dispara el envío. */
+    estadoEnvio: 'color_mm5gpcbj',
   },
   // Un producto entregado en el remito (subelemento de 🧾🚚 Remitos Ventas).
   remitoSub: {
@@ -368,6 +467,8 @@ export const COL = {
     /** "🤖 Estado Facturacion" de la línea. */
     estadoFacturacion: 'color_mm54wrds',
     unidadMedida: 'dropdown_mm5g9mp',
+    /** "🤖Peso": peso de la línea remitada (cantidad × peso unitario del producto). */
+    peso: 'numeric_mm5ga7bw',
     /** ID del subelemento ("RTOVMOV-03"). */
     pulseId: 'pulse_id_mkwcxgza',
   },
@@ -407,6 +508,16 @@ export const COL = {
     prodServ: 'dropdown_mm2fyez4',
     /** "Alícuota IVA %": la tasa del producto. La usan las fórmulas de IVA del board. */
     alicuotaIva: 'dropdown_mm2g198w',
+  },
+  // Destino de entrega (board 18421035523).
+  destino: {
+    /** "Cliente": conecta el destino con uno o más clientes (multi-valor). */
+    cliente: 'board_relation_mm57cgxx',
+    direccion: 'text_mm51s5ab',
+  },
+  // Vehículo de la flota (board 18421035528).
+  vehiculo: {
+    patente: 'text_mm51zhca',
   },
   config: {
     valor: 'numeric_mm5bgy5p',

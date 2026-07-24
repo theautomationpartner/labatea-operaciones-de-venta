@@ -11,7 +11,7 @@
  */
 import { round2 } from '@/lib/format'
 import type { LineaPresupuesto } from '@/types'
-import { COL } from './columns'
+import { COL, PRESUP_SUB_ESTADO_USO_INDEX } from './columns'
 
 /** Porción de la mutation bulk que le corresponde a una línea del carrito. */
 export interface FragmentoSubitem {
@@ -37,6 +37,8 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
     // El precio va con sus dos decimales: es el mismo con el que se calculó el subtotal.
     [COL.presupuestoSub.precioUnit]: String(round2(p.precio)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
+    // Producto recién presupuestado: todavía no se vendió nada, "0% Vendido" (por índice).
+    [COL.presupuestoSub.estadoUso]: { index: PRESUP_SUB_ESTADO_USO_INDEX.sinVender },
   }
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
 

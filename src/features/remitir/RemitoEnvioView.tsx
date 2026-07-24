@@ -1,11 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { AvisoModal } from '@/components/ui/AvisoModal'
+import { ModalCargando } from '@/components/ui/ModalCargando'
 import { Stepper } from '@/components/ui/Stepper'
-import { CHOFERES, COMISIONISTAS, DESTINOS, TRANSPORTISTA, VEHICULOS } from '@/data/mock'
+import { TRANSPORTISTA } from '@/data/mock'
 import { SelectoresOperacion } from '@/features/shared/TopSelectors'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { pasosDe } from '@/lib/pasos'
+import {
+  crearRemito,
+  getComisionistas,
+  getDestinosCliente,
+  getTransportistas,
+  getVehiculos,
+  type LineaRemito,
+} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { ResponsableEntrega } from '@/types'
+import type { Chofer, Comisionista, Destino, ResponsableEntrega, Vehiculo } from '@/types'
 
 /** Las tres opciones de quién entrega la mercadería. */
 const OPCIONES: { id: ResponsableEntrega; label: string; icon: string; desc: string }[] = [
@@ -27,17 +37,95 @@ export function RemitoEnvioView() {
   const { cliente, operacion, tipoVenta, tipoEntrega, remito } = useApp()
   const dispatch = useDispatch()
   const { envio } = remito
+  const esLaBatea = envio.responsable === 'LA_BATEA'
+  const esComisionista = envio.responsable === 'COMISIONISTA'
   const [abierto, setAbierto] = useState(true)
+  // Creación del remito en Monday al confirmar (con overlay que tapa la pantalla).
+  const [creando, setCreando] = useState(false)
+  const [errorCreacion, setErrorCreacion] = useState<string | null>(null)
 
-  const destinos = useMemo(
-    () => (cliente ? DESTINOS.filter((d) => d.clienteId === cliente.id) : []),
-    [cliente],
-  )
+  /* Destinos, transportistas y vehículos se traen de Monday sólo cuando entrega La Batea; los
+     comisionistas, cuando la entrega es tercerizada. Es ahí donde aparecen sus inputs. Cada
+     uno con su estado de carga, para que el select avise. */
+  const [destinos, setDestinos] = useState<Destino[]>([])
+  const [choferes, setChoferes] = useState<Chofer[]>([])
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([])
+  const [comisionistas, setComisionistas] = useState<Comisionista[]>([])
+  const [cargando, setCargando] = useState({
+    destinos: false,
+    choferes: false,
+    vehiculos: false,
+    comisionistas: false,
+  })
+
+  const clienteId = cliente?.id
+  useEffect(() => {
+    if (!esLaBatea || !clienteId) return
+    let vivo = true
+    setCargando((c) => ({ ...c, destinos: true }))
+    getDestinosCliente(clienteId)
+      .then((ds) => vivo && setDestinos(ds))
+      .catch(() => vivo && setDestinos([]))
+      .finally(() => vivo && setCargando((c) => ({ ...c, destinos: false })))
+    setCargando((c) => ({ ...c, choferes: true, vehiculos: true }))
+    getTransportistas()
+      .then((cs) => vivo && setChoferes(cs))
+      .catch(() => vivo && setChoferes([]))
+      .finally(() => vivo && setCargando((c) => ({ ...c, choferes: false })))
+    getVehiculos()
+      .then((vs) => vivo && setVehiculos(vs))
+      .catch(() => vivo && setVehiculos([]))
+      .finally(() => vivo && setCargando((c) => ({ ...c, vehiculos: false })))
+    return () => {
+      vivo = false
+    }
+  }, [esLaBatea, clienteId])
+
+  // Comisionistas: se traen cuando la entrega es tercerizada.
+  useEffect(() => {
+    if (!esComisionista) return
+    let vivo = true
+    setCargando((c) => ({ ...c, comisionistas: true }))
+    getComisionistas()
+      .then((cs) => vivo && setComisionistas(cs))
+      .catch(() => vivo && setComisionistas([]))
+      .finally(() => vivo && setCargando((c) => ({ ...c, comisionistas: false })))
+    return () => {
+      vivo = false
+    }
+  }, [esComisionista])
 
   if (!cliente) return null
 
-  const destino = destinos.find((d) => d.id === envio.destinoId)
-  const comisionista = COMISIONISTAS.find((c) => c.id === envio.comisionistaId) ?? null
+  /* Cada selección guarda, además del id, los datos que se muestran acá y en el resumen/PDF. */
+  const elegirComisionista = (id: string) => {
+    const c = comisionistas.find((x) => x.id === id)
+    dispatch({
+      type: 'setRemitoEnvio',
+      patch: { comisionistaId: id, comisionistaNombre: c?.name ?? '', comisionistaCuit: c?.cuit ?? '' },
+    })
+  }
+  const elegirDestino = (id: string) => {
+    const d = destinos.find((x) => x.id === id)
+    dispatch({
+      type: 'setRemitoEnvio',
+      patch: { destinoId: id, destinoNombre: d?.nombre ?? '', destinoDireccion: d?.direccion ?? '' },
+    })
+  }
+  const elegirChofer = (id: string) => {
+    const c = choferes.find((x) => x.id === id)
+    dispatch({
+      type: 'setRemitoEnvio',
+      patch: { choferId: id, choferNombre: c?.name ?? '', choferCuit: c?.cuit ?? '' },
+    })
+  }
+  const elegirVehiculo = (id: string) => {
+    const v = vehiculos.find((x) => x.id === id)
+    dispatch({
+      type: 'setRemitoEnvio',
+      patch: { vehiculoId: id, vehiculoNombre: v?.name ?? '', vehiculoPatente: v?.patente ?? '' },
+    })
+  }
 
   // Qué hace falta cargar para poder confirmar, según el responsable elegido.
   // La entrega compromete mercadería: no se confirma con el cliente bloqueado.
@@ -58,9 +146,9 @@ export function RemitoEnvioView() {
   // Resumen corto para la cabecera cuando el item queda plegado.
   const resumenEntrega =
     envio.responsable === 'LA_BATEA'
-      ? `La Batea · ${destino?.nombre ?? '—'}`
+      ? `La Batea · ${envio.destinoNombre || '—'}`
       : envio.responsable === 'COMISIONISTA'
-        ? `Comisionista · ${comisionista?.name ?? '—'}`
+        ? `Comisionista · ${envio.comisionistaNombre || '—'}`
         : envio.responsable === 'CLIENTE'
           ? `Cliente · ${envio.responsableNombre || '—'}`
           : ''
@@ -68,6 +156,59 @@ export function RemitoEnvioView() {
   // Elegir el mismo responsable lo deselecciona; cambiarlo limpia los datos anteriores.
   const elegir = (id: ResponsableEntrega) =>
     dispatch({ type: 'setEnvioResponsable', value: envio.responsable === id ? null : id })
+
+  /**
+   * Confirma el remito: lo crea en Monday (cabecera + un subelemento por producto) y recién ahí
+   * avanza a la emisión. Si ya se creó (mismo remito), no se recrea: sólo continúa. Un remito a
+   * medias —menos subelementos que líneas— no avanza: se avisa y se puede reintentar.
+   */
+  const confirmarRemito = async () => {
+    if (creando) return
+    if (remito.remitoId) {
+      dispatch({ type: 'goto', paso: 'remito-emision' })
+      return
+    }
+    setCreando(true)
+    setErrorCreacion(null)
+    try {
+      const lineas: LineaRemito[] = remito.items.map((it) => ({
+        productoId: it.productoId,
+        nombre: it.nombre,
+        cantidad: it.cantidad,
+        pesoUnitario: it.peso ?? 0,
+        um: it.um,
+      }))
+      // Ventas de origen (emisión ANTERIOR), sin repetir: una línea por venta puede repetirse.
+      const ventaIds = Array.from(
+        new Set(remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
+      )
+      const creado = await crearRemito({
+        clienteId: cliente.id,
+        nombre: cliente.name,
+        tipoEmision: remito.tipoEmision ?? 'POSTERIOR',
+        responsable: envio.responsable,
+        destinoId: envio.destinoId,
+        transportistaId: envio.choferId,
+        vehiculoId: envio.vehiculoId,
+        comisionistaId: envio.comisionistaId,
+        clienteResponsable: envio.responsableNombre,
+        ventaIds,
+        lineas,
+      })
+      if (creado.subitemsCreados < lineas.length) {
+        setErrorCreacion(
+          'El remito se creó pero quedaron productos sin asentar. Revisá en Monday antes de continuar.',
+        )
+        return
+      }
+      dispatch({ type: 'setRemitoCreado', value: creado.id })
+      dispatch({ type: 'goto', paso: 'remito-emision' })
+    } catch {
+      setErrorCreacion('No se pudo crear el remito en Monday. Reintentá en unos segundos.')
+    } finally {
+      setCreando(false)
+    }
+  }
 
   return (
     <section className="view">
@@ -147,16 +288,18 @@ export function RemitoEnvioView() {
                     className="full"
                     style={{ cursor: 'pointer' }}
                     value={envio.destinoId ?? ''}
-                    onChange={(e) =>
-                      dispatch({ type: 'setRemitoEnvio', patch: { destinoId: e.target.value } })
-                    }
+                    onChange={(e) => elegirDestino(e.target.value)}
                   >
                     <option value="" disabled>
-                      Seleccionar destino...
+                      {cargando.destinos
+                        ? 'Buscando destinos del cliente…'
+                        : destinos.length === 0
+                          ? 'El cliente no tiene destinos cargados'
+                          : 'Seleccionar destino...'}
                     </option>
                     {destinos.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.nombre} — {d.direccion}
+                        {d.direccion ? `${d.nombre} — ${d.direccion}` : d.nombre}
                       </option>
                     ))}
                   </select>
@@ -169,48 +312,74 @@ export function RemitoEnvioView() {
                   <span className="envio-transp-v">{TRANSPORTISTA}</span>
                 </div>
 
-                <div className="igp">
-                  <label htmlFor="chofer">Chofer asignado</label>
-                  <select
-                    id="chofer"
-                    className="full"
-                    style={{ cursor: 'pointer' }}
-                    value={envio.choferId ?? ''}
-                    onChange={(e) =>
-                      dispatch({ type: 'setRemitoEnvio', patch: { choferId: e.target.value } })
-                    }
-                  >
-                    <option value="" disabled>
-                      Seleccionar chofer...
-                    </option>
-                    {CHOFERES.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} — CUIT {c.cuit}
+                {/* Chofer + CUIT y Vehículo + Patente, en una sola fila. El chofer ocupa la
+                    mitad de su lado para dejar lugar al CUIT; el grupo del vehículo va después
+                    con 20px de separación, y la patente al lado del vehículo. */}
+                <div className="transporte-row">
+                  <div className="igp transporte-chofer">
+                    <label htmlFor="chofer">Chofer asignado</label>
+                    <select
+                      id="chofer"
+                      className="full"
+                      style={{ cursor: 'pointer' }}
+                      value={envio.choferId ?? ''}
+                      onChange={(e) => elegirChofer(e.target.value)}
+                    >
+                      <option value="" disabled>
+                        {cargando.choferes ? 'Buscando transportistas…' : 'Seleccionar chofer...'}
                       </option>
-                    ))}
-                  </select>
-                </div>
+                      {choferes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="igp">
-                  <label htmlFor="vehiculo">Vehículo</label>
-                  <select
-                    id="vehiculo"
-                    className="full"
-                    style={{ cursor: 'pointer' }}
-                    value={envio.vehiculoId ?? ''}
-                    onChange={(e) =>
-                      dispatch({ type: 'setRemitoEnvio', patch: { vehiculoId: e.target.value } })
-                    }
-                  >
-                    <option value="" disabled>
-                      Seleccionar vehículo...
-                    </option>
-                    {VEHICULOS.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.patente} — {v.descripcion}
+                  <div className="igp transporte-dato">
+                    <label>CUIT/CUIL</label>
+                    {/* No editable por ahora: refleja el CUIT del chofer elegido. */}
+                    {envio.choferId && !envio.choferCuit ? (
+                      <div className="dato-vacio">SIN CUIT</div>
+                    ) : (
+                      <input className="full" readOnly value={envio.choferCuit ?? ''} placeholder="—" />
+                    )}
+                  </div>
+
+                  <div className="igp transporte-vehiculo">
+                    <label htmlFor="vehiculo">Vehículo</label>
+                    <select
+                      id="vehiculo"
+                      className="full"
+                      style={{ cursor: 'pointer' }}
+                      value={envio.vehiculoId ?? ''}
+                      onChange={(e) => elegirVehiculo(e.target.value)}
+                    >
+                      <option value="" disabled>
+                        {cargando.vehiculos ? 'Buscando vehículos…' : 'Seleccionar vehículo...'}
                       </option>
-                    ))}
-                  </select>
+                      {vehiculos.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="igp transporte-dato">
+                    <label>Patente</label>
+                    {/* No editable por ahora: refleja la patente del vehículo elegido. */}
+                    {envio.vehiculoId && !envio.vehiculoPatente ? (
+                      <div className="dato-vacio">sin patente</div>
+                    ) : (
+                      <input
+                        className="full"
+                        readOnly
+                        value={envio.vehiculoPatente ?? ''}
+                        placeholder="—"
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div className="divi" />
@@ -252,27 +421,29 @@ export function RemitoEnvioView() {
                     className="full"
                     style={{ cursor: 'pointer' }}
                     value={envio.comisionistaId ?? ''}
-                    onChange={(e) =>
-                      dispatch({ type: 'setRemitoEnvio', patch: { comisionistaId: e.target.value } })
-                    }
+                    onChange={(e) => elegirComisionista(e.target.value)}
                   >
                     <option value="" disabled>
-                      Seleccionar comisionista...
+                      {cargando.comisionistas
+                        ? 'Buscando comisionistas…'
+                        : comisionistas.length === 0
+                          ? 'No hay comisionistas cargados'
+                          : 'Seleccionar comisionista...'}
                     </option>
-                    {COMISIONISTAS.map((c) => (
+                    {comisionistas.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} — CUIT {c.cuit} ({c.zona})
+                        {c.name}
                       </option>
                     ))}
                   </select>
                 </div>
-                {comisionista && (
+                {envio.comisionistaId && (
                   <div className="envio-dest-card">
                     <i className="fas fa-people-carry-box" />
                     <div>
-                      <div className="envio-dest-name">{comisionista.name}</div>
+                      <div className="envio-dest-name">{envio.comisionistaNombre}</div>
                       <div className="envio-dest-dir">
-                        CUIT {comisionista.cuit} · {comisionista.zona}
+                        {envio.comisionistaCuit ? `CUIT ${envio.comisionistaCuit}` : 'SIN CUIT'}
                       </div>
                     </div>
                   </div>
@@ -341,12 +512,28 @@ export function RemitoEnvioView() {
         <button
           type="button"
           className="btn btn-green"
-          disabled={!puedeContinuar}
-          onClick={() => dispatch({ type: 'goto', paso: 'remito-emision' })}
+          disabled={!puedeContinuar || creando}
+          aria-busy={creando}
+          onClick={confirmarRemito}
         >
           Continuar a emisión del remito <i className="fas fa-arrow-right" />
         </button>
       </div>
+
+      {creando && (
+        <ModalCargando
+          titulo="Confirmar el remito"
+          detalle={`Estamos creando el remito y sus ${remito.items.length} ${
+            remito.items.length === 1 ? 'producto' : 'productos'
+          } en Monday. No cierres esta pantalla.`}
+        />
+      )}
+
+      {errorCreacion && (
+        <AvisoModal titulo="No se pudo confirmar el remito" onClose={() => setErrorCreacion(null)}>
+          {errorCreacion}
+        </AvisoModal>
+      )}
 
       {bloqueo.modal}
     </section>

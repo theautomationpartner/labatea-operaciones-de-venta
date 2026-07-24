@@ -46,8 +46,9 @@ const TEXTO_FASE: Record<'deuda' | 'venta', { titulo: string; detalle: string }>
       'Creando el movimiento en la cuenta corriente del cliente y su factura pendiente de cobro.',
   },
   venta: {
-    titulo: 'Creando la venta en Monday…',
-    detalle: 'Estamos registrando la venta y sus productos. No cierres esta pantalla.',
+    titulo: 'Registrando venta...',
+    detalle:
+      'Estamos registrando la venta en el sistema junto a sus productos. Espera unos segundos',
   },
 }
 

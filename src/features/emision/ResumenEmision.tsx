@@ -10,6 +10,8 @@ interface ResumenEmisionProps {
   vencimiento: string
   /** El PDF se está generando (dispara loading en el visor y bloquea el botón). */
   generando: boolean
+  /** El presupuesto ya se emitió: el botón queda en verde, como el de envío. */
+  emitido: boolean
   onGenerar: () => void
 }
 
@@ -40,6 +42,7 @@ export function ResumenEmision({
   resumen,
   vencimiento,
   generando,
+  emitido,
   onGenerar,
 }: ResumenEmisionProps) {
   const { vendedor, cliente, lineas, fechaEmision, moneda, nroPresupuesto } = useApp()
@@ -109,16 +112,22 @@ export function ResumenEmision({
         type="button"
         className="btn-generar"
         onClick={onGenerar}
-        disabled={generando}
+        disabled={generando || emitido}
         aria-busy={generando}
+        // Emitido: el botón pasa a verde para confirmar, como el de "Enviado".
+        style={emitido ? { backgroundColor: 'var(--green)', color: '#fff' } : undefined}
       >
         {generando ? (
           <>
-            <i className="fas fa-circle-notch spin" /> Generando...
+            <i className="fas fa-circle-notch spin" /> Emitiendo...
+          </>
+        ) : emitido ? (
+          <>
+            <i className="fas fa-check" /> Presupuesto emitido
           </>
         ) : (
           <>
-            <i className="far fa-file-pdf" /> GENERAR PDF
+            <i className="far fa-file-pdf" /> Emitir Presupuesto
           </>
         )}
       </button>

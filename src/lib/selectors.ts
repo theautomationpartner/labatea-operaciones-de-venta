@@ -2,7 +2,7 @@
  * Reglas de negocio puras (sin React, sin DOM): totales, crédito y cobertura.
  * Aisladas acá para que la capa de servicio sólo tenga que aportar los datos.
  */
-import { aplicaCredito } from '@/lib/credito'
+import { aplicaCredito, creditoDisponibleProyectado, creditoResultante } from '@/lib/credito'
 import { round2 } from '@/lib/format'
 import type {
   Cliente,
@@ -164,7 +164,8 @@ export function impactoCredito(cliente: Cliente | null, importe: number): Impact
   const usado = (cliente ? cliente.limit - cliente.disponible : 0) + importe
   const usadoPct = limite > 0 ? Math.min((usado / limite) * 100, 100) : 0
   return {
-    disponible: Math.max(limite - usado, 0),
+    // El disponible proyectado sale de la fórmula centralizada, ya clampada en 0.
+    disponible: creditoDisponibleProyectado(cliente, importe),
     usadoPct,
     critico: usadoPct >= CREDITO_FOOTER_CRITICO,
     aplica: true,
@@ -223,7 +224,7 @@ export function resumenVenta(
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,
-    resultante: disponible - total,
+    resultante: cliente ? creditoResultante(cliente, total) : round2(disponible - total),
     limite,
   }
 }

@@ -111,6 +111,8 @@ export function ResumenVenta({
         disabled={emitiendo || yaEmitido || cantidadFacturas === 0}
         aria-busy={emitiendo}
         onClick={onEmitir}
+        // Emitido: el botón pasa a verde para confirmar, como el de "Enviado".
+        style={yaEmitido ? { backgroundColor: 'var(--green)', color: '#fff' } : undefined}
       >
         {emitiendo ? (
           <>

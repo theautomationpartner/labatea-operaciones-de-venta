@@ -8,15 +8,24 @@
  * La venta se da por creada sólo si volvieron tantos subelementos como productos había: una
  * cabecera sin sus líneas no es una venta, y el paso siguiente no debe abrirse.
  */
+import { VENTAS_ENTREGA } from '@/data/mock'
 import { round2 } from '@/lib/format'
-import type { Moneda, TipoEntrega, TipoVenta } from '@/types'
+import type {
+  Moneda,
+  TipoEntrega,
+  TipoVenta,
+  VentaEntregaPendiente,
+  VentaEntregaProducto,
+} from '@/types'
 import {
   BOARDS,
   COL,
   VENTA_COBRO_INDEX,
+  VENTA_ENTREGA_ESTADO_INDEX,
   VENTA_ENTREGA_INDEX,
   VENTA_TIPO_INDEX,
 } from './columns'
+import { byId, numCol, valor, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
 
 /** Subelementos por solicitud al actualizar la cantidad vendida de los presupuestos. */
@@ -87,16 +96,28 @@ const indiceTipoEntrega = (t: TipoEntrega): number =>
 /**
  * Columnas de un producto de la venta. El subtotal es fórmula del board: no se manda.
  * Con entrega SIMULTÁNEA la mercadería sale junto con la venta, así que lo vendido se asienta
- * también como cantidad entregada; en los otros tipos de entrega esa columna queda vacía.
+ * también como cantidad entregada y la línea queda en "100% Entregada" (por índice). Con entrega
+ * POSTERIOR nada salió todavía, así que la línea nace "0% Entregada" (índice 2 de color_mm5bhha).
+ * En la entrega ANTERIOR esas columnas quedan vacías.
  */
-const columnasLinea = (l: LineaVenta, entregaSimultanea: boolean): Record<string, unknown> => {
+const columnasLinea = (
+  l: LineaVenta,
+  entregaSimultanea: boolean,
+  entregaPosterior: boolean,
+): Record<string, unknown> => {
   const cv: Record<string, unknown> = {
     [COL.ventaSub.cantidad]: String(l.cantidad),
     [COL.ventaSub.precioUnit]: String(round2(l.precioUnitario)),
     [COL.ventaSub.descuento]: String(l.descuento),
     [COL.ventaSub.rentabilidad]: String(Math.round(l.rentabilidad)),
   }
-  if (entregaSimultanea) cv[COL.ventaSub.cantEntregadaSimult] = String(l.cantidad)
+  if (entregaSimultanea) {
+    cv[COL.ventaSub.cantEntregadaSimult] = String(l.cantidad)
+    cv[COL.ventaSub.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada }
+  } else if (entregaPosterior) {
+    // Entrega POSTERIOR: la mercadería todavía no salió, la línea nace "0% Entregada" (índice 2).
+    cv[COL.ventaSub.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.sinEntregar }
+  }
   // En el flujo de entrega ANTERIOR las líneas vienen del remito y no traen el producto.
   if (l.productoId) cv[COL.ventaSub.producto] = { item_ids: [Number(l.productoId)] }
   return cv
@@ -115,6 +136,8 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
 
   // Con entrega simultánea, cada subítem asienta también la cantidad entregada.
   const entregaSimultanea = tipoEntrega === 'SIMULTANEA'
+  // Con entrega posterior, la venta y sus líneas nacen "0% Entregado": nada salió todavía.
+  const entregaPosterior = tipoEntrega === 'POSTERIOR'
 
   const cabecera: Record<string, unknown> = {
     [COL.venta.tipoVenta]: { index: indiceTipoVenta(tipoVenta) },
@@ -123,6 +146,13 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
       index: cobroSimultaneo ? VENTA_COBRO_INDEX.simultaneo : VENTA_COBRO_INDEX.posterior,
     },
     [COL.venta.rentabilidad]: String(Math.round(rentabilidad)),
+  }
+  // Con entrega simultánea la mercadería sale con la venta: nace "100% Entregada" (por índice).
+  if (entregaSimultanea) {
+    cabecera[COL.venta.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada }
+  } else if (entregaPosterior) {
+    // Entrega POSTERIOR: nada entregado todavía, la venta nace "0% Entregado" (índice 2).
+    cabecera[COL.venta.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.sinEntregar }
   }
   if (clienteId) cabecera[COL.venta.cliente] = { item_ids: [Number(clienteId)] }
 
@@ -142,7 +172,7 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     const campos = tanda.map((l, i) => {
       const n = desde + i
       variables[`n${n}`] = l.nombre
-      variables[`cv${n}`] = JSON.stringify(columnasLinea(l, entregaSimultanea))
+      variables[`cv${n}`] = JSON.stringify(columnasLinea(l, entregaSimultanea, entregaPosterior))
       return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}) { id }`
     })
     const declaraciones = tanda
@@ -187,6 +217,166 @@ export async function actualizarCantVendida(lineas: CantVendida[]): Promise<void
       variables[`item${n}`] = l.subitemId
       variables[`cv${n}`] = JSON.stringify({
         [COL.presupuestoSub.cantVendida]: String(Math.round(l.cantVendida)),
+      })
+      return `u${n}: change_multiple_column_values(item_id: $item${n}, board_id: $board, column_values: $cv${n}) { id }`
+    })
+    const declaraciones = tanda
+      .map((_, i) => `$item${desde + i}: ID!, $cv${desde + i}: JSON!`)
+      .join(', ')
+    await mondayApi(
+      `mutation ($board: ID!, ${declaraciones}) { ${campos.join('\n')} }`,
+      variables,
+    )
+  }
+}
+
+/* ===== Ventas del cliente con entrega pendiente (origen del remito ANTERIOR) ===== */
+
+/** yyyy-MM-dd(THH…) → dd/MM/yyyy. Sin fecha devuelve '--'. */
+const fechaErp = (iso: string): string => {
+  const [y, m, d] = (iso ?? '').slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : '--'
+}
+
+/**
+ * Un producto de la venta pendiente de entregar. El nombre sale del producto conectado en
+ * "🤖Producto" (board_relation_mkwctrv6); el subelemento se renombra con IDs y no sirve para
+ * mostrar. El pendiente es lo vendido menos lo ya entregado, nunca menor a cero.
+ */
+function mapProductoEntrega(sub: MondayItem, ventaId: string): VentaEntregaProducto {
+  const c = byId(sub)
+  const producto = c[COL.ventaSub.producto]?.linked_items?.[0]
+  const vendida = numCol(c[COL.ventaSub.cantidad])
+  const entregada = numCol(c[COL.ventaSub.cantEntregadaPosterior])
+  const estado = c[COL.ventaSub.estadoEntrega]
+  return {
+    nombre: producto?.name || 'Producto sin asignar',
+    codigo: '',
+    // La U.M. y el peso salen de las columnas mirror del subelemento (espejan al producto
+    // conectado); vienen por display_value.
+    um: valor(c[COL.ventaSub.unidadMedida]),
+    vendida,
+    entregada,
+    pendiente: Math.max(vendida - entregada, 0),
+    estadoEntrega: estado?.text ?? '',
+    /* Sólo se pueden remitar los productos cuyo estado NO es "100% Entregada" (índice 1 de
+       color_mm5bhha). Se compara por índice, no por el texto de la etiqueta. */
+    seleccionable: estado?.index !== VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada,
+    subitemId: sub.id,
+    productoId: producto?.id,
+    ventaId,
+    peso: numCol(c[COL.ventaSub.peso]),
+  }
+}
+
+/**
+ * Ventas del cliente con entrega POSTERIOR todavía pendiente, con todos sus productos. Es el
+ * origen del remito de emisión ANTERIOR: se entrega lo que quedó por entregar de esas ventas.
+ *
+ * Los tres filtros van en la consulta, por índice: tipo de entrega "Posterior" (color_mm489k2j),
+ * estado de entrega distinto de "100% Entregada" (color_mm58xjgj) y el cliente conectado
+ * (board_relation_mm582k6v). El cliente viaja como NÚMERO, no como string. Se trae en una sola
+ * consulta con los subelementos.
+ */
+export async function getVentasEntregaPendiente(clienteId: string): Promise<VentaEntregaPendiente[]> {
+  if (!mondayHabilitado()) {
+    return VENTAS_ENTREGA.filter(
+      (v) => v.clienteId === clienteId && v.estado !== 'Entregada',
+    ).map((v) => ({
+      id: v.id,
+      nro: v.id,
+      estadoEntrega: v.estado,
+      fecha: v.fecha,
+      productos: v.productos.map((p) => ({ ...p, seleccionable: p.pendiente > 0 })),
+    }))
+  }
+  const idNumerico = Number(clienteId)
+  if (!Number.isFinite(idNumerico)) return []
+
+  const data = await mondayApi<{
+    boards: {
+      items_page: {
+        items: (MondayItem & { created_at?: string; subitems: MondayItem[] })[]
+      }
+    }[]
+  }>(
+    `query ($cliente: CompareValue!) {
+      boards(ids: [${BOARDS.ventas}]) {
+        items_page(
+          limit: 100,
+          query_params: {rules: [
+            {column_id: "${COL.venta.tipoEntrega}", compare_value: [${VENTA_ENTREGA_INDEX.posterior}], operator: any_of},
+            {column_id: "${COL.venta.estadoEntrega}", compare_value: [${VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada}], operator: not_any_of},
+            {column_id: "${COL.venta.cliente}", compare_value: $cliente, operator: any_of}
+          ]}
+        ) {
+          items {
+            id name created_at
+            column_values(ids: ["${COL.venta.idVta}","${COL.venta.estadoEntrega}"]) { id text }
+            subitems {
+              id name
+              column_values(ids: ["${COL.ventaSub.producto}","${COL.ventaSub.cantidad}","${COL.ventaSub.cantEntregadaPosterior}","${COL.ventaSub.estadoEntrega}","${COL.ventaSub.unidadMedida}","${COL.ventaSub.peso}"]) {
+                id text
+                ... on StatusValue { index }
+                ... on MirrorValue { display_value }
+                ... on BoardRelationValue { linked_items { id name } }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { cliente: [idNumerico] },
+  )
+
+  return (data.boards[0]?.items_page?.items ?? []).map((it) => {
+    const c = byId(it)
+    return {
+      id: it.id,
+      // El ID VTA ("VTA-016") es lo que ve el usuario; el name puede ser el del cliente.
+      nro: c[COL.venta.idVta]?.text?.trim() || it.name,
+      estadoEntrega: c[COL.venta.estadoEntrega]?.text ?? '',
+      fecha: fechaErp(it.created_at ?? ''),
+      productos: (it.subitems ?? []).map((sub) => mapProductoEntrega(sub, it.id)),
+    }
+  })
+}
+
+/** Unidades que todavía faltan entregar de la venta. Es lo que resume la card. */
+export const pendienteDeVentaEntrega = (v: VentaEntregaPendiente): number =>
+  v.productos.reduce((acc, p) => acc + p.pendiente, 0)
+
+/**
+ * Cantidad entregada a asentar en un subelemento de la venta al emitir el remito ANTERIOR.
+ * `cantEntregada` es el ACUMULADO: lo que ya estaba entregado más lo que sale en este remito.
+ */
+export interface CantEntregada {
+  /** ID del subelemento de la venta ("Subelementos de 📈Ventas", 18421035581). */
+  subitemId: string
+  cantEntregada: number
+}
+
+/**
+ * Impacta la cantidad entregada en los subelementos de la venta (columna
+ * "🤖Cant Entregada Posterior", numeric_mm54v0jd) al emitir un remito de emisión ANTERIOR.
+ * Cada producto del remito viene de una línea de una venta con entrega posterior; su cant
+ * entregada pasa a reflejar el total entregado hasta ahora.
+ *
+ * Se escribe con UNA solicitud bulk por tanda (alias `u0`, `u1`, …), igual que la cantidad
+ * vendida del presupuesto. Los ítems sin `subitemId` (remito POSTERIOR o modo local) se saltean.
+ */
+export async function actualizarCantEntregada(lineas: CantEntregada[]): Promise<void> {
+  const conId = lineas.filter((l) => l.subitemId)
+  if (!mondayHabilitado() || conId.length === 0) return
+
+  for (let desde = 0; desde < conId.length; desde += CANT_VENDIDA_POR_TANDA) {
+    const tanda = conId.slice(desde, desde + CANT_VENDIDA_POR_TANDA)
+    const variables: Record<string, unknown> = { board: BOARDS.ventasSub }
+    const campos = tanda.map((l, i) => {
+      const n = desde + i
+      variables[`item${n}`] = l.subitemId
+      variables[`cv${n}`] = JSON.stringify({
+        [COL.ventaSub.cantEntregadaPosterior]: String(round2(l.cantEntregada)),
       })
       return `u${n}: change_multiple_column_values(item_id: $item${n}, board_id: $board, column_values: $cv${n}) { id }`
     })

@@ -14,7 +14,6 @@ import { lineasDeVenta } from '@/lib/lineasVenta'
 import { pasosDe } from '@/lib/pasos'
 import { crearComprobantes, FACT_VENCIMIENTO_DIAS } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
-import { BotonCerrarVenta } from './BotonCerrarVenta'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
 import { ResumenVenta } from './ResumenVenta'
 
@@ -35,6 +34,8 @@ export function FacturaView() {
 
   const [emitiendo, setEmitiendo] = useState(false)
   const [errorEmision, setErrorEmision] = useState<string | null>(null)
+  // El envío se completó: junto con la factura ya emitida habilita "Finalizar Operación".
+  const [enviado, setEnviado] = useState(false)
   /* Días de vencimiento por comprobante. Viven acá y no en cada card porque el botón que emite
      está del otro lado de la pantalla. Sin tocar nada, cada uno arranca en 30 días. */
   const [dias, setDias] = useState<Record<string, number>>({})
@@ -143,7 +144,11 @@ export function FacturaView() {
           />
 
           {/* El estado del envío se muestra dentro de la propia card. */}
-          <EnviarDocumento documento="factura" numero={NRO_FACTURA} />
+          <EnviarDocumento
+            documento="factura"
+            numero={NRO_FACTURA}
+            onEnviado={() => setEnviado(true)}
+          />
         </div>
       </div>
 
@@ -155,7 +160,15 @@ export function FacturaView() {
         >
           <i className="fas fa-arrow-left" /> Volver
         </button>
-        <BotonCerrarVenta disabled={!factura.emitida} />
+        {/* Cierra la venta y reinicia la app. Sólo con la factura emitida y ya enviada. */}
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!(factura.emitida && enviado)}
+          onClick={() => dispatch({ type: 'reset' })}
+        >
+          <i className="fas fa-flag-checkered" /> Finalizar Operación
+        </button>
       </footer>
 
       {errorEmision && (

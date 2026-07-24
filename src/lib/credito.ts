@@ -19,7 +19,7 @@ const CONDICIONES_A_CREDITO: readonly CondicionPago[] = [
 
 /** La operación se cobra después, contra la cuenta corriente del cliente. */
 export const esVentaACredito = (c: Cliente): boolean =>
-  CONDICIONES_A_CREDITO.includes(c.condicionPago)
+  !!c.condicionPago && CONDICIONES_A_CREDITO.includes(c.condicionPago)
 
 /** Bloqueado: no puede operar en el sistema, sea cual sea su condición de pago. */
 export const clienteBloqueado = (c: Cliente | null | undefined): boolean =>
@@ -43,6 +43,10 @@ export const tieneValoresCredito = (c: Cliente): boolean =>
  */
 export function motivoCreditoIgnorado(c: Cliente): string | null {
   if (clienteBloqueado(c) || aplicaCredito(c) || !tieneValoresCredito(c)) return null
+  // Sin condición de pago no hay forma de saber cómo se cobra: se avisa por su cuenta, no como CONTADO.
+  if (!c.condicionPago) {
+    return 'No se considerará el crédito porque el cliente no tiene asignado una condición de pago en el sistema.'
+  }
   if (!esVentaACredito(c)) {
     return 'No se considerará el crédito asignado al cliente porque su condición de pago es CONTADO.'
   }
@@ -54,14 +58,40 @@ export const MENSAJE_CLIENTE_BLOQUEADO =
   'El cliente se encuentra bloqueado por lo que no es posible utilizarlo en el sistema.'
 
 /**
- * Crédito que le queda al cliente si la operación consume `importe` de su línea. Puede dar
- * negativo: ahí es donde el cliente estaría usando más crédito del que tiene asignado.
+ * Base de la línea de crédito ya consumida: la deuda de la cuenta corriente más los remitos
+ * pendientes de facturar. Es lo que ya se le descontó del límite.
+ */
+export const creditoUsado = (c: Cliente): number =>
+  round2(c.saldoCtaCte + c.remitosPendFacturar)
+
+/**
+ * Crédito disponible PROYECTADO si la operación en curso consume `importe`. Fórmula única y
+ * centralizada (DRY): se parte del límite, se resta lo ya usado (saldo + remitos) y el importe
+ * temporal de la operación. Se clampa en 0 porque el crédito disponible de la cuenta corriente
+ * NUNCA puede quedar en valor negativo. Es pura: recibe el importe por parámetro y no toca ningún
+ * estado. Con `importe = 0` da el disponible actual (antes de la operación).
+ *
+ *   creditoDisponible = max(0, límite − (saldo cta cte + remitos pendientes) − importe operación)
+ */
+export function creditoDisponibleProyectado(
+  c: Cliente | null | undefined,
+  importe = 0,
+): number {
+  if (!c) return 0
+  return round2(Math.max(0, c.limit - creditoUsado(c) - importe))
+}
+
+/**
+ * Crédito que le queda al cliente si la operación consume `importe` de su línea. A diferencia
+ * del disponible proyectado, este SÍ puede dar negativo: es la señal de que la operación consume
+ * más línea de la que le queda (por eso lo usa el chequeo de exceso; el disponible que se muestra
+ * se clampa en 0).
  *
  * Se redondea a dos decimales, como todo importe de la app: sin eso, una diferencia de
  * centésimas por punto flotante (−0,000001) daría "excedido" con la línea justa.
  */
 export const creditoResultante = (c: Cliente, importe: number): number =>
-  round2(c.disponible - importe)
+  round2(c.limit - creditoUsado(c) - importe)
 
 /**
  * El límite está alcanzado. La regla es una sola: el crédito resultante da NEGATIVO, o sea
@@ -74,9 +104,24 @@ export const creditoResultante = (c: Cliente, importe: number): number =>
 export const excedeCredito = (c: Cliente | null | undefined, importe: number): boolean =>
   aplicaCredito(c) && creditoResultante(c as Cliente, importe) < 0
 
-/** Mensaje del bloqueo por límite alcanzado, con los números que lo explican. */
+/**
+ * Si la operación debe FRENARSE por crédito. Acá se desacopla la estrategia según el
+ * comprobante: la VENTA es bloqueante (no se puede confirmar si el crédito se excedió), mientras
+ * que el PRESUPUESTO no lo es (el exceso se avisa, pero se puede guardar igual). El aviso lo
+ * muestra la vista/hook; esto sólo decide si además hay que frenar.
+ */
+export const frenaPorCredito = (
+  c: Cliente | null | undefined,
+  importe: number,
+  bloqueante: boolean,
+): boolean => bloqueante && excedeCredito(c, importe)
+
+/**
+ * Mensaje del bloqueo por límite alcanzado. El "disponible" es el REAL de la cuenta corriente
+ * en este momento (`c.disponible` = límite − línea utilizada): la operación todavía no registró
+ * su deuda, así que el crédito disponible no se modificó todavía. No se muestra el resultante
+ * proyectado: lo que interesa es el disponible real contra lo que la operación consume.
+ */
 export const mensajeCreditoExcedido = (c: Cliente, importe: number): string =>
-  `La operación supera el crédito disponible de ${c.name}: consume ${money(importe)} y tiene ` +
-  `${money(c.disponible)} sobre un límite de ${money(c.limit)}, así que su crédito quedaría en ` +
-  `${money(creditoResultante(c, importe))}. ` +
-  'Reducí el importe, registrá un cobro o pedí una ampliación del límite antes de continuar.'
+  `La operación supera el crédito disponible del cliente ${c.name}: consume ${money(importe)} ` +
+  `y tiene disponible ${money(c.disponible)} del ${money(c.limit)} asignado.`
