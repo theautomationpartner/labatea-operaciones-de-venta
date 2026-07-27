@@ -34,9 +34,14 @@ export function App() {
   const dispatch = useDispatch()
   const scrollRef = useRef<HTMLDivElement>(null)
   const Vista = VISTAS[paso]
-  // El cobro simultáneo es el único camino que aplica descuentos por forma de pago.
+  /* El cobro simultáneo es el único camino que aplica descuentos por forma de pago. Puede
+     llegar por dos lados: el cliente de contado, o el de cuenta corriente que en el cierre
+     elige cobrar en el acto ("SI"). Esa elección se toma en el paso 3, así que los descuentos
+     se traen para los dos casos: si no, el cobro en el acto se cargaría sin ellos. */
   const clienteId = cliente?.id ?? null
-  const clienteCobraSimultaneo = cliente ? pagoSimultaneo(cliente) : false
+  const clientePuedeCobrarEnElActo = cliente
+    ? pagoSimultaneo(cliente) || cliente.condicionPago === 'CUENTA CORRIENTE'
+    : false
 
   // Cada paso arranca desde arriba, como en una navegación real.
   useEffect(() => {
@@ -61,7 +66,7 @@ export function App() {
      los define el tablero de configuración y pueden haber cambiado desde el arranque. Se
      dispara al quedar elegido el cliente (paso 1), así llegan cargados al cierre (paso 3). */
   useEffect(() => {
-    if (!clienteCobraSimultaneo) return
+    if (!clientePuedeCobrarEnElActo) return
     let vivo = true
     getDescuentosPago()
       .then((descuentos) => vivo && dispatch({ type: 'setDescuentosPago', value: descuentos }))
@@ -69,7 +74,7 @@ export function App() {
     return () => {
       vivo = false
     }
-  }, [clienteCobraSimultaneo, clienteId, dispatch])
+  }, [clientePuedeCobrarEnElActo, clienteId, dispatch])
 
   return (
     <div className="scroll" ref={scrollRef}>

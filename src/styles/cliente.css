@@ -322,6 +322,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Deja que la card encoja en el grid en vez de empujar el ancho con importes largos. */
+  min-width: 0;
 }
 .cliente-v2 .kpi-label {
   font-size: 13px;
@@ -375,6 +377,47 @@
   height: 100%;
   border-radius: 8px;
   transition: width 0.3s ease;
+}
+
+/* ===== Bloque de crédito en dos filas ===== */
+/* Métricas arriba, "crédito disponible + barra de uso" abajo, con el mismo gap del grid. */
+.cliente-v2 .credito-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cliente-v2 .credito-fila2 {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 16px;
+  align-items: stretch;
+}
+/* Sin barra (el crédito no rige en esta operación): la card ocupa toda la fila. */
+.cliente-v2 .credito-fila2--solo {
+  grid-template-columns: 1fr;
+}
+/* La barra de uso es un elemento suelto (sin card ni fondo), centrada vertical y horizontalmente
+   dentro de su columna. */
+.cliente-v2 .credito-uso {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+/* El header y la barra ocupan el ancho de la columna; el bloque queda centrado por el grid. */
+.cliente-v2 .credito-uso .progress-header,
+.cliente-v2 .credito-uso .progress-track {
+  width: 100%;
+}
+
+/* En anchos angostos (widget/modal de Monday) las filas se apilan sin desbordar. */
+@media (max-width: 680px) {
+  .cliente-v2 .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cliente-v2 .credito-fila2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ===== Datos del presupuesto ===== */

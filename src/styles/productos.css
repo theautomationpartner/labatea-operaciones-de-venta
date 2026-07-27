@@ -1077,6 +1077,14 @@
   flex: 1;
   min-width: 0;
 }
+/* Botones de acción compactos, para que "Seleccionar todos" y "Ver todos" convivan con el
+   buscador sin empujar el ancho ni ir a otra línea. */
+.productos-v2 .pend-search .btn-outline {
+  padding: 10px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .productos-v2 .pend-search .fa-search {
   left: 18px;
   color: var(--p-text-secondary);
@@ -1101,15 +1109,21 @@
   padding: 0 12px;
   margin-top: 12px;
 }
+/* La tabla llena el ancho de su columna y puede encoger (sin el piso de 680px de la base): con el
+   padding reducido, todas las columnas entran sin scroll horizontal. */
+.productos-v2 .pend-table {
+  width: 100%;
+  min-width: 0;
+}
 .productos-v2 .pend-table th {
-  padding: 12px;
+  padding: 9px 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--p-text-secondary);
   border-bottom: 1px solid var(--p-border);
 }
 .productos-v2 .pend-table td {
-  padding: 14px 12px;
+  padding: 9px 8px;
   font-size: 14px;
   border-bottom: 1px solid var(--p-border);
   vertical-align: middle;

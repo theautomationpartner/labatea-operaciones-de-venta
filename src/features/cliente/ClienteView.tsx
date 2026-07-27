@@ -202,10 +202,7 @@ export function ClienteView() {
               depende de qué ventas se toman los productos a entregar.
             </>
           ) : (
-            <>
-              Para continuar tenés que seleccionar el tipo de venta y el tipo de entrega. De esas
-              dos opciones dependen los pasos que siguen y de dónde salen los productos.
-            </>
+            <>Para continuar tenés que seleccionar el tipo de venta y el tipo de entrega.</>
           )}
         </AvisoModal>
       )}

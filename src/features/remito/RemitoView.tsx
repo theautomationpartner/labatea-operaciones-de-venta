@@ -177,6 +177,7 @@ export function RemitoView() {
           colAccion="A facturar"
           filas={pendientes}
           filtroOrigen={filtroOrigen}
+          onVerTodos={() => setFiltroOrigen(null)}
           onConfirmar={confirmar}
         />
       </div>

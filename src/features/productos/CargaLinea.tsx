@@ -13,6 +13,11 @@ interface CargaLineaProps {
   onAdd: (cantidad: number, descuento: number) => void
   /** Sólo en la venta con crédito excedido: deshabilita "Agregar" hasta bajar el importe. */
   bloqueado?: boolean
+  /**
+   * Muestra los datos financieros (precio, descuento y rentabilidad). Con `false` sólo queda la
+   * cantidad: es un documento logístico (remito), no financiero. Por defecto se muestran.
+   */
+  showFinancialData?: boolean
 }
 
 /**
@@ -20,7 +25,13 @@ interface CargaLineaProps {
  * de la card de búsqueda y sólo aparece cuando hay un producto seleccionado.
  * El padre la remonta al cambiar de producto (`key`), así los campos arrancan limpios.
  */
-export function CargaLinea({ producto, aviso, onAdd, bloqueado = false }: CargaLineaProps) {
+export function CargaLinea({
+  producto,
+  aviso,
+  onAdd,
+  bloqueado = false,
+  showFinancialData = true,
+}: CargaLineaProps) {
   const { topesDescuento } = useApp()
   const [cantidad, setCantidad] = useState(1)
   const [descuento, setDescuento] = useState('')
@@ -119,61 +130,67 @@ export function CargaLinea({ producto, aviso, onAdd, bloqueado = false }: CargaL
             </div>
           </div>
 
-          <div className="control-item">
-            <label htmlFor="pprice">Precio</label>
-            {/* El precio sale de la lista del cliente en Monday: se muestra, no se edita. */}
-            <input
-              id="pprice"
-              type="text"
-              className="std-input"
-              placeholder="$ 0"
-              value={producto ? money(producto.precio) : ''}
-              readOnly
-            />
-          </div>
+          {/* Datos financieros: sólo en presupuesto/venta. El remito (documento logístico) los
+              oculta con `showFinancialData={false}` y deja únicamente la cantidad. */}
+          {showFinancialData && (
+            <>
+              <div className="control-item">
+                <label htmlFor="pprice">Precio</label>
+                {/* El precio sale de la lista del cliente en Monday: se muestra, no se edita. */}
+                <input
+                  id="pprice"
+                  type="text"
+                  className="std-input"
+                  placeholder="$ 0"
+                  value={producto ? money(producto.precio) : ''}
+                  readOnly
+                />
+              </div>
 
-          <div className="control-item">
-            <label htmlFor="pdesc">Descuento</label>
-            <div className={`desc-wrapper ${descuentoOk.ok ? '' : 'desc-wrapper--tope'}`}>
-              <input
-                id="pdesc"
-                type="text"
-                inputMode="decimal"
-                className="std-input small"
-                placeholder="0"
-                autoComplete="off"
-                aria-label={`Descuento en porcentaje: de 0 a ${topesDescuento.max}, o ${BONIFICACION_TOTAL} de bonificación total`}
-                aria-invalid={!descuentoOk.ok}
-                value={descuento}
-                disabled={!producto}
-                onChange={(e) => cambiarDescuento(e.target.value)}
-                aria-describedby="pdesc-aviso"
-              />
-              <span className="desc-suffix">%</span>
-              <span id="pdesc-aviso" className={`desc-tope ${descuentoOk.mensaje ? 'on' : ''}`}>
-                {descuentoOk.mensaje}
-              </span>
-            </div>
-          </div>
+              <div className="control-item">
+                <label htmlFor="pdesc">Descuento</label>
+                <div className={`desc-wrapper ${descuentoOk.ok ? '' : 'desc-wrapper--tope'}`}>
+                  <input
+                    id="pdesc"
+                    type="text"
+                    inputMode="decimal"
+                    className="std-input small"
+                    placeholder="0"
+                    autoComplete="off"
+                    aria-label={`Descuento en porcentaje: de 0 a ${topesDescuento.max}, o ${BONIFICACION_TOTAL} de bonificación total`}
+                    aria-invalid={!descuentoOk.ok}
+                    value={descuento}
+                    disabled={!producto}
+                    onChange={(e) => cambiarDescuento(e.target.value)}
+                    aria-describedby="pdesc-aviso"
+                  />
+                  <span className="desc-suffix">%</span>
+                  <span id="pdesc-aviso" className={`desc-tope ${descuentoOk.mensaje ? 'on' : ''}`}>
+                    {descuentoOk.mensaje}
+                  </span>
+                </div>
+              </div>
 
-          <div className="control-item">
-            <label htmlFor="prent">Rentabilidad</label>
-            {/* No editable: es el margen que queda tras el descuento, recalculado en vivo. Verde
-                si suma; rojo si el descuento se comió el margen (negativa). */}
-            <input
-              id="prent"
-              type="text"
-              className="std-input"
-              readOnly
-              placeholder="—"
-              value={producto ? pctDec(rentabilidadPrevista) : ''}
-              style={{
-                color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)',
-                fontWeight: 700,
-              }}
-              aria-label="Rentabilidad prevista del producto con el descuento aplicado"
-            />
-          </div>
+              <div className="control-item">
+                <label htmlFor="prent">Rentabilidad</label>
+                {/* No editable: es el margen que queda tras el descuento, recalculado en vivo. Verde
+                    si suma; rojo si el descuento se comió el margen (negativa). */}
+                <input
+                  id="prent"
+                  type="text"
+                  className="std-input"
+                  readOnly
+                  placeholder="—"
+                  value={producto ? pctDec(rentabilidadPrevista) : ''}
+                  style={{
+                    color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)',
+                    fontWeight: 700,
+                  }}
+                  aria-label="Rentabilidad prevista del producto con el descuento aplicado"
+                />
+              </div>
+            </>
+          )}
 
           <div className="control-item">
             {/* No se carga con un descuento fuera de rango, ni en la venta si se excedió el

@@ -116,12 +116,59 @@ export const esAgenteRetencion = (c: Cliente): boolean => c.agenteRetencion
 export const MENSAJE_RETENCION =
   'El cliente es agente de retención: cargá las retenciones calculadas para poder emitir la factura proforma.'
 
-/** Tipo de pago: se deriva de la condición de pago del cliente y no se puede cambiar. */
+/** Tipo de pago del CLIENTE: se deriva de su condición de pago y no se puede cambiar. */
 export const tipoPagoEfectivo = (c: Cliente): TipoPago =>
   c.condicionPago === 'CONTADO' ? 'SIMULTANEO' : 'POSTERIOR'
 
-/** Pago simultáneo: se cobra junto con la factura (clientes de contado). */
+/** El cliente es de contado: el cobro va sí o sí junto con la factura. */
 export const pagoSimultaneo = (c: Cliente): boolean => tipoPagoEfectivo(c) === 'SIMULTANEO'
+
+/**
+ * Tipo de pago de LA OPERACIÓN, que es el que se registra. Al del cliente le suma lo elegido
+ * en el cierre: la cuenta corriente puede cobrarse en el acto, y ese "SI" convierte la venta
+ * en SIMULTANEO —se cobra ahora y no queda deuda que diferir—.
+ *
+ *   contado                        → SIMULTANEO (siempre)
+ *   CUENTA CORRIENTE + cierre "SI" → SIMULTANEO
+ *   CUENTA CORRIENTE + cierre "NO" → POSTERIOR
+ *   plazos de proveedor            → POSTERIOR (no ofrecen cobro en el acto)
+ *
+ * Es el valor que viaja a "✋Tipo de Cobro" de la venta y el que decide, en un solo lugar, qué
+ * camino corre el cierre: recibo ahora o deuda en la cuenta corriente después.
+ */
+export const tipoPagoOperacion = (c: Cliente, cobro: CobroState): TipoPago =>
+  pagoSimultaneo(c) || (c.condicionPago === 'CUENTA CORRIENTE' && cobro.registrar)
+    ? 'SIMULTANEO'
+    : 'POSTERIOR'
+
+/** La operación se cobra en el acto: recibo con sus movimientos y exigencia del 100%. */
+export const cobroSimultaneoOperacion = (c: Cliente, cobro: CobroState): boolean =>
+  tipoPagoOperacion(c, cobro) === 'SIMULTANEO'
+
+/**
+ * Datos de cobro que viajan al payload de la venta. Es el único constructor del tipo de pago
+ * que se escribe en el board: la vista no lo arma a mano ni lo deduce de otro flag.
+ */
+export const datosCobroVenta = (c: Cliente, cobro: CobroState): { tipoPago: TipoPago } => ({
+  tipoPago: tipoPagoOperacion(c, cobro),
+})
+
+/**
+ * La venta tiene que dejar deuda en la cuenta corriente y todavía no se registró. Es la
+ * condición —y la única— que frena el cierre de la operación para pedir el registro:
+ *
+ *   · condición de pago del cliente = CUENTA CORRIENTE, y
+ *   · tipo de pago DE LA OPERACIÓN = POSTERIOR (en el cierre se eligió "NO").
+ *
+ * Cualquier otra combinación cierra derecho, sin modal: contado, los plazos de proveedor y —el
+ * caso que importa acá— la cuenta corriente cobrada en el acto, que ya se saldó con su recibo
+ * y no debe pasar por ningún paso de cobro diferido. La deuda ya escrita también se saltea: se
+ * mira `deudaId` para no duplicar el movimiento.
+ */
+export const requiereRegistroDeuda = (c: Cliente, cobro: CobroState): boolean =>
+  c.condicionPago === 'CUENTA CORRIENTE' &&
+  tipoPagoOperacion(c, cobro) === 'POSTERIOR' &&
+  !cobro.deudaId
 
 /**
  * Simultáneo: el formulario está siempre activo (se cobra ahora).
@@ -156,8 +203,9 @@ export function bloqueoCobro(
     return `Los cheques deben vencer después de la emisión de la factura (${fechaFactura}).`
   }
   /* Simultáneo es todo o nada: cobrar de menos deja la venta sin cerrar y cobrar de más no
-     corresponde a esta venta. En los dos casos se bloquea el registro. */
-  if (pagoSimultaneo(cliente) && resumen && !cobroCompleto(resumen)) {
+     corresponde a esta venta. En los dos casos se bloquea el registro. Vale igual para la
+     cuenta corriente cobrada en el acto: si se cobra ahora, se cobra entero. */
+  if (cobroSimultaneoOperacion(cliente, cobro) && resumen && !cobroCompleto(resumen)) {
     // Lo que falta se mide contra lo cancelado (caja + descuentos), no contra la caja sola.
     const falta = resumen.totalACobrar - resumen.cancelado
     return falta > 0
@@ -189,9 +237,10 @@ export const cobroRegistrado = (
 /**
  * Se puede pasar a emitir la factura.
  *
- * SIMULTÁNEO exige el recibo ya registrado: sin la plata cobrada no se factura.
- * POSTERIOR se da por cerrado apenas se entra: no hay nada que cargar, la deuda se crea sola
- * al continuar (cuenta corriente + factura pendiente de cobro).
+ * SIMULTÁNEO exige el recibo ya registrado: sin la plata cobrada no se factura. Incluye la
+ * cuenta corriente que se eligió cobrar en el acto.
+ * POSTERIOR se da por cerrado apenas se entra: no hay nada que cargar, y la deuda no se
+ * escribe acá sino al finalizar la operación, con la factura ya emitida y enviada.
  */
 export function puedeEmitirFactura(
   cliente: Cliente,
@@ -201,13 +250,13 @@ export function puedeEmitirFactura(
 ): boolean {
   if (esAgenteRetencion(cliente)) return false
   if (bloqueoCobro(cliente, cobro, fechaFactura, resumen) !== null) return false
-  if (!pagoSimultaneo(cliente)) return true
+  if (!cobroSimultaneoOperacion(cliente, cobro)) return true
   return cobro.confirmado
 }
 
 /**
  * La etapa de cierre quedó cumplida. En posterior se asume cumplida de entrada: lo que la
- * cierra de verdad (la deuda) se escribe al pasar a la emisión de la factura.
+ * cierra de verdad (la deuda) se escribe recién al finalizar la operación.
  */
 export const cierreCompleto = (
   cliente: Cliente,
@@ -215,7 +264,7 @@ export const cierreCompleto = (
   fechaFactura: string,
   resumen?: ResumenCobro,
 ): boolean =>
-  pagoSimultaneo(cliente)
+  cobroSimultaneoOperacion(cliente, cobro)
     ? cobroRegistrado(cliente, cobro, fechaFactura, resumen)
     : true
 

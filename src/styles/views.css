@@ -2450,7 +2450,51 @@
 .modal-actions {
   display: flex;
   justify-content: center;
+  gap: 10px;
   margin-top: 24px;
+}
+/* Datos de la operación dentro del modal (p. ej. la deuda que se va a registrar). */
+.modal-datos {
+  list-style: none;
+  margin: 16px auto 0;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--bg-soft, #f6f7fb);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.modal-datos li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal-datos strong {
+  font-weight: 700;
+  color: var(--text-dark);
+}
+/* El saldo se pasa del límite: mismo rojo que el impacto en cuenta corriente. */
+.modal-datos strong.is-over {
+  color: var(--red);
+}
+.modal-nota {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-dark);
+}
+.modal-nota i {
+  color: var(--yellow);
+  margin-right: 6px;
+}
+.modal-error {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
 }
 /* Advertencia: el flujo se frena por datos incompletos, no por un error del sistema. */
 .modal-icon--warn {

@@ -17,9 +17,8 @@ interface ComprobantesAGenerarProps {
    * al emitirse.
    */
   venceAPlazo: boolean
-  /** Días de vencimiento elegidos por comprobante. */
+  /** Días de vencimiento por comprobante (fijos, sólo lectura). */
   dias: Record<string, number>
-  onDias: (clave: string, dias: number) => void
   /** Comprobantes ya escritos en el board, por la clave del grupo que los originó. */
   emitidos: Map<string, ComprobanteEmitido>
   emitiendo: boolean
@@ -47,7 +46,6 @@ function CardComprobante({
   fechaEmision,
   venceAPlazo,
   dias,
-  onDias,
   emitido,
   emitiendo,
 }: {
@@ -57,7 +55,6 @@ function CardComprobante({
   fechaEmision: string
   venceAPlazo: boolean
   dias: number
-  onDias: (dias: number) => void
   emitido?: ComprobanteEmitido
   emitiendo: boolean
 }) {
@@ -66,7 +63,6 @@ function CardComprobante({
   // Sin cabecera creada o con líneas faltantes, el comprobante no se da por emitido.
   const completo = Boolean(emitido?.id) && emitido!.lineasCreadas >= emitido!.lineasEsperadas
   const incompleto = Boolean(emitido) && !completo
-  const bloqueado = Boolean(emitido) || emitiendo
 
   return (
     <div className={`comp-card ${consignada ? 'comp-card--co' : ''}`}>
@@ -148,31 +144,20 @@ function CardComprobante({
           </table>
 
           <div className="comp-pie">
+            {/* Vencimiento SÓLO para cuenta corriente: el plazo es fijo (30 días) y de sólo
+                lectura. En contado la factura no tiene vencimiento, así que no se muestra. */}
             <div className="comp-venc">
-              <span className="comp-head-lbl">Vencimiento del pago</span>
-              {venceAPlazo ? (
+              {venceAPlazo && (
                 <>
+                  <span className="comp-head-lbl">Vencimiento del pago</span>
                   <div className="comp-venc-campo">
-                    <input
-                      id={`venc-${comprobante.clave}`}
-                      type="text"
-                      inputMode="numeric"
-                      className="comp-venc-input"
-                      aria-label="Días de vencimiento del pago"
-                      value={dias}
-                      disabled={bloqueado}
-                      onChange={(e) => onDias(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                    />
-                    <span className="comp-venc-suf">días</span>
+                    <span className="comp-venc-fecha">{dias} días</span>
                     <span className="comp-venc-fecha">
                       <i className="fas fa-arrow-right" /> {addDays(fechaEmision, dias)}
                     </span>
                   </div>
-                  <span className="comp-venc-nota">Por defecto, 30 días desde la emisión.</span>
+                  <span className="comp-venc-nota">Fijo en 30 días desde la emisión.</span>
                 </>
-              ) : (
-                /* Contado: no hay plazo que contar, la factura se cobra al emitirse. */
-                <span className="comp-venc-contado">Al momento de emitirse</span>
               )}
             </div>
 
@@ -218,7 +203,6 @@ export function ComprobantesAGenerar({
   fechaEmision,
   venceAPlazo,
   dias,
-  onDias,
   emitidos,
   emitiendo,
 }: ComprobantesAGenerarProps) {
@@ -245,7 +229,6 @@ export function ComprobantesAGenerar({
           fechaEmision={fechaEmision}
           venceAPlazo={venceAPlazo}
           dias={dias[c.clave] ?? 0}
-          onDias={(d) => onDias(c.clave, d)}
           emitido={emitidos.get(c.clave)}
           emitiendo={emitiendo}
         />

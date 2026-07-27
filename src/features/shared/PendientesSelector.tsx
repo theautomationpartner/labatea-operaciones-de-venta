@@ -95,6 +95,38 @@ export function PendientesSelector({
   const noSeleccionable = (f: PendienteFila) =>
     f.ya || f.pend === 0 || f.seleccionable === false
 
+  // La vista ya muestra la TOTALIDAD de los productos de la operación (ni la card ni el buscador
+  // la achican): "Ver todos" queda visible pero sin acción.
+  const mostrandoTodos = visibles.length === filas.length
+  // Filas visibles que se pueden elegir (habilitadas, con pendiente y no agregadas).
+  const seleccionablesVisibles = visibles.filter((f) => !noSeleccionable(f))
+  // ¿Ya están todas las seleccionables marcadas? Define si el botón selecciona o deselecciona.
+  const todasSeleccionadas =
+    seleccionablesVisibles.length > 0 && seleccionablesVisibles.every((f) => seleccion.has(f.uid))
+
+  /** Vuelve a mostrar los productos de todos los documentos. Si ya se ven todos, no hace nada. */
+  const verTodos = () => {
+    if (mostrandoTodos) return
+    setBusqueda('')
+    onVerTodos?.()
+  }
+
+  /**
+   * Alterna la selección en bloque de las filas VISIBLES: si no están todas marcadas, marca
+   * todas; si ya lo están, las deselecciona. Nunca se inactiva.
+   */
+  const seleccionarTodos = () => {
+    setSeleccion((prev) => {
+      const next = new Map(prev)
+      if (todasSeleccionadas) {
+        for (const f of seleccionablesVisibles) next.delete(f.uid)
+      } else {
+        for (const f of seleccionablesVisibles) next.set(f.uid, f.pend) // arranca en lo pendiente
+      }
+      return next
+    })
+  }
+
   const toggle = (fila: PendienteFila) => {
     if (noSeleccionable(fila)) return
     setSeleccion((prev) => {
@@ -150,12 +182,32 @@ export function PendientesSelector({
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
-        {onVerTodos && filtroOrigen && (
+        {/* Acciones sobre la lista. Quedan FIJAS y visibles: cuando su acción no aplica se
+            inactivan (disabled + return temprano), nunca se desmontan ni cambian de lugar. */}
+        <button
+          type="button"
+          className="btn-outline"
+          onClick={seleccionarTodos}
+          title={
+            todasSeleccionadas
+              ? 'Deseleccionar todos los productos listados'
+              : 'Seleccionar todos los productos listados'
+          }
+        >
+          <i className={`fas ${todasSeleccionadas ? 'fa-square-minus' : 'fa-check-double'}`} />{' '}
+          {todasSeleccionadas ? 'Deseleccionar todos' : 'Seleccionar todos'}
+        </button>
+        {onVerTodos && (
           <button
             type="button"
             className="btn-outline"
-            onClick={onVerTodos}
-            title="Mostrar los productos de todos los documentos"
+            onClick={verTodos}
+            disabled={mostrandoTodos}
+            title={
+              mostrandoTodos
+                ? 'Ya se están mostrando todos los productos'
+                : 'Mostrar los productos de todos los documentos'
+            }
           >
             <i className="fas fa-list-ul" /> Ver todos
           </button>
@@ -168,7 +220,7 @@ export function PendientesSelector({
             <tr>
               <th style={{ width: 40 }} />
               <th>Producto</th>
-              <th className="ta-c" style={{ width: 150 }}>
+              <th className="ta-c" style={{ width: 120 }}>
                 {colAccion}
               </th>
               <th>Origen</th>

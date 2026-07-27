@@ -13,6 +13,7 @@ import { round2 } from '@/lib/format'
 import type {
   Moneda,
   TipoEntrega,
+  TipoPago,
   TipoVenta,
   VentaEntregaPendiente,
   VentaEntregaProducto,
@@ -66,8 +67,12 @@ export interface DatosVenta {
   nombre: string
   tipoVenta: TipoVenta
   tipoEntrega: TipoEntrega
-  /** El cobro se hizo con la factura (contado) o queda para después (cuenta corriente). */
-  cobroSimultaneo: boolean
+  /**
+   * Tipo de pago de la operación, tal cual se registra en "✋Tipo de Cobro". SIMULTANEO = se
+   * cobró con la factura (contado, o cuenta corriente cobrada en el acto); POSTERIOR = queda
+   * como deuda en la cuenta corriente. Lo arma `datosCobroVenta` en `lib/cobros`.
+   */
+  tipoPago: TipoPago
   /** Rentabilidad general de la venta, en %. */
   rentabilidad: number
   lineas: LineaVenta[]
@@ -128,7 +133,7 @@ const columnasLinea = (
  * devuelve cuántos se crearon para que la vista decida (y no avance).
  */
 export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
-  const { clienteId, nombre, tipoVenta, tipoEntrega, cobroSimultaneo, rentabilidad, lineas } = datos
+  const { clienteId, nombre, tipoVenta, tipoEntrega, tipoPago, rentabilidad, lineas } = datos
 
   if (!mondayHabilitado()) {
     return { id: `mock-venta-${Date.now()}`, subitemsCreados: lineas.length }
@@ -142,8 +147,11 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   const cabecera: Record<string, unknown> = {
     [COL.venta.tipoVenta]: { index: indiceTipoVenta(tipoVenta) },
     [COL.venta.tipoEntrega]: { index: indiceTipoEntrega(tipoEntrega) },
+    /* El board guarda el tipo de cobro por índice, no por texto: 'SIMULTANEO' es el valor de
+       negocio y acá se traduce a la etiqueta que corresponde. */
     [COL.venta.tipoCobro]: {
-      index: cobroSimultaneo ? VENTA_COBRO_INDEX.simultaneo : VENTA_COBRO_INDEX.posterior,
+      index:
+        tipoPago === 'SIMULTANEO' ? VENTA_COBRO_INDEX.simultaneo : VENTA_COBRO_INDEX.posterior,
     },
     [COL.venta.rentabilidad]: String(Math.round(rentabilidad)),
   }

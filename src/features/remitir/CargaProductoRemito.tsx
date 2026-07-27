@@ -1,103 +1,53 @@
 import { useState } from 'react'
 import { BuscadorProducto } from '@/features/productos/BuscadorProducto'
-import { StockPanel } from '@/features/productos/StockPanel'
+import { CargaLinea } from '@/features/productos/CargaLinea'
+import { FiltrosProductos } from '@/features/productos/FiltrosProductos'
 import { clienteLlevaIva } from '@/lib/precios'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Producto } from '@/types'
 
 /**
- * Misma mecánica de carga que venta/presupuesto —búsqueda + cantidad—, pero sin
- * precio ni descuento: el remito documenta cuánto se entrega, no cuánto se cobra.
+ * Carga de productos del remito POSTERIOR desde el catálogo. Reutiliza EXACTAMENTE la misma
+ * búsqueda y carga de línea que Presupuestar y la venta Directa (`BuscadorProducto` + `FiltrosProductos`
+ * + `CargaLinea`), así el buscador, el desplegable, el autocompletado y la selección son idénticos.
+ *
+ * El remito es un documento logístico, no financiero: se monta con `showFinancialData={false}` para
+ * ocultar precio, descuento y rentabilidad. Sólo queda la cantidad a entregar (más el nombre/código
+ * del producto y su stock).
  */
 export function CargaProductoRemito() {
   const { cliente } = useApp()
   const dispatch = useDispatch()
-  const [producto, setProducto] = useState<Producto | null>(null)
-  const [cantidad, setCantidad] = useState(1)
+  const [seleccionado, setSeleccionado] = useState<Producto | null>(null)
+  // Aviso de la búsqueda (sin resultados / error), mostrado donde iría el producto elegido.
+  const [avisoBusqueda, setAvisoBusqueda] = useState('')
 
-  const cambiar = (delta: number) => setCantidad((c) => Math.max(1, c + delta))
-
-  const agregar = () => {
-    if (!producto) return
-    dispatch({ type: 'addRemitoItemCatalogo', producto, cantidad })
-    setProducto(null)
-    setCantidad(1)
+  const agregar = (cantidad: number) => {
+    if (!seleccionado) return
+    dispatch({ type: 'addRemitoItemCatalogo', producto: seleccionado, cantidad })
+    setSeleccionado(null)
+    setAvisoBusqueda('')
   }
 
   return (
-    <div className="card card--input">
-      <BuscadorProducto
-        lista={cliente?.list ?? 'L1'}
-        conIva={clienteLlevaIva(cliente?.status ?? '')}
-        onSelect={setProducto}
-      />
-
-      <div className="carga">
-        <div className="selrow">
-          <div className="ig" style={{ flex: '0 0 450px' }}>
-            <label>Producto seleccionado</label>
-            <div className={`prodbox ${producto ? 'has' : ''}`}>
-              {producto ? (
-                <>
-                  <span className="prodbox-code">{producto.codigo}</span>
-                  <span className="prodbox-name">{producto.nombre}</span>
-                </>
-              ) : (
-                <span>Realiza una búsqueda y selecciona un producto...</span>
-              )}
-            </div>
-          </div>
-
-          <div className="ig">
-            <label htmlFor="rqty">Cantidad entregada</label>
-            <div className="qty">
-              <button type="button" onClick={() => cambiar(-1)} aria-label="Restar">
-                -
-              </button>
-              <input
-                id="rqty"
-                type="number"
-                min={1}
-                value={cantidad}
-                onChange={(e) => setCantidad(Math.max(1, Number(e.target.value) || 1))}
-              />
-              <button type="button" onClick={() => cambiar(1)} aria-label="Sumar">
-                +
-              </button>
-            </div>
-          </div>
-
-          <div className="ig">
-            <label htmlFor="rum">Unidad de medida</label>
-            <input
-              id="rum"
-              type="text"
-              className="ctrl"
-              style={{ width: 130, fontWeight: 600 }}
-              value={producto?.um ?? ''}
-              placeholder="—"
-              readOnly
-            />
-          </div>
-
-          <div className="ig">
-            <button
-              type="button"
-              className="btn btn-primary btn--h38"
-              disabled={!producto}
-              onClick={agregar}
-            >
-              <i className="fas fa-plus" /> Agregar
-            </button>
-          </div>
-        </div>
-
-        {producto && (
-          <div className="stockprev">
-            <StockPanel producto={producto} cantidad={cantidad} />
-          </div>
-        )}
+    <div className="card">
+      <div className="search-area">
+        <BuscadorProducto
+          lista={cliente?.list ?? 'L1'}
+          conIva={clienteLlevaIva(cliente?.status ?? '')}
+          onSelect={setSeleccionado}
+          variante="v2"
+          onAviso={setAvisoBusqueda}
+        />
+        <FiltrosProductos />
       </div>
+      <CargaLinea
+        key={seleccionado?.codigo ?? 'vacio'}
+        producto={seleccionado}
+        aviso={avisoBusqueda}
+        onAdd={agregar}
+        showFinancialData={false}
+      />
     </div>
   )
 }

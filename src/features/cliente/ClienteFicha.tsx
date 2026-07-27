@@ -103,10 +103,16 @@ export function ClienteFicha({ cliente, children }: ClienteFichaProps) {
       {muestraValores && (
         <>
           <section className={`credito-grupo ${rigeCredito ? '' : 'credito-grupo--off'}`}>
+            {/* FILA 1: cuatro métricas de igual ancho. */}
             <div className="kpi-grid">
               <div className="kpi-card">
                 <span className="kpi-label">Límite asignado</span>
                 <span className={`kpi-value ${claseImporte}`}>{money(cliente.limit)}</span>
+              </div>
+              {/* Saldo real de la Cta Cte (ventas − cobros), ya resuelto al buscar el cliente. */}
+              <div className="kpi-card">
+                <span className="kpi-label">Saldo Cta Cte</span>
+                <span className={`kpi-value ${claseImporte}`}>{money(cliente.saldoCtaCte)}</span>
               </div>
               {/* Informativo: no entra en el cálculo del uso del crédito. */}
               <div className="kpi-card">
@@ -122,40 +128,41 @@ export function ClienteFicha({ cliente, children }: ClienteFichaProps) {
                   {money(cliente.lineaUtilizada)}
                 </span>
               </div>
+            </div>
+
+            {/* FILA 2: crédito disponible a la izquierda; la barra de uso, a la derecha. Sin barra
+                (el crédito no rige) la card ocupa toda la fila. */}
+            <div className={`credito-fila2 ${rigeCredito ? '' : 'credito-fila2--solo'}`}>
               <div className="kpi-card">
                 <span className="kpi-label">Crédito disponible</span>
                 <span className={`kpi-value ${claseImporte || 'v-green'}`}>
                   {money(credito.disponible)}
                 </span>
               </div>
+
+              {rigeCredito && (
+                <div className="credito-uso">
+                  <div className="progress-header">
+                    <span>Uso de límite de crédito</span>
+                    <strong>{credito.usadoPct}% Utilizado</strong>
+                  </div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        // La barra no puede pasarse aunque el saldo supere el límite.
+                        width: `${Math.min(Math.max(credito.usadoPct, 0), 100)}%`,
+                        background: credito.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
           {/* Por qué el límite no va a pesar en esta operación. */}
           {motivoIgnorado && <p className="credito-nota-off">{motivoIgnorado}</p>}
-        </>
-      )}
-
-      {rigeCredito && (
-        <>
-          <hr className="divider" />
-
-          <div className="progress-section">
-            <div className="progress-header">
-              <span>Uso de límite de crédito</span>
-              <strong>{credito.usadoPct}% Utilizado</strong>
-            </div>
-            <div className="progress-track">
-              <div
-                className="progress-fill"
-                style={{
-                  // La barra no puede pasarse aunque el saldo supere el límite.
-                  width: `${Math.min(Math.max(credito.usadoPct, 0), 100)}%`,
-                  background: credito.color,
-                }}
-              />
-            </div>
-          </div>
         </>
       )}
 

@@ -161,6 +161,7 @@ export function RemitoProductosView() {
             colAccion="A remitar"
             filas={pendientes}
             filtroOrigen={filtroOrigen}
+            onVerTodos={() => setFiltroOrigen(null)}
             onConfirmar={confirmar}
           />
         </div>

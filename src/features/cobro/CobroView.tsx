@@ -7,7 +7,9 @@ import {
   bloqueoCobro,
   cobroActivo,
   cobroConfirmable,
+  cobroSimultaneoOperacion,
   cierreCompleto,
+  datosCobroVenta,
   esAgenteRetencion,
   MENSAJE_RETENCION,
   pagoSimultaneo,
@@ -33,18 +35,13 @@ import { FormularioCobro } from './FormularioCobro'
 import { TablaMovimientos } from './TablaMovimientos'
 
 /**
- * En qué anda el cierre mientras se escribe en Monday. El orden importa y se le muestra al
- * usuario: primero la deuda del cliente, después la venta.
+ * En qué anda el cierre mientras se escribe en Monday. La deuda del pago posterior ya no pasa
+ * por acá: se registra al finalizar la operación, con la factura emitida y enviada.
  */
-type FaseCierre = null | 'deuda' | 'venta'
+type FaseCierre = null | 'venta'
 
 /** Qué decir en cada fase: título y qué se está escribiendo, para que la espera se entienda. */
-const TEXTO_FASE: Record<'deuda' | 'venta', { titulo: string; detalle: string }> = {
-  deuda: {
-    titulo: 'Registrando la deuda…',
-    detalle:
-      'Creando el movimiento en la cuenta corriente del cliente y su factura pendiente de cobro.',
-  },
+const TEXTO_FASE: Record<'venta', { titulo: string; detalle: string }> = {
   venta: {
     titulo: 'Registrando venta...',
     detalle:
@@ -152,7 +149,12 @@ export function CobroView() {
   if (!cliente) return null
 
   const agente = esAgenteRetencion(cliente)
-  const simultaneo = pagoSimultaneo(cliente)
+  /* Cómo es el cliente: de contado no elige nada (siempre cobra en el acto); el resto ve el
+     SI/NO del cierre. Define la FORMA de la pantalla, no el camino del registro. */
+  const clienteDeContado = pagoSimultaneo(cliente)
+  /* Cómo se cobra ESTA operación: contado, o cuenta corriente con "SI" en el cierre. Es el
+     flag que decide el registro (recibo vs. deuda) y el que viaja al board. */
+  const simultaneo = cobroSimultaneoOperacion(cliente, cobro)
   /* Hay cuerpo que desplegar cuando se va a cargar un cobro: siempre en contado, y en cuenta
      corriente sólo si el vendedor eligió "SI". */
   const activo = cobroActivo(cliente, cobro)
@@ -163,9 +165,10 @@ export function CobroView() {
   const yaEscrito = Boolean(cobro.cobroId || cobro.deudaId)
 
   /**
-   * El registro se bifurca por el tipo de cobro: simultáneo crea el recibo con sus
-   * movimientos; posterior no toca el tablero de Cobros y genera la deuda en la cuenta
-   * corriente del cliente.
+   * El registro se bifurca por el TIPO DE PAGO DE LA OPERACIÓN, no por la condición del
+   * cliente: SIMULTANEO crea el recibo con sus movimientos —también cuando el cliente es de
+   * cuenta corriente y acá se eligió "SI"—; POSTERIOR no toca el tablero de Cobros y difiere
+   * la deuda al cierre de la operación. Los dos caminos son excluyentes.
    */
   const registrar = async (): Promise<boolean> => {
     if (registrando) return yaEscrito
@@ -212,21 +215,11 @@ export function CobroView() {
       setRegistrando(false)
     }
   }
-  /* Pasar a la factura: en posterior no hay nada cargado que confirmar, así que es acá donde
-     se crea la deuda (movimiento en la cuenta corriente + factura pendiente de cobro). Sólo
-     se navega si la escritura salió bien. */
+  /* Pasar a la factura. La deuda del pago posterior NO se escribe acá: el cliente recién queda
+     endeudado cuando la factura legal está emitida y enviada, así que su registro vive en el
+     cierre de la operación (modal de "Finalizar Operación"). */
   const continuarAFactura = async () => {
     if (fase) return
-    /* Primero la deuda: el movimiento en la cuenta corriente y su factura pendiente de cobro.
-       Recién con eso escrito tiene sentido crear la venta. */
-    if (!simultaneo && !cobro.confirmado) {
-      setFase('deuda')
-      const ok = await registrar()
-      if (!ok) {
-        setFase(null)
-        return
-      }
-    }
 
     /* La venta se escribe en "📈Ventas" recién acá: es el punto donde la operación queda
        cerrada. Sólo se abre la facturación si la cabecera y TODOS sus productos entraron. */
@@ -249,7 +242,9 @@ export function CobroView() {
           nombre: cliente.name,
           tipoVenta: tipoVenta ?? 'DIRECTA',
           tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
-          cobroSimultaneo: simultaneo,
+          /* Tipo de pago de la operación ('SIMULTANEO' / 'POSTERIOR'): lo arma el constructor
+             del payload, no la vista. Es lo que queda asentado en el board. */
+          ...datosCobroVenta(cliente, cobro),
           rentabilidad: rentabilidadVenta,
           lineas: productos,
         })
@@ -338,12 +333,13 @@ export function CobroView() {
             >
               <i className={`fas fa-chevron-down cobro-acc-chev ${abierto ? 'open' : ''}`} />
               <span className="cobro-acc-title">
-                {simultaneo ? 'Cobro de la venta' : '¿Desea registrar un Cobro?'}
+                {clienteDeContado ? 'Cobro de la venta' : '¿Desea registrar un Cobro?'}
               </span>
             </button>
 
-            {/* Cuenta corriente: cobrar ahora es opcional. Arranca en NO. */}
-            {!simultaneo && (
+            {/* Cuenta corriente: cobrar ahora es opcional. Arranca en NO. El grupo sigue a la
+                vista después de elegir "SI": es lo que permite volver atrás antes de registrar. */}
+            {!clienteDeContado && (
               <div className="cobro-sino" role="group" aria-label="¿Desea registrar un cobro?">
                 <button
                   type="button"
@@ -369,15 +365,21 @@ export function CobroView() {
             {/* Qué implica la elección, o qué exige la condición del cliente. */}
             <span className="cobro-tipo-nota">
               <i className="fas fa-circle-info" />{' '}
-              {simultaneo ? (
+              {clienteDeContado ? (
                 <>
                   La condición del cliente es de {cliente.condicionPago}: registrá el cobro para
                   poder facturar.
                 </>
+              ) : simultaneo ? (
+                <>
+                  Con «SI» la venta se registra como cobro <strong>SIMULTANEO</strong>: cobrá el
+                  100% ahora y no se genera deuda en la cuenta corriente.
+                </>
               ) : (
                 <>
                   Si deja por defecto la opción «NO», la venta se creará como pendiente de cobro y
-                  se registrará la deuda en la cuenta corriente del cliente.
+                  la deuda se registrará al finalizar la operación, una vez emitida y enviada la
+                  factura.
                 </>
               )}
             </span>

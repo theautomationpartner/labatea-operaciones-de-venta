@@ -9,12 +9,14 @@ import {
   letraComprobante,
   PUNTO_VENTA_DEFAULT,
 } from '@/lib/factura'
-import { comprobantesDeVenta } from '@/lib/facturacion'
+import { requiereRegistroDeuda } from '@/lib/cobros'
+import { comprobantesDeVenta, totalesComprobantes } from '@/lib/facturacion'
 import { lineasDeVenta } from '@/lib/lineasVenta'
 import { pasosDe } from '@/lib/pasos'
 import { crearComprobantes, FACT_VENCIMIENTO_DIAS } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
+import { RegistrarDeudaModal } from './RegistrarDeudaModal'
 import { ResumenVenta } from './ResumenVenta'
 
 /** Número de comprobante que asignaría AFIP al emitirla. */
@@ -29,16 +31,20 @@ const NRO_FACTURA = 'FC-0001-00001234'
  */
 export function FacturaView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, factura, fechaEmision, ventaId } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega, factura, fechaEmision, ventaId, cobro } =
+    state
   const dispatch = useDispatch()
 
   const [emitiendo, setEmitiendo] = useState(false)
   const [errorEmision, setErrorEmision] = useState<string | null>(null)
   // El envío se completó: junto con la factura ya emitida habilita "Finalizar Operación".
   const [enviado, setEnviado] = useState(false)
-  /* Días de vencimiento por comprobante. Viven acá y no en cada card porque el botón que emite
-     está del otro lado de la pantalla. Sin tocar nada, cada uno arranca en 30 días. */
-  const [dias, setDias] = useState<Record<string, number>>({})
+  /* Modal de registro de deuda: se monta sólo si al cerrar la operación la venta quedó a
+     cuenta corriente con pago posterior. */
+  const [registrandoDeuda, setRegistrandoDeuda] = useState(false)
+  /* Días de vencimiento por comprobante: fijos en 30 (no editables). Se mantiene el mapa por
+     compatibilidad con `diasDe`, pero ya no se modifica desde la UI. */
+  const [dias] = useState<Record<string, number>>({})
 
   /* Evaluación de la mercadería de la venta: en cuántos comprobantes se parte. Se hace sobre
      las líneas normalizadas, que son las que arrastran tipo de mercadería, proveedor e IVA. */
@@ -109,6 +115,20 @@ export function FacturaView() {
     }
   }
 
+  /**
+   * Cierre de la operación. La deuda del cliente no nace con el pedido: si la venta va a
+   * CUENTA CORRIENTE con tipo de pago POSTERIOR, acá se frena el cierre y se pide registrarla
+   * en la cuenta corriente, con la factura ya emitida y enviada. Contado (pago SIMULTANEO) o
+   * cualquier otra condición cierran derecho, sin montar el modal.
+   */
+  const finalizar = () => {
+    if (requiereRegistroDeuda(cliente, cobro)) {
+      setRegistrandoDeuda(true)
+      return
+    }
+    dispatch({ type: 'reset' })
+  }
+
   return (
     <section className="view factura-v2 paso-layout">
       <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={3} />
@@ -138,7 +158,6 @@ export function FacturaView() {
             fechaEmision={fechaEmision}
             venceAPlazo={venceAPlazo}
             dias={Object.fromEntries(comprobantes.map((c) => [c.clave, diasDe(c.clave)]))}
-            onDias={(clave, d) => setDias((v) => ({ ...v, [clave]: d }))}
             emitidos={emitidos}
             emitiendo={emitiendo}
           />
@@ -165,7 +184,7 @@ export function FacturaView() {
           type="button"
           className="btn-primary"
           disabled={!(factura.emitida && enviado)}
-          onClick={() => dispatch({ type: 'reset' })}
+          onClick={finalizar}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación
         </button>
@@ -175,6 +194,21 @@ export function FacturaView() {
         <AvisoModal titulo="No se pudieron emitir todos los comprobantes" onClose={() => setErrorEmision(null)}>
           {errorEmision}
         </AvisoModal>
+      )}
+
+      {/* Sólo cuenta corriente + pago posterior. La deuda es el total facturado (con IVA), que
+          es lo que el cliente queda debiendo. Cerrada la escritura, recién ahí se resetea. */}
+      {registrandoDeuda && (
+        <RegistrarDeudaModal
+          cliente={cliente}
+          total={totalesComprobantes(comprobantes).total}
+          concepto={`${cliente.name} · ${cobro.fecha}`}
+          onRegistrada={() => {
+            setRegistrandoDeuda(false)
+            dispatch({ type: 'reset' })
+          }}
+          onCancelar={() => setRegistrandoDeuda(false)}
+        />
       )}
     </section>
   )
