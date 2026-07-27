@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Modal } from '@/components/ui/Modal'
-import { estadoCtaCte } from '@/lib/cobros'
+import { AvisoModal } from '@/components/ui/AvisoModal'
+import { ModalCargando } from '@/components/ui/ModalCargando'
 import { money } from '@/lib/format'
 import { registrarDeudaPosterior } from '@/services/monday'
 import { useDispatch } from '@/state/hooks'
 import type { Cliente } from '@/types'
+
+/**
+ * Piso de tiempo que la ventana queda a la vista. La escritura en Monday suele volver antes de
+ * que el ojo alcance a leer qué pasó; sin este piso el modal aparece y desaparece de un
+ * parpadeo y la operación parece cerrarse sola.
+ */
+const MINIMO_VISIBLE_MS = 2000
 
 interface RegistrarDeudaModalProps {
   cliente: Cliente
@@ -25,10 +32,10 @@ interface RegistrarDeudaModalProps {
  * `requiereRegistroDeuda`): la deuda no nace con el pedido sino recién acá, con la factura
  * legal ya emitida.
  *
- * No pide confirmación: montarlo ES la orden de registrar. "Finalizar Operación" ya fue el
- * clic del usuario, así que la escritura arranca sola y la ventana sólo muestra el resumen de
- * la cuenta y en qué anda. Lo único que se ofrece es reintentar si Monday falló: sin eso, un
- * error dejaría la operación trabada sin salida.
+ * No pide confirmación ni ofrece botones: montarlo ES la orden de registrar. "Finalizar
+ * Operación" ya fue el clic del usuario, así que la escritura arranca sola y la ventana sólo
+ * informa qué se está asentando y por cuánto. El resumen de la cuenta no se repite acá: vive
+ * en el paso de cierre, donde el vendedor lo revisó antes de facturar.
  */
 export function RegistrarDeudaModal({
   cliente,
@@ -38,105 +45,59 @@ export function RegistrarDeudaModal({
   onCancelar,
 }: RegistrarDeudaModalProps) {
   const dispatch = useDispatch()
-  const [registrando, setRegistrando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   /* La escritura se dispara una sola vez por montaje. El ref es imprescindible: en desarrollo
      StrictMode corre los efectos dos veces y, sin él, la deuda se escribiría duplicada. */
   const disparado = useRef(false)
 
-  // Cómo queda la cuenta con esta venta. Nada cancelado: la deuda entra entera.
-  const cta = estadoCtaCte(cliente, total, 0)
-  const excedido = cta.resultante > cta.limite
-
-  const registrar = async () => {
-    if (!cliente.ctaCteId) {
-      setRegistrando(false)
-      setError(
-        `${cliente.name} no tiene cuenta corriente conectada: no se puede registrar la deuda.`,
-      )
-      return
-    }
-    setRegistrando(true)
-    setError(null)
-    try {
-      const { deudaId, saldoAnterior } = await registrarDeudaPosterior({
-        ctaCteId: cliente.ctaCteId,
-        total,
-        concepto,
-      })
-      dispatch({ type: 'confirmarCobro', deudaId, saldoAnterior })
-      onRegistrada()
-    } catch {
-      setRegistrando(false)
-      setError('No se pudo registrar la deuda en la cuenta corriente. Reintentá en unos segundos.')
-    }
-  }
-
   /* Montarse es el disparo: se escribe apenas aparece la ventana, sin paso intermedio.
-     A propósito sin deps de los datos: son los de la venta que se está cerrando y no cambian
-     mientras el modal vive. */
+     A propósito sin deps: son los datos de la venta que se está cerrando y no cambian
+     mientras el modal vive; el ref es lo que garantiza una sola corrida. */
   useEffect(() => {
     if (disparado.current) return
     disparado.current = true
+
+    const registrar = async () => {
+      if (!cliente.ctaCteId) {
+        setError(
+          `${cliente.name} no tiene cuenta corriente conectada: no se puede registrar la deuda.`,
+        )
+        return
+      }
+      try {
+        /* La espera mínima corre en paralelo con la escritura: no la demora, sólo evita que
+           la ventana se cierre antes de poder leerla. */
+        await Promise.all([
+          registrarDeudaPosterior({ ctaCteId: cliente.ctaCteId, total, concepto }).then(
+            ({ deudaId, saldoAnterior }) =>
+              dispatch({ type: 'confirmarCobro', deudaId, saldoAnterior }),
+          ),
+          new Promise((r) => setTimeout(r, MINIMO_VISIBLE_MS)),
+        ])
+        onRegistrada()
+      } catch {
+        setError(
+          'No se pudo registrar la deuda en la cuenta corriente. Cerrá este aviso y volvé a finalizar la operación.',
+        )
+      }
+    }
     void registrar()
   })
 
+  /* Falló la escritura: se avisa y se vuelve a la factura. Reintentar es volver a tocar
+     "Finalizar Operación", que remonta esta ventana y dispara el registro de nuevo. */
+  if (error) {
+    return (
+      <AvisoModal titulo="No se pudo registrar la deuda" onClose={onCancelar}>
+        {error}
+      </AvisoModal>
+    )
+  }
+
   return (
-    <Modal
-      title="Registrando la deuda en cuenta corriente"
-      icon={<i className="fas fa-file-invoice-dollar modal-icon--warn" />}
-      // Mientras se escribe no se puede cerrar: es una operación que no conviene interrumpir.
-      onClose={registrando ? () => {} : onCancelar}
-      actions={
-        error ? (
-          <button type="button" className="btn btn-primary" onClick={registrar}>
-            <i className="fas fa-rotate-right" /> Reintentar
-          </button>
-        ) : undefined
-      }
-    >
-      <p>
-        La factura de <strong>{cliente.name}</strong> ya está emitida y su condición de pago es{' '}
-        <strong>{cliente.condicionPago}</strong> con cobro posterior: la venta queda asentada como
-        deuda en su cuenta corriente.
-      </p>
-
-      {/* Resumen de la cuenta: cómo queda el saldo del cliente después de esta operación. */}
-      <ul className="modal-datos">
-        <li>
-          <span>N° de cuenta</span>
-          <strong>{cta.cuenta}</strong>
-        </li>
-        <li>
-          <span>Deuda a registrar</span>
-          <strong>{money(total)}</strong>
-        </li>
-        <li>
-          <span>Saldo pendiente actual</span>
-          <strong>{money(cta.saldoPendiente)}</strong>
-        </li>
-        <li>
-          <span>Saldo resultante</span>
-          <strong className={excedido ? 'is-over' : undefined}>{money(cta.resultante)}</strong>
-        </li>
-      </ul>
-
-      {excedido && (
-        <p className="modal-nota">
-          <i className="fas fa-circle-exclamation" /> El saldo resultante supera el límite de
-          crédito ({money(cta.limite)}).
-        </p>
-      )}
-
-      {/* En qué anda la escritura. Ocupa el lugar de la botonera que antes pedía confirmar. */}
-      {registrando && (
-        <p className="modal-progreso" role="status" aria-live="polite">
-          <i className="fas fa-circle-notch spin" /> Creando el movimiento en la cuenta corriente y
-          su factura pendiente de cobro…
-        </p>
-      )}
-
-      {error && <p className="modal-error">{error}</p>}
-    </Modal>
+    <ModalCargando
+      titulo="Registrando deuda..."
+      detalle={`Estamos asentando ${money(total)} como deuda en la cuenta corriente de ${cliente.name}. Se crea el movimiento en su cuenta y la factura queda pendiente de cobro.`}
+    />
   )
 }

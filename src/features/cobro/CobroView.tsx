@@ -12,6 +12,7 @@ import {
   datosCobroVenta,
   esAgenteRetencion,
   MENSAJE_RETENCION,
+  mostrarImpactoCtaCte,
   pagoSimultaneo,
   puedeEmitirFactura,
   resumenCobro,
@@ -158,6 +159,9 @@ export function CobroView() {
   /* Hay cuerpo que desplegar cuando se va a cargar un cobro: siempre en contado, y en cuenta
      corriente sólo si el vendedor eligió "SI". */
   const activo = cobroActivo(cliente, cobro)
+  /* El impacto en cuenta corriente se muestra sólo si la venta va a dejar deuda: cuenta
+     corriente con "NO". Elegir "SI" lo desmonta. */
+  const mostrarImpacto = mostrarImpactoCtaCte(cliente, cobro)
   const bloqueoMsg = bloqueoCobro(cliente, cobro, fechaEmision, resumen)
   const confirmable = cobroConfirmable(cliente, cobro, fechaEmision, resumen)
   const puedeEmitir = puedeEmitirFactura(cliente, cobro, fechaEmision, resumen)
@@ -424,42 +428,38 @@ export function CobroView() {
                       bloqueado={bloqueado}
                     />
 
+                    {/* La acción cierra la carga del cobro, pegada a lo que confirma. */}
+                    <div className="cobro-card-acts">
+                      {errorRegistro && <span className="cobro-err">{errorRegistro}</span>}
+                      <button
+                        type="button"
+                        className="cobro-btn cobro-btn--primary"
+                        disabled={!confirmable || cobro.confirmado || registrando}
+                        aria-busy={registrando}
+                        onClick={registrar}
+                      >
+                        {registrando ? (
+                          <>
+                            <i className="fas fa-circle-notch spin" /> Registrando...
+                          </>
+                        ) : cobro.confirmado ? (
+                          <>
+                            <i className="fas fa-check" /> Cobro registrado
+                          </>
+                        ) : (
+                          'Registrar cobro'
+                        )}
+                      </button>
+                    </div>
                   </div>
-
-                  {/* Cierra el panel a todo su ancho: la venta engrosa el saldo pendiente y lo
-                      cobrado lo devuelve, así que acá se ve el efecto sobre el crédito antes
-                      de confirmar. La acción vive adentro, junto a su consecuencia. */}
-                  <ImpactoCtaCte
-                    cliente={cliente}
-                    resumen={resumen}
-                    accion={
-                      <div className="cobro-card-acts">
-                        {errorRegistro && <span className="cobro-err">{errorRegistro}</span>}
-                        <button
-                          type="button"
-                          className="cobro-btn cobro-btn--primary"
-                          disabled={!confirmable || cobro.confirmado || registrando}
-                          aria-busy={registrando}
-                          onClick={registrar}
-                        >
-                          {registrando ? (
-                            <>
-                              <i className="fas fa-circle-notch spin" /> Registrando...
-                            </>
-                          ) : cobro.confirmado ? (
-                            <>
-                              <i className="fas fa-check" /> Cobro registrado
-                            </>
-                          ) : (
-                            'Registrar cobro'
-                          )}
-                        </button>
-                      </div>
-                    }
-                  />
                 </div>
             </div>
           )}
+
+          {/* Impacto en cuenta corriente: sólo en el camino que deja deuda —cuenta corriente
+              con "NO"—. Con "SI" el cobro cancela la venta en el acto y no hay saldo
+              proyectado que mostrar, así que el bloque ni se monta. */}
+          {mostrarImpacto && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
         </div>
 
         {bloqueoMsg && (

@@ -146,6 +146,14 @@ export const cobroSimultaneoOperacion = (c: Cliente, cobro: CobroState): boolean
   tipoPagoOperacion(c, cobro) === 'SIMULTANEO'
 
 /**
+ * Se muestra el "Impacto en cuenta corriente" del cierre. Sólo tiene sentido cuando la venta
+ * va a dejar deuda: cliente de CUENTA CORRIENTE que además eligió NO cobrar en el acto. Con
+ * "SI" el cobro cancela la venta en el momento y no hay saldo proyectado que mostrar.
+ */
+export const mostrarImpactoCtaCte = (c: Cliente, cobro: CobroState): boolean =>
+  c.condicionPago === 'CUENTA CORRIENTE' && !cobro.registrar
+
+/**
  * Datos de cobro que viajan al payload de la venta. Es el único constructor del tipo de pago
  * que se escribe en el board: la vista no lo arma a mano ni lo deduce de otro flag.
  */

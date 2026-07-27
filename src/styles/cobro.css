@@ -224,6 +224,11 @@
   font-weight: 500;
   color: var(--c-text-secondary);
 }
+/* La deuda del impacto en cuenta corriente va entera en verde: rótulo y valor. */
+.cobro-v2 .cobro-cab-lbl--verde {
+  color: var(--c-success);
+  font-weight: 700;
+}
 .cobro-v2 .cobro-cab-lbl--met {
   font-size: 11px;
   font-weight: 700;
