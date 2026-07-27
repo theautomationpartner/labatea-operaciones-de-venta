@@ -23,8 +23,8 @@ interface RegistrarDeudaModalProps {
  *
  * Sólo se monta cuando la venta va a cuenta corriente con pago POSTERIOR (ver
  * `requiereRegistroDeuda`): la deuda no nace con el pedido sino recién acá, con la factura
- * legal ya emitida y enviada. Escribe el movimiento en la Cta Cte del cliente y su factura
- * pendiente de cobro; hasta que eso salga bien, la operación no se cierra.
+ * legal ya emitida. Escribe el movimiento en la Cta Cte del cliente y su factura pendiente de
+ * cobro; hasta que eso salga bien, la operación no se cierra.
  */
 export function RegistrarDeudaModal({
   cliente,
@@ -100,9 +100,9 @@ export function RegistrarDeudaModal({
       }
     >
       <p>
-        La factura de <strong>{cliente.name}</strong> se emitió y se envió, y su condición de pago
-        es <strong>{cliente.condicionPago}</strong> con cobro posterior. Para cerrar la operación
-        hay que asentar la deuda en su cuenta corriente.
+        La factura de <strong>{cliente.name}</strong> ya está emitida y su condición de pago es{' '}
+        <strong>{cliente.condicionPago}</strong> con cobro posterior. Para cerrar la operación hay
+        que asentar la deuda en su cuenta corriente.
       </p>
 
       <ul className="modal-datos">

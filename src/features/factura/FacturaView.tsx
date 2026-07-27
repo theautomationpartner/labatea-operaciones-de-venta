@@ -37,8 +37,6 @@ export function FacturaView() {
 
   const [emitiendo, setEmitiendo] = useState(false)
   const [errorEmision, setErrorEmision] = useState<string | null>(null)
-  // El envío se completó: junto con la factura ya emitida habilita "Finalizar Operación".
-  const [enviado, setEnviado] = useState(false)
   /* Modal de registro de deuda: se monta sólo si al cerrar la operación la venta quedó a
      cuenta corriente con pago posterior. */
   const [registrandoDeuda, setRegistrandoDeuda] = useState(false)
@@ -162,12 +160,9 @@ export function FacturaView() {
             emitiendo={emitiendo}
           />
 
-          {/* El estado del envío se muestra dentro de la propia card. */}
-          <EnviarDocumento
-            documento="factura"
-            numero={NRO_FACTURA}
-            onEnviado={() => setEnviado(true)}
-          />
+          {/* El estado del envío se muestra dentro de la propia card. No condiciona el cierre:
+              la venta puede finalizarse con la factura emitida y el envío pendiente. */}
+          <EnviarDocumento documento="factura" numero={NRO_FACTURA} />
         </div>
       </div>
 
@@ -179,11 +174,13 @@ export function FacturaView() {
         >
           <i className="fas fa-arrow-left" /> Volver
         </button>
-        {/* Cierra la venta y reinicia la app. Sólo con la factura emitida y ya enviada. */}
+        {/* Cierra la venta y reinicia la app. Alcanza con la factura emitida: el envío al
+            cliente es una gestión aparte y puede quedar pendiente. */}
         <button
           type="button"
           className="btn-primary"
-          disabled={!(factura.emitida && enviado)}
+          disabled={!factura.emitida}
+          title={factura.emitida ? undefined : 'Emití la factura para poder finalizar la operación.'}
           onClick={finalizar}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación
