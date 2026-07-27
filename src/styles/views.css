@@ -2496,6 +2496,20 @@
   font-weight: 600;
   color: var(--red);
 }
+/* Escritura en curso dentro del modal: ocupa el lugar donde antes iba la botonera. */
+.modal-progreso {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.modal-progreso i {
+  color: var(--primary-blue);
+}
 /* Advertencia: el flujo se frena por datos incompletos, no por un error del sistema. */
 .modal-icon--warn {
   color: var(--yellow);
