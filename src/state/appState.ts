@@ -305,12 +305,17 @@ export function reducer(state: AppState, action: Action): AppState {
     // Tipo de venta y de entrega reordenan el flujo de CARGAR VENTA: hay que reubicar el paso.
     case 'setTipoVenta': {
       if (state.tipoVenta === action.value) return state
-      // Las tres entregas valen para los dos tipos de venta: la elegida se conserva.
+      // La entrega ANTERIOR es exclusiva de la venta DIRECTA: al pasar a CON PRESUPUESTO PREVIO se
+      // descarta la entrega anterior que hubiera quedado elegida (el resto de las entregas se conserva).
+      const tipoEntrega =
+        action.value === 'CON PRESUPUESTO PREVIO' && state.tipoEntrega === 'ANTERIOR'
+          ? null
+          : state.tipoEntrega
       const paso =
         state.operacion === 'CARGAR VENTA'
-          ? pasoDelModo(state.paso, state.operacion, action.value, state.tipoEntrega)
+          ? pasoDelModo(state.paso, state.operacion, action.value, tipoEntrega)
           : state.paso
-      return { ...state, tipoVenta: action.value, paso }
+      return { ...state, tipoVenta: action.value, tipoEntrega, paso }
     }
 
     case 'setTipoEntrega': {
@@ -562,9 +567,15 @@ export function reducer(state: AppState, action: Action): AppState {
               nombre: action.producto.nombre,
               um: action.producto.um,
               cantidad: action.cantidad,
-              // Del catálogo salen el id del producto (para linkearlo) y su peso unitario.
+              // Del catálogo salen el id del producto (para linkearlo), su peso y su precio unitario.
               productoId: action.producto.id,
               peso: action.producto.peso,
+              // El precio de lista (ya con/sin IVA según el cliente) alimenta el importe a facturar.
+              precioUnitario: action.producto.precio,
+              // Tipo de mercadería (CO / COM): viaja a la "Vta Pend de Facturar" del remito POSTERIOR.
+              tipo: action.producto.tipo,
+              // Rentabilidad según la lista del cliente: se guarda en la "Vta Pend de Facturar".
+              rentabilidad: action.producto.rentabilidad,
             },
           ],
         },
@@ -612,6 +623,9 @@ export function reducer(state: AppState, action: Action): AppState {
           // La venta de origen se linkea en la cabecera del remito; el peso, en la línea.
           ventaId: s.prod.ventaId,
           peso: s.prod.peso,
+          // Relacionales para afectar pendiente de entrega y stock al emitir el remito.
+          pendienteEntregaId: s.prod.pendienteEntregaId,
+          stockId: s.prod.stockId,
         }))
       if (nuevos.length === 0) return state
       return {

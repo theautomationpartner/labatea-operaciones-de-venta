@@ -1,4 +1,5 @@
-import { entregadoDeRemito, pendienteDeRemito, type RemitoPendiente } from '@/services/monday'
+import { money } from '@/lib/format'
+import { montoPendienteFacturar, type RemitoPendiente } from '@/services/monday'
 
 /** Clase del badge según lo que diga la columna de estado de facturación del board. */
 const badgeDe = (estado: string): string =>
@@ -30,21 +31,21 @@ export function ResumenRemitos({
 }: ResumenRemitosProps) {
   return (
     <div className="presup-panel">
-      <div className="presup-head">Remitos de venta del cliente</div>
+      <div className="presup-head">Ventas pendientes de facturar del cliente</div>
       <div className="presup-list">
         {cargando && (
           <div className="presup-vacio">
-            <i className="fas fa-spinner fa-spin" /> Buscando remitos pendientes de facturar…
+            <i className="fas fa-spinner fa-spin" /> Buscando ventas pendientes de facturar…
           </div>
         )}
         {!cargando && error && (
           <div className="presup-vacio presup-vacio--alerta">
-            No se pudieron traer los remitos del cliente. Reintentá en unos segundos.
+            No se pudieron traer las ventas del cliente. Reintentá en unos segundos.
           </div>
         )}
         {!cargando && !error && remitos.length === 0 && (
           <div className="presup-vacio presup-vacio--alerta">
-            Este cliente no tiene remitos pendientes de facturar.
+            Este cliente no tiene ventas pendientes de facturar.
           </div>
         )}
         {!cargando &&
@@ -64,18 +65,12 @@ export function ResumenRemitos({
               </div>
               <div className="pcard-row">
                 <div>
-                  <div className="pcol-l">Fecha</div>
-                  <div className="pcol-v">{r.fecha}</div>
-                </div>
-                <div>
-                  <div className="pcol-l">Pend. de facturar</div>
-                  <div className="pcol-v">
-                    {pendienteDeRemito(r)} / {entregadoDeRemito(r)}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
                   <div className="pcol-l">Productos</div>
                   <div className="pcol-v">{r.productos.length}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="pcol-l">Monto pend. de facturar</div>
+                  <div className="pcol-v">{money(montoPendienteFacturar(r))}</div>
                 </div>
               </div>
             </button>
@@ -83,9 +78,9 @@ export function ResumenRemitos({
       </div>
       <div className="presup-foot">
         {cargando
-          ? 'Consultando el tablero de Remitos…'
+          ? 'Consultando las ventas pendientes de facturar…'
           : `Mostrando ${remitos.length} ${
-              remitos.length === 1 ? 'remito pendiente' : 'remitos pendientes'
+              remitos.length === 1 ? 'venta pendiente' : 'ventas pendientes'
             }`}
       </div>
     </div>

@@ -7,13 +7,11 @@
  */
 import { CHOFERES, COMISIONISTAS, DESTINOS, REMITOS, VEHICULOS } from '@/data/mock'
 import { round2 } from '@/lib/format'
-import { clienteLlevaIva, precioConIva } from '@/lib/precios'
 import type {
   Chofer,
   Cliente,
   Comisionista,
   Destino,
-  ListaPrecio,
   MedioEnvio,
   RemitoProducto,
   ResponsableEntrega,
@@ -28,12 +26,9 @@ import {
   MEDIO_ENVIO_LABELS,
   REMITO_EMISION_ESTADO,
   REMITO_ENVIO_ESTADO,
-  REMITO_ESTADO_FACT_INDEX,
-  REMITO_SUB_ESTADO_FACT_INDEX,
-  REMITO_SUB_ESTADO_NO_SELECCIONABLE,
   REMITO_VENTA_INDEX,
 } from './columns'
-import { byId, numCol, valor, type CV, type MondayItem } from './parse'
+import { byId, numCol, valor, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
 
 /** Un remito del cliente con mercadería entregada que todavía hay que facturar. */
@@ -51,182 +46,9 @@ export interface RemitoPendiente {
   productos: RemitoProducto[]
 }
 
-/** yyyy-MM-dd (Monday) → dd/MM/yyyy (el formato del ERP). Sin fecha devuelve '--'. */
-const fechaErp = (iso: string): string => {
-  const [y, m, d] = (iso ?? '').split('-')
-  return y && m && d ? `${d}/${m}/${y}` : '--'
-}
-
-/**
- * Un producto entregado en el remito. El nombre y el código salen del producto conectado en
- * "✋Producto" (board_relation_mkwca4wb), nunca del nombre del subítem: ése se renombra con
- * IDs ("RTOVMOV-03") y no le dice nada al usuario.
- *
- * El precio y la rentabilidad no viven en el remito —documenta cantidades, no importes—, así
- * que se leen del Maestro de Productos por la lista del cliente, igual que en la búsqueda.
- */
-function mapRemitoProducto(sub: MondayItem, lista: ListaPrecio, conIva: boolean): RemitoProducto {
-  const c = byId(sub)
-  const producto = c[COL.remitoSub.producto]?.linked_items?.[0]
-  const prodCols = producto ? byId(producto) : {}
-  const proveedor = prodCols[COL.producto.proveedor]?.linked_items?.[0]
-  const entregada = numCol(c[COL.remitoSub.cantEntregada])
-  const facturada = numCol(c[COL.remitoSub.cantFacturada])
-  const estado = c[COL.remitoSub.estadoFacturacion]
-  const margenCol = COL.margen[lista]
-  return {
-    nombre: producto?.name || 'Producto sin asignar',
-    codigo: producto ? valor(prodCols[COL.producto.codigo]) : '',
-    cantRemito: entregada,
-    cantFacturada: facturada,
-    // Pendiente de facturar = entregada − facturada. Nunca baja de cero.
-    pendiente: Math.max(entregada - facturada, 0),
-    precio: precioConIva(
-      numCol(prodCols[COL.precioLista[lista]]),
-      numCol(prodCols[COL.producto.iva]),
-      conIva,
-    ),
-    rent: margenCol ? numCol(prodCols[margenCol]) : 0,
-    um: valor(c[COL.remitoSub.unidadMedida]),
-    /* Datos fiscales del producto: parten la venta en comprobantes (consignada por proveedor)
-       y definen la alícuota que se declara en cada línea. */
-    tipo: valor(prodCols[COL.producto.tipoMercaderia]),
-    iva: numCol(prodCols[COL.producto.iva]),
-    proveedorId: proveedor?.id,
-    proveedorNombre: proveedor?.name ?? '',
-    estadoFacturacion: estado?.text ?? '',
-    /* Sólo se pueden llevar a la factura los productos cuyo estado NO es "Pend de Facturar"
-       (índice 2 de color_mm54wrds). Se compara por índice, no por el texto de la etiqueta. */
-    seleccionable: estado?.index !== REMITO_SUB_ESTADO_NO_SELECCIONABLE,
-    subitemId: sub.id,
-    productoId: producto?.id,
-  }
-}
-
-/**
- * IDs de los remitos que hay que facturar: los de venta POSTERIOR (la mercadería salió antes
- * de la factura) cuyo estado de facturación no llegó todavía a "100% Facturado".
- *
- * Los dos filtros van por ÍNDICE en la consulta; el del cliente se aplica acá, porque
- * `query_params` no filtra sobre una columna `board_relation`. Un remito sin estado cargado
- * pasa: sin dato no se puede afirmar que ya esté facturado.
- */
-async function idsRemitosAFacturar(clienteItemId: string): Promise<string[]> {
-  const data = await mondayApi<{
-    boards: { items_page: { items: { id: string; column_values: CV[] }[] } }[]
-  }>(
-    `query {
-      boards(ids: [${BOARDS.remitos}]) {
-        items_page(
-          limit: 200,
-          query_params: {rules: [
-            {column_id: "${COL.remito.venta}", compare_value: [${REMITO_VENTA_INDEX.posterior}], operator: any_of},
-            {column_id: "${COL.remito.estadoFacturacion}", compare_value: [${REMITO_ESTADO_FACT_INDEX.totalmenteFacturado}], operator: not_any_of}
-          ]}
-        ) {
-          items {
-            id
-            column_values(ids: ["${COL.remito.cliente}"]) {
-              id text
-              ... on BoardRelationValue { linked_item_ids }
-            }
-          }
-        }
-      }
-    }`,
-  )
-  return (data.boards[0]?.items_page?.items ?? [])
-    .filter((it) => {
-      const linked = byId(it)[COL.remito.cliente]?.linked_item_ids ?? []
-      return linked.map(String).includes(String(clienteItemId))
-    })
-    .map((it) => it.id)
-}
-
-/**
- * Remitos del cliente pendientes de facturar, con todos sus productos (cantidad entregada,
- * facturada, pendiente y estado de facturación de la línea).
- *
- * Va en dos consultas, igual que los presupuestos vigentes: primero los ítems del board
- * filtrando por tipo de venta y estado, y después sólo esos ítems con sus subelementos y el
- * producto conectado, del que sale el precio de la lista del cliente.
- */
-export async function getRemitosPendientesFacturar(cliente: Cliente): Promise<RemitoPendiente[]> {
-  if (!mondayHabilitado()) {
-    return REMITOS.filter((r) => r.estado !== 'Facturado').map((r) => ({
-      id: r.id,
-      nro: r.id,
-      nroRemito: r.id,
-      fecha: r.fecha,
-      estadoFacturacion: r.estado,
-      productos: r.productos.map((p) => ({ ...p, seleccionable: p.pendiente > 0 })),
-    }))
-  }
-
-  const ids = await idsRemitosAFacturar(cliente.id)
-  if (ids.length === 0) return []
-
-  const lista = cliente.list ?? 'L1'
-  // Monotributista, Consumidor Final y Exento pagan IVA; el Resp. Inscripto, no.
-  const conIva = clienteLlevaIva(cliente.status)
-  const columnasProducto = JSON.stringify([
-    COL.producto.codigo,
-    COL.producto.iva,
-    COL.producto.tipoMercaderia,
-    COL.producto.proveedor,
-    COL.precioLista[lista],
-    ...(COL.margen[lista] ? [COL.margen[lista] as string] : []),
-  ])
-
-  const data = await mondayApi<{ items: (MondayItem & { subitems: MondayItem[] })[] }>(
-    `query ($ids: [ID!]) {
-      items(ids: $ids) {
-        id name
-        column_values(ids: ["${COL.remito.pulseId}","${COL.remito.nroRemito}","${COL.remito.fechaEmision}","${COL.remito.estadoFacturacion}"]) { id text }
-        subitems {
-          id name
-          column_values(ids: ["${COL.remitoSub.producto}","${COL.remitoSub.cantEntregada}","${COL.remitoSub.cantFacturada}","${COL.remitoSub.estadoFacturacion}","${COL.remitoSub.unidadMedida}"]) {
-            id text
-            ... on StatusValue { index }
-            ... on BoardRelationValue {
-              linked_items {
-                id name
-                column_values(ids: ${columnasProducto}) {
-                  id text
-                  ... on FormulaValue { display_value }
-                  ... on MirrorValue { display_value }
-                  ... on BoardRelationValue { linked_items { id name } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }`,
-    { ids },
-  )
-
-  return (data.items ?? []).map((it) => {
-    const c = byId(it)
-    return {
-      id: it.id,
-      // El ID del board ("RTOVTA-04") es lo que ve el usuario; el name puede estar sin renombrar.
-      nro: c[COL.remito.pulseId]?.text?.trim() || it.name,
-      nroRemito: c[COL.remito.nroRemito]?.text?.trim() ?? '',
-      fecha: fechaErp(c[COL.remito.fechaEmision]?.text ?? ''),
-      estadoFacturacion: c[COL.remito.estadoFacturacion]?.text ?? '',
-      productos: (it.subitems ?? []).map((sub) => mapRemitoProducto(sub, lista, conIva)),
-    }
-  })
-}
-
-/** Unidades del remito que todavía no se facturaron. Es lo que resume la card. */
-export const pendienteDeRemito = (r: RemitoPendiente): number =>
-  r.productos.reduce((acc, p) => acc + p.pendiente, 0)
-
-/** Unidades entregadas en el remito, facturadas o no. */
-export const entregadoDeRemito = (r: RemitoPendiente): number =>
-  r.productos.reduce((acc, p) => acc + p.cantRemito, 0)
+/* La fuente de "pendientes de facturar" para la venta DIRECTA con entrega ANTERIOR ya NO sale de
+   los remitos del board 18421035529: se lee de "Vtas Pends de Facturar" (18421033947), más abajo
+   (`getVentasPendientesFacturar`). Las consultas de remitos a facturar quedaron deprecadas. */
 
 /* ===== Especificación del envío (entrega por La Batea) ===== */
 
@@ -372,6 +194,8 @@ export interface LineaRemito {
   pesoUnitario: number
   /** Etiqueta de unidad de medida del producto (dropdown del subelemento). */
   um: string
+  /** Precio unitario del producto. Sólo POSTERIOR: alimenta el "🤖Total $" del subelemento. */
+  precioUnitario?: number
 }
 
 /** Datos para crear el remito y sus líneas. Refleja el estado del paso de envío. */
@@ -406,25 +230,51 @@ export interface RemitoCreado {
 const pesoLinea = (l: LineaRemito): number => round2(l.cantidad * (l.pesoUnitario || 0))
 
 /**
- * Columnas de un subelemento del remito. La cantidad remitada va tanto en "✋Cant a Entregar"
- * como en "🤖Cant Facturada", según lo pedido. La U.M. se escribe como etiqueta del dropdown
- * (se crea si el board no la tenía); el peso, ya calculado por línea.
- *
- * En la emisión ANTERIOR la línea nace "Pend de Facturar" (0% facturado, índice 2 de
- * color_mm54wrds); en la POSTERIOR esa columna queda vacía.
+ * Columnas de un subelemento del remito: cantidad entregada, peso y —sólo POSTERIOR— el "🤖Total $"
+ * de la línea. La U.M. va como etiqueta del dropdown (se crea si el board no la tenía). Las columnas
+ * de facturación (cantidad facturada y estado) se eliminaron del board: ya no se escriben.
  */
-const columnasLineaRemito = (l: LineaRemito, emisionAnterior: boolean): Record<string, unknown> => {
+const columnasLineaRemito = (l: LineaRemito, totalProducto: number | null): Record<string, unknown> => {
   const cv: Record<string, unknown> = {
     [COL.remitoSub.cantEntregada]: String(round2(l.cantidad)),
-    [COL.remitoSub.cantFacturada]: String(round2(l.cantidad)),
     [COL.remitoSub.peso]: String(pesoLinea(l)),
   }
-  if (emisionAnterior) {
-    cv[COL.remitoSub.estadoFacturacion] = { index: REMITO_SUB_ESTADO_FACT_INDEX.pendDeFacturar }
+  if (totalProducto != null) {
+    cv[COL.remitoSub.totalProducto] = String(totalProducto)
   }
   if (l.productoId) cv[COL.remitoSub.producto] = { item_ids: [Number(l.productoId)] }
   if (l.um) cv[COL.remitoSub.unidadMedida] = { labels: [l.um] }
   return cv
+}
+
+/** Importe de una línea del remito: cantidad × precio unitario (0 si no hay precio). */
+const totalLineaRemito = (l: LineaRemito): number => round2(l.cantidad * (l.precioUnitario ?? 0))
+
+/**
+ * Índice del primer label cuyo texto coincide con alguno de los candidatos, leído de la metadata
+ * de la columna. Se mapea por texto (no por un índice fijo) para sobrevivir a que el board reordene
+ * o reescriba etiquetas; los candidatos cubren sinónimos ("0% Facturado" vs "0% Facturada").
+ */
+const indiceDeLabel = (settingsStr: string | undefined, candidatos: string[]): number | null => {
+  if (!settingsStr) return null
+  const labels = (JSON.parse(settingsStr).labels ?? {}) as Record<string, string>
+  for (const cand of candidatos) {
+    const entrada = Object.entries(labels).find(([, l]) => l === cand)
+    if (entrada) return Number(entrada[0])
+  }
+  return null
+}
+
+/**
+ * Resuelve dinámicamente el índice de "Posterior"/"Anterior" en "✋Venta" (color_mkwbrkg6), leyendo
+ * la metadata de la columna. Así la creación no depende de un índice numérico hardcodeado.
+ */
+async function indicesVentaRemito(): Promise<{ posterior: number | null; anterior: number | null }> {
+  const data = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
+    `query { boards(ids: [${BOARDS.remitos}]) { columns(ids: ["${COL.remito.venta}"]) { settings_str } } }`,
+  )
+  const str = data.boards[0]?.columns?.[0]?.settings_str
+  return { posterior: indiceDeLabel(str, ['Posterior']), anterior: indiceDeLabel(str, ['Anterior']) }
 }
 
 /**
@@ -456,19 +306,18 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
     return { id: `mock-remito-${Date.now()}`, subitemsCreados: lineas.length }
   }
 
-  const emisionIndex =
-    tipoEmision === 'POSTERIOR' ? REMITO_VENTA_INDEX.posterior : REMITO_VENTA_INDEX.anterior
-  // Emisión ANTERIOR: el remito y sus líneas nacen "0% Facturado".
-  const emisionAnterior = tipoEmision === 'ANTERIOR'
+  const esPosterior = tipoEmision === 'POSTERIOR'
+  // "✋Venta": Posterior/Anterior resuelto por metadata (con respaldo por si el label cambió).
+  const venta = await indicesVentaRemito()
+  const ventaIndex = esPosterior
+    ? venta.posterior ?? REMITO_VENTA_INDEX.posterior
+    : venta.anterior ?? REMITO_VENTA_INDEX.anterior
+
   const pesoTotal = lineas.reduce((acc, l) => acc + pesoLinea(l), 0)
 
   const cabecera: Record<string, unknown> = {
-    [COL.remito.venta]: { index: emisionIndex },
+    [COL.remito.venta]: { index: ventaIndex },
     [COL.remito.pesoTotal]: String(round2(pesoTotal)),
-  }
-  // Emisión ANTERIOR: el remito nace "0% Facturado" (índice 2 de color_mm5bf05j).
-  if (emisionAnterior) {
-    cabecera[COL.remito.estadoFacturacion] = { index: REMITO_ESTADO_FACT_INDEX.sinFacturar }
   }
   if (clienteId) cabecera[COL.remito.cliente] = { item_ids: [Number(clienteId)] }
 
@@ -509,7 +358,10 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
     const campos = tanda.map((l, i) => {
       const n = desde + i
       variables[`n${n}`] = l.nombre
-      variables[`cv${n}`] = JSON.stringify(columnasLineaRemito(l, emisionAnterior))
+      // El "🤖Total $" sólo aplica al remito POSTERIOR (lo pendiente de facturar por línea).
+      variables[`cv${n}`] = JSON.stringify(
+        columnasLineaRemito(l, esPosterior ? totalLineaRemito(l) : null),
+      )
       return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}, create_labels_if_missing: true) { id }`
     })
     const declaraciones = tanda
@@ -524,6 +376,333 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
   }
 
   return { id: itemId, subitemsCreados }
+}
+
+/* ===== Registro en "Vtas Pends de Facturar" (board 18421033947) ===== */
+
+/** Una línea del remito llevada a "Vtas Pends de Facturar": su producto y su precio unitario. */
+export interface LineaVtaPendiente {
+  productoId?: string
+  precioUnitario: number
+  /** Cantidad remitada del producto: se persiste como "Cant Entregada" (numeric_mm5nf0t6). */
+  cantidad: number
+  /** Tipo de mercadería del producto (CO / COM), leído del Maestro (color_mm48hm74). Se etiqueta
+   *  en el subelemento (color_mm5preby) resolviendo el índice por label del board destino. */
+  tipoMercaderia?: string
+  /** Rentabilidad del producto según la lista del cliente, en %. Se persiste en "🤖Rentab %"
+   *  (numeric_mm5p80xs) para reusarla al facturar la venta DIRECTA con entrega ANTERIOR. */
+  rentabilidad?: number
+}
+
+/** Datos para crear el ítem de "Vtas Pends de Facturar" y sus subelementos. */
+export interface DatosVtaPendienteFacturar {
+  /** Nombre con el que nace el ítem (por lo general, el del cliente). */
+  nombre: string
+  /** Ítem del cliente en Personas (board_relation_mm5pd79g). Es por donde se filtra al facturar. */
+  clienteId?: string
+  /** Ítem de la cuenta corriente del cliente (board_relation_mkwbz75m). */
+  ctaCteId?: string
+  /** Remito POSTERIOR recién creado (board_relation_mkwbvma5). */
+  remitoId: string
+  /** Importe total del remito ("🤖Importe a Facturar $"). */
+  importeTotal: number
+  lineas: LineaVtaPendiente[]
+}
+
+/**
+ * Crea, tras un remito POSTERIOR, el registro de "Vtas Pends de Facturar" (18421033947): cabecera
+ * enlazada a la cuenta corriente y al remito, con el importe a facturar y el estado "0% Facturada"
+ * (índice resuelto por metadata); y un subelemento por producto (bulk, con alias) con su precio
+ * unitario, la cantidad facturada en 0 y el estado "0% Facturado" (también por índice dinámico).
+ */
+export async function crearVtaPendienteFacturar(
+  datos: DatosVtaPendienteFacturar,
+): Promise<{ id: string; subitemsCreados: number }> {
+  const { nombre, clienteId, ctaCteId, remitoId, importeTotal, lineas } = datos
+  if (!mondayHabilitado()) {
+    return { id: `mock-vtapend-${Date.now()}`, subitemsCreados: lineas.length }
+  }
+
+  // Índices de "0% Facturada"/"0% Facturado" (ítem y subítem) y del "🤖Tipo" del subítem, resueltos
+  // por metadata en una sola consulta. El tipo de mercadería se mapea por LABEL: los índices del board
+  // destino (color_mm5preby: COM=0, CO=1) NO coinciden con los del Maestro (color_mm48hm74: COM=1, CO=2).
+  const meta = await mondayApi<{
+    item: { columns: { settings_str: string }[] }[]
+    sub: { columns: { id: string; settings_str: string }[] }[]
+  }>(
+    `query {
+      item: boards(ids: [${BOARDS.vtasPendFacturar}]) { columns(ids: ["${COL.vtaPendFacturar.estadoFacturacion}"]) { settings_str } }
+      sub: boards(ids: [${BOARDS.vtasPendFacturarSub}]) { columns(ids: ["${COL.vtaPendFacturarSub.estadoFacturacion}","${COL.vtaPendFacturarSub.tipoMercaderia}"]) { id settings_str } }
+    }`,
+  )
+  // El texto varía entre boards ("0% Facturada" en el ítem, "0% Facturado" en el subítem): se cubren ambos.
+  const itemSinFactIdx = indiceDeLabel(meta.item[0]?.columns?.[0]?.settings_str, ['0% Facturada', '0% Facturado'])
+  const subCols = meta.sub[0]?.columns ?? []
+  const subSinFactStr = subCols.find((c) => c.id === COL.vtaPendFacturarSub.estadoFacturacion)?.settings_str
+  const subTipoStr = subCols.find((c) => c.id === COL.vtaPendFacturarSub.tipoMercaderia)?.settings_str
+  const subSinFactIdx = indiceDeLabel(subSinFactStr, ['0% Facturado', '0% Facturada'])
+  // Índice del tipo de mercadería en el board destino, resuelto por label (CO / COM).
+  const tipoIdx = (tipo?: string): number | null => {
+    const t = (tipo ?? '').trim().toUpperCase()
+    if (!t) return null
+    return indiceDeLabel(subTipoStr, [t])
+  }
+
+  const cabecera: Record<string, unknown> = {
+    [COL.vtaPendFacturar.remito]: { item_ids: [Number(remitoId)] },
+    [COL.vtaPendFacturar.importeAFacturar]: String(round2(importeTotal)),
+    [COL.vtaPendFacturar.importeFacturado]: '0',
+  }
+  if (ctaCteId) cabecera[COL.vtaPendFacturar.ctaCte] = { item_ids: [Number(ctaCteId)] }
+  // Cliente obligatorio: es la columna por la que se filtran las ventas pendientes al facturar.
+  if (clienteId) cabecera[COL.vtaPendFacturar.cliente] = { item_ids: [Number(clienteId)] }
+  if (itemSinFactIdx != null) cabecera[COL.vtaPendFacturar.estadoFacturacion] = { index: itemSinFactIdx }
+
+  const creado = await mondayApi<{ create_item: { id: string } }>(
+    `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
+      create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
+    }`,
+    { boardId: BOARDS.vtasPendFacturar, name: nombre, cv: JSON.stringify(cabecera) },
+  )
+  const itemId = creado.create_item.id
+
+  // Columnas de un subelemento: producto, precio unitario, cantidad facturada 0 y estado 0% Facturado.
+  const columnasSub = (l: LineaVtaPendiente): Record<string, unknown> => {
+    const cv: Record<string, unknown> = {
+      [COL.vtaPendFacturarSub.precioUnit]: String(round2(l.precioUnitario)),
+      // Cantidad remitada = cantidad entregada del producto (pendiente de facturar).
+      [COL.vtaPendFacturarSub.cantEntregada]: String(round2(l.cantidad)),
+      [COL.vtaPendFacturarSub.cantFacturada]: '0',
+    }
+    if (l.productoId) cv[COL.vtaPendFacturarSub.producto] = { item_ids: [Number(l.productoId)] }
+    if (subSinFactIdx != null) cv[COL.vtaPendFacturarSub.estadoFacturacion] = { index: subSinFactIdx }
+    // Tipo de producto (CO / COM) heredado del Maestro, mapeado al índice del board destino por label.
+    const idxTipo = tipoIdx(l.tipoMercaderia)
+    if (idxTipo != null) cv[COL.vtaPendFacturarSub.tipoMercaderia] = { index: idxTipo }
+    // Rentabilidad del producto según la lista del cliente: se guarda para reusarla al facturar.
+    if (l.rentabilidad != null) {
+      cv[COL.vtaPendFacturarSub.rentabilidad] = String(round2(l.rentabilidad))
+    }
+    return cv
+  }
+
+  let subitemsCreados = 0
+  for (let desde = 0; desde < lineas.length; desde += PRODUCTOS_POR_TANDA_REMITO) {
+    const tanda = lineas.slice(desde, desde + PRODUCTOS_POR_TANDA_REMITO)
+    const variables: Record<string, unknown> = { parentId: itemId }
+    const campos = tanda.map((l, i) => {
+      const n = desde + i
+      variables[`n${n}`] = nombre
+      variables[`cv${n}`] = JSON.stringify(columnasSub(l))
+      return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}) { id }`
+    })
+    const declaraciones = tanda
+      .map((_, i) => `$n${desde + i}: String!, $cv${desde + i}: JSON!`)
+      .join(', ')
+    const res = await mondayApi<Record<string, { id: string } | null>>(
+      `mutation ($parentId: ID!, ${declaraciones}) { ${campos.join('\n')} }`,
+      variables,
+    )
+    subitemsCreados += tanda.filter((_, i) => res[`s${desde + i}`]?.id).length
+  }
+
+  return { id: itemId, subitemsCreados }
+}
+
+/* ===== Ventas pendientes de facturar (fuente de la venta DIRECTA con entrega ANTERIOR) ===== */
+
+/** Importe pendiente de facturar de una venta pendiente: Σ (pendiente × precio) de sus productos. */
+export const montoPendienteFacturar = (r: RemitoPendiente): number =>
+  round2(r.productos.reduce((acc, p) => acc + p.pendiente * p.precio, 0))
+
+/** Un subelemento de "Vtas Pends de Facturar" mapeado a la forma `RemitoProducto` que consume la UI. */
+function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProducto {
+  const c = byId(sub)
+  const producto = c[COL.vtaPendFacturarSub.producto]?.linked_items?.[0]
+  const prodCols = producto ? byId(producto) : {}
+  const entregada = numCol(c[COL.vtaPendFacturarSub.cantEntregada])
+  const facturada = numCol(c[COL.vtaPendFacturarSub.cantFacturada])
+  const estado = c[COL.vtaPendFacturarSub.estadoFacturacion]
+  const pendiente = Math.max(entregada - facturada, 0)
+  return {
+    nombre: producto?.name || 'Producto sin asignar',
+    codigo: producto ? valor(prodCols[COL.producto.codigo]) : '',
+    cantRemito: entregada,
+    cantFacturada: facturada,
+    // Pendiente de facturar = entregada − facturada. Nunca baja de cero.
+    pendiente,
+    precio: numCol(c[COL.vtaPendFacturarSub.precioUnit]),
+    // Rentabilidad guardada al remitir ("🤖Rentab %"): alimenta la rentabilidad general al facturar.
+    rent: numCol(c[COL.vtaPendFacturarSub.rentabilidad]),
+    // Subtotal de la línea (fórmula del board, por display_value).
+    subtotal: numCol(c[COL.vtaPendFacturarSub.subtotal]),
+    estadoFacturacion: estado?.text ?? '',
+    // Sólo se puede facturar lo que todavía tiene unidades pendientes.
+    seleccionable: pendiente > 0,
+    subitemId: sub.id,
+    productoId: producto?.id,
+    // Linaje: a qué venta pendiente (ítem padre) pertenece el subítem.
+    ventaPendId,
+  }
+}
+
+/**
+ * Ventas del cliente pendientes de facturar, leídas de "Vtas Pends de Facturar" (18421033947).
+ * REEMPLAZA a la fuente anterior (remitos del board 18421035529). Se filtra en la consulta por el
+ * cliente (board_relation_mm5pd79g) y por estado distinto de "100% Facturada" (color_mm5ndgd5, por
+ * índice dinámico), sin filtrar del lado del cliente. Cada subelemento se mapea a `RemitoProducto`.
+ */
+export async function getVentasPendientesFacturar(cliente: Cliente): Promise<RemitoPendiente[]> {
+  if (!mondayHabilitado()) {
+    // Modo local: se aproxima con el mock de remitos para que el prototipo siga corriendo.
+    return REMITOS.filter((r) => r.estado !== 'Facturado').map((r) => ({
+      id: r.id,
+      nro: r.id,
+      nroRemito: r.id,
+      fecha: r.fecha,
+      estadoFacturacion: r.estado,
+      productos: r.productos.map((p) => ({ ...p, seleccionable: p.pendiente > 0 })),
+    }))
+  }
+  const idNum = Number(cliente.id)
+  if (!Number.isFinite(idNum)) return []
+
+  // Índice de "100% Facturada" en color_mm5ndgd5, para excluirla por query_params (no hardcodeado).
+  const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
+    `query { boards(ids: [${BOARDS.vtasPendFacturar}]) { columns(ids: ["${COL.vtaPendFacturar.estadoFacturacion}"]) { settings_str } } }`,
+  )
+  const completaIdx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, ['100% Facturada', '100% Facturado'])
+  const reglaEstado =
+    completaIdx != null
+      ? `, {column_id: "${COL.vtaPendFacturar.estadoFacturacion}", compare_value: [${completaIdx}], operator: not_any_of}`
+      : ''
+
+  const data = await mondayApi<{
+    boards: { items_page: { items: (MondayItem & { subitems: MondayItem[] })[] } }[]
+  }>(
+    `query ($cliente: CompareValue!) {
+      boards(ids: [${BOARDS.vtasPendFacturar}]) {
+        items_page(
+          limit: 100,
+          query_params: {rules: [
+            {column_id: "${COL.vtaPendFacturar.cliente}", compare_value: $cliente, operator: any_of}${reglaEstado}
+          ]}
+        ) {
+          items {
+            id name
+            column_values(ids: ["${COL.vtaPendFacturar.estadoFacturacion}"]) { id text }
+            subitems {
+              id name
+              column_values(ids: ["${COL.vtaPendFacturarSub.producto}","${COL.vtaPendFacturarSub.precioUnit}","${COL.vtaPendFacturarSub.subtotal}","${COL.vtaPendFacturarSub.cantEntregada}","${COL.vtaPendFacturarSub.cantFacturada}","${COL.vtaPendFacturarSub.rentabilidad}","${COL.vtaPendFacturarSub.estadoFacturacion}"]) {
+                id text
+                ... on StatusValue { index }
+                ... on FormulaValue { display_value }
+                ... on BoardRelationValue { linked_items { id name column_values(ids: ["${COL.producto.codigo}"]) { id text } } }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { cliente: [idNum] },
+  )
+
+  return (data.boards[0]?.items_page?.items ?? []).map((it) => {
+    const c = byId(it)
+    return {
+      id: it.id,
+      nro: it.name,
+      nroRemito: '',
+      fecha: '',
+      estadoFacturacion: c[COL.vtaPendFacturar.estadoFacturacion]?.text ?? '',
+      productos: (it.subitems ?? []).map((sub) => mapVtaPendProducto(sub, it.id)),
+    }
+  })
+}
+
+/** Una línea facturada en esta operatoria, con su linaje en "Vtas Pends de Facturar". */
+export interface LineaFacturacionVtaPend {
+  /** Subítem del producto (board 18421034035) — NIVEL A. */
+  subitemId?: string
+  /** Ítem padre de la venta pendiente (board 18421033947) — NIVEL B. */
+  ventaPendId?: string
+  /** Cantidad facturada en esta operatoria. */
+  aFacturar: number
+  /** Precio unitario, para el monto facturado (aFacturar × precio). */
+  precio: number
+}
+
+/**
+ * Cierre de facturación sobre "Vtas Pends de Facturar" (18421033947), en dos niveles y por lotes:
+ *  - NIVEL A (subítems): acumula la cantidad facturada (numeric_mm5nadmz += aFacturar; nulo → 0).
+ *  - NIVEL B (ítems padre): acumula el importe facturado (numeric_mm5n938k += Σ aFacturar×precio,
+ *    agrupado por venta) y enlaza la venta creada (board_relation_mkwbb4w4).
+ * Si el NIVEL A falla, no se ejecuta el NIVEL B (no se computa el monto de productos que no se
+ * actualizaron), manteniendo la coherencia financiera.
+ */
+export async function registrarFacturacionVtasPend(
+  items: LineaFacturacionVtaPend[],
+  ventaId: string,
+): Promise<void> {
+  if (!mondayHabilitado()) return
+
+  // NIVEL A: cantidad facturada acumulada por subítem (agregada por si un subítem se repite).
+  const porSub = new Map<string, number>()
+  for (const it of items) {
+    if (it.subitemId && it.aFacturar > 0) {
+      porSub.set(it.subitemId, round2((porSub.get(it.subitemId) ?? 0) + it.aFacturar))
+    }
+  }
+  const subIds = [...porSub.keys()]
+  if (subIds.length > 0) {
+    const data = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
+      `query ($ids: [ID!]) { items(ids: $ids) { id column_values(ids: ["${COL.vtaPendFacturarSub.cantFacturada}"]) { text } } }`,
+      { ids: subIds },
+    )
+    const actual = new Map<string, number>()
+    for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
+    const vars: Record<string, unknown> = {}
+    const campos = subIds.map((id, i) => {
+      const nuevo = round2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
+      vars[`i${i}`] = id
+      vars[`cv${i}`] = JSON.stringify({ [COL.vtaPendFacturarSub.cantFacturada]: String(nuevo) })
+      return `a${i}: change_multiple_column_values(item_id: $i${i}, board_id: ${BOARDS.vtasPendFacturarSub}, column_values: $cv${i}) { id }`
+    })
+    const decl = subIds.map((_, i) => `$i${i}: ID!, $cv${i}: JSON!`).join(', ')
+    await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, vars)
+  }
+
+  // NIVEL B: importe facturado acumulado por ítem padre (agrupado por venta) + enlace de la venta.
+  const montoPorPadre = new Map<string, number>()
+  for (const it of items) {
+    if (it.ventaPendId && it.aFacturar > 0) {
+      montoPorPadre.set(
+        it.ventaPendId,
+        round2((montoPorPadre.get(it.ventaPendId) ?? 0) + it.aFacturar * it.precio),
+      )
+    }
+  }
+  const padres = [...montoPorPadre.keys()]
+  if (padres.length === 0) return
+  const data = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
+    `query ($ids: [ID!]) { items(ids: $ids) { id column_values(ids: ["${COL.vtaPendFacturar.importeFacturado}"]) { text } } }`,
+    { ids: padres },
+  )
+  const actual = new Map<string, number>()
+  for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
+  const vars: Record<string, unknown> = {}
+  const campos = padres.map((id, i) => {
+    const nuevo = round2((actual.get(id) ?? 0) + (montoPorPadre.get(id) ?? 0))
+    const cv: Record<string, unknown> = { [COL.vtaPendFacturar.importeFacturado]: String(nuevo) }
+    if (ventaId && Number.isFinite(Number(ventaId))) {
+      cv[COL.vtaPendFacturar.venta] = { item_ids: [Number(ventaId)] }
+    }
+    vars[`i${i}`] = id
+    vars[`cv${i}`] = JSON.stringify(cv)
+    return `b${i}: change_multiple_column_values(item_id: $i${i}, board_id: ${BOARDS.vtasPendFacturar}, column_values: $cv${i}) { id }`
+  })
+  const decl = padres.map((_, i) => `$i${i}: ID!, $cv${i}: JSON!`).join(', ')
+  await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, vars)
 }
 
 /* ===== Emisión y envío del remito (mismo flujo que el presupuesto) ===== */
@@ -549,20 +728,218 @@ async function indiceEstadoRemito(columnId: string, label: string): Promise<numb
 /**
  * Emite el remito: escribe las observaciones en "🤖Observaciones" (long_text_mm51vcrj) y pone
  * "🤖Estado Emision Remito" (color_mkwb12n1) en "Emitir" —por índice—, lo que dispara la
- * automatización que genera el PDF. Ambas cosas van en una sola escritura, así la observación ya
- * está cuando se dispara la generación.
+ * automatización que genera el PDF. Si viene una hoja de talonario, además la linkea en
+ * "🤖Num Remito Talonario" (board_relation_mm5jy3ke). Todo va en una sola escritura, así la
+ * observación y la hoja ya están cuando se dispara la generación.
  */
-export async function emitirRemito(itemId: string, observaciones: string): Promise<void> {
+export async function emitirRemito(
+  itemId: string,
+  observaciones: string,
+  hojaTalonarioId?: string,
+): Promise<void> {
   if (!mondayHabilitado()) return
   const idx = await indiceEstadoRemito(COL.remito.estadoEmision, REMITO_EMISION_ESTADO.emitir)
   const cv: Record<string, unknown> = { [COL.remito.observaciones]: observaciones ?? '' }
   if (idx != null) cv[COL.remito.estadoEmision] = { index: idx }
+  // La hoja del talonario numera el remito: se enlaza como board_relation (item_ids).
+  if (hojaTalonarioId && Number.isFinite(Number(hojaTalonarioId))) {
+    cv[COL.remito.numRemitoTalonario] = { item_ids: [Number(hojaTalonarioId)] }
+  }
   await mondayApi(
     `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
       change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
     }`,
     { id: itemId, board: BOARDS.remitos, cv: JSON.stringify(cv) },
   )
+}
+
+/* ===== Conciliación del remito ANTERIOR: Pendientes de Entrega + subelemento de la Venta ===== */
+
+/** Una línea a conciliar al emitir el remito ANTERIOR: su cantidad y sus dos destinos. */
+export interface LineaEntregaAnterior {
+  cantidad: number
+  /** Nombre del producto, para rotular el subítem de historial. */
+  nombre: string
+  /** Ítem de "Pends de Entrega" (Bulk A): padre del subítem de historial de entrega. */
+  pendienteEntregaId?: string
+  /** Subelemento de la Venta (Bulk B): destino del acumulado de cantidad entregada. */
+  ventaSubitemId?: string
+}
+
+/** BULK A: crea el subítem de historial de entrega en cada "Pends de Entrega" (por lote, con alias). */
+async function bulkAEntrega(items: LineaEntregaAnterior[]): Promise<void> {
+  const conPend = items.filter((l) => l.pendienteEntregaId && l.cantidad > 0)
+  if (conPend.length === 0) return
+  const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
+    `query { boards(ids: [${BOARDS.pendientesEntregaSub}]) { columns(ids: ["${COL.pendienteEntregaSub.tipoRto}"]) { settings_str } } }`,
+  )
+  const idx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, ['RTO Entrega A Cliente'])
+  const variables: Record<string, unknown> = {}
+  const campos = conPend.map((l, i) => {
+    const cv: Record<string, unknown> = {
+      [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
+    }
+    if (idx != null) cv[COL.pendienteEntregaSub.tipoRto] = { index: idx }
+    variables[`p${i}`] = l.pendienteEntregaId
+    variables[`pn${i}`] = l.nombre
+    variables[`pcv${i}`] = JSON.stringify(cv)
+    return `p${i}: create_subitem(parent_item_id: $p${i}, item_name: $pn${i}, column_values: $pcv${i}) { id }`
+  })
+  const decl = conPend.map((_, i) => `$p${i}: ID!, $pn${i}: String!, $pcv${i}: JSON!`).join(', ')
+  await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, variables)
+}
+
+/** BULK B: acumula lo entregado en el subelemento de la Venta (numeric_mm54v0jd; nulo → 0). */
+async function bulkBVenta(items: LineaEntregaAnterior[]): Promise<void> {
+  const conSub = items.filter((l) => l.ventaSubitemId && l.cantidad > 0)
+  if (conSub.length === 0) return
+  const porSub = new Map<string, number>()
+  for (const l of conSub) {
+    const id = l.ventaSubitemId as string
+    porSub.set(id, round2((porSub.get(id) ?? 0) + l.cantidad))
+  }
+  const subIds = [...porSub.keys()]
+  const data = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
+    `query ($ids: [ID!]) { items(ids: $ids) { id column_values(ids: ["${COL.ventaSub.cantEntregadaPosterior}"]) { text } } }`,
+    { ids: subIds },
+  )
+  const actual = new Map<string, number>()
+  for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
+  const vars: Record<string, unknown> = {}
+  const campos = subIds.map((id, i) => {
+    const nuevo = round2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
+    vars[`i${i}`] = id
+    vars[`cv${i}`] = JSON.stringify({ [COL.ventaSub.cantEntregadaPosterior]: String(nuevo) })
+    return `b${i}: change_multiple_column_values(item_id: $i${i}, board_id: ${BOARDS.ventasSub}, column_values: $cv${i}) { id }`
+  })
+  const decl = subIds.map((_, i) => `$i${i}: ID!, $cv${i}: JSON!`).join(', ')
+  await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, vars)
+}
+
+/**
+ * Conciliación del remito ANTERIOR mediante dos operaciones bulk PARALELAS y DESACOPLADAS:
+ *  - Bulk A: subítem de historial de entrega en cada "Pends de Entrega".
+ *  - Bulk B: acumula lo entregado en el subelemento de la Venta.
+ * Se lanzan con `Promise.all` (no encadenadas: NO se espera A para lanzar B). El llamador la dispara
+ * sin bloquear el cierre del remito (fire-and-forget).
+ */
+export async function afectarEntregaAnterior(items: LineaEntregaAnterior[]): Promise<void> {
+  if (!mondayHabilitado()) return
+  await Promise.all([bulkAEntrega(items), bulkBVenta(items)])
+}
+
+/** Una línea a conciliar: su cantidad remitada y los ítems de pendiente/stock a afectar. */
+export interface LineaAfectacionEntrega {
+  cantidad: number
+  /** Nombre del producto, para rotular los subítems de movimiento. */
+  nombre: string
+  /** Ítem de "Pends de Entrega" (board_relation_mm5psr2k). Sin él, la línea no se afecta ahí. */
+  pendienteEntregaId?: string
+  /** Ítem de "Stock y Movimientos" (board_relation_mm5pz6kz). Sin él, no se afecta el stock. */
+  stockId?: string
+}
+
+/**
+ * Conciliación en cascada tras emitir el remito (venta ANTERIOR). Por cada producto remitado:
+ *   1) crea un subítem de entrega en su "Pends de Entrega" (Q RTO + "RTO Entrega A Cliente"),
+ *   2) crea un subítem de movimiento en su "Stock y Movimientos" (egreso + "RTO Venta Entrega" +
+ *      fecha + número de hoja del remito), y
+ *   3) resta la cantidad entregada al saldo pendiente de entrega del ítem de stock.
+ *
+ * Todo por lotes (bulk con alias) para ahorrar llamadas. Los índices de estado se resuelven por
+ * metadata (no hardcodeados). Las líneas sin relaciones (remito POSTERIOR / catálogo) se saltean.
+ * `fecha` viaja en formato YYYY-MM-DD. No toca ninguna columna fuera de las indicadas.
+ */
+export async function afectarEntregaRemito(
+  lineas: LineaAfectacionEntrega[],
+  hojaNombre: string,
+  fecha: string,
+): Promise<void> {
+  if (!mondayHabilitado()) return
+  const conPend = lineas.filter((l) => l.pendienteEntregaId && l.cantidad > 0)
+  const conStock = lineas.filter((l) => l.stockId && l.cantidad > 0)
+  if (conPend.length === 0 && conStock.length === 0) return
+
+  // Índices dinámicos de los estados de cada tablero, en una sola consulta de metadata.
+  const meta = await mondayApi<{
+    pend: { columns: { settings_str: string }[] }[]
+    stock: { columns: { settings_str: string }[] }[]
+  }>(
+    `query {
+      pend: boards(ids: [${BOARDS.pendientesEntregaSub}]) { columns(ids: ["${COL.pendienteEntregaSub.tipoRto}"]) { settings_str } }
+      stock: boards(ids: [${BOARDS.stockMovimientosSub}]) { columns(ids: ["${COL.stockMovSub.estado}"]) { settings_str } }
+    }`,
+  )
+  const tipoRtoIdx = indiceDeLabel(meta.pend[0]?.columns?.[0]?.settings_str, ['RTO Entrega A Cliente'])
+  const movEstadoIdx = indiceDeLabel(meta.stock[0]?.columns?.[0]?.settings_str, ['RTO Venta Entrega'])
+  const nombreMov = (l: LineaAfectacionEntrega) => hojaNombre || l.nombre
+
+  // 1) Afectación 1 (bulk): un subítem de entrega por producto en su "Pends de Entrega".
+  if (conPend.length > 0) {
+    const variables: Record<string, unknown> = {}
+    const campos = conPend.map((l, i) => {
+      const cv: Record<string, unknown> = {
+        [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
+      }
+      if (tipoRtoIdx != null) cv[COL.pendienteEntregaSub.tipoRto] = { index: tipoRtoIdx }
+      variables[`p${i}`] = l.pendienteEntregaId
+      variables[`pn${i}`] = nombreMov(l)
+      variables[`pcv${i}`] = JSON.stringify(cv)
+      return `p${i}: create_subitem(parent_item_id: $p${i}, item_name: $pn${i}, column_values: $pcv${i}) { id }`
+    })
+    const decl = conPend.map((_, i) => `$p${i}: ID!, $pn${i}: String!, $pcv${i}: JSON!`).join(', ')
+    await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, variables)
+  }
+
+  if (conStock.length === 0) return
+
+  // 2) Afectación 2 (bulk): un subítem de movimiento por producto en su "Stock y Movimientos".
+  {
+    const variables: Record<string, unknown> = {}
+    const campos = conStock.map((l, i) => {
+      const cv: Record<string, unknown> = {
+        [COL.stockMovSub.egreso]: String(round2(l.cantidad)),
+        [COL.stockMovSub.fecha]: { date: fecha },
+        [COL.stockMovSub.comprobante]: hojaNombre,
+      }
+      if (movEstadoIdx != null) cv[COL.stockMovSub.estado] = { index: movEstadoIdx }
+      variables[`s${i}`] = l.stockId
+      variables[`sn${i}`] = nombreMov(l)
+      variables[`scv${i}`] = JSON.stringify(cv)
+      return `s${i}: create_subitem(parent_item_id: $s${i}, item_name: $sn${i}, column_values: $scv${i}) { id }`
+    })
+    const decl = conStock.map((_, i) => `$s${i}: ID!, $sn${i}: String!, $scv${i}: JSON!`).join(', ')
+    await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, variables)
+  }
+
+  // 3) Afectación 3: restar lo entregado al saldo del ítem de stock. Se agrega por stockId (un
+  //    producto puede venir en varias líneas) y se lee/escribe en bloque. Saldo nulo/indefinido → 0.
+  const porStock = new Map<string, number>()
+  for (const l of conStock) {
+    const id = l.stockId as string
+    porStock.set(id, round2((porStock.get(id) ?? 0) + l.cantidad))
+  }
+  const stockIds = [...porStock.keys()]
+  const saldo = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
+    `query ($ids: [ID!]) {
+      items(ids: $ids) { id column_values(ids: ["${COL.stockItem.pendEntregaVta}"]) { text } }
+    }`,
+    { ids: stockIds },
+  )
+  const actualPorId = new Map<string, number>()
+  for (const it of saldo.items ?? []) {
+    const n = Number(it.column_values?.[0]?.text)
+    actualPorId.set(it.id, Number.isFinite(n) ? n : 0)
+  }
+  const upVars: Record<string, unknown> = {}
+  const upCampos = stockIds.map((id, i) => {
+    const nuevo = round2((actualPorId.get(id) ?? 0) - (porStock.get(id) ?? 0))
+    upVars[`u${i}`] = id
+    upVars[`ucv${i}`] = JSON.stringify({ [COL.stockItem.pendEntregaVta]: String(nuevo) })
+    return `u${i}: change_multiple_column_values(item_id: $u${i}, board_id: ${BOARDS.stockMovimientos}, column_values: $ucv${i}) { id }`
+  })
+  const upDecl = stockIds.map((_, i) => `$u${i}: ID!, $ucv${i}: JSON!`).join(', ')
+  await mondayApi(`mutation (${upDecl}) { ${upCampos.join('\n')} }`, upVars)
 }
 
 /** PDF del remito subido por la automatización a la columna file ("🤖RTO PDF"). */

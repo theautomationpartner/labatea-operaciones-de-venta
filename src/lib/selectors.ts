@@ -287,6 +287,8 @@ export interface ResumenFactura {
   descuento: number
   /** Lo que efectivamente se factura. */
   neto: number
+  /** Rentabilidad general de la venta, en %: ponderada por el importe de cada línea. */
+  rentabilidad: number
   disponible: number
   /** Uso de la cuenta corriente incluyendo esta factura: mismo criterio que PRESUPUESTAR. */
   usadoPct: number
@@ -304,6 +306,12 @@ export function resumenFactura(
   // El descuento del remito sólo aplica si hay algo que facturar.
   const descuentoAplicado = subtotal > 0 ? round2(Math.min(descuento, subtotal)) : 0
   const neto = round2(subtotal - descuentoAplicado)
+  // Rentabilidad general ponderada por el importe de cada línea (la factura no lleva descuento
+  // por línea, así que el importe de referencia es precio × cantidad a facturar).
+  const rentPonderada = items.reduce(
+    (acc, it) => acc + it.rent * round2(it.precio * it.aFacturar),
+    0,
+  )
 
   const limite = cliente?.limit ?? 0
   const disponible = cliente?.disponible ?? 0
@@ -313,6 +321,7 @@ export function resumenFactura(
     subtotal,
     descuento: descuentoAplicado,
     neto,
+    rentabilidad: subtotal > 0 ? Math.round(rentPonderada / subtotal) : 0,
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,

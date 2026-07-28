@@ -10,6 +10,12 @@ interface ResumenRemitoEmisionProps {
   emitido: boolean
   /** Emite el remito: escribe observaciones + estado "Emitir" y espera el PDF. */
   onEmitir: () => void
+  /** Talonario activo con el que se numera el remito (ítem "En USO"). */
+  talonarioNombre?: string
+  /** Hoja/folio del talonario (subítem "Pend de Usar"). */
+  hojaNombre?: string
+  /** Bloquea "Emitir Remito": sin talonario/hoja disponibles o mientras se valida. */
+  bloqueado?: boolean
 }
 
 interface FilaProps {
@@ -33,7 +39,14 @@ function Fila({ label, tono, children }: FilaProps) {
  * pasos anteriores, más el campo de observaciones y el botón que emite. Muestra cuánto se remite
  * (líneas, peso y unidades de medida) y quién entrega la mercadería.
  */
-export function ResumenRemitoEmision({ generando, emitido, onEmitir }: ResumenRemitoEmisionProps) {
+export function ResumenRemitoEmision({
+  generando,
+  emitido,
+  onEmitir,
+  talonarioNombre,
+  hojaNombre,
+  bloqueado = false,
+}: ResumenRemitoEmisionProps) {
   const { vendedor, cliente, remito } = useApp()
   const dispatch = useDispatch()
   const { envio, items } = remito
@@ -52,6 +65,16 @@ export function ResumenRemitoEmision({ generando, emitido, onEmitir }: ResumenRe
   return (
     <div className="card card--flush resumen-emision">
       <h3 className="resumen-title">Resumen del remito</h3>
+
+      {/* Talonario y hoja con los que se numera el remito: dato de cabecera, prioritario. */}
+      <div className="rgroup">
+        <Fila label="Talonario">{talonarioNombre ?? '—'}</Fila>
+        <Fila label="Hoja de Talonario" tono="verde">
+          {hojaNombre ?? '—'}
+        </Fila>
+      </div>
+
+      <hr className="rsep" />
 
       <div className="rgroup">
         <Fila label="Vendedor asignado">
@@ -126,7 +149,7 @@ export function ResumenRemitoEmision({ generando, emitido, onEmitir }: ResumenRe
         type="button"
         className="btn-generar"
         onClick={onEmitir}
-        disabled={generando || emitido}
+        disabled={generando || emitido || bloqueado}
         aria-busy={generando}
         // Emitido: el botón pasa a verde para confirmar, como el de "Enviado".
         style={emitido ? { backgroundColor: 'var(--green)', color: '#fff' } : undefined}

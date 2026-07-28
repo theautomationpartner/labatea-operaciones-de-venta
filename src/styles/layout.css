@@ -14,3 +14,13 @@
 .view {
   width: 100%;
 }
+
+/* La etapa de "Especificación del envío" del remito comparte el mismo box (ancho, padding y gap)
+   que la etapa de emisión (`.emision-v2`), para que no haya saltos de layout al cambiar de paso.
+   No hereda los estilos de card de `.emision-v2`. */
+.remito-envio-layout {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 0 24px;
+  gap: 16px;
+}

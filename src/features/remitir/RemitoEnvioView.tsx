@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ModalCargando } from '@/components/ui/ModalCargando'
-import { Stepper } from '@/components/ui/Stepper'
 import { TRANSPORTISTA } from '@/data/mock'
-import { SelectoresOperacion } from '@/features/shared/TopSelectors'
+import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
+import { round2 } from '@/lib/format'
 import { pasosDe } from '@/lib/pasos'
 import {
   crearRemito,
+  crearVtaPendienteFacturar,
   getComisionistas,
   getDestinosCliente,
   getTransportistas,
   getVehiculos,
+  sumarRemitoPendienteFacturar,
   type LineaRemito,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -177,6 +179,8 @@ export function RemitoEnvioView() {
         cantidad: it.cantidad,
         pesoUnitario: it.peso ?? 0,
         um: it.um,
+        // Sólo POSTERIOR lo usa: alimenta el "🤖Total $" del subelemento y el pendiente de facturar.
+        precioUnitario: it.precioUnitario,
       }))
       // Ventas de origen (emisión ANTERIOR), sin repetir: una línea por venta puede repetirse.
       const ventaIds = Array.from(
@@ -202,6 +206,45 @@ export function RemitoEnvioView() {
         return
       }
       dispatch({ type: 'setRemitoCreado', value: creado.id })
+
+      /* POSTERIOR: la mercadería entregada queda pendiente de facturar. Con el remito ya creado
+         (Σ cantidad × precio unitario = importe pendiente), se: (1) acumula ese importe en el
+         "🤖Remito Pends de Facturar" de la cuenta corriente, y (2) abre el registro en "Vtas Pends
+         de Facturar" (ítem + subítems) enlazado al remito y a la cuenta. Ambos pasos son best-effort:
+         un fallo posterior no revierte el remito ni frena la operación. */
+      if ((remito.tipoEmision ?? 'POSTERIOR') === 'POSTERIOR') {
+        const importePendFacturar = round2(
+          remito.items.reduce((acc, it) => acc + round2(it.cantidad * (it.precioUnitario ?? 0)), 0),
+        )
+        if (cliente.ctaCteId) {
+          try {
+            await sumarRemitoPendienteFacturar(cliente.ctaCteId, importePendFacturar)
+          } catch {
+            /* La cuenta corriente se actualiza de forma best-effort. */
+          }
+        }
+        try {
+          await crearVtaPendienteFacturar({
+            nombre: cliente.name,
+            clienteId: cliente.id,
+            ctaCteId: cliente.ctaCteId,
+            remitoId: creado.id,
+            importeTotal: importePendFacturar,
+            lineas: remito.items.map((it) => ({
+              productoId: it.productoId,
+              precioUnitario: it.precioUnitario ?? 0,
+              cantidad: it.cantidad,
+              // Tipo de producto (CO / COM) del Maestro: se etiqueta en el subelemento pendiente.
+              tipoMercaderia: it.tipo,
+              // Rentabilidad según la lista del cliente: se guarda para reusarla al facturar.
+              rentabilidad: it.rentabilidad,
+            })),
+          })
+        } catch {
+          /* El registro de "Vtas Pends de Facturar" se crea best-effort. */
+        }
+      }
+
       dispatch({ type: 'goto', paso: 'remito-emision' })
     } catch {
       setErrorCreacion('No se pudo crear el remito en Monday. Reintentá en unos segundos.')
@@ -211,12 +254,15 @@ export function RemitoEnvioView() {
   }
 
   return (
-    <section className="view">
-      <SelectoresOperacion />
-      <Stepper
-        steps={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        current={2}
-        className="stepper--tight"
+    <section className="view paso-layout remito-envio-layout">
+      <PasoHeader
+        pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
+        actual={2}
+      />
+      <PasoTitulo
+        numero={3}
+        titulo="Especificación del envío"
+        descripcion="Indicá quién entrega la mercadería y completá los datos del transporte para generar el remito."
       />
 
       <div className="cobro-acc">
@@ -522,10 +568,8 @@ export function RemitoEnvioView() {
 
       {creando && (
         <ModalCargando
-          titulo="Confirmar el remito"
-          detalle={`Estamos creando el remito y sus ${remito.items.length} ${
-            remito.items.length === 1 ? 'producto' : 'productos'
-          } en Monday. No cierres esta pantalla.`}
+          titulo="Registrando remito"
+          detalle="Estamos registrando el remito en el sistema. Espera unos segundos"
         />
       )}
 

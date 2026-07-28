@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:credito": "esbuild tests/credito.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/credito.test.mjs && node node_modules/.cache/credito.test.mjs",
     "test:deuda": "esbuild tests/deuda.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/deuda.test.mjs && node node_modules/.cache/deuda.test.mjs",
+    "test:busqueda": "esbuild tests/busqueda-productos.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/busqueda.test.mjs && node node_modules/.cache/busqueda.test.mjs",
+    "test:resultados": "esbuild tests/resultados-busqueda.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/resultados.test.mjs && node node_modules/.cache/resultados.test.mjs",
     "test:cierre-modal": "esbuild tests/cierre-modal.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/cierre-modal.test.cjs && node node_modules/.cache/cierre-modal.test.cjs"
   },
   "dependencies": {

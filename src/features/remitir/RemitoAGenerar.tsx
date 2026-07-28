@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { round2 } from '@/lib/format'
 import type { RemitoItem } from '@/types'
 
 interface RemitoAGenerarProps {
@@ -7,9 +6,6 @@ interface RemitoAGenerarProps {
   numero: string
   items: RemitoItem[]
 }
-
-/** Peso de la línea: cantidad remitada × peso unitario del producto (kg). */
-const pesoLinea = (it: RemitoItem): number => round2(it.cantidad * (it.peso ?? 0))
 
 /**
  * El remito a generar, con el mismo desplegable que los comprobantes de la factura (clases
@@ -53,7 +49,7 @@ export function RemitoAGenerar({ numero, items }: RemitoAGenerarProps) {
                 <tr>
                   <th>Producto</th>
                   <th className="ta-c">Unidad de medida</th>
-                  <th className="ta-r">Peso</th>
+                  <th className="ta-c">Cantidad a remitir</th>
                 </tr>
               </thead>
               <tbody>
@@ -64,7 +60,7 @@ export function RemitoAGenerar({ numero, items }: RemitoAGenerarProps) {
                       <span className="comp-nom">{it.nombre}</span>
                     </td>
                     <td className="ta-c">{it.um || '—'}</td>
-                    <td className="ta-r comp-total-prod">{pesoLinea(it)} kg</td>
+                    <td className="ta-c comp-total-prod">{it.cantidad}</td>
                   </tr>
                 ))}
               </tbody>

@@ -13,7 +13,7 @@ import {
   facturaItemUid,
   resumenFactura,
 } from '@/lib/selectors'
-import { getRemitosPendientesFacturar, type RemitoPendiente } from '@/services/monday'
+import { getVentasPendientesFacturar, type RemitoPendiente } from '@/services/monday'
 import { type SeleccionFactura } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { RemitoProducto } from '@/types'
@@ -49,7 +49,7 @@ export function RemitoView() {
   // Aviso al intentar avanzar sin productos a facturar.
   const [sinProductos, setSinProductos] = useState(false)
 
-  // Remitos pendientes de facturar del cliente, leídos del tablero al entrar al paso.
+  // Ventas pendientes de facturar del cliente, leídas del tablero al entrar al paso.
   const [remitos, setRemitos] = useState<RemitoPendiente[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState(false)
@@ -62,7 +62,7 @@ export function RemitoView() {
     let vivo = true
     setCargando(true)
     setError(false)
-    getRemitosPendientesFacturar(cliente)
+    getVentasPendientesFacturar(cliente)
       .then((rs) => {
         if (vivo) setRemitos(rs)
       })
@@ -103,6 +103,11 @@ export function RemitoView() {
           referencia: prod.cantRemito,
           resuelta: prod.cantFacturada,
           pend: prod.pendiente,
+          // Tipo de mercadería (CO / COM): se muestra en columna y divide la lista en secciones.
+          tipo: prod.tipo,
+          // Importes de la venta pendiente de facturar (se muestran con `mostrarPrecios`).
+          precio: prod.precio,
+          subtotal: prod.subtotal,
           estadoColor: colorEstado(prod.estadoFacturacion, estado),
           // El board ya dice el estado de facturación de la línea; si no, se deriva del avance.
           estadoLabel: prod.estadoFacturacion || AVANCE_LABEL_FACTURA[estado],
@@ -166,15 +171,18 @@ export function RemitoView() {
           hint="Seleccioná los productos, ajustá la cantidad a facturar (no puede superar lo pendiente) y confirmalos para agregarlos a la facturación."
           vacio={
             cargando
-              ? 'Buscando los remitos pendientes de facturar del cliente…'
+              ? 'Buscando las ventas pendientes de facturar del cliente…'
               : error
-                ? 'No se pudieron traer los productos de los remitos. Reintentá en unos segundos.'
-                : 'Este cliente no tiene remitos con productos pendientes de facturar.'
+                ? 'No se pudieron traer los productos de las ventas pendientes. Reintentá en unos segundos.'
+                : 'Este cliente no tiene ventas con productos pendientes de facturar.'
           }
           colReferencia="Cant. entregada"
           colResuelta="Cant. facturada"
           colPend="Pend. de facturar"
           colAccion="A facturar"
+          mostrarPrecios
+          mostrarTipo
+          dividirTipo
           filas={pendientes}
           filtroOrigen={filtroOrigen}
           onVerTodos={() => setFiltroOrigen(null)}
@@ -217,8 +225,8 @@ export function RemitoView() {
 
       {sinProductos && (
         <AvisoModal titulo="No hay productos seleccionados" onClose={() => setSinProductos(false)}>
-          Tenés que agregar al menos un producto a facturar para continuar. Elegilos de los remitos
-          pendientes del cliente y confirmalos.
+          Tenés que agregar al menos un producto a facturar para continuar. Elegilos de las ventas
+          pendientes de facturar del cliente y confirmalos.
         </AvisoModal>
       )}
 

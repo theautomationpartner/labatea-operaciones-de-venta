@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
-import { Stepper } from '@/components/ui/Stepper'
 import { NRO_REMITO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
-import { SelectoresOperacion } from '@/features/shared/TopSelectors'
+import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { round2 } from '@/lib/format'
 import { pasosDe } from '@/lib/pasos'
 import {
-  actualizarCantEntregada,
+  afectarEntregaAnterior,
   emitirRemito,
   esperarRemitoPdf,
+  getHojaTalonario,
+  marcarHojaUsada,
   mondayHabilitado,
+  type HojaTalonario,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ResumenRemitoEmision } from './ResumenRemitoEmision'
@@ -30,12 +31,51 @@ export function RemitoEmisionView() {
   const [error, setError] = useState<string | null>(null)
   // El envío se completó: junto con el remito ya emitido habilita "Finalizar Operación".
   const [enviado, setEnviado] = useState(false)
+
+  /* Talonario "En USO" y su primera hoja "Pend de Usar": son la numeración del remito. Sin ellos
+     no se puede emitir (botón deshabilitado + aviso). Se chequea al entrar al paso. */
+  const [talonario, setTalonario] = useState<HojaTalonario | null>(null)
+  const [talonarioError, setTalonarioError] = useState<'sin-talonario' | 'sin-hoja' | null>(null)
+  const [avisoTalonario, setAvisoTalonario] = useState(false)
+  const [validandoTalonario, setValidandoTalonario] = useState(true)
+
   // Si se sale del paso mientras se espera el PDF, no actualizamos estado desmontado.
   const activo = useRef(true)
   useEffect(() => {
     activo.current = true
     return () => {
       activo.current = false
+    }
+  }, [])
+
+  // Pre-validación del talonario al entrar al paso: define si la emisión está habilitada.
+  useEffect(() => {
+    let vivo = true
+    setValidandoTalonario(true)
+    getHojaTalonario()
+      .then((res) => {
+        if (!vivo) return
+        if (res.estado === 'ok') {
+          setTalonario(res.hoja)
+          setTalonarioError(null)
+        } else {
+          setTalonario(null)
+          setTalonarioError(res.estado)
+          setAvisoTalonario(true)
+        }
+      })
+      .catch(() => {
+        if (!vivo) return
+        // Ante un fallo de la consulta se bloquea igual: no se puede confirmar el talonario.
+        setTalonario(null)
+        setTalonarioError('sin-talonario')
+        setAvisoTalonario(true)
+      })
+      .finally(() => {
+        if (vivo) setValidandoTalonario(false)
+      })
+    return () => {
+      vivo = false
     }
   }, [])
 
@@ -49,6 +89,11 @@ export function RemitoEmisionView() {
    */
   const emitir = async () => {
     if (!cliente) return
+    // Sin talonario "En USO" con hoja "Pend de Usar" no se numera el remito: se frena y se avisa.
+    if (talonarioError || !talonario) {
+      setAvisoTalonario(true)
+      return
+    }
     if (bloqueo.frenar()) return
     /* Sin ítem no hay nada que emitir. El remito nace al confirmar la entrega: si se llegó sin
        remito creado, hay que volver al paso anterior y confirmarla. */
@@ -63,16 +108,30 @@ export function RemitoEmisionView() {
     setEstado('generando')
     setError(null)
     try {
-      await emitirRemito(id, remito.observaciones)
-      // La cantidad entregada de cada línea se asienta en el subelemento de la venta (ANTERIOR).
-      await actualizarCantEntregada(
-        remito.items
-          .filter((it) => it.subitemId)
-          .map((it) => ({
-            subitemId: it.subitemId as string,
-            cantEntregada: round2((it.entregadaPrevia ?? 0) + it.cantidad),
-          })),
-      )
+      /* Estado "Emitir", observaciones y hoja del talonario en UNA sola mutación: es atómica, así
+         no queda el remito emitido sin su número de hoja (ni al revés) si algo falla. */
+      await emitirRemito(id, remito.observaciones, talonario.hojaId)
+      /* Ya consumida y vinculada la hoja, se cierra su correlativo: pasa a "Usado". Best-effort:
+         un fallo acá no revierte el remito ya emitido. */
+      try {
+        await marcarHojaUsada(talonario.hojaId)
+      } catch {
+        /* El cierre de la hoja del talonario es best-effort. */
+      }
+      /* Conciliación del remito ANTERIOR: dos bulk PARALELAS y DESACOPLADAS —Bulk A crea el subítem
+         de historial en "Pends de Entrega"; Bulk B acumula lo entregado en el subelemento de la
+         Venta—. Se dispara SIN await (fire-and-forget): no bloquea la finalización del remito, y las
+         dos operaciones corren en paralelo (nunca A→B encadenadas). */
+      void afectarEntregaAnterior(
+        remito.items.map((it) => ({
+          cantidad: it.cantidad,
+          nombre: it.nombre,
+          pendienteEntregaId: it.pendienteEntregaId,
+          ventaSubitemId: it.subitemId,
+        })),
+      ).catch(() => {
+        /* La conciliación de entrega es best-effort: el remito ya quedó emitido. */
+      })
       dispatch({ type: 'emitirRemito' })
       const generado = await esperarRemitoPdf(id)
       if (!activo.current) return
@@ -96,11 +155,14 @@ export function RemitoEmisionView() {
 
   return (
     <section className="view emision-v2 paso-layout">
-      <SelectoresOperacion />
-      <Stepper
-        steps={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        current={3}
-        className="stepper--tight"
+      <PasoHeader
+        pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
+        actual={3}
+      />
+      <PasoTitulo
+        numero={4}
+        titulo="Emitir y enviar remito"
+        descripcion="Revisá el resumen del remito, emitilo y mandáselo a los contactos del cliente."
       />
 
       {/* Izquierda: el resumen con el botón de emisión. Derecha: el remito a generar en un
@@ -111,6 +173,9 @@ export function RemitoEmisionView() {
             generando={estado === 'generando'}
             emitido={estado === 'listo'}
             onEmitir={emitir}
+            talonarioNombre={talonario?.talonarioNombre}
+            hojaNombre={talonario?.hojaNombre}
+            bloqueado={validandoTalonario || talonarioError != null || !talonario}
           />
         </div>
 
@@ -144,6 +209,22 @@ export function RemitoEmisionView() {
           <i className="fas fa-flag-checkered" /> Finalizar Operación
         </button>
       </div>
+
+      {/* Bloqueo por talonario: sin talonario en uso o sin hojas disponibles no se puede emitir. */}
+      {avisoTalonario && talonarioError && (
+        <AvisoModal
+          titulo={
+            talonarioError === 'sin-talonario'
+              ? 'No hay talonarios disponibles'
+              : 'Sin hoja de talonario asignada'
+          }
+          onClose={() => setAvisoTalonario(false)}
+        >
+          {talonarioError === 'sin-talonario'
+            ? 'No hay ningún talonario en uso para numerar el remito. Activá un talonario en Monday para poder emitir.'
+            : 'El talonario actual no posee hojas disponibles.'}
+        </AvisoModal>
+      )}
 
       {/* La emisión ya no tiene visor: un fallo se avisa en el mismo modal reutilizado. */}
       {estado === 'error' && error && (

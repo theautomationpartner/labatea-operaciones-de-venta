@@ -438,6 +438,27 @@
   font-weight: 600;
   font-size: 13px;
 }
+/* Fila ya elegida: queda marcada para poder seguir cargando del mismo resultado. */
+.ritem--elegido {
+  background: #f0faf3;
+}
+.ritem--elegido:hover {
+  background: #e6f6ec;
+}
+.ritem-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.ritem-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green, #1f8b4c);
+  white-space: nowrap;
+}
 .ritem-code {
   font-weight: 700;
   font-size: 12px;
@@ -448,6 +469,52 @@
   color: var(--text-gray);
   text-align: center;
   font-size: 13px;
+}
+/* Desplegable paginado: scrollea la lista, no la barra de navegación (queda siempre visible). */
+.results--paged {
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.results--paged .results-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.results-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: #f8f9fa;
+}
+.results-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-blue);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.results-pager-btn:hover:not(:disabled) {
+  background: #f0f5ff;
+}
+.results-pager-btn:disabled {
+  color: var(--text-gray);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.results-pager-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-gray);
 }
 /* Carga de línea: parte de la card de búsqueda, separada por un filete. */
 .carga {

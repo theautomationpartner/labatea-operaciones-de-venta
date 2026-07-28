@@ -31,6 +31,22 @@ export const BOARDS = {
   remitos: 18421035529,
   /** Subelementos del remito: un movimiento de mercadería por producto. */
   remitosSub: 18421035607,
+  /** "Vtas Pends de Facturar": un ítem por remito POSTERIOR que quedó pendiente de facturar. */
+  vtasPendFacturar: 18421033947,
+  /** Subelementos de "Vtas Pends de Facturar": un producto por línea del remito. */
+  vtasPendFacturarSub: 18421034035,
+  /** "Talonarios Remito": cada ítem es un talonario; su estado marca cuál está "En USO". */
+  talonarios: 18423468398,
+  /** Subelementos del talonario: una hoja/folio cada uno, con su estado "Pend de Usar". */
+  talonariosSub: 18423468575,
+  /** "🚚Pends de Entrega": un ítem por producto vendido pendiente de entregar. */
+  pendientesEntrega: 18421035527,
+  /** Subelementos de "Pends de Entrega": un movimiento de entrega (RTO) cada uno. */
+  pendientesEntregaSub: 18421035605,
+  /** "🧮Stock y Movimientos": un ítem por producto, con su saldo y sus movimientos. */
+  stockMovimientos: 18421752251,
+  /** Subelementos de "Stock y Movimientos": un movimiento de stock (entrada/salida) cada uno. */
+  stockMovimientosSub: 18421752360,
   /** "Facturación": un ítem por comprobante a emitir. */
   facturacion: 18422405731,
   /** Subelementos del comprobante: una línea de facturación por producto. */
@@ -121,13 +137,6 @@ export const REMITO_VENTA_INDEX = {
   anterior: 1,
 } as const
 
-/** Índices de "🤖Estado del Facturacion" (color_mm5bf05j), a nivel remito. */
-export const REMITO_ESTADO_FACT_INDEX = {
-  parcialmenteFacturado: 0,
-  totalmenteFacturado: 1,
-  sinFacturar: 2,
-} as const
-
 /**
  * Labels de "🤖Estado Emision Remito" (color_mkwb12n1) y "🤖Estado Envio Remito"
  * (color_mm5gpcbj). Al emitir/enviar se escribe por ÍNDICE —el índice se resuelve leyendo la
@@ -146,19 +155,6 @@ export const REMITO_ENVIO_ESTADO = {
   enviado: 'Enviado',
   error: 'Error - Ver Update',
 } as const
-
-/** Índices de "🤖 Estado Facturacion" (color_mm54wrds), a nivel producto del remito. */
-export const REMITO_SUB_ESTADO_FACT_INDEX = {
-  facturacionCompleta: 0,
-  parcialmenteFacturado: 1,
-  pendDeFacturar: 2,
-} as const
-
-/**
- * Estado de facturación que deja un producto del remito FUERA de la selección. Es el índice
- * de "Pend de Facturar" en color_mm54wrds, tal como se definió para este flujo.
- */
-export const REMITO_SUB_ESTADO_NO_SELECCIONABLE = REMITO_SUB_ESTADO_FACT_INDEX.pendDeFacturar
 
 /**
  * Índices de "✋️Situacion Cliente" (color_mm58nd7b) en el board de Personas. La situación se
@@ -242,6 +238,8 @@ export const COL = {
     tipoMercaderia: 'color_mm48hm74',
     /** "✋IVA": alícuota del producto, en %. Se suma al precio de lista si el cliente la paga. */
     iva: 'numeric_mm5gyrnb',
+    /** "🧮Stock y Movimientos": ítem de stock del producto (board 18421752251). Venta DIRECTA. */
+    stock: 'board_relation_mm57jgks',
   },
   /* Precio unitario por lista de precio (L1..L8). Es el precio del Maestro de Productos, sin
      IVA: la alícuota se agrega después, según la condición fiscal del cliente. Son columnas
@@ -316,6 +314,9 @@ export const COL = {
     estadoUso: 'color_mm54j58z',
     /** "Reflejo" del Tipo de Mercadería del producto conectado: CO / COM. */
     tipoMercaderia: 'lookup_mm5gym7g',
+    /** "🧮Stock y Movimientos": ítem de stock del producto. Se hereda del Maestro al presupuestar
+     *  y viaja a la venta (CON PRESUPUESTO PREVIO). */
+    stock: 'board_relation_mm5pzc9y',
     /** ID del subelemento; se usa para renombrarlo. */
     pulseId: 'pulse_id_mkw8mfdg',
   },
@@ -411,12 +412,19 @@ export const COL = {
     cantEntregadaSimult: 'numeric_mm54fxxh',
     /** "🤖Cant Entregada Posterior": unidades ya remitidas de una venta con entrega posterior. */
     cantEntregadaPosterior: 'numeric_mm54v0jd',
+    /** "🤖Cant Entregada Anterior": en la venta con entrega ANTERIOR la mercadería ya salió por
+     *  remito, así que lo vendido = lo entregado antes de facturar. */
+    cantEntregadaAnterior: 'numeric_mm54vcmr',
     /** "🤖Estado de Entrega" de la línea: 0% / Parcialmente / 100% Entregada. */
     estadoEntrega: 'color_mm5bhha',
     /** "🤖Unidad de Medida": mirror de la U.M. del producto conectado. Se lee por display_value. */
     unidadMedida: 'lookup_mm5hr4p9',
     /** "🤖Peso": mirror del peso del producto conectado (kg). Se lee por display_value. */
     peso: 'lookup_mm5h7byp',
+    /** "🚚Pends de Entrega": ítem del pendiente de entrega de esta línea (board 18421035527). */
+    pendienteEntrega: 'board_relation_mm5psr2k',
+    /** "🧮Stock y Movimientos": ítem de stock del producto de esta línea (board 18421752251). */
+    stock: 'board_relation_mm5pz6kz',
   },
   // Cabecera del remito de venta (board 18421035529).
   remito: {
@@ -424,8 +432,6 @@ export const COL = {
     cliente: 'board_relation_mm5act3k',
     /** "✋Venta": Anterior / Posterior, según cuándo se factura lo entregado. */
     venta: 'color_mkwbrkg6',
-    /** "🤖Estado del Facturacion": cuánto del remito ya se facturó. */
-    estadoFacturacion: 'color_mm5bf05j',
     /** "🤖Nro Rto": el número impreso del remito. */
     nroRemito: 'text_mm516d4q',
     fechaEmision: 'date_mm5144rt',
@@ -456,21 +462,113 @@ export const COL = {
     medioEnvio: 'dropdown_mm5gqs51',
     /** "🤖Estado Envio Remito": ponerlo en "Enviar" dispara el envío. */
     estadoEnvio: 'color_mm5gpcbj',
+    /** "🤖Num Remito Talonario": la hoja del talonario (subítem) que numera este remito. */
+    numRemitoTalonario: 'board_relation_mm5jy3ke',
   },
   // Un producto entregado en el remito (subelemento de 🧾🚚 Remitos Ventas).
   remitoSub: {
     producto: 'board_relation_mkwca4wb',
     /** "✋Cant a Entregar": las unidades que salieron en el remito. */
     cantEntregada: 'numeric_mm54mbjx',
-    /** "🤖Cant Facturada": de esas unidades, las que ya se facturaron. */
-    cantFacturada: 'numeric_mkwcg93f',
-    /** "🤖 Estado Facturacion" de la línea. */
-    estadoFacturacion: 'color_mm54wrds',
     unidadMedida: 'dropdown_mm5g9mp',
     /** "🤖Peso": peso de la línea remitada (cantidad × peso unitario del producto). */
     peso: 'numeric_mm5ga7bw',
+    /** "🤖Total $": importe de la línea (cantidad × precio unitario). Sólo remito POSTERIOR. */
+    totalProducto: 'numeric_mm5nhdjk',
     /** ID del subelemento ("RTOVMOV-03"). */
     pulseId: 'pulse_id_mkwcxgza',
+  },
+  // Cabecera de "Vtas Pends de Facturar" (board 18421033947): un remito POSTERIOR pendiente de facturar.
+  vtaPendFacturar: {
+    /** "💵Cta Cte Cliente- PENDIENTE": conecta con la cuenta corriente del cliente (18421858736). */
+    ctaCte: 'board_relation_mkwbz75m',
+    /** "🤖Cliente": el cliente (Personas, 18420688238). Filtra las ventas pendientes por cliente. */
+    cliente: 'board_relation_mm5pd79g',
+    /** "🧾🚚 Remitos Ventas": el remito POSTERIOR que originó el pendiente. */
+    remito: 'board_relation_mkwbvma5',
+    /** "📈Ventas": la venta que factura este pendiente. Se enlaza al cerrar la facturación. */
+    venta: 'board_relation_mkwbb4w4',
+    /** "🤖Importe a Facturar $": el importe total del remito. */
+    importeAFacturar: 'numeric_mm5np70x',
+    /** "🤖Importe Facturado $": arranca en 0; se acumula al facturar. */
+    importeFacturado: 'numeric_mm5n938k',
+    /** "🤖Estado de Facturacion": nace "0% Facturada" (por índice dinámico). */
+    estadoFacturacion: 'color_mm5ndgd5',
+  },
+  // Subelemento de "Vtas Pends de Facturar" (board 18421034035): un producto del remito.
+  vtaPendFacturarSub: {
+    /** "📦Productos": conecta con el Maestro de Productos (18421035535). */
+    producto: 'board_relation_mm5nndxm',
+    /** "🤖Precio Unit $": precio unitario del producto según la lista del cliente. */
+    precioUnit: 'numeric_mm5ncc8m',
+    /** "🤖Subtotal x Prod $": fórmula (precio × cantidad). Se lee por display_value. */
+    subtotal: 'formula_mm5nc530',
+    /** "🤖Cant Entregada": unidades entregadas del producto. */
+    cantEntregada: 'numeric_mm5nf0t6',
+    /** "🤖Cant Facturada": unidades ya facturadas; se acumula al facturar. */
+    cantFacturada: 'numeric_mm5nadmz',
+    /** "🤖Estado de Facturacion": nace "0% Facturado" (por índice dinámico). */
+    estadoFacturacion: 'color_mm5ny2y9',
+    /** "🤖Tipo": tipo de mercadería del producto (CO / COM), heredado del Maestro (color_mm48hm74).
+     *  Los índices NO coinciden con los del Maestro: se resuelve por label contra este board. */
+    tipoMercaderia: 'color_mm5preby',
+    /** "🤖Rentab %": rentabilidad del producto según la lista del cliente, guardada al remitir para
+     *  reutilizarla al facturar la venta DIRECTA con entrega ANTERIOR (rentabilidad general). */
+    rentabilidad: 'numeric_mm5p80xs',
+  },
+  // Cabecera del talonario de remitos (board 18423468398).
+  talonario: {
+    /** "🤖Estado Talonario": marca cuál está "En USO". */
+    estado: 'color_mm5hmyaj',
+  },
+  // Subelemento del talonario (board 18423468575): una hoja/folio de remito.
+  talonarioSub: {
+    /** "🤖Estado Rto": "Pend de Usar" hasta que se consume la hoja. */
+    estado: 'status',
+  },
+  // Ítem de "Pends de Entrega" (board 18421035527): un producto vendido pendiente de entregar.
+  pendienteEntregaItem: {
+    /** "🤖Personas": el cliente de la venta. Por acá se filtra la fuente del remito ANTERIOR. */
+    cliente: 'board_relation_mm5p8hpc',
+    /** "🤖Maestro de Productos": el producto pendiente. */
+    producto: 'board_relation_mkwbxjqx',
+    /** "🤖Venta": la venta que originó el pendiente (nivel ítem). */
+    venta: 'board_relation_mkwbb4w4',
+    /** "📈Subelementos de Ventas": el subelemento de venta del que sale esta línea (18421035581). */
+    ventaSubelemento: 'board_relation_mm5pcdfj',
+    /** "🤖Q VTA": cantidad vendida. */
+    cantidad: 'numeric_mkwb862t',
+    /** "🤖U.Medida": mirror de la U.M. del producto (refleja el Maestro vía board_relation_mkwbxjqx). */
+    unidadMedida: 'lookup_mm5pggg9',
+    /** "🤖Q RTO Neto": cantidad ya entregada (mirror de los subítems de entrega). */
+    entregada: 'lookup_mkwb1xhh',
+    /** "🤖Pend de Entrega": lo que falta entregar (fórmula = Q VTA − Q RTO Neto). */
+    pendiente: 'formula_mkwbf3ax',
+    /** "🤖Estado de Entrega": nace "Pend de Entregar 100%" (por índice dinámico). */
+    estado: 'color_mm48wnvf',
+  },
+  // Subelemento de "Pends de Entrega" (board 18421035605): un movimiento de entrega del producto.
+  pendienteEntregaSub: {
+    /** "🤖Q RTO": cantidad remitada en este movimiento. */
+    cantRto: 'numeric_mkwbzd9j',
+    /** "🤖Tipo RTO": nace "RTO Entrega A Cliente" (por índice dinámico). */
+    tipoRto: 'color_mkwbzrx2',
+  },
+  // Ítem de "Stock y Movimientos" (board 18421752251).
+  stockItem: {
+    /** "🤖Pend de Entrega Vta": saldo pendiente de entregar; se decrementa al remitir. */
+    pendEntregaVta: 'numeric_mm5nscx',
+  },
+  // Subelemento de "Stock y Movimientos" (board 18421752360): un movimiento de stock.
+  stockMovSub: {
+    /** "🤖Estado": tipo de movimiento; la entrega de remito nace "RTO Venta Entrega" (índice dinámico). */
+    estado: 'status',
+    /** "🤖Egreso": cantidad que sale del stock. */
+    egreso: 'numeric_mm57fs41',
+    /** "🤖Fecha Mov": fecha del movimiento (YYYY-MM-DD). */
+    fecha: 'date0',
+    /** "Numero Comprobante": el número de hoja del remito. */
+    comprobante: 'text_mm5nmtat',
   },
   // Cabecera del comprobante (board 18422405731). Una venta puede generar varios.
   facturacion: {

@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import { esConsignada } from '@/lib/facturacion'
+import { money } from '@/lib/format'
 
 /** Una línea pendiente, ya resuelta por la vista: origen, cantidades y estado. */
 export interface PendienteFila {
@@ -20,6 +22,12 @@ export interface PendienteFila {
   estadoLabel: string
   /** Tipo de mercadería del producto: 'CO' (consignada) o 'COM'. */
   tipo?: string
+  /** Precio unitario del producto (sólo se muestra con `mostrarPrecios`). */
+  precio?: number
+  /** Subtotal de la línea, tal como lo trae la fuente (sólo con `mostrarPrecios`). */
+  subtotal?: number
+  /** Unidad de medida del producto (sólo se muestra con `mostrarUm`). */
+  um?: string
   /** La línea ya está en la tabla de seleccionados: no se vuelve a agregar. */
   ya: boolean
   /**
@@ -43,6 +51,15 @@ interface PendientesSelectorProps {
   colAccion: string
   /** Suma la columna de tipo de mercadería (CO / COM). */
   mostrarTipo?: boolean
+  /**
+   * Parte el listado en dos secciones —mercadería común y consignada—, con la misma lógica de
+   * división de consignación del resto de la app (`esConsignada`). Sin esto, la lista es plana.
+   */
+  dividirTipo?: boolean
+  /** Suma las columnas de precio unitario y subtotal por línea (venta pendiente de facturar). */
+  mostrarPrecios?: boolean
+  /** Suma la columna de unidad de medida por línea (remito de venta ANTERIOR). */
+  mostrarUm?: boolean
   filas: PendienteFila[]
   /** Documento seleccionado en el panel de cards; filtra la lista. null = todos. */
   filtroOrigen: string | null
@@ -67,13 +84,17 @@ export function PendientesSelector({
   colPend,
   colAccion,
   mostrarTipo = false,
+  dividirTipo = false,
+  mostrarPrecios = false,
+  mostrarUm = false,
   filas,
   filtroOrigen,
   onVerTodos,
   onConfirmar,
 }: PendientesSelectorProps) {
-  // Columnas de la tabla: la de tipo de mercadería sólo existe en la venta presupuestada.
-  const columnas = mostrarTipo ? 9 : 8
+  // Columnas de la tabla: la de tipo (venta presupuestada), las de importes (venta pend de facturar)
+  // y la de unidad de medida (remito ANTERIOR).
+  const columnas = (mostrarTipo ? 9 : 8) + (mostrarPrecios ? 2 : 0) + (mostrarUm ? 1 : 0)
   // uid → cantidad elegida. Sólo entran las filas seleccionables (no agregadas, con pendiente).
   const [seleccion, setSeleccion] = useState<ReadonlyMap<string, number>>(new Map())
   const [busqueda, setBusqueda] = useState('')
@@ -90,6 +111,16 @@ export function PendientesSelector({
         (!q || f.nombre.toLowerCase().includes(q) || f.codigo.toLowerCase().includes(q)),
     )
   }, [filas, filtroOrigen, busqueda])
+
+  // División de consignación: mercadería común primero, consignada después. Misma regla que el
+  // resto de la app (`esConsignada`). Los grupos vacíos no se muestran. null = lista plana.
+  const grupos = useMemo(() => {
+    if (!dividirTipo) return null
+    return [
+      { clave: 'comun', label: 'Mercadería común', filas: visibles.filter((f) => !esConsignada(f.tipo)) },
+      { clave: 'consignada', label: 'Mercadería consignada', filas: visibles.filter((f) => esConsignada(f.tipo)) },
+    ].filter((g) => g.filas.length > 0)
+  }, [dividirTipo, visibles])
 
   /** Una línea ya llevada, sin unidades pendientes o no habilitada no se puede elegir. */
   const noSeleccionable = (f: PendienteFila) =>
@@ -158,6 +189,108 @@ export function PendientesSelector({
 
   const count = seleccion.size
 
+  /** Una fila de la tabla. Se extrae para poder renderizarla plana o dentro de una sección. */
+  const filaTr = (fila: PendienteFila) => {
+    const marcada = seleccion.has(fila.uid)
+    const bloqueada = noSeleccionable(fila)
+    const cantidad = seleccion.get(fila.uid) ?? fila.pend
+    return (
+      <tr
+        key={fila.uid}
+        className={`pend-row ${marcada ? 'sel' : ''} ${fila.ya ? 'dt-added' : ''}`}
+        aria-selected={marcada}
+        title={fila.seleccionable === false ? fila.motivoBloqueo : undefined}
+        onClick={() => toggle(fila)}
+      >
+        <td>
+          <input
+            type="checkbox"
+            checked={fila.ya || marcada}
+            disabled={bloqueada}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => toggle(fila)}
+            aria-label={
+              fila.ya
+                ? `${fila.nombre} ya está en la venta`
+                : fila.seleccionable === false
+                  ? fila.motivoBloqueo ?? `${fila.nombre} no se puede seleccionar`
+                  : fila.pend === 0
+                    ? `${fila.nombre} no tiene unidades pendientes`
+                    : `Seleccionar ${fila.nombre}`
+            }
+          />
+        </td>
+        <td>
+          <span style={{ color: 'var(--primary-blue)', fontWeight: 700 }}>{fila.codigo}</span>
+          <span style={{ marginLeft: 10, fontWeight: 600 }}>{fila.nombre}</span>
+        </td>
+        {mostrarUm && <td className="ta-c">{fila.um || '—'}</td>}
+        {mostrarPrecios && <td className="ta-r">{money(fila.precio ?? 0)}</td>}
+        {mostrarPrecios && (
+          <td className="ta-r" style={{ fontWeight: 600 }}>
+            {money(fila.subtotal ?? 0)}
+          </td>
+        )}
+        <td className="ta-c" onClick={(e) => e.stopPropagation()}>
+          {marcada ? (
+            <span className="qbox">
+              <input
+                type="text"
+                inputMode="numeric"
+                aria-label={`${colAccion} de ${fila.nombre}`}
+                value={cantidad}
+                onChange={(e) => setCantidad(fila, Number(e.target.value.replace(/\D/g, '')) || 0)}
+              />
+              <span className="qbtns">
+                <button
+                  type="button"
+                  aria-label={`Sumar una unidad de ${fila.nombre}`}
+                  disabled={cantidad >= fila.pend}
+                  onClick={() => setCantidad(fila, cantidad + 1)}
+                >
+                  <i className="fas fa-angle-up" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Restar una unidad de ${fila.nombre}`}
+                  disabled={cantidad <= 1}
+                  onClick={() => setCantidad(fila, cantidad - 1)}
+                >
+                  <i className="fas fa-angle-down" />
+                </button>
+              </span>
+            </span>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+        <td>
+          <span className="pend-origen">{fila.origenLabel ?? fila.origen}</span>
+        </td>
+        <td className="ta-c">{fila.referencia}</td>
+        <td className="ta-c">{fila.resuelta}</td>
+        <td className="ta-c" style={{ color: fila.estadoColor, fontWeight: 700 }}>
+          {fila.pend}
+        </td>
+        {/* La mercadería consignada (CO) se distingue en dorado, como en el stock. */}
+        {mostrarTipo && (
+          <td
+            className="ta-c"
+            style={{ fontWeight: 700, color: fila.tipo === 'CO' ? '#b58200' : 'inherit' }}
+          >
+            {fila.tipo || '—'}
+          </td>
+        )}
+        <td>
+          <span className="estado-cell">
+            <span className="dot dot--sm" style={{ background: fila.estadoColor }} />
+            {fila.estadoLabel}
+          </span>
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <div className="tablec">
       <div className="thtitle">
@@ -220,6 +353,9 @@ export function PendientesSelector({
             <tr>
               <th style={{ width: 40 }} />
               <th>Producto</th>
+              {mostrarUm && <th className="ta-c">U.M.</th>}
+              {mostrarPrecios && <th className="ta-r">Precio unit.</th>}
+              {mostrarPrecios && <th className="ta-r">Subtotal</th>}
               <th className="ta-c" style={{ width: 120 }}>
                 {colAccion}
               </th>
@@ -247,103 +383,22 @@ export function PendientesSelector({
                 </td>
               </tr>
             )}
-            {visibles.map((fila) => {
-              const marcada = seleccion.has(fila.uid)
-              const bloqueada = noSeleccionable(fila)
-              const cantidad = seleccion.get(fila.uid) ?? fila.pend
-              return (
-                <tr
-                  key={fila.uid}
-                  className={`pend-row ${marcada ? 'sel' : ''} ${fila.ya ? 'dt-added' : ''}`}
-                  aria-selected={marcada}
-                  title={fila.seleccionable === false ? fila.motivoBloqueo : undefined}
-                  onClick={() => toggle(fila)}
-                >
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={fila.ya || marcada}
-                      disabled={bloqueada}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => toggle(fila)}
-                      aria-label={
-                        fila.ya
-                          ? `${fila.nombre} ya está en la venta`
-                          : fila.seleccionable === false
-                            ? fila.motivoBloqueo ?? `${fila.nombre} no se puede seleccionar`
-                            : fila.pend === 0
-                              ? `${fila.nombre} no tiene unidades pendientes`
-                              : `Seleccionar ${fila.nombre}`
-                      }
-                    />
-                  </td>
-                  <td>
-                    <span style={{ color: 'var(--primary-blue)', fontWeight: 700 }}>
-                      {fila.codigo}
-                    </span>
-                    <span style={{ marginLeft: 10, fontWeight: 600 }}>{fila.nombre}</span>
-                  </td>
-                  <td className="ta-c" onClick={(e) => e.stopPropagation()}>
-                    {marcada ? (
-                      <span className="qbox">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          aria-label={`${colAccion} de ${fila.nombre}`}
-                          value={cantidad}
-                          onChange={(e) =>
-                            setCantidad(fila, Number(e.target.value.replace(/\D/g, '')) || 0)
-                          }
-                        />
-                        <span className="qbtns">
-                          <button
-                            type="button"
-                            aria-label={`Sumar una unidad de ${fila.nombre}`}
-                            disabled={cantidad >= fila.pend}
-                            onClick={() => setCantidad(fila, cantidad + 1)}
-                          >
-                            <i className="fas fa-angle-up" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Restar una unidad de ${fila.nombre}`}
-                            disabled={cantidad <= 1}
-                            onClick={() => setCantidad(fila, cantidad - 1)}
-                          >
-                            <i className="fas fa-angle-down" />
-                          </button>
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className="pend-origen">{fila.origenLabel ?? fila.origen}</span>
-                  </td>
-                  <td className="ta-c">{fila.referencia}</td>
-                  <td className="ta-c">{fila.resuelta}</td>
-                  <td className="ta-c" style={{ color: fila.estadoColor, fontWeight: 700 }}>
-                    {fila.pend}
-                  </td>
-                  {/* La mercadería consignada (CO) se distingue en dorado, como en el stock. */}
-                  {mostrarTipo && (
-                    <td
-                      className="ta-c"
-                      style={{ fontWeight: 700, color: fila.tipo === 'CO' ? '#b58200' : 'inherit' }}
-                    >
-                      {fila.tipo || '—'}
-                    </td>
-                  )}
-                  <td>
-                    <span className="estado-cell">
-                      <span className="dot dot--sm" style={{ background: fila.estadoColor }} />
-                      {fila.estadoLabel}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
+            {/* Lista plana, o partida en secciones de consignación (común / consignada). */}
+            {grupos
+              ? grupos.map((g) => (
+                  <Fragment key={g.clave}>
+                    <tr className="pend-group-row">
+                      <td
+                        colSpan={columnas}
+                        className={`pend-group ${g.clave === 'consignada' ? 'pend-group--co' : ''}`}
+                      >
+                        {g.label} ({g.filas.length})
+                      </td>
+                    </tr>
+                    {g.filas.map(filaTr)}
+                  </Fragment>
+                ))
+              : visibles.map(filaTr)}
           </tbody>
         </table>
       </div>

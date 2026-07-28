@@ -31,7 +31,7 @@ export const PASOS_REMITO_POSTERIOR = [
 
 export const PASOS_REMITO_ANTERIOR = [
   'Seleccionar cliente',
-  'Seleccionar venta',
+  'Selección de productos',
   'Especificación del envío',
   'Emitir remito',
 ] as const

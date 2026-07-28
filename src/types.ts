@@ -118,6 +118,9 @@ export interface Producto {
   fisico: number
   comercial: number
   disponible: number
+  /** ID del ítem de "Stock y Movimientos" del producto (Maestro board_relation_mm57jgks). Viaja a
+   *  la venta para afectar el stock al cerrarla. */
+  stockId?: string
 }
 
 /** Columna de taxonomía del Maestro de Productos sobre la que se filtra. */
@@ -169,6 +172,9 @@ export interface PresupuestoProducto {
   subitemId?: string
   /** ID del producto conectado en el Maestro de Productos. */
   productoId?: string
+  /** ID del ítem de "Stock y Movimientos" (subitem board_relation_mm5pzc9y). Viaja a la venta
+   *  CON PRESUPUESTO PREVIO para afectar el stock al cerrarla. */
+  stockId?: string
 }
 
 export interface Presupuesto {
@@ -231,6 +237,10 @@ export interface RemitoProducto {
   subitemId?: string
   /** ID del producto conectado en el Maestro de Productos. */
   productoId?: string
+  /** Subtotal de la línea (precio × cantidad), cuando la fuente lo trae calculado. */
+  subtotal?: number
+  /** ID del ítem padre en "Vtas Pends de Facturar" (18421033947): trazabilidad del linaje. */
+  ventaPendId?: string
 }
 
 export interface Remito {
@@ -403,6 +413,10 @@ export interface VentaEntregaProducto {
   ventaId?: string
   /** Peso unitario del producto en kg. Alimenta el peso de la línea del remito. */
   peso?: number
+  /** ID del ítem de "Pends de Entrega" (board_relation_mm5psr2k): afectado al emitir el remito. */
+  pendienteEntregaId?: string
+  /** ID del ítem de "Stock y Movimientos" (board_relation_mm5pz6kz): afectado al emitir el remito. */
+  stockId?: string
 }
 
 /** Venta facturada con entrega pendiente: origen del remito de emisión ANTERIOR. */
@@ -452,6 +466,19 @@ export interface RemitoItem {
   ventaId?: string
   /** Peso unitario del producto en kg. Con la cantidad, da el peso de la línea. */
   peso?: number
+  /** Precio unitario del producto (lista del cliente). Sólo se usa en el remito POSTERIOR, para
+   *  el importe pendiente de facturar (cantidad × precio). */
+  precioUnitario?: number
+  /** Tipo de mercadería del producto: 'CO' (consignada) o 'COM' (común). POSTERIOR: viaja a la
+   *  "Vta Pend de Facturar" para etiquetar el tipo de producto en el subelemento. */
+  tipo?: string
+  /** Rentabilidad del producto según la lista del cliente, en %. POSTERIOR: viaja a la "Vta Pend de
+   *  Facturar" para reusarla en la rentabilidad general al facturar la venta DIRECTA con entrega ANTERIOR. */
+  rentabilidad?: number
+  /** ANTERIOR: ítem de "Pends de Entrega" de la línea. Se afecta al emitir el remito. */
+  pendienteEntregaId?: string
+  /** ANTERIOR: ítem de "Stock y Movimientos" del producto. Se afecta al emitir el remito. */
+  stockId?: string
 }
 
 /** Destino de entrega asociado a un cliente. */

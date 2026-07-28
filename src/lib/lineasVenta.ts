@@ -62,6 +62,8 @@ export function lineasDeVenta({
       proveedorId: it.proveedorId,
       proveedorNombre: it.proveedorNombre,
       iva: it.iva,
+      // El ítem de stock viene del subelemento del presupuesto (heredado del maestro).
+      stockId: it.stockId,
     }))
   }
 
@@ -77,5 +79,7 @@ export function lineasDeVenta({
     proveedorId: l.producto.provId,
     proveedorNombre: l.producto.provNombre,
     iva: l.producto.iva,
+    // El ítem de stock viene directo del maestro (venta DIRECTA).
+    stockId: l.producto.stockId,
   }))
 }

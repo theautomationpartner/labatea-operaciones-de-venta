@@ -14,7 +14,7 @@ export function RemitoConfig() {
           <i className="fas fa-truck-ramp-box" />
         </div>
         <div className="cfg-c">
-          <div className="cfg-l">Tipo de emisión</div>
+          <div className="cfg-l">La venta es...</div>
           <select
             className={`cfg-sel ${remito.tipoEmision ? '' : 'cfg-sel--ph'}`}
             value={remito.tipoEmision ?? ''}

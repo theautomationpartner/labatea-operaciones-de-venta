@@ -101,6 +101,26 @@
   border-color: var(--p-border);
   max-height: 260px;
 }
+/* Con paginación el alto lo pone la lista: la barra de navegación no scrollea. */
+.productos-v2 .results--paged {
+  max-height: none;
+}
+.productos-v2 .results--paged .results-list {
+  max-height: 260px;
+}
+.productos-v2 .results-pager {
+  border-color: var(--p-border);
+  background: var(--p-bg-input);
+}
+.productos-v2 .results-pager-btn {
+  color: var(--p-primary);
+  background: var(--p-bg-card);
+  border-color: var(--p-border);
+  border-radius: var(--p-radius-md);
+}
+.productos-v2 .results-pager-info {
+  color: var(--p-text-secondary);
+}
 .productos-v2 .search-error {
   font-size: 12px;
   font-weight: 600;
@@ -613,6 +633,15 @@
   margin-bottom: 0;
   padding: 8px 24px 16px;
   overflow-x: auto;
+}
+/* Resumen financiero del remito POSTERIOR: la tarjeta de importes queda a la IZQUIERDA, con la
+   misma jerarquía que el resto de la app (`.kpi-card` + `.subtotal-lines`). */
+.productos-v2 .remito-importe-wrap {
+  display: flex;
+  justify-content: flex-start;
+}
+.productos-v2 .remito-importe-wrap .kpi-card {
+  min-width: 340px;
 }
 .productos-v2 .thtitle {
   padding: 16px 0 8px;
@@ -1127,6 +1156,25 @@
   font-size: 14px;
   border-bottom: 1px solid var(--p-border);
   vertical-align: middle;
+}
+/* Cabecera de sección de consignación: divide el listado en mercadería común y consignada. */
+.productos-v2 .pend-group-row:hover {
+  background: transparent;
+}
+.productos-v2 .pend-group {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--p-text-secondary);
+  background: #f4f6f9;
+  border-bottom: 1px solid var(--p-border);
+}
+/* La consignada se rotula en dorado, igual que su tipo de mercadería en el resto de la app. */
+.productos-v2 .pend-group--co {
+  color: #b58200;
+  background: #fdf6e6;
 }
 .productos-v2 .pend-row:hover {
   background: #f9fafb;

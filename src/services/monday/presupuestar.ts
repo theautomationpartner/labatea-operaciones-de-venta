@@ -409,11 +409,24 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     fisico: numCol(c[COL.producto.stockFisico]),
     comercial: numCol(c[COL.producto.stockComercial]),
     disponible: numCol(c[COL.producto.stockDisponible]),
+    // Ítem de stock del producto (para afectar el stock al cerrar la venta DIRECTA).
+    stockId: c[COL.producto.stock]?.linked_items?.[0]?.id,
   }
 }
 
-async function fetchProductosMonday(lista: ListaPrecio, conIva: boolean): Promise<Producto[]> {
-  const ids = JSON.stringify([
+/** Ítems por página. La búsqueda nunca baja el board entero: se pagina contra la API. */
+export const PRODUCTOS_POR_PAGINA = 15
+
+/** Una página de resultados: sus ítems y el cursor de la siguiente (null = última). */
+export interface PaginaProductos {
+  productos: Producto[]
+  /** Cursor que devuelve Monday. Se guarda tal cual y se manda para pedir la página siguiente. */
+  cursor: string | null
+}
+
+/** Columnas del producto que necesita la app, según la lista de precio del cliente. */
+const columnasProducto = (lista: ListaPrecio): string =>
+  JSON.stringify([
     COL.producto.codigo,
     COL.producto.rubro,
     COL.producto.subrubro,
@@ -427,29 +440,144 @@ async function fetchProductosMonday(lista: ListaPrecio, conIva: boolean): Promis
     COL.producto.proveedorCodigo,
     COL.producto.tipoMercaderia,
     COL.producto.iva,
+    COL.producto.stock,
     columnaPrecio(lista),
     ...(COL.margen[lista] ? [COL.margen[lista] as string] : []),
   ])
-  // `display_value` trae el valor calculado de fórmulas (precio, márgenes, stock) y de las
-  // mirror (el código del proveedor).
-  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
-    `query {
+
+/**
+ * Selección GraphQL de un producto: es la misma en la primera página y en las siguientes.
+ * `display_value` trae el valor calculado de fórmulas (precio, márgenes, stock) y de las
+ * mirror (el código del proveedor).
+ */
+const seleccionProducto = (lista: ListaPrecio): string => `
+  id name
+  column_values(ids: ${columnasProducto(lista)}) {
+    id text
+    ... on FormulaValue { display_value }
+    ... on MirrorValue { display_value }
+    ... on BoardRelationValue { linked_items { id name } }
+  }
+`
+
+/** Página tal como la devuelve la API, antes de mapear los ítems a `Producto`. */
+interface PaginaCruda {
+  cursor: string | null
+  items: MondayItem[]
+}
+
+const mapPagina = (
+  pagina: PaginaCruda | undefined,
+  lista: ListaPrecio,
+  conIva: boolean,
+): PaginaProductos => ({
+  productos: (pagina?.items ?? []).map((it) => mapProducto(it, lista, conIva)),
+  cursor: pagina?.cursor ?? null,
+})
+
+/* ===== Constructor dinámico de la consulta (query_params) ===== */
+
+/**
+ * Una regla de `query_params`. Sólo se arman las de los criterios que el usuario eligió: un
+ * criterio vacío NO genera regla (una regla con `compare_value: []` devuelve 0 resultados).
+ */
+interface ReglaBusqueda {
+  column_id: string
+  /** Lista de valores para `any_of`; texto suelto para `contains_text`. */
+  compare_value: string | (string | number)[]
+  operator: 'any_of' | 'contains_text'
+}
+
+/** `query_params` completo: las reglas válidas, todas intersectadas (AND entre criterios). */
+interface QueryParamsProductos {
+  rules: ReglaBusqueda[]
+  operator: 'and'
+}
+
+/** Campo de filtro → columna dropdown del Maestro de Productos. */
+const CAMPO_COLUMNA: Record<CampoFiltro, string> = {
+  Rubro: COL.producto.rubro,
+  Subrubro: COL.producto.subrubro,
+  Categoría: COL.producto.categoria,
+}
+
+/** Sólo dígitos = código interno del producto. */
+const esCodigo = (t: string): boolean => /^\d+$/.test(t)
+
+/** label normalizado → id de la etiqueta, por campo. Es lo que aceptan las reglas de la API. */
+type IndicesFiltros = Record<CampoFiltro, Record<string, number>>
+
+/**
+ * Reglas de taxonomía, una por criterio con valores elegidos:
+ *   - OR dentro del criterio: todos sus valores en un mismo `any_of` (Rubro = A ó B).
+ *   - AND entre criterios: cada criterio es una regla aparte bajo el `operator: and` raíz.
+ *
+ * Un criterio sin valores se OMITE por completo: no viaja como regla vacía.
+ */
+function reglasTaxonomia(filtros: Filtro[], indices: IndicesFiltros): ReglaBusqueda[] {
+  const porCampo = new Map<CampoFiltro, number[]>()
+  for (const f of filtros) {
+    // Las columnas dropdown se filtran por el id de la etiqueta, no por su texto.
+    const id = indices[f.campo]?.[norm(f.valor)]
+    if (id === undefined) continue
+    porCampo.set(f.campo, [...(porCampo.get(f.campo) ?? []), id])
+  }
+  const reglas: ReglaBusqueda[] = []
+  for (const [campo, valores] of porCampo) {
+    if (valores.length === 0) continue
+    reglas.push({ column_id: CAMPO_COLUMNA[campo], compare_value: valores, operator: 'any_of' })
+  }
+  return reglas
+}
+
+/**
+ * Arma el `query_params` de la búsqueda. Es 100% dinámico: sólo entran las columnas que el
+ * usuario completó.
+ *
+ * - RAMA A · código interno: anula todo lo demás (nombre y filtros) y consulta por valor
+ *   exacto contra "✋Codigo Interno". El código identifica un único producto.
+ * - RAMA B · sólo filtros: no hace falta nombre; las reglas de taxonomía se mandan solas.
+ * - RAMA C · híbrida: el nombre es un criterio más (`contains_text` sobre el nombre del ítem)
+ *   que se intersecta con la taxonomía.
+ *
+ * Sin ningún criterio devuelve `undefined`: la consulta va sin `query_params` (el buscador ya
+ * impide llegar acá sin término ni filtros).
+ */
+export function construirQueryProductos(
+  termino: string,
+  filtros: Filtro[],
+  indices: IndicesFiltros,
+): QueryParamsProductos | undefined {
+  const t = termino.trim()
+  if (esCodigo(t)) {
+    return {
+      rules: [{ column_id: COL.producto.codigo, compare_value: [t], operator: 'any_of' }],
+      operator: 'and',
+    }
+  }
+  const rules = reglasTaxonomia(filtros, indices)
+  if (t) rules.push({ column_id: 'name', compare_value: t, operator: 'contains_text' })
+  return rules.length > 0 ? { rules, operator: 'and' } : undefined
+}
+
+/** Primera página contra Monday: es la única consulta que lleva `query_params`. */
+async function fetchPaginaProductos(
+  queryParams: QueryParamsProductos | undefined,
+  lista: ListaPrecio,
+  conIva: boolean,
+): Promise<PaginaProductos> {
+  const data = await mondayApi<{ boards: { items_page: PaginaCruda }[] }>(
+    `query ($limit: Int!, $qp: ItemsQuery) {
       boards(ids: [${BOARDS.productos}]) {
-        items_page(limit: 200) {
-          items {
-            id name
-            column_values(ids: ${ids}) {
-              id text
-              ... on FormulaValue { display_value }
-              ... on MirrorValue { display_value }
-              ... on BoardRelationValue { linked_items { id name } }
-            }
-          }
+        items_page(limit: $limit, query_params: $qp) {
+          cursor
+          items { ${seleccionProducto(lista)} }
         }
       }
     }`,
+    { limit: PRODUCTOS_POR_PAGINA, qp: queryParams ?? null },
   )
-  return data.boards[0].items_page.items.map((it) => mapProducto(it, lista, conIva))
+  return mapPagina(data.boards[0]?.items_page, lista, conIva)
 }
 
 /** Texto de la taxonomía del producto según el campo de filtro. */
@@ -457,9 +585,9 @@ const campoDeProducto = (p: Producto, campo: CampoFiltro): string =>
   campo === 'Rubro' ? p.rubro ?? '' : campo === 'Subrubro' ? p.subrubro ?? '' : p.categoria ?? ''
 
 /**
- * Aplica los filtros de taxonomía: OR dentro de un mismo campo (Rubro A ó B) y AND entre campos
- * (además debe cumplir el Subrubro/Categoría elegidos). El texto del producto puede traer varias
- * etiquetas separadas por coma; se compara token a token, sin distinguir mayúsculas.
+ * Filtros de taxonomía en memoria: OR dentro de un mismo campo (Rubro A ó B) y AND entre campos.
+ * Es el equivalente local de las reglas de `query_params` y se usa SÓLO en modo mock (sin token);
+ * contra Monday la combinación la resuelve el servidor.
  */
 function pasaFiltros(p: Producto, filtros: Filtro[]): boolean {
   if (filtros.length === 0) return true
@@ -478,14 +606,15 @@ function pasaFiltros(p: Producto, filtros: Filtro[]): boolean {
 }
 
 /**
- * Busca productos según lo que se ingrese y los filtros de Rubro/Subrubro/Categoría:
+ * Página de resultados del catálogo. TODA la combinación de criterios y el corte de a
+ * `PRODUCTOS_POR_PAGINA` los resuelve el servidor de Monday (`query_params` + `items_page`):
+ * acá no se descarga el board para recortarlo después.
  *
- * - Código interno (sólo dígitos): búsqueda DIRECTA por "✋Codigo Interno" (text_mm5ghnv7). Como
- *   el código es único por producto, NO se aplican los filtros. Los códigos van de 1 a 4 dígitos,
- *   así que un número más largo se consulta igual pero no devuelve resultados.
- * - Nombre (o vacío) con filtros: se combinan con AND. Primero deben pasar los filtros —AND entre
- *   los tipos (Rubro y Subrubro y Categoría), OR dentro de un mismo tipo—, y además el nombre es
- *   un filtro más: el producto tiene que contener el texto ingresado.
+ * - RAMA A · código interno (sólo dígitos): consulta directa y exacta por "✋Codigo Interno"
+ *   (text_mm5ghnv7), ignorando nombre y filtros. El código es único por producto.
+ * - RAMA B · sólo filtros: no exige nombre; alcanza con los criterios de taxonomía.
+ * - RAMA C · híbrida: OR dentro de un mismo criterio (`any_of`) y AND entre criterios distintos
+ *   (`operator: and` raíz), con el nombre como un criterio más.
  *
  * El precio sale de la columna de la lista del cliente (L1..L8). `conIva` agrega la alícuota
  * del producto: la pagan Monotributista, Consumidor Final y Exento, no el Resp. Inscripto.
@@ -495,41 +624,96 @@ export async function buscarProductos(
   lista: ListaPrecio,
   conIva: boolean,
   filtros: Filtro[] = [],
-): Promise<Producto[]> {
+): Promise<PaginaProductos> {
   const t = termino.trim()
-  const base = mondayHabilitado() ? await fetchProductosMonday(lista, conIva) : PRODUCTOS
-  // Sólo dígitos = código interno: búsqueda directa y única, sin aplicar los filtros.
-  if (/^\d+$/.test(t)) {
-    return base.filter((p) => p.codigo.trim().includes(t))
-  }
-  // Nombre (o sin término): los filtros de taxonomía y el nombre se combinan con AND.
-  return base.filter((p) => {
-    if (!pasaFiltros(p, filtros)) return false
-    if (!t) return true
-    return similitud(t, p.nombre) >= UMBRAL_SIMILITUD || norm(p.nombre).includes(norm(t))
-  })
+  // Sin conexión el prototipo sigue corriendo contra el mock, con las mismas ramas y páginas.
+  if (!mondayHabilitado()) return primeraPaginaMock(t, filtros)
+  const { indices } = await getTaxonomiaProductos()
+  return fetchPaginaProductos(construirQueryProductos(t, filtros, indices), lista, conIva)
 }
 
-/* ===== 3b) Opciones de los filtros (labels reales de las columnas dropdown) ===== */
+/**
+ * Página siguiente. Va SÓLO con el cursor: Monday guarda en él la consulta original, así que
+ * no se reenvían ni los filtros ni el término. Un cursor vence a la hora; agotado el listado,
+ * la API deja de devolver cursor y la navegación se termina.
+ */
+export async function siguientePaginaProductos(
+  cursor: string,
+  lista: ListaPrecio,
+  conIva: boolean,
+): Promise<PaginaProductos> {
+  if (!mondayHabilitado()) return siguientePaginaMock(cursor)
+  const data = await mondayApi<{ next_items_page: PaginaCruda }>(
+    `query ($limit: Int!, $cursor: String!) {
+      next_items_page(limit: $limit, cursor: $cursor) {
+        cursor
+        items { ${seleccionProducto(lista)} }
+      }
+    }`,
+    { limit: PRODUCTOS_POR_PAGINA, cursor },
+  )
+  return mapPagina(data.next_items_page, lista, conIva)
+}
+
+/* ===== 3b) Paginación del mock (modo local, sin token) ===== */
+
+/** Resultado completo de la última búsqueda mock: de él salen las páginas siguientes. */
+let mockResultados: Producto[] = []
+
+/** Corta el resultado mock en páginas, con un cursor que sólo guarda el corrimiento. */
+const paginaMock = (desde: number): PaginaProductos => {
+  const productos = mockResultados.slice(desde, desde + PRODUCTOS_POR_PAGINA)
+  const proximo = desde + PRODUCTOS_POR_PAGINA
+  return { productos, cursor: proximo < mockResultados.length ? `mock:${proximo}` : null }
+}
+
+/** Mismas ramas que la consulta real, resueltas en memoria sobre el catálogo de ejemplo. */
+function primeraPaginaMock(termino: string, filtros: Filtro[]): PaginaProductos {
+  mockResultados = esCodigo(termino)
+    ? PRODUCTOS.filter((p) => p.codigo.trim() === termino)
+    : PRODUCTOS.filter(
+        (p) => pasaFiltros(p, filtros) && (!termino || norm(p.nombre).includes(norm(termino))),
+      )
+  return paginaMock(0)
+}
+
+const siguientePaginaMock = (cursor: string): PaginaProductos =>
+  paginaMock(Number(cursor.replace('mock:', '')) || 0)
+
+/* ===== 3c) Opciones de los filtros (labels reales de las columnas dropdown) ===== */
 
 /** Opciones disponibles para cada filtro de taxonomía. */
 export type OpcionesFiltros = Record<CampoFiltro, string[]>
 
-/** Labels de una columna dropdown a partir de su `settings_str`. */
-const labelsDropdown = (settingsStr: string): string[] => {
-  const parsed = JSON.parse(settingsStr) as { labels?: { id: number; name: string }[] }
-  return (parsed.labels ?? []).map((l) => l.name)
+/** Taxonomía del Maestro: los labels que se muestran y los ids con los que se filtra. */
+interface TaxonomiaProductos {
+  opciones: OpcionesFiltros
+  indices: IndicesFiltros
 }
 
+/** Etiquetas de una columna dropdown a partir de su `settings_str`. */
+const etiquetasDropdown = (settingsStr: string): { id: number; name: string }[] => {
+  const parsed = JSON.parse(settingsStr) as { labels?: { id: number; name: string }[] }
+  return parsed.labels ?? []
+}
+
+const taxonomiaMock = (): TaxonomiaProductos => {
+  const indices = { Rubro: {}, Subrubro: {}, Categoría: {} } as IndicesFiltros
+  return { opciones: { Rubro: RUBROS, Subrubro: SUBRUBROS, Categoría: CATEGORIAS }, indices }
+}
+
+/** Se lee una sola vez por sesión: las etiquetas del board no cambian mientras se opera. */
+let taxonomiaCache: Promise<TaxonomiaProductos> | null = null
+
 /**
- * Trae las opciones de Rubro/Subrubro/Categoría desde las columnas dropdown del Maestro de
- * Productos (o del mock si no hay conexión), para poblar los selectores de filtro.
+ * Lee las columnas dropdown de Rubro/Subrubro/Categoría del Maestro de Productos: de ahí salen
+ * tanto los labels de los selectores como los IDS de etiqueta, que son los que aceptan las
+ * reglas de `query_params` (una columna dropdown no se filtra por su texto).
  */
-export async function getOpcionesFiltros(): Promise<OpcionesFiltros> {
-  if (!mondayHabilitado()) {
-    return { Rubro: RUBROS, Subrubro: SUBRUBROS, Categoría: CATEGORIAS }
-  }
-  const data = await mondayApi<{ boards: { columns: { id: string; settings_str: string }[] }[] }>(
+function getTaxonomiaProductos(): Promise<TaxonomiaProductos> {
+  if (!mondayHabilitado()) return Promise.resolve(taxonomiaMock())
+  if (taxonomiaCache) return taxonomiaCache
+  taxonomiaCache = mondayApi<{ boards: { columns: { id: string; settings_str: string }[] }[] }>(
     `query {
       boards(ids: [${BOARDS.productos}]) {
         columns(ids: ["${COL.producto.rubro}","${COL.producto.subrubro}","${COL.producto.categoria}"]) {
@@ -538,16 +722,35 @@ export async function getOpcionesFiltros(): Promise<OpcionesFiltros> {
       }
     }`,
   )
-  const cols = data.boards[0]?.columns ?? []
-  const de = (id: string) => {
-    const col = cols.find((c) => c.id === id)
-    return col ? labelsDropdown(col.settings_str) : []
-  }
-  return {
-    Rubro: de(COL.producto.rubro),
-    Subrubro: de(COL.producto.subrubro),
-    Categoría: de(COL.producto.categoria),
-  }
+    .then((data) => {
+      const cols = data.boards[0]?.columns ?? []
+      const de = (id: string) => {
+        const col = cols.find((c) => c.id === id)
+        return col ? etiquetasDropdown(col.settings_str) : []
+      }
+      const opciones = {} as OpcionesFiltros
+      const indices = {} as IndicesFiltros
+      for (const [campo, columna] of Object.entries(CAMPO_COLUMNA) as [CampoFiltro, string][]) {
+        const etiquetas = de(columna)
+        opciones[campo] = etiquetas.map((l) => l.name)
+        indices[campo] = Object.fromEntries(etiquetas.map((l) => [norm(l.name), l.id]))
+      }
+      return { opciones, indices }
+    })
+    .catch((e) => {
+      // Un error no puede dejar cacheada una taxonomía vacía: se reintenta en la próxima búsqueda.
+      taxonomiaCache = null
+      throw e
+    })
+  return taxonomiaCache
+}
+
+/**
+ * Opciones de Rubro/Subrubro/Categoría para poblar los selectores de filtro. Salen de las
+ * mismas columnas dropdown que después se usan para filtrar del lado del servidor.
+ */
+export async function getOpcionesFiltros(): Promise<OpcionesFiltros> {
+  return (await getTaxonomiaProductos()).opciones
 }
 
 /* ===== 4) Contactos del cliente (según "Para Enviar") ===== */
@@ -998,6 +1201,8 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     estadoUso: c[COL.presupuestoSub.estadoUso]?.text ?? '',
     subitemId: sub.id,
     productoId: producto?.id,
+    // Ítem de stock heredado del maestro al presupuestar: viaja a la venta CON PRESUPUESTO PREVIO.
+    stockId: c[COL.presupuestoSub.stock]?.linked_items?.[0]?.id,
   }
 }
 
@@ -1079,7 +1284,7 @@ export async function getPresupuestosVigentes(clienteItemId: string): Promise<Pr
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {

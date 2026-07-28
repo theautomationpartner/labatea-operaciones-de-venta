@@ -1,17 +1,32 @@
+import { money, round2 } from '@/lib/format'
 import type { RemitoItem } from '@/types'
 
 interface TablaRemitoProps {
   items: RemitoItem[]
   onCantidad: (uid: string, cantidad: number) => void
   onRemove: (uid: string) => void
+  /**
+   * Remito POSTERIOR: además de las cantidades, muestra el precio unitario, el total por producto
+   * (cantidad × precio) y, debajo, el importe pendiente de facturar. El remito ANTERIOR es un
+   * documento de sólo cantidades y no expone importes.
+   */
+  mostrarImporte?: boolean
 }
 
+/** Total de la línea: cantidad a entregar × precio unitario. */
+const totalLinea = (it: RemitoItem): number => round2(it.cantidad * (it.precioUnitario ?? 0))
+
 /**
- * Líneas a remitar. El remito es un documento de cantidades: sin precio, sin
- * rentabilidad, sin descuento ni importes. Sólo código, producto, cantidad y u.m.
+ * Líneas a remitar. En ANTERIOR es un documento de cantidades (código, producto, cantidad y u.m.).
+ * En POSTERIOR, además, muestra precio unitario, total por producto y el importe pendiente de
+ * facturar, que es la suma de todos los totales.
  */
-export function TablaRemito({ items, onCantidad, onRemove }: TablaRemitoProps) {
-  return (
+export function TablaRemito({ items, onCantidad, onRemove, mostrarImporte = false }: TablaRemitoProps) {
+  // Sin importes: 6 columnas. Con importes (POSTERIOR): 8 (precio unitario + total).
+  const colSpanVacio = mostrarImporte ? 8 : 6
+  const importePendFacturar = round2(items.reduce((acc, it) => acc + totalLinea(it), 0))
+
+  const tabla = (
     <div className="tablec">
       <div className="thtitle">Productos a remitar ({items.length})</div>
       <table>
@@ -21,13 +36,15 @@ export function TablaRemito({ items, onCantidad, onRemove }: TablaRemitoProps) {
             <th colSpan={2}>Producto</th>
             <th className="ta-c">Cantidad a entregar</th>
             <th className="ta-c">Unidad de medida</th>
+            {mostrarImporte && <th className="ta-c">Precio unitario</th>}
+            {mostrarImporte && <th className="ta-c">Total por producto</th>}
             <th className="ta-c">Acc.</th>
           </tr>
         </thead>
         <tbody>
           {items.length === 0 && (
             <tr>
-              <td colSpan={6} className="tablec-empty">
+              <td colSpan={colSpanVacio} className="tablec-empty">
                 Todavía no cargaste productos para remitar.
               </td>
             </tr>
@@ -80,6 +97,14 @@ export function TablaRemito({ items, onCantidad, onRemove }: TablaRemitoProps) {
                 <td className="ta-c" style={{ fontWeight: 600 }}>
                   {it.um}
                 </td>
+
+                {mostrarImporte && <td className="ta-c">{money(it.precioUnitario ?? 0)}</td>}
+                {mostrarImporte && (
+                  <td className="ta-c" style={{ fontWeight: 700 }}>
+                    {money(totalLinea(it))}
+                  </td>
+                )}
+
                 <td className="ta-c">
                   <i
                     className="far fa-trash-alt trash"
@@ -94,5 +119,30 @@ export function TablaRemito({ items, onCantidad, onRemove }: TablaRemitoProps) {
         </tbody>
       </table>
     </div>
+  )
+
+  return (
+    <>
+      {tabla}
+
+      {/* Resumen financiero del remito POSTERIOR: misma tarjeta de importes que el resto de la app
+          (Subtotal + total destacado), ubicada a la izquierda. */}
+      {mostrarImporte && items.length > 0 && (
+        <div className="remito-importe-wrap">
+          <div className="kpi-card">
+            <div className="subtotal-lines">
+              <div className="sub-row">
+                <span>Subtotal</span>
+                <span>{money(importePendFacturar)}</span>
+              </div>
+              <div className="total-row">
+                <span>IMPORTE PEND DE FACTURAR</span>
+                <span>{money(importePendFacturar)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

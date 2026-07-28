@@ -10,7 +10,6 @@ import { type SeleccionRemito } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { VentaEntregaPendiente, VentaEntregaProducto } from '@/types'
 import { CargaProductoRemito } from './CargaProductoRemito'
-import { ResumenVentasEntrega } from './ResumenVentasEntrega'
 import { TablaRemito } from './TablaRemito'
 
 /** Motivo por el que un producto no se puede remitar (ya se entregó por completo). */
@@ -36,8 +35,6 @@ export function RemitoProductosView() {
   const { cliente, operacion, tipoVenta, tipoEntrega, remito } = useApp()
   const dispatch = useDispatch()
   const esAnterior = remito.tipoEmision === 'ANTERIOR'
-  // Venta elegida como filtro de la lista de productos (toggle desde las cards).
-  const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null)
   // Aviso al intentar avanzar sin productos en el remito.
   const [sinProductos, setSinProductos] = useState(false)
 
@@ -93,6 +90,8 @@ export function RemitoProductosView() {
           referencia: prod.vendida,
           resuelta: prod.entregada,
           pend: prod.pendiente,
+          // Unidad de medida (columna espejo del pendiente): se muestra en el listado.
+          um: prod.um,
           estadoColor: colorEstado(prod.estadoEntrega, estado),
           // El board ya dice el estado de entrega de la línea; si no, se deriva del avance.
           estadoLabel: prod.estadoEntrega || AVANCE_LABEL_ENTREGA[estado],
@@ -136,35 +135,27 @@ export function RemitoProductosView() {
       />
 
       {esAnterior ? (
-        /* Resumen de ventas a la izquierda; todos sus productos pendientes, a la derecha. */
-        <div className="pend-grid">
-          <ResumenVentasEntrega
-            ventas={ventas}
-            cargando={cargando}
-            error={error}
-            seleccionado={filtroOrigen}
-            onSelect={(id) => setFiltroOrigen((prev) => (prev === id ? null : id))}
-          />
-          <PendientesSelector
-            titulo="Todos los productos pendientes de entregar"
-            hint="Seleccioná los productos, ajustá la cantidad a remitar (no puede superar lo pendiente) y confirmalos para armar el remito."
-            vacio={
-              cargando
-                ? 'Buscando las ventas con entrega pendiente del cliente…'
-                : error
-                  ? 'No se pudieron traer los productos de las ventas. Reintentá en unos segundos.'
-                  : 'Este cliente no tiene ventas con entrega pendiente.'
-            }
-            colReferencia="Vendida"
-            colResuelta="Entregada"
-            colPend="Pend. de entregar"
-            colAccion="A remitar"
-            filas={pendientes}
-            filtroOrigen={filtroOrigen}
-            onVerTodos={() => setFiltroOrigen(null)}
-            onConfirmar={confirmar}
-          />
-        </div>
+        /* Sin panel lateral: la tabla de pendientes ocupa el 100% del ancho, con su buscador y
+           su botonera arriba. */
+        <PendientesSelector
+          titulo="Todos los productos pendientes de entregar"
+          hint="Seleccioná los productos, ajustá la cantidad a remitar (no puede superar lo pendiente) y confirmalos para armar el remito."
+          vacio={
+            cargando
+              ? 'Buscando los productos pendientes de entregar del cliente…'
+              : error
+                ? 'No se pudieron traer los productos pendientes. Reintentá en unos segundos.'
+                : 'Este cliente no tiene productos pendientes de entregar.'
+          }
+          colReferencia="Vendida"
+          colResuelta="Entregada"
+          colPend="Pend. de entregar"
+          colAccion="A remitar"
+          mostrarUm
+          filas={pendientes}
+          filtroOrigen={null}
+          onConfirmar={confirmar}
+        />
       ) : (
         <>
           {/* POSTERIOR: se remite ahora y se factura después. */}
@@ -181,6 +172,8 @@ export function RemitoProductosView() {
         items={remito.items}
         onCantidad={(uid, cantidad) => dispatch({ type: 'setRemitoItemCantidad', uid, cantidad })}
         onRemove={(uid) => dispatch({ type: 'removeRemitoItem', uid })}
+        // POSTERIOR: la venta se factura después, así que se muestran precios e importe pendiente.
+        mostrarImporte={!esAnterior}
       />
 
       <footer className="page-footer">

@@ -24,6 +24,7 @@ import { IVA_RATE, resumenFactura, resumenVenta } from '@/lib/selectors'
 import {
   actualizarCantVendida,
   crearVenta,
+  registrarFacturacionVtasPend,
   vincularVentaAlCobro,
   registrarCobroSimultaneo,
   registrarDeudaPosterior,
@@ -274,6 +275,26 @@ export function CobroView() {
               cantVendida: (it.vend ?? 0) + it.aVender,
             })),
         )
+      }
+
+      /* ENTREGA ANTERIOR (fuente "Vtas Pends de Facturar"): la facturación de esta operatoria se
+         distribuye en dos niveles sobre el board 18421033947 —cantidad facturada por subítem y
+         monto facturado por venta, con el enlace a la venta creada—. Best-effort: la venta ya se
+         creó, así que un fallo acá no la revierte ni frena la operación. */
+      if (state.facturaItems.length > 0) {
+        try {
+          await registrarFacturacionVtasPend(
+            state.facturaItems.map((it) => ({
+              subitemId: it.subitemId,
+              ventaPendId: it.ventaPendId,
+              aFacturar: it.aFacturar,
+              precio: it.precio,
+            })),
+            ventaId,
+          )
+        } catch {
+          /* La conciliación de "Vtas Pends de Facturar" es best-effort. */
+        }
       }
 
       /* El recibo nace antes que la venta, así que el vínculo se cierra recién ahora. Sólo

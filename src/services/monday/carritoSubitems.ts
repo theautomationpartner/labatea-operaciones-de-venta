@@ -41,6 +41,8 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
     [COL.presupuestoSub.estadoUso]: { index: PRESUP_SUB_ESTADO_USO_INDEX.sinVender },
   }
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
+  // Se arrastra el ítem de stock del maestro para que viaje del presupuesto a la venta.
+  if (p.stockId) columnas[COL.presupuestoSub.stock] = { item_ids: [Number(p.stockId)] }
 
   return {
     alias,

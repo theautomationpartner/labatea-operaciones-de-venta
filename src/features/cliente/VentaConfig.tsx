@@ -9,6 +9,12 @@ export function VentaConfig() {
   const { tipoVenta, tipoEntrega } = useApp()
   const dispatch = useDispatch()
 
+  /* La entrega ANTERIOR es de uso EXCLUSIVO de la venta DIRECTA: una venta que nace de un
+     presupuesto nunca pudo tener mercadería entregada antes de emitirse. Con "CON PRESUPUESTO
+     PREVIO" elegido, esa opción ni siquiera se ofrece. */
+  const entregasDisponibles =
+    tipoVenta === 'CON PRESUPUESTO PREVIO' ? ENTREGAS.filter((t) => t !== 'ANTERIOR') : ENTREGAS
+
   return (
     <div className="venta-cfg">
       <div className="cfgbox">
@@ -38,7 +44,7 @@ export function VentaConfig() {
         </div>
         <div className="cfg-c">
           <div className="cfg-l">Tipo de entrega</div>
-          {/* Las tres entregas valen para cualquier tipo de venta. */}
+          {/* CON PRESUPUESTO PREVIO no ofrece la entrega ANTERIOR: sólo posterior/simultánea. */}
           <select
             className={`cfg-sel ${tipoEntrega ? '' : 'cfg-sel--ph'}`}
             value={tipoEntrega ?? ''}
@@ -50,7 +56,7 @@ export function VentaConfig() {
             <option value="" disabled>
               {tipoVenta ? 'Seleccionar...' : 'Elegí el tipo de venta'}
             </option>
-            {ENTREGAS.map((t) => (
+            {entregasDisponibles.map((t) => (
               <option key={t}>{t}</option>
             ))}
           </select>
