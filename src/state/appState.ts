@@ -9,6 +9,7 @@ import type {
   CobroState,
   ComprobanteEmitido,
   Contacto,
+  EntregaVentaState,
   EnvioState,
   FacturaItem,
   FacturaState,
@@ -80,6 +81,9 @@ export interface AppState {
   /* Paso 3 de la venta: cobro de la factura */
   cobro: CobroState
 
+  /* Paso 3 de la venta: responsable logístico y ruta de entrega (Cierre de Venta) */
+  entregaVenta: EntregaVentaState
+
   /* Paso 4 de la venta: emisión de la factura */
   factura: FacturaState
 
@@ -117,6 +121,15 @@ const cobroInicial: CobroState = {
   saldoAnterior: null,
 }
 
+const entregaVentaInicial: EntregaVentaState = {
+  responsable: null,
+  rutaId: null,
+  rutaNombre: '',
+  rutaConfirmada: false,
+  comisionistaId: null,
+  responsableNombre: '',
+}
+
 export const initialState: AppState = {
   paso: 'inicio',
   operacion: null,
@@ -149,6 +162,7 @@ export const initialState: AppState = {
   facturaItems: [],
 
   cobro: cobroInicial,
+  entregaVenta: entregaVentaInicial,
 
   factura: {
     moneda: 'Pesos (ARS)',
@@ -237,6 +251,9 @@ export type Action =
   | { type: 'setEnvioResponsable'; value: ResponsableEntrega | null }
   | { type: 'setRemitoEnvio'; patch: Partial<EnvioState> }
   | { type: 'confirmarEntrega' }
+  | { type: 'setEntregaVentaResponsable'; value: ResponsableEntrega | null }
+  | { type: 'setEntregaVenta'; patch: Partial<EntregaVentaState> }
+  | { type: 'confirmarRutaEntrega' }
   | { type: 'setRemitoCreado'; value: string | null }
   | { type: 'emitirRemito' }
 
@@ -298,6 +315,8 @@ export function reducer(state: AppState, action: Action): AppState {
         contactos: [],
         // El cobro pertenece a la venta del cliente anterior: se reinicia por completo.
         cobro: cobroInicial,
+        // El responsable logístico y la ruta también son de la venta anterior: se reinician.
+        entregaVenta: entregaVentaInicial,
         // El remito también parte de datos del cliente: se reinicia salvo el tipo de emisión.
         remito: { ...remitoInicial, tipoEmision: state.remito.tipoEmision },
       }
@@ -665,6 +684,28 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         remito: { ...state.remito, envio: { ...state.remito.envio, confirmado: true } },
       }
+
+    // Cierre de Venta: elegir el responsable logístico limpia los datos de las otras opciones.
+    case 'setEntregaVentaResponsable':
+      return {
+        ...state,
+        entregaVenta: { ...entregaVentaInicial, responsable: action.value },
+      }
+
+    // Cambiar la ruta (u otro dato) reabre la confirmación: la ruta hay que volver a confirmarla.
+    case 'setEntregaVenta':
+      return {
+        ...state,
+        entregaVenta: {
+          ...state.entregaVenta,
+          ...action.patch,
+          rutaConfirmada:
+            'rutaId' in action.patch ? false : state.entregaVenta.rutaConfirmada,
+        },
+      }
+
+    case 'confirmarRutaEntrega':
+      return { ...state, entregaVenta: { ...state.entregaVenta, rutaConfirmada: true } }
 
     // El remito quedó creado en Monday: se guarda su id para no recrearlo al volver a entrar.
     case 'setRemitoCreado':

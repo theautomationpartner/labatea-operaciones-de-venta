@@ -12,6 +12,7 @@ import { VENTAS_ENTREGA } from '@/data/mock'
 import { round2 } from '@/lib/format'
 import type {
   Moneda,
+  ResponsableEntrega,
   TipoEntrega,
   TipoPago,
   TipoVenta,
@@ -21,6 +22,7 @@ import type {
 import {
   BOARDS,
   COL,
+  ENTREGA_RESPONSABLE_LABEL,
   VENTA_COBRO_INDEX,
   VENTA_ENTREGA_ESTADO_INDEX,
   VENTA_ENTREGA_INDEX,
@@ -77,6 +79,10 @@ export interface DatosVenta {
   tipoPago: TipoPago
   /** Rentabilidad general de la venta, en %. */
   rentabilidad: number
+  /** Responsable logístico elegido en el Cierre de Venta. Se escribe en "✋Entrega" (dropdown). */
+  responsableEntrega?: ResponsableEntrega
+  /** Ruta de entrega confirmada (sólo La Batea). Se linkea en la venta y baja a los pendientes. */
+  rutaId?: string
   lineas: LineaVenta[]
   /** Sin uso todavía: la columna "✋Entrega" del board queda para una etapa posterior. */
   moneda?: Moneda
@@ -171,6 +177,7 @@ async function crearPendientesEntrega(
   clienteId: string | undefined,
   ventaId: string,
   lineas: LineaVentaCreada[],
+  rutaId?: string,
 ): Promise<void> {
   const conProd = lineas.filter((l) => l.productoId && l.cantidad > 0)
   if (conProd.length === 0) return
@@ -189,6 +196,10 @@ async function crearPendientesEntrega(
     }
     if (clienteId) cv[COL.pendienteEntregaItem.cliente] = { item_ids: [Number(clienteId)] }
     if (l.productoId) cv[COL.pendienteEntregaItem.producto] = { item_ids: [Number(l.productoId)] }
+    // Ruta de entrega de la venta: baja a cada pendiente para verla al remitar (venta ANTERIOR).
+    if (rutaId && Number.isFinite(Number(rutaId))) {
+      cv[COL.pendienteEntregaItem.ruta] = { item_ids: [Number(rutaId)] }
+    }
     // Enlace al subelemento de la venta (unidireccional en el pendiente; visible del otro lado por reflexión).
     if (l.ventaSubitemId) {
       cv[COL.pendienteEntregaItem.ventaSubelemento] = { item_ids: [Number(l.ventaSubitemId)] }
@@ -238,7 +249,17 @@ async function crearMovimientosStockSimultanea(lineas: LineaVentaCreada[]): Prom
  * devuelve cuántos se crearon para que la vista decida (y no avance).
  */
 export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
-  const { clienteId, nombre, tipoVenta, tipoEntrega, tipoPago, rentabilidad, lineas } = datos
+  const {
+    clienteId,
+    nombre,
+    tipoVenta,
+    tipoEntrega,
+    tipoPago,
+    rentabilidad,
+    responsableEntrega,
+    rutaId,
+    lineas,
+  } = datos
 
   if (!mondayHabilitado()) {
     return { id: `mock-venta-${Date.now()}`, subitemsCreados: lineas.length }
@@ -294,6 +315,13 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     }
   }
   if (clienteId) cabecera[COL.venta.cliente] = { item_ids: [Number(clienteId)] }
+  // Responsable logístico → dropdown por label. Ruta → board_relation (sólo si La Batea la confirmó).
+  if (responsableEntrega) {
+    cabecera[COL.venta.responsableEntrega] = { labels: [ENTREGA_RESPONSABLE_LABEL[responsableEntrega]] }
+  }
+  if (rutaId && Number.isFinite(Number(rutaId))) {
+    cabecera[COL.venta.ruta] = { item_ids: [Number(rutaId)] }
+  }
 
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
@@ -344,7 +372,7 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
        · POSTERIOR: crea los "Pends de Entrega", enlazados a su subelemento de venta. No toca stock.
        · SIMULTÁNEA: crea el movimiento de salida en el Stock del producto. No crea pendientes. */
   if (tipoEntrega === 'POSTERIOR') {
-    void crearPendientesEntrega(clienteId, itemId, lineasConSub).catch(() => {
+    void crearPendientesEntrega(clienteId, itemId, lineasConSub, rutaId).catch(() => {
       /* La creación de pendientes de entrega es best-effort y desacoplada. */
     })
   } else if (tipoEntrega === 'SIMULTANEA') {
@@ -412,6 +440,7 @@ function mapPendienteEntrega(item: MondayItem): VentaEntregaProducto {
   const prodCols = producto ? byId(producto) : {}
   const venta = c[COL.pendienteEntregaItem.venta]?.linked_items?.[0]
   const ventaSub = c[COL.pendienteEntregaItem.ventaSubelemento]?.linked_items?.[0]
+  const ruta = c[COL.pendienteEntregaItem.ruta]?.linked_items?.[0]
   const vendida = numCol(c[COL.pendienteEntregaItem.cantidad])
   const entregada = numCol(c[COL.pendienteEntregaItem.entregada])
   const pendiente = Math.max(numCol(c[COL.pendienteEntregaItem.pendiente]) || vendida - entregada, 0)
@@ -421,6 +450,8 @@ function mapPendienteEntrega(item: MondayItem): VentaEntregaProducto {
     codigo: producto ? valor(prodCols[COL.producto.codigo]) : '',
     // La U.M. sale de la columna espejo del pendiente (lookup_mm5pggg9), no del maestro.
     um: valor(c[COL.pendienteEntregaItem.unidadMedida]),
+    // Ruta de entrega asignada al pendiente (board_relation_mm5pa9v3): se muestra al remitar.
+    ruta: ruta?.name,
     vendida,
     entregada,
     pendiente,
@@ -468,7 +499,7 @@ export async function getVentasEntregaPendiente(clienteId: string): Promise<Vent
         ) {
           items {
             id name
-            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.venta}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}"]) {
+            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.venta}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.ruta}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}"]) {
               id text
               ... on StatusValue { index }
               ... on FormulaValue { display_value }

@@ -10,10 +10,16 @@ import {
   PUNTO_VENTA_DEFAULT,
 } from '@/lib/factura'
 import { requiereRegistroDeuda } from '@/lib/cobros'
-import { comprobantesDeVenta, totalesComprobantes } from '@/lib/facturacion'
+import { aIso } from '@/lib/dates'
+import { comprobantesDeVenta, precioFacturado, totalesComprobantes } from '@/lib/facturacion'
 import { lineasDeVenta } from '@/lib/lineasVenta'
 import { pasosDe } from '@/lib/pasos'
-import { crearComprobantes, FACT_VENCIMIENTO_DIAS } from '@/services/monday'
+import {
+  crearComisiones,
+  crearComprobantes,
+  crearConsignacionesCYO,
+  FACT_VENCIMIENTO_DIAS,
+} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
 import { RegistrarDeudaModal } from './RegistrarDeudaModal'
@@ -114,16 +120,76 @@ export function FacturaView() {
   }
 
   /**
+   * Registro de comisiones de la venta (best-effort, fire-and-forget), al finalizar la operación.
+   * Universal: corre para cualquier tipo de venta/entrega. El servicio evalúa por producto si es
+   * comisionable ("SI") y aborta solo si ninguno lo es (sin tocar el board). En el cobro POSTERIOR
+   * enlaza la deuda recién creada; en el SIMULTANEO omite esa relación. No frena el cierre.
+   */
+  const dispararComisiones = (pendienteCobroId?: string) => {
+    if (!ventaId) return
+    void crearComisiones({
+      ventaId,
+      nombre: cliente.name,
+      tipoVenta: tipoVenta ?? 'DIRECTA',
+      fecha: aIso(fechaEmision),
+      pendienteCobroId,
+      lineas: productos.map((p) => ({
+        productoId: p.productoId,
+        cantidad: p.cantidad,
+        precioUnitario: p.precioUnitario,
+      })),
+    }).catch(() => {
+      /* El registro de comisiones es best-effort: un fallo no revierte la venta ni frena el cierre. */
+    })
+  }
+
+  /**
+   * Registro de mercadería consignada CYO (best-effort, fire-and-forget), al finalizar la operación.
+   * Sólo corre si durante la división de mercadería se EMITIÓ una factura consignada: por cada
+   * comprobante CONSIGNADA efectivamente emitido (id + todas sus líneas), crea un ítem por producto
+   * en el tablero de liquidación CYO. Venta 100% común → no crea nada. No congela la UI.
+   */
+  const dispararConsignacionesCYO = () => {
+    const lineasCYO = comprobantes
+      .filter((c) => c.tipo === 'CONSIGNADA')
+      .flatMap((c) => {
+        const emitido = emitidos.get(c.clave)
+        // La factura consignada tiene que haberse emitido completa para registrar su liquidación.
+        if (!emitido?.id || emitido.lineasCreadas < emitido.lineasEsperadas) return []
+        return c.lineas
+          .filter((l) => l.productoId)
+          .map((l) => ({
+            productoId: l.productoId,
+            nombre: l.nombre,
+            cantidad: l.cantidad,
+            // Precio al que se facturó (ya bonificado): el mismo que va al comprobante.
+            precioUnitario: precioFacturado(l),
+            comprobanteId: emitido.id,
+          }))
+      })
+    if (lineasCYO.length === 0) return
+    void crearConsignacionesCYO(lineasCYO, aIso(fechaEmision)).catch(() => {
+      /* El registro CYO es best-effort: un fallo no revierte la venta ni frena el cierre. */
+    })
+  }
+
+  /**
    * Cierre de la operación. La deuda del cliente no nace con el pedido: si la venta va a
    * CUENTA CORRIENTE con tipo de pago POSTERIOR, acá se frena el cierre y se pide registrarla
-   * en la cuenta corriente, con la factura ya emitida y enviada. Contado (pago SIMULTANEO) o
-   * cualquier otra condición cierran derecho, sin montar el modal.
+   * en la cuenta corriente, con la factura ya emitida y enviada. Ese registro —la deuda y la
+   * "Vta Pend de Cobro"— SÍ se espera (`await`, en el modal). Contado (pago SIMULTANEO) o cualquier
+   * otra condición cierran derecho, sin montar el modal.
+   *
+   * Las comisiones y la consignación CYO se disparan SIN esperar (fire-and-forget) recién con la
+   * deuda ya registrada: no bloquean el cierre.
    */
   const finalizar = () => {
     if (requiereRegistroDeuda(cliente, cobro)) {
       setRegistrandoDeuda(true)
       return
     }
+    dispararComisiones()
+    dispararConsignacionesCYO()
     dispatch({ type: 'reset' })
   }
 
@@ -200,8 +266,13 @@ export function FacturaView() {
           cliente={cliente}
           total={totalesComprobantes(comprobantes).total}
           concepto={`${cliente.name} · ${cobro.fecha}`}
-          onRegistrada={() => {
+          onRegistrada={(deudaId) => {
             setRegistrandoDeuda(false)
+            /* La deuda y la "Vta Pend de Cobro" ya quedaron registradas (awaited en el modal).
+               Recién ahí se disparan, SIN esperar: la comisión —que enlaza la deuda— y la
+               consignación CYO. Ninguna de las dos bloquea el cierre. */
+            dispararComisiones(deudaId)
+            dispararConsignacionesCYO()
             dispatch({ type: 'reset' })
           }}
           onCancelar={() => setRegistrandoDeuda(false)}

@@ -55,6 +55,14 @@ export const BOARDS = {
   destinos: 18421035523,
   /** "🚛Vehículos": la flota propia de La Batea. */
   vehiculos: 18421035528,
+  /** "🛣️Rutas de Transporte": las rutas de entrega que se asignan a la venta. */
+  rutasEntrega: 18421708745,
+  /** "Pend Venta de Liq CYO": un ítem por producto consignado (cuenta y orden) facturado. */
+  consignacionesCYO: 18421465215,
+  /** "💲Registro de Comisiones": un ítem por venta comisionable, con un subítem por producto. */
+  comisiones: 18421035548,
+  /** Subelementos de "💲Registro de Comisiones": un producto comisionable de la venta cada uno. */
+  comisionesSub: 18421035638,
 } as const
 
 /** Item de config donde vive el valor de "Días de Vigencia de Presupuesto". */
@@ -236,6 +244,12 @@ export const COL = {
     /** "🤖Código Sistema Prov": espeja el código del proveedor conectado. */
     proveedorCodigo: 'lookup_mm5fh97p',
     tipoMercaderia: 'color_mm48hm74',
+    /** "✋️Comision": indica si el producto es comisionable ("SI" / "NO"). */
+    comisionable: 'color_mm51p0wn',
+    /** "✋️Porc Com Activa": % de comisión de la venta CON PRESUPUESTO PREVIO. */
+    porcComActiva: 'numeric_mm5b72kv',
+    /** "✋️Porc Com Pasiva": % de comisión de la venta DIRECTA. */
+    porcComPasiva: 'numeric_mm5bkt7d',
     /** "✋IVA": alícuota del producto, en %. Se suma al precio de lista si el cliente la paga. */
     iva: 'numeric_mm5gyrnb',
     /** "🧮Stock y Movimientos": ítem de stock del producto (board 18421752251). Venta DIRECTA. */
@@ -384,6 +398,11 @@ export const COL = {
     tipoCobro: 'color_mm5b7t0d',
     /** "✋Entrega": Envio / Sin Envio. Leída del board; todavía sin mapeo definido. */
     entrega: 'color_mm52jx3d',
+    /** "✋Entrega" (dropdown): responsable logístico de la venta ("La Batea" / "Comisionista
+     *  Responsable" / "Cliente Responsable"). Se escribe por label. */
+    responsableEntrega: 'dropdown_mm5p34k6',
+    /** "✋🛣️Rutas de Transporte": ruta de entrega asignada a la venta (board 18421708745). */
+    ruta: 'board_relation_mm5nr3d5',
     rentabilidad: 'numeric_mm52rk7t',
     /** "🤖Estado de Entrega": cuánto de la venta ya se entregó (a nivel venta). */
     estadoEntrega: 'color_mm58xjgj',
@@ -540,6 +559,9 @@ export const COL = {
     cantidad: 'numeric_mkwb862t',
     /** "🤖U.Medida": mirror de la U.M. del producto (refleja el Maestro vía board_relation_mkwbxjqx). */
     unidadMedida: 'lookup_mm5pggg9',
+    /** "🛣️Rutas de Transporte": ruta de entrega del pendiente (board 18421708745). Se hereda de la
+     *  venta al crearlo y se muestra al remitar (venta ANTERIOR). */
+    ruta: 'board_relation_mm5pa9v3',
     /** "🤖Q RTO Neto": cantidad ya entregada (mirror de los subítems de entrega). */
     entregada: 'lookup_mkwb1xhh',
     /** "🤖Pend de Entrega": lo que falta entregar (fórmula = Q VTA − Q RTO Neto). */
@@ -607,6 +629,40 @@ export const COL = {
     /** "Alícuota IVA %": la tasa del producto. La usan las fórmulas de IVA del board. */
     alicuotaIva: 'dropdown_mm2g198w',
   },
+  // Ítem de "💲Registro de Comisiones" (board 18421035548): la comisión de una venta.
+  comision: {
+    /** "🤖Fecha Emision Vta": fecha de emisión de la factura (YYYY-MM-DD). */
+    fecha: 'date_mm4dxd48',
+    /** "📈Ventas": la venta que originó la comisión. */
+    venta: 'board_relation_mm4d72qt',
+    /** "💰Vtas Pend de Cobro": la deuda del cobro POSTERIOR. Se omite en el cobro SIMULTANEO. */
+    cobroPendiente: 'board_relation_mm4dzhr1',
+  },
+  // Subelemento de "💲Registro de Comisiones" (board 18421035638): un producto comisionable.
+  comisionSub: {
+    /** "📦Maestro de Productos": el producto comisionable. */
+    producto: 'board_relation_mm5bmztw',
+    /** "🤖Cantidad": unidades vendidas/facturadas del producto. */
+    cantidad: 'numeric_mm5b62j5',
+    /** "🤖Precio unit": precio unitario al que se vendió. */
+    precioUnit: 'numeric_mm5bk04f',
+    /** "🤖Comision": % de comisión resuelto del Maestro según el tipo de venta. */
+    comision: 'numeric_mm5bn9f9',
+  },
+  // Ítem de "Pend Venta de Liq CYO" (board 18421465215): un producto consignado facturado.
+  consignacionCYO: {
+    /** "📦Productos": el producto consignado del Maestro. */
+    producto: 'board_relation_mm5p5kma',
+    /** "Date fact": fecha de emisión de la factura (YYYY-MM-DD). */
+    fecha: 'date4',
+    /** "Cant": cantidad facturada del producto. */
+    cantidad: 'numeric_mm5nds65',
+    /** "Precio de Vta": precio unitario al que se facturó. */
+    precio: 'numeric_mm5n13wv',
+    /** "Archivo": PDF de la factura. NUNCA se escribe en el create_item (columna file); se adjunta
+     *  aparte referenciando el asset del comprobante (asset_ids). */
+    pdf: 'file_mm5pb2vh',
+  },
   // Destino de entrega (board 18421035523).
   destino: {
     /** "Cliente": conecta el destino con uno o más clientes (multi-valor). */
@@ -651,6 +707,17 @@ export const MEDIO_ENVIO_LABELS: Record<'Email' | 'WhatsApp' | 'Ambos', string[]
   Email: ['Email'],
   WhatsApp: ['Whatsapp'],
   Ambos: ['Whatsapp', 'Email'],
+}
+
+/**
+ * Responsable logístico de la app → etiqueta de la columna dropdown "✋Entrega" (dropdown_mm5p34k6)
+ * del board de Ventas. Los textos son EXACTAMENTE los del board: "La Batea" (no "Responsable La
+ * Batea"), "Comisionista Responsable" y "Cliente Responsable".
+ */
+export const ENTREGA_RESPONSABLE_LABEL: Record<'LA_BATEA' | 'COMISIONISTA' | 'CLIENTE', string> = {
+  LA_BATEA: 'La Batea',
+  COMISIONISTA: 'Comisionista Responsable',
+  CLIENTE: 'Cliente Responsable',
 }
 
 /**

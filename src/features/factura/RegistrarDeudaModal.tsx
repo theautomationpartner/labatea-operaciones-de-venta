@@ -19,8 +19,9 @@ interface RegistrarDeudaModalProps {
   total: number
   /** Nombre del movimiento en la cuenta corriente (cliente y fecha). */
   concepto: string
-  /** La deuda quedó escrita: la operación puede cerrarse. */
-  onRegistrada: () => void
+  /** La deuda quedó escrita: la operación puede cerrarse. Recibe el id de la deuda recién creada
+   *  ("Vta Pend de Cobro"), que la comisión de la venta enlaza en el cobro POSTERIOR. */
+  onRegistrada: (deudaId: string) => void
   /** Se cierra sin registrar: la operación NO se cierra y el vendedor sigue en la factura. */
   onCancelar: () => void
 }
@@ -67,14 +68,18 @@ export function RegistrarDeudaModal({
       try {
         /* La espera mínima corre en paralelo con la escritura: no la demora, sólo evita que
            la ventana se cierre antes de poder leerla. */
+        let nuevaDeudaId = ''
         await Promise.all([
           registrarDeudaPosterior({ ctaCteId: cliente.ctaCteId, total, concepto }).then(
-            ({ deudaId, saldoAnterior }) =>
-              dispatch({ type: 'confirmarCobro', deudaId, saldoAnterior }),
+            ({ deudaId, saldoAnterior }) => {
+              nuevaDeudaId = deudaId
+              dispatch({ type: 'confirmarCobro', deudaId, saldoAnterior })
+            },
           ),
           new Promise((r) => setTimeout(r, MINIMO_VISIBLE_MS)),
         ])
-        onRegistrada()
+        // El id de la deuda viaja al cierre: la comisión POSTERIOR lo enlaza como "Vta Pend de Cobro".
+        onRegistrada(nuevaDeudaId)
       } catch {
         setError(
           'No se pudo registrar la deuda en la cuenta corriente. Cerrá este aviso y volvé a finalizar la operación.',

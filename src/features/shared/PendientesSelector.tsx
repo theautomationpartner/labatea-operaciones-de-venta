@@ -28,6 +28,8 @@ export interface PendienteFila {
   subtotal?: number
   /** Unidad de medida del producto (sólo se muestra con `mostrarUm`). */
   um?: string
+  /** Ruta de entrega asignada al pendiente (sólo se muestra con `mostrarRuta`). */
+  ruta?: string
   /** La línea ya está en la tabla de seleccionados: no se vuelve a agregar. */
   ya: boolean
   /**
@@ -60,6 +62,8 @@ interface PendientesSelectorProps {
   mostrarPrecios?: boolean
   /** Suma la columna de unidad de medida por línea (remito de venta ANTERIOR). */
   mostrarUm?: boolean
+  /** Suma la columna de ruta de entrega por línea (remito de venta ANTERIOR). */
+  mostrarRuta?: boolean
   filas: PendienteFila[]
   /** Documento seleccionado en el panel de cards; filtra la lista. null = todos. */
   filtroOrigen: string | null
@@ -87,6 +91,7 @@ export function PendientesSelector({
   dividirTipo = false,
   mostrarPrecios = false,
   mostrarUm = false,
+  mostrarRuta = false,
   filas,
   filtroOrigen,
   onVerTodos,
@@ -94,7 +99,8 @@ export function PendientesSelector({
 }: PendientesSelectorProps) {
   // Columnas de la tabla: la de tipo (venta presupuestada), las de importes (venta pend de facturar)
   // y la de unidad de medida (remito ANTERIOR).
-  const columnas = (mostrarTipo ? 9 : 8) + (mostrarPrecios ? 2 : 0) + (mostrarUm ? 1 : 0)
+  const columnas =
+    (mostrarTipo ? 9 : 8) + (mostrarPrecios ? 2 : 0) + (mostrarUm ? 1 : 0) + (mostrarRuta ? 1 : 0)
   // uid → cantidad elegida. Sólo entran las filas seleccionables (no agregadas, con pendiente).
   const [seleccion, setSeleccion] = useState<ReadonlyMap<string, number>>(new Map())
   const [busqueda, setBusqueda] = useState('')
@@ -225,6 +231,12 @@ export function PendientesSelector({
           <span style={{ marginLeft: 10, fontWeight: 600 }}>{fila.nombre}</span>
         </td>
         {mostrarUm && <td className="ta-c">{fila.um || '—'}</td>}
+        {/* Ruta de entrega del pendiente: badge para distinguirla de un dato numérico. */}
+        {mostrarRuta && (
+          <td className="ta-c">
+            {fila.ruta ? <span className="ruta-badge">{fila.ruta}</span> : '—'}
+          </td>
+        )}
         {mostrarPrecios && <td className="ta-r">{money(fila.precio ?? 0)}</td>}
         {mostrarPrecios && (
           <td className="ta-r" style={{ fontWeight: 600 }}>
@@ -354,6 +366,7 @@ export function PendientesSelector({
               <th style={{ width: 40 }} />
               <th>Producto</th>
               {mostrarUm && <th className="ta-c">U.M.</th>}
+              {mostrarRuta && <th className="ta-c">Ruta</th>}
               {mostrarPrecios && <th className="ta-r">Precio unit.</th>}
               {mostrarPrecios && <th className="ta-r">Subtotal</th>}
               <th className="ta-c" style={{ width: 120 }}>

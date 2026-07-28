@@ -2329,6 +2329,59 @@
 .entrega-form {
   margin-top: 16px;
 }
+/* Responsable logístico del Cierre de Venta: separado del bloque del cobro. */
+.entrega-cierre {
+  margin-top: 16px;
+}
+/* Ruta de entrega (La Batea): select compacto + botón de confirmación + tilde de éxito. */
+.ruta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.ruta-select {
+  /* Ancho compacto y legible: el nombre de la ruta entra completo sin truncar (≈400px). */
+  width: 100%;
+  max-width: 400px;
+  min-width: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--p-border, #e4e7ec);
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+}
+.ruta-select:disabled {
+  background: #f4f6f9;
+  color: var(--text-gray, #64748b);
+  cursor: default;
+}
+.ruta-confirmar {
+  white-space: nowrap;
+}
+/* Indicador de éxito: tilde verde + nombre de la ruta confirmada. */
+.ruta-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green-dark, #157347);
+}
+.ruta-ok i {
+  color: var(--green, #00b461);
+}
+/* Ruta de entrega en la tabla de pendientes (badge, como el origen). */
+.ruta-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--p-text-main, #1f2937);
+  background: #eef2f9;
+  border-radius: 12px;
+  padding: 3px 10px;
+}
 .entrega-confirmar {
   display: flex;
   justify-content: flex-start;

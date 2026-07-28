@@ -92,6 +92,8 @@ export function RemitoProductosView() {
           pend: prod.pendiente,
           // Unidad de medida (columna espejo del pendiente): se muestra en el listado.
           um: prod.um,
+          // Ruta de entrega asignada al pendiente: se muestra al remitar (venta ANTERIOR).
+          ruta: prod.ruta,
           estadoColor: colorEstado(prod.estadoEntrega, estado),
           // El board ya dice el estado de entrega de la línea; si no, se deriva del avance.
           estadoLabel: prod.estadoEntrega || AVANCE_LABEL_ENTREGA[estado],
@@ -152,6 +154,7 @@ export function RemitoProductosView() {
           colPend="Pend. de entregar"
           colAccion="A remitar"
           mostrarUm
+          mostrarRuta
           filas={pendientes}
           filtroOrigen={null}
           onConfirmar={confirmar}

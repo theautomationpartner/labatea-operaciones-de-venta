@@ -32,6 +32,7 @@ import {
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { CabeceraCobro } from './CabeceraCobro'
+import { EntregaCierreVenta } from './EntregaCierreVenta'
 import { ImpactoCtaCte } from './ImpactoCtaCte'
 import { FormularioCobro } from './FormularioCobro'
 import { TablaMovimientos } from './TablaMovimientos'
@@ -168,6 +169,14 @@ export function CobroView() {
   const puedeEmitir = puedeEmitirFactura(cliente, cobro, fechaEmision, resumen)
   // Ya escrito en Monday: no se vuelve a registrar para no duplicar el recibo ni la deuda.
   const yaEscrito = Boolean(cobro.cobroId || cobro.deudaId)
+  /* El responsable logístico (y su ruta) se pregunta SÓLO en la entrega POSTERIOR. */
+  const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
+  /* Guardrail de ruta: en POSTERIOR, si el responsable logístico es La Batea, no se puede avanzar
+     hasta seleccionar y confirmar una Ruta de Entrega. Las otras opciones no la exigen. */
+  const faltaRutaLaBatea =
+    esEntregaPosterior &&
+    state.entregaVenta.responsable === 'LA_BATEA' &&
+    !state.entregaVenta.rutaConfirmada
 
   /**
    * El registro se bifurca por el TIPO DE PAGO DE LA OPERACIÓN, no por la condición del
@@ -225,6 +234,8 @@ export function CobroView() {
      cierre de la operación (modal de "Finalizar Operación"). */
   const continuarAFactura = async () => {
     if (fase) return
+    // Guardrail: La Batea sin ruta confirmada no avanza (el botón ya está inhabilitado; defensa extra).
+    if (faltaRutaLaBatea) return
 
     /* La venta se escribe en "📈Ventas" recién acá: es el punto donde la operación queda
        cerrada. Sólo se abre la facturación si la cabecera y TODOS sus productos entraron. */
@@ -251,6 +262,15 @@ export function CobroView() {
              del payload, no la vista. Es lo que queda asentado en el board. */
           ...datosCobroVenta(cliente, cobro),
           rentabilidad: rentabilidadVenta,
+          /* Responsable logístico (dropdown) y ruta: SÓLO en la entrega POSTERIOR, que es donde se
+             pregunta. La ruta se manda únicamente si La Batea la confirmó, y baja a los pendientes. */
+          responsableEntrega: esEntregaPosterior
+            ? state.entregaVenta.responsable ?? undefined
+            : undefined,
+          rutaId:
+            esEntregaPosterior && state.entregaVenta.rutaConfirmada
+              ? state.entregaVenta.rutaId ?? undefined
+              : undefined,
           lineas: productos,
         })
         if (creada.subitemsCreados !== productos.length) {
@@ -483,6 +503,10 @@ export function CobroView() {
           {mostrarImpacto && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
         </div>
 
+        {/* Responsable logístico de la venta (junto a la consulta del cobro). SÓLO se pregunta en
+            la entrega POSTERIOR. Con La Batea pide sólo la ruta; comisionista y cliente, como el Remito. */}
+        {esEntregaPosterior && <EntregaCierreVenta />}
+
         {bloqueoMsg && (
           <div className="cobro-bloqueo">
             <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
@@ -504,12 +528,14 @@ export function CobroView() {
           <button
             type="button"
             className="cobro-btn cobro-btn--green"
-            disabled={!puedeEmitir || Boolean(fase)}
+            disabled={!puedeEmitir || Boolean(fase) || faltaRutaLaBatea}
             aria-busy={Boolean(fase)}
             title={
-              puedeEmitir
-                ? undefined
-                : 'Registrá el cobro de la venta para poder emitir la factura.'
+              faltaRutaLaBatea
+                ? 'Confirmá la Ruta de Entrega para continuar.'
+                : puedeEmitir
+                  ? undefined
+                  : 'Registrá el cobro de la venta para poder emitir la factura.'
             }
             onClick={continuarAFactura}
           >

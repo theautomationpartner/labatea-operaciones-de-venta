@@ -401,6 +401,8 @@ export interface VentaEntregaProducto {
   vendida: number
   entregada: number
   pendiente: number
+  /** Ruta de entrega asignada al pendiente (board_relation_mm5pa9v3), para verla al remitar. */
+  ruta?: string
   /** "🤖Estado de Entrega" de la línea, tal como está en el board. */
   estadoEntrega?: string
   /** La línea se puede remitar. Es false para los productos "100% Entregada". */
@@ -518,6 +520,27 @@ export interface Comisionista {
 
 /** Quién se hace responsable de entregar la mercadería remitida. */
 export type ResponsableEntrega = 'LA_BATEA' | 'COMISIONISTA' | 'CLIENTE'
+
+/**
+ * Responsable logístico y ruta de la venta, elegidos en el Cierre de Venta. Es una variante
+ * reducida de `EnvioState`: cuando entrega La Batea no se piden destino/transporte, sólo una
+ * "Ruta de Entrega" que se confirma y bloquea.
+ */
+export interface EntregaVentaState {
+  /** null hasta que se elige quién entrega. Al cambiarlo se limpian los datos de las otras. */
+  responsable: ResponsableEntrega | null
+  /** La Batea: ruta de transporte elegida (board 18421708745). */
+  rutaId: string | null
+  rutaNombre: string
+  /** La ruta se confirmó a mano: bloquea el select y habilita avanzar de etapa. */
+  rutaConfirmada: boolean
+  /** Comisionista responsable del traslado. */
+  comisionistaId: string | null
+  comisionistaNombre?: string
+  comisionistaCuit?: string
+  /** Cliente responsable que retira. */
+  responsableNombre: string
+}
 
 /** Especificación de la entrega de la mercadería remitida. */
 export interface EnvioState {
