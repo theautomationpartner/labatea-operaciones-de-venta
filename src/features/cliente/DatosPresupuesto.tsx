@@ -34,24 +34,20 @@ export function DatosPresupuesto() {
     <div className="card budget-card no-radius">
       <h3>Datos del presupuesto</h3>
 
-      <div className="form-grid">
+      {/* Fechas + moneda en una sola fila. Las tres fechas son datos planos (sin caja de input);
+          sólo la moneda conserva el estilo/elemento de input. */}
+      <div className="datos-row">
         <div className="form-group">
-          <label htmlFor="fecha-emision">Fecha de emisión</label>
-          <div className="input-wrapper">
+          <label>Fecha de emisión</label>
+          <div className="dato-plano">
             <IconoCalendario color="var(--c-primary)" />
-            <input
-              id="fecha-emision"
-              type="text"
-              className="form-control with-icon"
-              value={fechaEmision}
-              readOnly
-            />
+            <span>{fechaEmision}</span>
           </div>
         </div>
 
         <div className="form-group">
-          <label htmlFor="dias-vigencia">Días de vigencia</label>
-          <div className="input-wrapper">
+          <label>Días de vigencia</label>
+          <div className="dato-plano" title="Definido en la configuración del sistema (Monday)">
             <svg
               width="16"
               height="16"
@@ -64,37 +60,20 @@ export function DatosPresupuesto() {
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
-            <input
-              id="dias-vigencia"
-              type="text"
-              className="form-control with-icon"
-              style={{ color: 'var(--c-text-muted)' }}
-              value={`${diasVigencia} días`}
-              readOnly
-              title="Definido en la configuración del sistema (Monday)"
-            />
+            <span style={{ color: 'var(--c-text-muted)' }}>{diasVigencia} días</span>
           </div>
         </div>
 
         <div className="form-group">
-          <label htmlFor="fecha-vencimiento">Fecha de vencimiento</label>
-          <div className="input-wrapper">
+          <label>Fecha de vencimiento</label>
+          <div className="dato-plano">
             <IconoCalendario color="var(--c-success)" />
-            <input
-              id="fecha-vencimiento"
-              type="text"
-              className="form-control with-icon"
-              style={{ color: 'var(--c-success)', fontWeight: 600 }}
-              value={vencimiento}
-              readOnly
-            />
+            <span style={{ color: 'var(--c-success)', fontWeight: 600 }}>{vencimiento}</span>
           </div>
         </div>
-      </div>
 
-      {/* La moneda del presupuesto es siempre pesos: se informa, no se elige. */}
-      <div className="moneda-row">
-        <div className="form-group">
+        {/* La moneda es el único campo que conserva su input (siempre pesos). */}
+        <div className="form-group moneda-group">
           <label htmlFor="moneda">Moneda</label>
           <div className="input-wrapper">
             <svg

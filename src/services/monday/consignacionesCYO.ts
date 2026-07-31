@@ -93,7 +93,8 @@ export async function crearConsignacionesCYO(
       [COL.consignacionCYO.cantidad]: round2(l.cantidad),
       [COL.consignacionCYO.precio]: round2(l.precioUnitario),
     }
-    variables[`n${i}`] = l.nombre
+    // Ítem raíz del tablero de consignaciones: nombre general; su ID lo asigna la customKey del board.
+    variables[`n${i}`] = 'Consignaciones CYO'
     variables[`cv${i}`] = JSON.stringify(cv)
     return `c${i}: create_item(board_id: $boardId, item_name: $n${i}, column_values: $cv${i}) { id }`
   })

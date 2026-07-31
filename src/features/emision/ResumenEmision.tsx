@@ -1,7 +1,7 @@
-import { useMemo, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { NRO_PRESUPUESTO } from '@/data/mock'
-import { money, pct, pctDec } from '@/lib/format'
+import { money, pct } from '@/lib/format'
 import type { ResumenPresupuesto } from '@/lib/selectors'
 import { useApp } from '@/state/hooks'
 
@@ -19,13 +19,20 @@ interface FilaProps {
   label: string
   /** Campo que viaja al documento: se marca con asterisco. */
   requerido?: boolean
-  /** Verde para los datos favorables (importe total, rentabilidad, vencimiento). */
-  tono?: 'verde' | 'total'
+  /** Color del valor: verde (favorable), rojo (alerta) o "total" (destacado). */
+  tono?: 'verde' | 'total' | 'rojo'
   children: ReactNode
 }
 
 function Fila({ label, requerido = true, tono, children }: FilaProps) {
-  const clase = tono === 'total' ? 'rvalue--total' : tono === 'verde' ? 'rvalue--green' : ''
+  const clase =
+    tono === 'total'
+      ? 'rvalue--total'
+      : tono === 'verde'
+        ? 'rvalue--green'
+        : tono === 'rojo'
+          ? 'rvalue--red'
+          : ''
   return (
     <div className="rrow">
       <span className="rlabel">
@@ -45,13 +52,7 @@ export function ResumenEmision({
   emitido,
   onGenerar,
 }: ResumenEmisionProps) {
-  const { vendedor, cliente, lineas, fechaEmision, moneda, nroPresupuesto } = useApp()
-
-  // Descuento general: cuánto se resignó sobre el bruto del presupuesto.
-  const descuentoGeneral = useMemo(
-    () => (resumen.subtotal > 0 ? (resumen.descuento / resumen.subtotal) * 100 : 0),
-    [resumen.subtotal, resumen.descuento],
-  )
+  const { vendedor, cliente, lineas, fechaEmision, nroPresupuesto } = useApp()
 
   return (
     <div className="card card--flush resumen-emision">
@@ -74,36 +75,27 @@ export function ResumenEmision({
 
       <hr className="rsep" />
 
-      {/* El presupuesto no liquida IVA: el importe total es el neto de sus productos. */}
+      {/* El presupuesto no liquida IVA: se muestra únicamente el importe total. */}
       <div className="rgroup">
-        <Fila label="Subtotal">{money(resumen.subtotal)}</Fila>
-        {resumen.descuento > 0 && (
-          <Fila label="Descuento">− {money(resumen.descuento)}</Fila>
-        )}
         <Fila label="Importe total" tono="total">
           {money(resumen.total)}
         </Fila>
-      </div>
-
-      <hr className="rsep" />
-
-      <div className="rgroup">
         <Fila label="Rentabilidad general" tono="verde">
           {pct(resumen.rentabilidad)}
         </Fila>
+        {/* Descuento general: por ahora fijo en 0%. */}
         <Fila label="Descuento general" tono="verde">
-          {pctDec(descuentoGeneral)}
+          0%
         </Fila>
       </div>
 
       <hr className="rsep" />
 
       <div className="rgroup">
-        <Fila label="Moneda">{moneda === 'Dólares' ? 'Dólares (USD)' : 'Pesos (ARS)'}</Fila>
         <Fila label="Fecha de emisión" requerido={false}>
           {fechaEmision}
         </Fila>
-        <Fila label="Fecha de vencimiento" tono="verde">
+        <Fila label="Fecha de vencimiento" tono="rojo">
           {vencimiento} 📅
         </Fila>
       </div>

@@ -10,6 +10,8 @@ interface DropdownProps<T> {
   onSelect: (item: T) => void
   /** Clase extra para cada opción (p. ej. `dditem--strong`). */
   itemClassName?: string
+  /** Deshabilita el control: no abre el menú (p. ej. mientras se cargan sus opciones). */
+  disabled?: boolean
 }
 
 /** Selector con menú desplegable, usado para operación y vendedor. */
@@ -20,6 +22,7 @@ export function Dropdown<T>({
   renderItem,
   onSelect,
   itemClassName = '',
+  disabled = false,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -33,13 +36,14 @@ export function Dropdown<T>({
         className="selbox selbox--fix selbox--btn"
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
         {label}
         <i className="fas fa-chevron-down" />
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div className="ddmenu" role="listbox">
           {items.map((item) => (
             <div

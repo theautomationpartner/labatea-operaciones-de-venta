@@ -144,10 +144,11 @@ function CardComprobante({
           </table>
 
           <div className="comp-pie">
-            {/* Vencimiento SÓLO para cuenta corriente: el plazo es fijo (30 días) y de sólo
-                lectura. En contado la factura no tiene vencimiento, así que no se muestra. */}
+            {/* Vencimiento SÓLO cuando la forma de pago es CUENTA CORRIENTE: el plazo es fijo
+                (30 días) y de sólo lectura. En cualquier otra forma (contado, tarjetas) la factura
+                se cobra al emitirse: se muestra "Pago contado", sin fecha de vencimiento. */}
             <div className="comp-venc">
-              {venceAPlazo && (
+              {venceAPlazo ? (
                 <>
                   <span className="comp-head-lbl">Vencimiento del pago</span>
                   <div className="comp-venc-campo">
@@ -158,6 +159,8 @@ function CardComprobante({
                   </div>
                   <span className="comp-venc-nota">Fijo en 30 días desde la emisión.</span>
                 </>
+              ) : (
+                <span className="comp-head-lbl">Pago contado</span>
               )}
             </div>
 

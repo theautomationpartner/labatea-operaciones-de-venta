@@ -1,65 +1,53 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AvisoModal } from '@/components/ui/AvisoModal'
-import { ModalCargando } from '@/components/ui/ModalCargando'
+import { useMemo, useState } from 'react'
+import { Modal } from '@/components/ui/Modal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
   balancePagos,
-  bloqueoCobro,
-  cobroActivo,
-  cobroConfirmable,
-  cobroSimultaneoOperacion,
-  cierreCompleto,
-  datosCobroVenta,
-  esAgenteRetencion,
-  MENSAJE_RETENCION,
-  mostrarImpactoCtaCte,
-  pagoSimultaneo,
-  puedeEmitirFactura,
+  esPagoConTarjeta,
   resumenCobro,
+  tipoTarjetaDe,
+  type DescuentosPago,
 } from '@/lib/cobros'
 import { round2 } from '@/lib/format'
-import { lineasDeVenta } from '@/lib/lineasVenta'
-import { esFlujoRemito, pasoDeProductos, pasosDe } from '@/lib/pasos'
+import { esFlujoRemito, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
 import { IVA_RATE, resumenFactura, resumenVenta } from '@/lib/selectors'
-import {
-  actualizarCantVendida,
-  crearVenta,
-  registrarFacturacionVtasPend,
-  vincularVentaAlCobro,
-  registrarCobroSimultaneo,
-  registrarDeudaPosterior,
-} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { CabeceraCobro } from './CabeceraCobro'
-import { EntregaCierreVenta } from './EntregaCierreVenta'
+import { CobroProforma } from './CobroProforma'
+import { CobroTarjeta } from './CobroTarjeta'
 import { ImpactoCtaCte } from './ImpactoCtaCte'
 import { FormularioCobro } from './FormularioCobro'
 import { TablaMovimientos } from './TablaMovimientos'
 
-/**
- * En qué anda el cierre mientras se escribe en Monday. La deuda del pago posterior ya no pasa
- * por acá: se registra al finalizar la operación, con la factura emitida y enviada.
- */
-type FaseCierre = null | 'venta'
-
-/** Qué decir en cada fase: título y qué se está escribiendo, para que la espera se entienda. */
-const TEXTO_FASE: Record<'venta', { titulo: string; detalle: string }> = {
-  venta: {
-    titulo: 'Registrando venta...',
-    detalle:
-      'Estamos registrando la venta en el sistema junto a sus productos. Espera unos segundos',
-  },
+/** El cobro de contado no aplica descuentos por medio de pago: se cobra el importe cargado. */
+const SIN_DESCUENTO: DescuentosPago = {
+  Efectivo: 0,
+  Cheque: 0,
+  Transferencia: 0,
+  'Tarjeta de débito': 0,
+  'Tarjeta de crédito': 0,
 }
 
 /**
- * Paso 3 de CARGAR VENTA: cierre de la venta. El cobro es opcional y vive en un
+ * Compara dos importes SIN considerar los centavos: se toman como iguales cuando difieren en
+ * menos de un peso. Así el cobro cierra aunque el total de la venta traiga centavos que el
+ * efectivo no puede igualar (p. ej. $ 181.396,91 se cubre cobrando $ 181.396).
+ */
+const mismoImporte = (a: number, b: number): boolean => Math.abs(a - b) < 1
+
+/**
+ * Paso 3 de VENTA: cierre de la venta. El cobro es opcional y vive en un
  * desplegable; lo que sí se valida es que la factura proforma se pueda emitir.
  */
 export function CobroView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, fechaEmision, cobro, descuentosPago } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega, fechaEmision, cobro, formaPago, proformaId } =
+    state
   const dispatch = useDispatch()
+  /* Débito y crédito son dos formas de pago, pero un mismo ramal de cobro: el formulario de
+     tarjeta. Qué tipo es sale de la forma elegida, ya no de un selector aparte. */
+  const conTarjeta = esPagoConTarjeta(formaPago)
 
   /* Neto de la venta (sin IVA): es la base del crédito. La línea del cliente se mide sobre el
      neto, igual que en la selección de productos, no sobre el total con IVA. De dónde sale
@@ -70,8 +58,9 @@ export function CobroView() {
       esFlujoRemito(tipoEntrega)
         ? // La factura aplana varios remitos: ya no hay un descuento único por remito.
           resumenFactura(state.facturaItems, cliente, 0).neto
-        : tipoVenta === 'CON PRESUPUESTO PREVIO'
-          ? resumenVenta(state.ventaItems, cliente, 'CON PRESUPUESTO PREVIO').total
+        : // CON PRESUPUESTO PREVIO y la VENTA PROFORMA arman la venta en `ventaItems`.
+          tipoVenta === 'CON PRESUPUESTO PREVIO' || operacion === 'VENTA PROFORMA'
+          ? resumenVenta(state.ventaItems, cliente, tipoVenta ?? 'CON PRESUPUESTO PREVIO').total
           : round2(
               state.lineas.reduce(
                 (acc, l) => acc + round2(l.producto.precio * l.cantidad * (1 - l.descuento / 100)),
@@ -83,32 +72,11 @@ export function CobroView() {
   /* Lo que hay que cobrar es el TOTAL con IVA: es el importe que va a la factura, no el neto. */
   const totalVenta = useMemo(() => round2(netoVenta * (1 + IVA_RATE)), [netoVenta])
 
-  /* Rentabilidad general de la venta: es lo que va a la cabecera del ítem en "📈Ventas".
-     Cada línea pesa por su importe ya bonificado, igual que en el presupuesto. */
-  const rentabilidadVenta = useMemo(() => {
-    const productos = lineasDeVenta({
-      tipoVenta,
-      tipoEntrega,
-      lineas: state.lineas,
-      ventaItems: state.ventaItems,
-      facturaItems: state.facturaItems,
-    })
-    const base = productos.reduce(
-      (acc, p) => acc + p.precioUnitario * p.cantidad * (1 - p.descuento / 100),
-      0,
-    )
-    if (base <= 0) return 0
-    const ponderada = productos.reduce(
-      (acc, p) =>
-        acc + p.rentabilidad * ((p.precioUnitario * p.cantidad * (1 - p.descuento / 100)) / base),
-      0,
-    )
-    return Math.round(ponderada)
-  }, [state, tipoVenta, tipoEntrega])
-
+  /* El cobro de contado NO aplica descuentos por medio de pago: lo cobrado es el importe cargado,
+     y "Total Cobrado" debe dar exactamente el total de la venta (Diferencia 0) para avanzar. */
   const balances = useMemo(
-    () => balancePagos(cobro.movimientos, descuentosPago),
-    [cobro.movimientos, descuentosPago],
+    () => balancePagos(cobro.movimientos, SIN_DESCUENTO),
+    [cobro.movimientos],
   )
   const resumen = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
   /* Bloqueo por crédito. Lo que consume la línea es el NETO de la venta —la misma base que la
@@ -116,228 +84,71 @@ export function CobroView() {
      ventas que en el resumen todavía mostraban crédito disponible. Y si la venta se cobra
      entera en el acto no deja deuda, así que no consume nada. */
   const aCredito = useMemo(() => {
-    const cobradoTodo = round2(resumen.cancelado) >= round2(resumen.totalACobrar)
+    // Cobrado todo (ignorando centavos): iguala el total o lo supera.
+    const cobradoTodo =
+      mismoImporte(resumen.cancelado, resumen.totalACobrar) ||
+      resumen.cancelado >= resumen.totalACobrar
     return cobradoTodo ? 0 : netoVenta
   }, [netoVenta, resumen.cancelado, resumen.totalACobrar])
   const bloqueo = useBloqueoCredito(aCredito)
-  // Registrar el cobro pliega el item; de ahí en más se abre y cierra a mano.
-  const [abierto, setAbierto] = useState(true)
-  /* El plegado anima sobre `height`, así que hace falta el alto real del contenido: `auto`
-     no interpola. Se remide cuando el contenido cambia (un pago más, un aviso) para que el
-     desplegable abierto nunca recorte. */
-  const cuerpoRef = useRef<HTMLDivElement>(null)
-  const [altoCuerpo, setAltoCuerpo] = useState(0)
-  // Escritura en Monday: en curso y su error, para no dejar el botón mudo.
-  const [registrando, setRegistrando] = useState(false)
-  const [errorRegistro, setErrorRegistro] = useState<string | null>(null)
-  /* Cierre de la operación: tapa la pantalla mientras se escribe en Monday y va contando en
-     qué paso está. `null` = nada en curso. */
-  const [fase, setFase] = useState<FaseCierre>(null)
-  const [errorVenta, setErrorVenta] = useState<string | null>(null)
-
-  // Se mide antes de pintar: el desplegable arranca abierto y no tiene que dar un salto.
-  useLayoutEffect(() => {
-    const el = cuerpoRef.current
-    if (!el) return
-    const medir = () => setAltoCuerpo(el.scrollHeight)
-    medir()
-    const observador = new ResizeObserver(medir)
-    observador.observe(el)
-    return () => observador.disconnect()
-    /* A propósito sin deps: cada render remide, así el alto nunca queda viejo cuando cambia
-       el contenido (un pago más, un aviso). El observer cubre lo que no pasa por render:
-       fuentes que cargan tarde, cambios de ancho de ventana. */
-  })
+  /* Forma de pago CONTADO: el vendedor elige entre emitir una proforma o registrar el cobro. */
+  const [contadoTab, setContadoTab] = useState<'proforma' | 'cobro'>('cobro')
+  /* Pago con tarjeta: el cobro se da por hecho al confirmar los datos de la tarjeta. */
+  const [tarjetaConfirmada, setTarjetaConfirmada] = useState(false)
+  /* Modal de cierre de la venta con proforma (Guardar Venta): al aceptar limpia todo el estado. */
+  const [guardando, setGuardando] = useState(false)
 
   if (!cliente) return null
 
-  const agente = esAgenteRetencion(cliente)
-  /* Cómo es el cliente: de contado no elige nada (siempre cobra en el acto); el resto ve el
-     SI/NO del cierre. Define la FORMA de la pantalla, no el camino del registro. */
-  const clienteDeContado = pagoSimultaneo(cliente)
-  /* Cómo se cobra ESTA operación: contado, o cuenta corriente con "SI" en el cierre. Es el
-     flag que decide el registro (recibo vs. deuda) y el que viaja al board. */
-  const simultaneo = cobroSimultaneoOperacion(cliente, cobro)
-  /* Hay cuerpo que desplegar cuando se va a cargar un cobro: siempre en contado, y en cuenta
-     corriente sólo si el vendedor eligió "SI". */
-  const activo = cobroActivo(cliente, cobro)
-  /* El impacto en cuenta corriente se muestra sólo si la venta va a dejar deuda: cuenta
-     corriente con "NO". Elegir "SI" lo desmonta. */
-  const mostrarImpacto = mostrarImpactoCtaCte(cliente, cobro)
-  const bloqueoMsg = bloqueoCobro(cliente, cobro, fechaEmision, resumen)
-  const confirmable = cobroConfirmable(cliente, cobro, fechaEmision, resumen)
-  const puedeEmitir = puedeEmitirFactura(cliente, cobro, fechaEmision, resumen)
-  // Ya escrito en Monday: no se vuelve a registrar para no duplicar el recibo ni la deuda.
-  const yaEscrito = Boolean(cobro.cobroId || cobro.deudaId)
+  /* El cobro cierra cuando lo cobrado (sin descuentos) iguala el total de la venta SIN considerar
+     los centavos. Es la validación para poder confirmar y avanzar. */
+  const cobroCompleto =
+    cobro.movimientos.length > 0 && mismoImporte(resumen.cancelado, resumen.totalACobrar)
+  /* Motivo por el que el cobro todavía no cierra (se muestra al lado del botón). */
+  const bloqueoMsg =
+    cobro.movimientos.length > 0 && !cobroCompleto
+      ? 'El total cobrado debe igualar el total de la venta (sin contar los centavos).'
+      : null
   /* El responsable logístico (y su ruta) se pregunta SÓLO en la entrega POSTERIOR. */
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
-  /* Guardrail de ruta: en POSTERIOR, si el responsable logístico es La Batea, no se puede avanzar
-     hasta seleccionar y confirmar una Ruta de Entrega. Las otras opciones no la exigen. */
-  const faltaRutaLaBatea =
-    esEntregaPosterior &&
-    state.entregaVenta.responsable === 'LA_BATEA' &&
-    !state.entregaVenta.rutaConfirmada
 
   /**
-   * El registro se bifurca por el TIPO DE PAGO DE LA OPERACIÓN, no por la condición del
-   * cliente: SIMULTANEO crea el recibo con sus movimientos —también cuando el cliente es de
-   * cuenta corriente y acá se eligió "SI"—; POSTERIOR no toca el tablero de Cobros y difiere
-   * la deuda al cierre de la operación. Los dos caminos son excluyentes.
+   * "Confirmar Cobro" es una confirmación LOCAL: marca el cobro como cargado en el estado, pero
+   * NO escribe nada en Monday. El registro real —el recibo del cobro simultáneo o la deuda del
+   * pago posterior— se difiere y se dispara fire-and-forget al "Finalizar Operación", junto con
+   * la creación de la venta. Acá sólo se valida el crédito y se pliega el desplegable.
    */
   const registrar = async (): Promise<boolean> => {
-    if (registrando) return yaEscrito
-    if (yaEscrito) return true
-    // La deuda del pago posterior consume línea: no se escribe si no entra.
+    if (cobro.confirmado) return true
     if (bloqueo.frenar()) return false
-    setRegistrando(true)
-    setErrorRegistro(null)
-    try {
-      if (simultaneo) {
-        const { id } = await registrarCobroSimultaneo({
-          totalACobrar: resumen.totalACobrar,
-          cancelado: resumen.cancelado,
-          balances,
-          ctaCteId: cliente.ctaCteId,
-          nombreCliente: cliente.name,
-        })
-        dispatch({ type: 'confirmarCobro', cobroId: id })
-        setAbierto(false)
-        return true
-      } else {
-        if (!cliente.ctaCteId) {
-          setErrorRegistro(
-            `${cliente.name} no tiene cuenta corriente conectada: no se puede registrar la deuda.`,
-          )
-          return false
-        }
-        const { deudaId, saldoAnterior } = await registrarDeudaPosterior({
-          ctaCteId: cliente.ctaCteId,
-          total: resumen.totalACobrar,
-          concepto: `${cliente.name} · ${cobro.fecha}`,
-        })
-        dispatch({ type: 'confirmarCobro', deudaId, saldoAnterior })
-        return true
-      }
-    } catch {
-      setErrorRegistro(
-        simultaneo
-          ? 'No se pudo registrar el cobro en Monday. Reintentá en unos segundos.'
-          : 'No se pudo registrar la deuda en la cuenta corriente. Reintentá en unos segundos.',
-      )
-      return false
-    } finally {
-      setRegistrando(false)
-    }
+    dispatch({ type: 'confirmarCobro' })
+    return true
   }
   /* Pasar a la factura. La deuda del pago posterior NO se escribe acá: el cliente recién queda
      endeudado cuando la factura legal está emitida y enviada, así que su registro vive en el
      cierre de la operación (modal de "Finalizar Operación"). */
-  const continuarAFactura = async () => {
-    if (fase) return
-    // Guardrail: La Batea sin ruta confirmada no avanza (el botón ya está inhabilitado; defensa extra).
-    if (faltaRutaLaBatea) return
-
-    /* La venta se escribe en "📈Ventas" recién acá: es el punto donde la operación queda
-       cerrada. Sólo se abre la facturación si la cabecera y TODOS sus productos entraron. */
-    const productos = lineasDeVenta({
-      tipoVenta,
-      tipoEntrega,
-      lineas: state.lineas,
-      ventaItems: state.ventaItems,
-      facturaItems: state.facturaItems,
-    })
-    setFase('venta')
-    setErrorVenta(null)
-    try {
-      /* Si ya se creó en un intento anterior no se vuelve a crear: reintentar tras un fallo
-         del vínculo no debe dejar dos ventas por la misma operación. */
-      let ventaId = state.ventaId
-      if (!ventaId) {
-        const creada = await crearVenta({
-          clienteId: cliente.id,
-          nombre: cliente.name,
-          tipoVenta: tipoVenta ?? 'DIRECTA',
-          tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
-          /* Tipo de pago de la operación ('SIMULTANEO' / 'POSTERIOR'): lo arma el constructor
-             del payload, no la vista. Es lo que queda asentado en el board. */
-          ...datosCobroVenta(cliente, cobro),
-          rentabilidad: rentabilidadVenta,
-          /* Responsable logístico (dropdown) y ruta: SÓLO en la entrega POSTERIOR, que es donde se
-             pregunta. La ruta se manda únicamente si La Batea la confirmó, y baja a los pendientes. */
-          responsableEntrega: esEntregaPosterior
-            ? state.entregaVenta.responsable ?? undefined
-            : undefined,
-          rutaId:
-            esEntregaPosterior && state.entregaVenta.rutaConfirmada
-              ? state.entregaVenta.rutaId ?? undefined
-              : undefined,
-          lineas: productos,
-        })
-        if (creada.subitemsCreados !== productos.length) {
-          setErrorVenta(
-            `La venta se creó pero quedó incompleta: entraron ${creada.subitemsCreados} de ${productos.length} productos. Revisala en Monday antes de facturar.`,
-          )
-          return
-        }
-        ventaId = creada.id
-        dispatch({ type: 'setVentaId', value: ventaId })
-      }
-
-      /* CON PRESUPUESTO PREVIO: cada producto salió de una línea de presupuesto. Se asienta la
-         cantidad vendida en su subelemento, acumulando lo que ya estaba vendido con lo que se
-         lleva ahora. Es idempotente (valor absoluto), así que un reintento no la duplica. */
-      if (tipoVenta === 'CON PRESUPUESTO PREVIO') {
-        await actualizarCantVendida(
-          state.ventaItems
-            .filter((it) => it.subitemId)
-            .map((it) => ({
-              subitemId: it.subitemId as string,
-              cantVendida: (it.vend ?? 0) + it.aVender,
-            })),
-        )
-      }
-
-      /* ENTREGA ANTERIOR (fuente "Vtas Pends de Facturar"): la facturación de esta operatoria se
-         distribuye en dos niveles sobre el board 18421033947 —cantidad facturada por subítem y
-         monto facturado por venta, con el enlace a la venta creada—. Best-effort: la venta ya se
-         creó, así que un fallo acá no la revierte ni frena la operación. */
-      if (state.facturaItems.length > 0) {
-        try {
-          await registrarFacturacionVtasPend(
-            state.facturaItems.map((it) => ({
-              subitemId: it.subitemId,
-              ventaPendId: it.ventaPendId,
-              aFacturar: it.aFacturar,
-              precio: it.precio,
-            })),
-            ventaId,
-          )
-        } catch {
-          /* La conciliación de "Vtas Pends de Facturar" es best-effort. */
-        }
-      }
-
-      /* El recibo nace antes que la venta, así que el vínculo se cierra recién ahora. Sólo
-         aplica al cobro simultáneo: el posterior no genera recibo. */
-      if (cobro.cobroId) await vincularVentaAlCobro(cobro.cobroId, ventaId)
-
-      dispatch({ type: 'goto', paso: 'factura' })
-    } catch {
-      setErrorVenta(
-        state.ventaId
-          ? 'La venta quedó creada pero no se pudo vincular al cobro. Reintentá: no se va a duplicar.'
-          : 'No se pudo crear la venta en Monday. Reintentá en unos segundos.',
-      )
-    } finally {
-      setFase(null)
-    }
+  /* Avanzar es una transición de UI local y 100% silenciosa: la venta NO se crea acá, su creación
+     se traslada al "Finalizar Operación". Con entrega POSTERIOR se pasa antes por "Entrega de
+     Mercadería"; si no, directo a la factura. */
+  const continuarAFactura = () => {
+    dispatch({ type: 'goto', paso: pasoTrasCobro(tipoEntrega) })
   }
 
-  // El tilde de la cabecera: el recibo en simultáneo, la deuda en posterior.
-  const etapaCerrada = cierreCompleto(cliente, cobro, fechaEmision, resumen)
-  /* Ya escrito en Monday: el registro queda a la vista pero no se edita más. Se pliega solo
-     al registrarlo, y de ahí en más se abre y cierra a voluntad. */
+  /* Ya confirmado: el registro queda a la vista pero no se edita más. */
   const bloqueado = cobro.confirmado
+
+  /* CONTADO·EMITIR PROFORMA no continúa a otra etapa: la venta se cierra ahí mismo con "Guardar
+     Venta" (dentro de CobroProforma), que limpia el estado. Por eso el pie no ofrece "Continuar". */
+  const enProforma = formaPago === 'CONTADO' && contadoTab === 'proforma'
+
+  /* Se puede avanzar según la forma de pago: CUENTA CORRIENTE alcanza con ver el impacto; las
+     tarjetas exigen confirmar los datos; CONTADO·cobro exige el cobro confirmado (Diferencia 0). */
+  const puedeContinuar =
+    formaPago === 'CUENTA CORRIENTE'
+      ? true
+      : conTarjeta
+        ? tarjetaConfirmada
+        : cobro.confirmado
 
   return (
     <section className="view cobro-v2 paso-layout">
@@ -347,174 +158,119 @@ export function CobroView() {
       <div className="paso-body">
         <PasoTitulo
           numero={3}
-          titulo="Cierre de Venta"
+          titulo="Cobro"
           descripcion={
-            simultaneo
-              ? 'Registrá el cobro de la venta para poder emitir la factura.'
-              : 'Revisá la deuda que se genera en la cuenta corriente del cliente antes de facturar.'
+            formaPago === 'CUENTA CORRIENTE'
+              ? 'Revisá cómo queda el saldo de la cuenta corriente del cliente con esta venta.'
+              : conTarjeta
+                ? 'Completá los datos de la tarjeta para registrar el cobro.'
+                : 'Registrá el cobro de la venta para poder emitir la factura.'
           }
         />
 
-        {/* El cálculo de retenciones vive en otra app: por ahora sólo se avisa. */}
-        {agente && (
-          <p className="cobro-aviso">
-            <i className="fas fa-circle-exclamation" /> {MENSAJE_RETENCION}
-          </p>
-        )}
-
-        {/* Desplegable del cobro: la cabecera, la carga y el impacto en cuenta corriente
-            viven adentro; la barra de arriba sólo pliega y muestra el estado. */}
-        <div className="cobro-acc">
-          {/* La barra abre y cierra el cuerpo; en cuenta corriente además decide si se carga
-              un cobro, así que los botones viven fuera del toggle. */}
-          <div className="cobro-acc-head">
+        {/* Forma de pago CONTADO: se elige entre emitir una proforma o registrar el cobro. */}
+        {formaPago === 'CONTADO' && (
+          <div
+            className="entrega-opts contado-tabs"
+            role="radiogroup"
+            aria-label="¿Qué querés hacer con este cobro de contado?"
+          >
             <button
               type="button"
-              className="cobro-acc-toggle"
-              aria-expanded={abierto}
-              aria-controls="cobro-detalle"
-              disabled={!activo}
-              onClick={() => setAbierto((v) => !v)}
+              className={`entrega-opt ${contadoTab === 'proforma' ? 'active' : ''}`}
+              role="radio"
+              aria-checked={contadoTab === 'proforma'}
+              onClick={() => setContadoTab('proforma')}
             >
-              <i className={`fas fa-chevron-down cobro-acc-chev ${abierto ? 'open' : ''}`} />
-              <span className="cobro-acc-title">
-                {clienteDeContado ? 'Cobro de la venta' : '¿Desea registrar un Cobro?'}
+              <span className="entrega-opt-ic">
+                <i className="fas fa-file-invoice" />
+              </span>
+              <span className="entrega-opt-txt">
+                <span className="entrega-opt-l">EMITIR PROFORMA</span>
+                <span className="entrega-opt-d">Generar y enviar una factura proforma</span>
               </span>
             </button>
-
-            {/* Cuenta corriente: cobrar ahora es opcional. Arranca en NO. El grupo sigue a la
-                vista después de elegir "SI": es lo que permite volver atrás antes de registrar. */}
-            {!clienteDeContado && (
-              <div className="cobro-sino" role="group" aria-label="¿Desea registrar un cobro?">
-                <button
-                  type="button"
-                  className={`cobro-sino-btn ${cobro.registrar ? 'is-on' : ''}`}
-                  aria-pressed={cobro.registrar}
-                  disabled={bloqueado}
-                  onClick={() => dispatch({ type: 'setRegistrarCobro', value: true })}
-                >
-                  SI
-                </button>
-                <button
-                  type="button"
-                  className={`cobro-sino-btn ${cobro.registrar ? '' : 'is-on'}`}
-                  aria-pressed={!cobro.registrar}
-                  disabled={bloqueado}
-                  onClick={() => dispatch({ type: 'setRegistrarCobro', value: false })}
-                >
-                  NO
-                </button>
-              </div>
-            )}
-
-            {/* Qué implica la elección, o qué exige la condición del cliente. */}
-            <span className="cobro-tipo-nota">
-              <i className="fas fa-circle-info" />{' '}
-              {clienteDeContado ? (
-                <>
-                  La condición del cliente es de {cliente.condicionPago}: registrá el cobro para
-                  poder facturar.
-                </>
-              ) : simultaneo ? (
-                <>
-                  Con «SI» la venta se registra como cobro <strong>SIMULTANEO</strong>: cobrá el
-                  100% ahora y no se genera deuda en la cuenta corriente.
-                </>
-              ) : (
-                <>
-                  Si deja por defecto la opción «NO», la venta se creará como pendiente de cobro y
-                  la deuda se registrará al finalizar la operación, una vez emitida y enviada la
-                  factura.
-                </>
-              )}
-            </span>
-
-            <span
-              className={`cobro-ok ${etapaCerrada ? 'on' : ''}`}
-              title={
-                etapaCerrada
-                  ? simultaneo
-                    ? 'Cobro registrado correctamente'
-                    : 'Deuda registrada en la cuenta corriente'
-                  : simultaneo
-                    ? 'Cobro sin registrar'
-                    : 'Deuda sin registrar'
-              }
+            <button
+              type="button"
+              className={`entrega-opt ${contadoTab === 'cobro' ? 'active' : ''}`}
+              role="radio"
+              aria-checked={contadoTab === 'cobro'}
+              onClick={() => setContadoTab('cobro')}
             >
-              <i className="fas fa-check" />
-            </span>
-          </div>
-
-          {/* El cuerpo queda montado siempre: es lo que permite animar el plegado. */}
-          {activo && (
-            <div
-              id="cobro-detalle"
-              className="cobro-acc-clip"
-              style={{ height: abierto ? (altoCuerpo || 'auto') : 0 }}
-              aria-hidden={!abierto}
-            >
-              <div className="cobro-acc-body" ref={cuerpoRef}>
-                  <CabeceraCobro cliente={cliente} resumen={resumen} />
-
-                  {/* La carga del cobro: formulario y lo ya registrado. */}
-                  <div className="cobro-card">
-                    <h3 className="cobro-card-title">Registrar cobro</h3>
-
-                    <FormularioCobro fechaFactura={fechaEmision} bloqueado={bloqueado} />
-
-                    <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
-                    <TablaMovimientos
-                      balances={balances}
-                      fecha={cobro.fecha}
-                      bloqueado={bloqueado}
-                    />
-
-                    {/* La acción cierra la carga del cobro, pegada a lo que confirma. */}
-                    <div className="cobro-card-acts">
-                      {errorRegistro && <span className="cobro-err">{errorRegistro}</span>}
-                      <button
-                        type="button"
-                        className="cobro-btn cobro-btn--primary"
-                        disabled={!confirmable || cobro.confirmado || registrando}
-                        aria-busy={registrando}
-                        onClick={registrar}
-                      >
-                        {registrando ? (
-                          <>
-                            <i className="fas fa-circle-notch spin" /> Registrando...
-                          </>
-                        ) : cobro.confirmado ? (
-                          <>
-                            <i className="fas fa-check" /> Cobro registrado
-                          </>
-                        ) : (
-                          'Registrar cobro'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-            </div>
-          )}
-
-          {/* Impacto en cuenta corriente: sólo en el camino que deja deuda —cuenta corriente
-              con "NO"—. Con "SI" el cobro cancela la venta en el acto y no hay saldo
-              proyectado que mostrar, así que el bloque ni se monta. */}
-          {mostrarImpacto && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
-        </div>
-
-        {/* Responsable logístico de la venta (junto a la consulta del cobro). SÓLO se pregunta en
-            la entrega POSTERIOR. Con La Batea pide sólo la ruta; comisionista y cliente, como el Remito. */}
-        {esEntregaPosterior && <EntregaCierreVenta />}
-
-        {bloqueoMsg && (
-          <div className="cobro-bloqueo">
-            <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
+              <span className="entrega-opt-ic">
+                <i className="fas fa-hand-holding-dollar" />
+              </span>
+              <span className="entrega-opt-txt">
+                <span className="entrega-opt-l">REGISTRAR COBRO</span>
+                <span className="entrega-opt-d">Cobrar el 100% ahora (cobro simultáneo)</span>
+              </span>
+            </button>
           </div>
         )}
 
-        {/* Avanzar está siempre a la vista, pero apagado hasta que el cobro quede registrado:
-            así se ve a dónde lleva el paso sin poder saltearlo. */}
+        {/* CONTADO · EMITIR PROFORMA: datos + emisión de la proforma, card resumen y envío a los
+            contactos. La navegación (Volver / Continuar) vive en el pie de la etapa, no acá dentro. */}
+        {formaPago === 'CONTADO' && contadoTab === 'proforma' && <CobroProforma />}
+
+        {/* CUENTA CORRIENTE: sin "¿Desea registrar un cobro?". Sólo el "Impacto en cuenta
+            corriente": cómo queda el saldo del cliente al registrarse la nueva deuda. */}
+        {formaPago === 'CUENTA CORRIENTE' && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
+
+        {/* Tarjeta: formulario de cobro (débito: Banco + Tipo; crédito: + Cuotas). */}
+        {conTarjeta && (
+          <CobroTarjeta
+            tipo={tipoTarjetaDe(formaPago)}
+            confirmada={tarjetaConfirmada}
+            onConfirmar={() => setTarjetaConfirmada(true)}
+          />
+        )}
+
+        {/* REGISTRAR COBRO. Bloque ESTÁTICO (ya no es acordeón), siempre visible. OCULTO para
+            CUENTA CORRIENTE y tarjetas; en CONTADO, sólo bajo la pestaña "REGISTRAR COBRO". */}
+        {formaPago !== 'CUENTA CORRIENTE' &&
+          !conTarjeta &&
+          (formaPago !== 'CONTADO' || contadoTab === 'cobro') && (
+          <div className="cobro-static">
+            <CabeceraCobro cliente={cliente} resumen={resumen} />
+
+            <div className="cobro-card">
+              <h3 className="cobro-card-title">Registrar cobro</h3>
+              <p className="cobro-card-desc">Especificar cómo pagó el cliente</p>
+
+              <FormularioCobro fechaFactura={fechaEmision} bloqueado={bloqueado} />
+
+              <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
+              <TablaMovimientos balances={balances} bloqueado={bloqueado} />
+
+              {/* Footer de la card: el botón de confirmación (la métrica TOTAL COBRADO ahora vive
+                  arriba, junto a TOTAL VENTA y DIFERENCIA); a su derecha, el motivo que traba el
+                  cobro si el total cobrado no llega al de la venta. */}
+              <div className="cobro-card-acts">
+                <button
+                  type="button"
+                  className="cobro-btn cobro-btn--primary"
+                  disabled={!cobroCompleto || cobro.confirmado}
+                  onClick={registrar}
+                >
+                  {cobro.confirmado ? (
+                    <>
+                      <i className="fas fa-check" /> Cobro confirmado
+                    </>
+                  ) : (
+                    'Confirmar Cobro'
+                  )}
+                </button>
+                {bloqueoMsg && (
+                  <span className="cobro-bloqueo-inline">
+                    <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Volver / Continuar viven SIEMPRE en el pie de la etapa, sin importar la rama elegida. */}
         <div className="footer-acts">
           <button
             type="button"
@@ -525,38 +281,66 @@ export function CobroView() {
           >
             <i className="fas fa-arrow-left" /> Volver a paso anterior
           </button>
-          <button
-            type="button"
-            className="cobro-btn cobro-btn--green"
-            disabled={!puedeEmitir || Boolean(fase) || faltaRutaLaBatea}
-            aria-busy={Boolean(fase)}
-            title={
-              faltaRutaLaBatea
-                ? 'Confirmá la Ruta de Entrega para continuar.'
-                : puedeEmitir
-                  ? undefined
-                  : 'Registrá el cobro de la venta para poder emitir la factura.'
-            }
-            onClick={continuarAFactura}
-          >
-            {/* El estado de la escritura lo cuenta la ventana de carga, no el botón. */}
-            Continuar a Emitir factura <i className="fas fa-arrow-right" />
-          </button>
+          {/* A la derecha: en EMITIR PROFORMA, "Guardar Venta" (a la izquierda del "Continuar", que
+              queda deshabilitado). En el resto, sólo "Continuar". */}
+          <div className="footer-acts-right">
+            {enProforma && (
+              <button
+                type="button"
+                className="cobro-btn cobro-btn--primary"
+                onClick={() => setGuardando(true)}
+                disabled={!proformaId}
+                title={proformaId ? undefined : 'Emití la proforma para poder guardar la venta.'}
+              >
+                <i className="fas fa-floppy-disk" /> Guardar Venta
+              </button>
+            )}
+            <button
+              type="button"
+              className="cobro-btn cobro-btn--primary"
+              /* EMITIR PROFORMA no avanza a otra etapa: el botón se muestra pero queda inhabilitado. */
+              disabled={enProforma || !puedeContinuar}
+              title={
+                enProforma
+                  ? 'La venta con proforma se cierra con "Guardar Venta", no continúa a otra etapa.'
+                  : puedeContinuar
+                    ? undefined
+                    : conTarjeta
+                      ? 'Confirmá los datos de la tarjeta para continuar.'
+                      : 'Registrá el cobro de la venta para poder emitir la factura.'
+              }
+              onClick={continuarAFactura}
+            >
+              {esEntregaPosterior
+                ? 'Continuar a Entrega de Mercadería'
+                : 'Continuar a Emitir factura'}{' '}
+              <i className="fas fa-arrow-right" />
+            </button>
+          </div>
         </div>
 
         {bloqueo.modal}
 
-        {/* La venta quedó a medias en el board: no se abre la facturación hasta resolverlo. */}
-        {errorVenta && (
-          <AvisoModal titulo="No se pudo cerrar la venta" onClose={() => setErrorVenta(null)}>
-            {errorVenta}
-          </AvisoModal>
-        )}
-
-        {/* Tapa la pantalla mientras se escribe en Monday: es una secuencia que no conviene
-            interrumpir ni disparar dos veces, y el texto dice en qué paso va. */}
-        {fase && (
-          <ModalCargando titulo={TEXTO_FASE[fase].titulo} detalle={TEXTO_FASE[fase].detalle} />
+        {/* Cierre de la venta con proforma: informa que quedó registrada y, al aceptar, limpia todo
+            el estado global (vuelve al inicio). La factura se emitirá luego sobre esa proforma. */}
+        {guardando && (
+          <Modal
+            title="Venta guardada"
+            icon={<i className="fas fa-circle-check" style={{ color: 'var(--green)' }} />}
+            onClose={() => setGuardando(false)}
+            actions={
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => dispatch({ type: 'reset' })}
+              >
+                Aceptar
+              </button>
+            }
+          >
+            La Proforma se registró en el sistema. Luego podrá emitir factura sobre esa proforma una
+            vez cerrada la venta.
+          </Modal>
         )}
       </div>
     </section>

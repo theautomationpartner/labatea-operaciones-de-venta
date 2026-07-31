@@ -21,6 +21,7 @@ import type {
   CondicionPago,
   Contacto,
   CuentaBancaria,
+  CuentaPropia,
   Filtro,
   LineaPresupuesto,
   ListaPrecio,
@@ -50,12 +51,8 @@ import {
 } from './columns'
 import { DESCUENTO_MAX_DEFAULT, DESCUENTO_MIN_DEFAULT } from '@/lib/selectors'
 import { round2 } from '@/lib/format'
-import { precioConIva } from '@/lib/precios'
-import {
-  construirBulkRenombrado,
-  construirBulkSubitems,
-  type Renombrado,
-} from './carritoSubitems'
+import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
+import { construirBulkSubitems } from './carritoSubitems'
 import { byId, num, numCol, sumaMirror, valor, type CV, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -222,6 +219,34 @@ export async function getCuentasBancarias(clienteId: string): Promise<CuentaBanc
       numeroCuenta: valor(c[COL.ctaBancaria.numeroCuenta]),
     }
   })
+}
+
+/** Etiqueta de "Tipo de Config" que identifica las cuentas bancarias propias de La Batea. */
+const CTA_PROPIA_LABEL = 'Ctas Bancarias Propias'
+
+/**
+ * Cuentas bancarias propias de La Batea: ítems del board de configuración (18421035530) cuyo
+ * "Tipo de Config" (color_mm4emv5g) es "Ctas Bancarias Propias". Son el destino posible de una
+ * transferencia. Se filtra por la etiqueta y se devuelve sólo id y nombre —lo único que se
+ * muestra en el selector—.
+ */
+export async function getCuentasBancariasPropias(): Promise<CuentaPropia[]> {
+  if (!mondayHabilitado()) return []
+  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
+    `query {
+      boards(ids: [${BOARDS.config}]) {
+        items_page(limit: 200) {
+          items {
+            id name
+            column_values(ids: ["${COL.config.tipo}"]) { id text }
+          }
+        }
+      }
+    }`,
+  )
+  return data.boards[0].items_page.items
+    .filter((item) => valor(byId(item)[COL.config.tipo]) === CTA_PROPIA_LABEL)
+    .map((item) => ({ id: item.id, name: item.name }))
 }
 
 /* ===== 2) Búsqueda de cliente ===== */
@@ -392,12 +417,21 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
       numCol(c[COL.producto.iva]),
       conIva,
     ),
+    /* Mismo precio de lista pero SIN redondear (con IVA si corresponde): lo usa la conversión de
+       dólares a pesos para no perder precisión antes de multiplicar por la tasa. */
+    precioBase: precioListaSinRedondear(
+      numCol(c[columnaPrecio(lista)]),
+      numCol(c[COL.producto.iva]),
+      conIva,
+    ),
     rentabilidad: margenCol ? numCol(c[margenCol]) : 0,
     // El proveedor es el ítem conectado; su código, la mirror que espeja el del maestro.
     provCod: valor(c[COL.producto.proveedorCodigo]),
     provNombre: c[COL.producto.proveedor]?.linked_items?.[0]?.name ?? '',
     provId: c[COL.producto.proveedor]?.linked_items?.[0]?.id,
     tipo: valor(c[COL.producto.tipoMercaderia]),
+    // Moneda del producto (status): en "Dolares" el precio se convierte a pesos con la cotización.
+    moneda: valor(c[COL.producto.moneda]),
     // La alícuota viaja con el producto: es la que se declara en la línea del comprobante.
     iva: numCol(c[COL.producto.iva]),
     rubro: valor(c[COL.producto.rubro]),
@@ -439,6 +473,7 @@ const columnasProducto = (lista: ListaPrecio): string =>
     COL.producto.proveedor,
     COL.producto.proveedorCodigo,
     COL.producto.tipoMercaderia,
+    COL.producto.moneda,
     COL.producto.iva,
     COL.producto.stock,
     columnaPrecio(lista),
@@ -860,34 +895,22 @@ export interface PresupuestoCreado {
   productosSinCrear: string[]
 }
 
-/** Renombrado de un subelemento: "<ID del presupuesto> - <ID del subelemento>". */
-const renombradoSub = (
-  sub: { id: string; column_values: { text: string | null }[] },
-  pulsePadre: string,
-): Renombrado => ({
-  id: sub.id,
-  boardId: BOARDS.presupuestosSub,
-  nombre: `${pulsePadre} - ${sub.column_values[0]?.text || sub.id}`,
-})
-
 /**
  * Crea UN subelemento por su cuenta. Es el reintento de las líneas que la solicitud bulk no
- * devolvió: si vuelve a fallar se informa, pero no se corta la creación de las demás.
+ * devolvió: si vuelve a fallar se informa, pero no se corta la creación de las demás. Devuelve
+ * `true` si el subelemento quedó creado.
  */
-async function crearSubitemSuelto(
-  itemId: string,
-  linea: LineaPresupuesto,
-): Promise<{ id: string; column_values: { text: string | null }[] } | null> {
+async function crearSubitemSuelto(itemId: string, linea: LineaPresupuesto): Promise<boolean> {
   const bulk = construirBulkSubitems([linea], 0)
-  if (!bulk) return null
+  if (!bulk) return false
   try {
-    const res = await mondayApi<
-      Record<string, { id: string; column_values: { text: string | null }[] } | null>
-    >(bulk.query, { ...bulk.variables, parentId: itemId })
-    const sub = res[bulk.alias[0]]
-    return sub?.id ? sub : null
+    const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
+      ...bulk.variables,
+      parentId: itemId,
+    })
+    return Boolean(res[bulk.alias[0]]?.id)
   } catch {
-    return null
+    return false
   }
 }
 
@@ -897,16 +920,15 @@ async function crearSubitemSuelto(
  * lugar donde nace el presupuesto; emitirlo es un paso aparte (`emitirPresupuesto`).
  *
  * Flujo (board real 18421035513):
- *   1. `create_item` con la cabecera y su pulse_id (pulse_id_mkwb5sj3) en la misma respuesta.
+ *   1. `create_item` con la cabecera. El ítem nace con el nombre general del tablero
+ *      ("Presupuestos"); su ID lo asigna la customKey del board (pulse_id_mkwb5sj3), sin renombrado
+ *      del lado de la app.
  *   2. UNA solicitud con todos los subitems (los fragmentos del carrito, con alias `s0`, `s1`…),
- *      que devuelve el pulse_id de cada uno (pulse_id_mkw8mfdg), más un reintento suelto por
- *      cada línea que no haya vuelto.
- *   3. UNA solicitud que renombra todo junto: el ítem con su ID ("PRESUP-009") y cada producto
- *      con "<ID del presupuesto> - <ID del subelemento>".
+ *      cada uno con el nombre de su producto, más un reintento suelto por cada línea que no volvió.
  *
- * Son 3 llamadas fijas en vez de 2 + 2n: 10 productos pasaban de 22 solicitudes a 3. Con más
- * de `SUBITEMS_POR_TANDA` productos, los pasos 2 y 3 se parten en tandas para no exceder el
- * presupuesto de complejidad de la API. El subtotal es fórmula: no se setea.
+ * Son 2 llamadas fijas en vez de 3 (se eliminó la de renombrado). Con más de `SUBITEMS_POR_TANDA`
+ * productos, el paso 2 se parte en tandas para no exceder el presupuesto de complejidad de la API.
+ * El subtotal es fórmula: no se setea.
  */
 export async function crearPresupuesto(datos: DatosPresupuesto): Promise<PresupuestoCreado> {
   if (!mondayHabilitado()) {
@@ -936,71 +958,49 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
   if (vencimiento) cabecera[COL.presupuesto.fechaVencimiento] = { date: vencimiento }
 
-  // 1) Crear el ítem base y leer su pulse_id en la misma respuesta.
-  const creado = await mondayApi<{
-    create_item: { id: string; column_values: { id: string; text: string | null }[] }
-  }>(
+  // 1) Crear el ítem base con el nombre general del tablero. El ID de negocio ("PRESUP-009") lo
+  //    asigna la customKey del board; la app ya no lo lee ni renombra el ítem.
+  const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
-      create_item(board_id: $boardId, item_name: $name, column_values: $cv) {
-        id
-        column_values(ids: ["${COL.presupuesto.pulseId}"]) { id text }
-      }
+      create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.presupuestos, name: cliente.name, cv: JSON.stringify(cabecera) },
+    { boardId: BOARDS.presupuestos, name: 'Presupuestos', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
-  // pulse_id_mkwb5sj3: el ID del board (p. ej. "PRESUP-009"). Es el nombre final del ítem.
-  const pulsePadre = creado.create_item.column_values[0]?.text || itemId
 
-  /* 2) Todos los subitems del carrito, en una sola solicitud por tanda.
-     La respuesta se controla alias por alias: Monday puede devolver `null` en un
+  /* 2) Todos los subitems del carrito, en una sola solicitud por tanda —cada uno ya con el nombre
+     de su producto—. La respuesta se controla alias por alias: Monday puede devolver `null` en un
      `create_subitem` sin marcar la solicitud como fallida, y esa línea se perdía en silencio
-     (un presupuesto de 3 productos quedaba con 2). Las que no volvieron se reintentan de a
-     una, y las que sigan sin entrar se informan al final. */
-  const renombrados: Renombrado[] = []
+     (un presupuesto de 3 productos quedaba con 2). Las que no volvieron se reintentan de a una, y
+     las que sigan sin entrar se informan al final. */
+  let subitemsCreados = 0
   const faltantes: LineaPresupuesto[] = []
   for (let desde = 0; desde < lineas.length; desde += SUBITEMS_POR_TANDA) {
     const tanda = lineas.slice(desde, desde + SUBITEMS_POR_TANDA)
     const bulk = construirBulkSubitems(tanda, desde)
     if (!bulk) continue
 
-    const res = await mondayApi<
-      Record<string, { id: string; column_values: { text: string | null }[] } | null>
-    >(bulk.query, { ...bulk.variables, parentId: itemId })
+    const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
+      ...bulk.variables,
+      parentId: itemId,
+    })
 
-    // El nombre definitivo necesita el pulse_id del subelemento (pulse_id_mkw8mfdg), que
-    // recién ahora se conoce: queda "<ID del presupuesto> - <ID del subelemento>".
     bulk.alias.forEach((alias, i) => {
-      const sub = res[alias]
-      if (!sub?.id) {
-        faltantes.push(tanda[i])
-        return
-      }
-      renombrados.push(renombradoSub(sub, pulsePadre))
+      if (res[alias]?.id) subitemsCreados++
+      else faltantes.push(tanda[i])
     })
   }
 
   // 2.b) Reintento de las líneas que no entraron, una por solicitud.
   const sinCrear: LineaPresupuesto[] = []
   for (const linea of faltantes) {
-    const sub = await crearSubitemSuelto(itemId, linea)
-    if (sub) renombrados.push(renombradoSub(sub, pulsePadre))
+    if (await crearSubitemSuelto(itemId, linea)) subitemsCreados++
     else sinCrear.push(linea)
-  }
-
-  // 3) Renombrado final: el ítem y todos sus productos en la misma solicitud.
-  const todos: Renombrado[] = [
-    { id: itemId, boardId: BOARDS.presupuestos, nombre: pulsePadre },
-    ...renombrados,
-  ]
-  for (let desde = 0; desde < todos.length; desde += SUBITEMS_POR_TANDA) {
-    const bulk = construirBulkRenombrado(todos.slice(desde, desde + SUBITEMS_POR_TANDA))
-    if (bulk) await mondayApi(bulk.query, bulk.variables)
   }
 
   return {
     id: itemId,
-    subitemsCreados: renombrados.length,
+    subitemsCreados,
     productosSinCrear: sinCrear.map((l) => l.producto.nombre),
   }
 }
@@ -1195,6 +1195,10 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     /* El tipo de mercadería sale de la mirror del subelemento; si no vino, del propio producto
        conectado. De él dependen los comprobantes: la consignada se factura aparte. */
     tipo: valor(c[COL.presupuestoSub.tipoMercaderia]) || valor(prodCols[COL.producto.tipoMercaderia]),
+    // Comisionable: mirror "✋Comision" del subelemento (SI/NO). El % sale del Maestro.
+    comisionable: valor(c[COL.presupuestoSub.comisionable]).trim().toUpperCase() === 'SI',
+    porcComActiva: numCol(prodCols[COL.producto.porcComActiva]),
+    porcComPasiva: numCol(prodCols[COL.producto.porcComPasiva]),
     iva: numCol(prodCols[COL.producto.iva]),
     proveedorId: proveedor?.id,
     proveedorNombre: proveedor?.name ?? '',
@@ -1284,13 +1288,13 @@ export async function getPresupuestosVigentes(clienteItemId: string): Promise<Pr
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {
               linked_items {
                 id name
-                column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.tipoMercaderia}","${COL.producto.proveedor}"]) {
+                column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.tipoMercaderia}","${COL.producto.proveedor}","${COL.producto.porcComActiva}","${COL.producto.porcComPasiva}"]) {
                   id text
                   ... on FormulaValue { display_value }
                   ... on BoardRelationValue { linked_items { id name } }

@@ -15,21 +15,24 @@ import { VentaConfig } from './VentaConfig'
 /** A quién queda asignado el vendedor, según la operación. */
 const TITULO_VENDEDOR: Record<string, string> = {
   PRESUPUESTAR: 'Vendedor asignado al presupuesto',
-  'CARGAR VENTA': 'Vendedor asignado a la venta',
+  'VENTA': 'Vendedor asignado a la venta',
+  'VENTA PROFORMA': 'Vendedor asignado a la venta',
   REMITO: 'Vendedor asignado al remito',
 }
 
 /** Qué viene después de confirmar el cliente, para anticiparlo en el footer. */
 const SIGUIENTE_PASO: Record<string, string> = {
-  PRESUPUESTAR: 'selección de productos y cantidades',
-  'CARGAR VENTA': 'carga de los productos de la venta',
-  REMITO: 'carga de los productos del remito',
+  PRESUPUESTAR: 'Selección de productos',
+  'VENTA': 'Carga de productos',
+  'VENTA PROFORMA': 'Carga de productos',
+  REMITO: 'Carga de productos',
 }
 
 /** Bajada del paso, según lo que se está por armar. */
 const SUBTITULO_PASO: Record<string, string> = {
   PRESUPUESTAR: 'Buscá y validá la información del cliente para iniciar el presupuesto.',
-  'CARGAR VENTA': 'Buscá y validá la información del cliente para iniciar la venta.',
+  'VENTA': 'Buscá y validá la información del cliente para iniciar la venta.',
+  'VENTA PROFORMA': 'Buscá y validá la información del cliente para iniciar la venta con proforma.',
   REMITO: 'Buscá y validá la información del cliente para iniciar el remito.',
 }
 
@@ -45,8 +48,10 @@ export function ClienteView() {
   const [avisoBloqueado, setAvisoBloqueado] = useState(false)
   // Aviso emergente al intentar avanzar sin configurar la operación.
   const [avisoConfig, setAvisoConfig] = useState(false)
+  // Aviso emergente al intentar avanzar sin un cliente cargado.
+  const [avisoSinCliente, setAvisoSinCliente] = useState(false)
   const esPresupuesto = operacion === 'PRESUPUESTAR'
-  const esVenta = operacion === 'CARGAR VENTA'
+  const esVenta = operacion === 'VENTA'
   const esRemito = operacion === 'REMITO'
   const bloqueado = clienteBloqueado(cliente)
   // Sin lista de precio no hay precios que traer; sin condición fiscal no se sabe si llevan IVA.
@@ -57,6 +62,11 @@ export function ClienteView() {
     (esVenta && (!tipoVenta || !tipoEntrega)) || (esRemito && !remito.tipoEmision)
 
   const continuar = () => {
+    /* Sin un cliente confirmado el botón sigue a la vista: se avisa que hace falta cargarlo. */
+    if (estadoBusqueda !== 'idle' || !cliente) {
+      setAvisoSinCliente(true)
+      return
+    }
     /* Con el cliente bloqueado el botón sigue activo a propósito: la ventana explica por qué
        no se puede seguir, en vez de dejar un botón muerto sin motivo. */
     if (bloqueado) {
@@ -86,9 +96,9 @@ export function ClienteView() {
       : faltaConfigurar
         ? 'Completá la configuración de la operación'
         : undefined
-  // Ni el bloqueo del cliente ni la configuración pendiente apagan el botón: se avisa al
-  // intentarlo, con una ventana que dice exactamente qué falta.
-  const puedeContinuar = !motivoBloqueo || bloqueado || faltaConfigurar
+  // Ni la falta de cliente, ni el bloqueo, ni la configuración pendiente apagan el botón: queda
+  // siempre activo y, al intentarlo, una ventana dice exactamente qué falta.
+  const puedeContinuar = !motivoBloqueo || bloqueado || faltaConfigurar || !clienteListo
 
   /** Qué eligió a medias el usuario, para nombrarlo en el aviso. */
   const configFaltante = [
@@ -133,13 +143,7 @@ export function ClienteView() {
         </div>
       </div>
 
-      {/* En el lugar de la ficha: loading mientras consulta, o aviso si no encontró. */}
-      {estadoBusqueda === 'buscando' && (
-        <div className="cliente-estado cliente-estado--cargando">
-          <i className="fas fa-spinner fa-spin" />
-          <div>Buscando cliente…</div>
-        </div>
-      )}
+      {/* Avisos de la búsqueda (no encontrado / error), arriba de la ficha. */}
       {estadoBusqueda === 'no-encontrado' && (
         <div className="cliente-estado cliente-estado--error">
           <i className="fas fa-triangle-exclamation" />
@@ -153,41 +157,52 @@ export function ClienteView() {
         </div>
       )}
 
-      {/* Datos reales del cliente, sólo cuando la búsqueda cerró bien. */}
-      {estadoBusqueda === 'idle' && cliente && (
-        <>
-          <ClienteFicha cliente={cliente} />
+      {/* La ficha del cliente se muestra SIEMPRE: skeleton mientras no hay cliente o se consulta,
+          y se rellena con los datos reales al resolver la búsqueda. */}
+      <ClienteFicha
+        cliente={estadoBusqueda === 'idle' ? cliente : null}
+        cargando={estadoBusqueda === 'buscando'}
+      />
 
-          {/* Las fechas del documento sólo aplican al presupuesto. */}
-          {esPresupuesto && <DatosPresupuesto />}
+      {/* Datos del presupuesto: son de la OPERACIÓN, no del cliente, así que se muestran SIEMPRE de
+          forma fija, debajo de la card del cliente, sin importar el estado de la búsqueda. */}
+      {esPresupuesto && <DatosPresupuesto />}
 
-          {/* El avance cierra el contenido del paso, después de los datos a validar. */}
-          <div className="actions-footer">
-            <span className={`paso-siguiente ${motivoBloqueo ? 'paso-siguiente--bloqueo' : ''}`}>
-              {motivoBloqueo ? (
-                <>
-                  <i className="fas fa-circle-exclamation" /> {motivoBloqueo}
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-arrow-turn-up paso-siguiente-ic" /> Siguiente:{' '}
-                  {SIGUIENTE_PASO[operacion ?? 'PRESUPUESTAR']}
-                </>
-              )}
-            </span>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!puedeContinuar}
-              onClick={continuar}
-            >
-              {esPresupuesto ? 'Continuar a selección de productos' : 'Continuar'}{' '}
-              <i className="fas fa-arrow-right" />
-            </button>
-          </div>
-        </>
-      )}
+      {/* El avance queda SIEMPRE a la vista, haya o no cliente: si falta, la ventana lo explica al
+          hacer click, en vez de esconder o apagar el botón. */}
+      <div className="actions-footer">
+        <span className={`paso-siguiente ${motivoBloqueo ? 'paso-siguiente--bloqueo' : ''}`}>
+          {motivoBloqueo ? (
+            <>
+              <i className="fas fa-circle-exclamation" /> {motivoBloqueo}
+            </>
+          ) : (
+            <>
+              <i className="fas fa-arrow-turn-up paso-siguiente-ic" /> Siguiente:{' '}
+              {SIGUIENTE_PASO[operacion ?? 'PRESUPUESTAR']}
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!puedeContinuar}
+          onClick={continuar}
+        >
+          {/* Template uniforme: "Continuar a [ETAPA]" con el nombre del paso siguiente. */}
+          Continuar a {SIGUIENTE_PASO[operacion ?? 'PRESUPUESTAR']}{' '}
+          <i className="fas fa-arrow-right" />
+        </button>
       </div>
+      </div>
+
+      {/* Sin cliente cargado no se puede avanzar: se explica al intentarlo. */}
+      {avisoSinCliente && (
+        <AvisoModal titulo="Falta cargar un cliente" onClose={() => setAvisoSinCliente(false)}>
+          Para continuar tenés que buscar y cargar un cliente. Usá el buscador de arriba para
+          seleccionarlo y volvé a intentar.
+        </AvisoModal>
+      )}
 
       {/* La operación no está configurada: sin eso no se sabe qué productos ofrecer. */}
       {avisoConfig && (

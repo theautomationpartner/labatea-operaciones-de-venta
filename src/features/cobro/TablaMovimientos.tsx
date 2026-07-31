@@ -6,8 +6,6 @@ import type { MovimientoPago } from '@/types'
 
 interface TablaMovimientosProps {
   balances: BalancePago[]
-  /** Fecha del cobro: es una sola para toda la operación, se repite en cada fila. */
-  fecha: string
   /** Cobro ya registrado en Monday: el registro queda a la vista, pero no se toca. */
   bloqueado?: boolean
 }
@@ -19,18 +17,35 @@ interface Dato {
 }
 
 /**
- * Detalle adicional de un pago, según su forma. El efectivo no tiene nada que agregar a lo
- * que ya muestra la fila, así que no se despliega; el resto sí.
+ * Detalle adicional de un pago, según su forma: es lo que se capturó en el formulario para ese
+ * medio de cobro. El efectivo no agrega nada a lo que ya muestra la fila, así que no despliega;
+ * el resto sí, para poder revisar los datos antes de confirmar la operación.
  */
 function detalleDe(m: MovimientoPago): Dato[] {
-  if (m.formaPago === 'Transferencia') {
-    const c = m.cuentaBancaria
+  if (m.formaPago === 'Cheque') {
     return [
-      { label: 'Banco', valor: c?.banco || '—' },
-      { label: 'Número de cuenta', valor: c?.numeroCuenta || '—' },
-      { label: 'Medio de transferencia', valor: m.medioTransferencia || '—' },
-      { label: 'Tipo de cuenta', valor: c?.tipoCuenta || '—' },
+      { label: 'Número de cheque', valor: m.numeroCheque || '—' },
+      { label: 'Fecha de emisión', valor: m.fechaEmisionCheque || '—' },
+      { label: 'Fecha de vencimiento', valor: m.chequeVencimiento || '—' },
+      { label: 'Banco emisor', valor: m.bancoEmisor || '—' },
     ]
+  }
+  if (m.formaPago === 'Transferencia') {
+    return [
+      { label: 'Cuenta bancaria', valor: m.cuentaPropia || '—' },
+      { label: 'Comprobante', valor: m.comprobanteNombre || '—' },
+    ]
+  }
+  if (m.formaPago === 'Tarjeta de débito' || m.formaPago === 'Tarjeta de crédito') {
+    const filas: Dato[] = [
+      { label: 'Banco', valor: m.bancoTarjeta || '—' },
+      { label: 'Tipo', valor: m.tipoTarjeta || '—' },
+    ]
+    // Las cuotas sólo existen en el crédito.
+    if (m.formaPago === 'Tarjeta de crédito') {
+      filas.push({ label: 'Cantidad de cuotas', valor: m.cuotas ? String(m.cuotas) : '—' })
+    }
+    return filas
   }
   return []
 }
@@ -38,13 +53,11 @@ function detalleDe(m: MovimientoPago): Dato[] {
 /** Fila de un pago, con su detalle plegable debajo cuando la forma lo amerita. */
 function FilaPago({
   balance,
-  fecha,
   bloqueado,
   columnas,
   onQuitar,
 }: {
   balance: BalancePago
-  fecha: string
   bloqueado: boolean
   columnas: number
   onQuitar: () => void
@@ -57,6 +70,7 @@ function FilaPago({
   return (
     <>
       <tr className={desplegable && abierto ? 'cobro-fila--abierta' : ''}>
+        {/* Medio de Cobro: el chevron de detalle (transferencia) va pegado a la forma de pago. */}
         <td>
           <span className="cobro-fila-1a">
             {/* El efectivo no despliega nada: el hueco mantiene alineada la columna. */}
@@ -73,14 +87,10 @@ function FilaPago({
             ) : (
               <span className="cobro-fila-chev cobro-fila-chev--vacio" />
             )}
-            {fecha}
+            {m.formaPago}
           </span>
         </td>
-        <td>{m.formaPago}</td>
         <td>{money(m.importe)}</td>
-        <td>{balance.descuentoPct}%</td>
-        <td>{money(balance.montoCobrado)}</td>
-        <td>{m.referencia || '-'}</td>
         {!bloqueado && (
           <td className="ta-r">
             <button
@@ -114,21 +124,17 @@ function FilaPago({
 }
 
 /** Pagos ya cargados al cobro. */
-export function TablaMovimientos({ balances, fecha, bloqueado = false }: TablaMovimientosProps) {
+export function TablaMovimientos({ balances, bloqueado = false }: TablaMovimientosProps) {
   const dispatch = useDispatch()
   // Sin acciones posibles, la columna deja de tener sentido y se va.
-  const columnas = bloqueado ? 6 : 7
+  const columnas = bloqueado ? 2 : 3
 
   return (
     <table className="cobro-tabla">
       <thead>
         <tr>
-          <th>Fecha del cobro</th>
-          <th>Forma de pago</th>
+          <th>Medio de Cobro</th>
           <th>Importe</th>
-          <th>Descuento %</th>
-          <th>Monto cobrado</th>
-          <th>N° de referencia</th>
           {!bloqueado && <th className="ta-r">Acciones</th>}
         </tr>
       </thead>
@@ -142,7 +148,6 @@ export function TablaMovimientos({ balances, fecha, bloqueado = false }: TablaMo
             <FilaPago
               key={b.movimiento.id}
               balance={b}
-              fecha={fecha}
               bloqueado={bloqueado}
               columnas={columnas}
               onQuitar={() =>
@@ -152,7 +157,7 @@ export function TablaMovimientos({ balances, fecha, bloqueado = false }: TablaMo
           ))
         )}
       </tbody>
-      {/* Sin fila de total: el TOTAL COBRADO ya vive en la cabecera del panel. */}
+      {/* Sin fila de total: los totales se muestran debajo de la tabla, en el panel de cobro. */}
     </table>
   )
 }

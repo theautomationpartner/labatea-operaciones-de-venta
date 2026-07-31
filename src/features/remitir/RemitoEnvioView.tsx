@@ -1,20 +1,13 @@
 import { useEffect, useState } from 'react'
-import { AvisoModal } from '@/components/ui/AvisoModal'
-import { ModalCargando } from '@/components/ui/ModalCargando'
 import { TRANSPORTISTA } from '@/data/mock'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { round2 } from '@/lib/format'
 import { pasosDe } from '@/lib/pasos'
 import {
-  crearRemito,
-  crearVtaPendienteFacturar,
   getComisionistas,
   getDestinosCliente,
   getTransportistas,
   getVehiculos,
-  sumarRemitoPendienteFacturar,
-  type LineaRemito,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Chofer, Comisionista, Destino, ResponsableEntrega, Vehiculo } from '@/types'
@@ -42,9 +35,6 @@ export function RemitoEnvioView() {
   const esLaBatea = envio.responsable === 'LA_BATEA'
   const esComisionista = envio.responsable === 'COMISIONISTA'
   const [abierto, setAbierto] = useState(true)
-  // Creación del remito en Monday al confirmar (con overlay que tapa la pantalla).
-  const [creando, setCreando] = useState(false)
-  const [errorCreacion, setErrorCreacion] = useState<string | null>(null)
 
   /* Destinos, transportistas y vehículos se traen de Monday sólo cuando entrega La Batea; los
      comisionistas, cuando la entrega es tercerizada. Es ahí donde aparecen sus inputs. Cada
@@ -160,97 +150,11 @@ export function RemitoEnvioView() {
     dispatch({ type: 'setEnvioResponsable', value: envio.responsable === id ? null : id })
 
   /**
-   * Confirma el remito: lo crea en Monday (cabecera + un subelemento por producto) y recién ahí
-   * avanza a la emisión. Si ya se creó (mismo remito), no se recrea: sólo continúa. Un remito a
-   * medias —menos subelementos que líneas— no avanza: se avisa y se puede reintentar.
+   * Avanzar a la emisión del remito es una transición local y silenciosa: el remito NO se crea
+   * acá, nace al hacer click en "Emitir Remito". Sin queries a Monday ni modales.
    */
-  const confirmarRemito = async () => {
-    if (creando) return
-    if (remito.remitoId) {
-      dispatch({ type: 'goto', paso: 'remito-emision' })
-      return
-    }
-    setCreando(true)
-    setErrorCreacion(null)
-    try {
-      const lineas: LineaRemito[] = remito.items.map((it) => ({
-        productoId: it.productoId,
-        nombre: it.nombre,
-        cantidad: it.cantidad,
-        pesoUnitario: it.peso ?? 0,
-        um: it.um,
-        // Sólo POSTERIOR lo usa: alimenta el "🤖Total $" del subelemento y el pendiente de facturar.
-        precioUnitario: it.precioUnitario,
-      }))
-      // Ventas de origen (emisión ANTERIOR), sin repetir: una línea por venta puede repetirse.
-      const ventaIds = Array.from(
-        new Set(remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
-      )
-      const creado = await crearRemito({
-        clienteId: cliente.id,
-        nombre: cliente.name,
-        tipoEmision: remito.tipoEmision ?? 'POSTERIOR',
-        responsable: envio.responsable,
-        destinoId: envio.destinoId,
-        transportistaId: envio.choferId,
-        vehiculoId: envio.vehiculoId,
-        comisionistaId: envio.comisionistaId,
-        clienteResponsable: envio.responsableNombre,
-        ventaIds,
-        lineas,
-      })
-      if (creado.subitemsCreados < lineas.length) {
-        setErrorCreacion(
-          'El remito se creó pero quedaron productos sin asentar. Revisá en Monday antes de continuar.',
-        )
-        return
-      }
-      dispatch({ type: 'setRemitoCreado', value: creado.id })
-
-      /* POSTERIOR: la mercadería entregada queda pendiente de facturar. Con el remito ya creado
-         (Σ cantidad × precio unitario = importe pendiente), se: (1) acumula ese importe en el
-         "🤖Remito Pends de Facturar" de la cuenta corriente, y (2) abre el registro en "Vtas Pends
-         de Facturar" (ítem + subítems) enlazado al remito y a la cuenta. Ambos pasos son best-effort:
-         un fallo posterior no revierte el remito ni frena la operación. */
-      if ((remito.tipoEmision ?? 'POSTERIOR') === 'POSTERIOR') {
-        const importePendFacturar = round2(
-          remito.items.reduce((acc, it) => acc + round2(it.cantidad * (it.precioUnitario ?? 0)), 0),
-        )
-        if (cliente.ctaCteId) {
-          try {
-            await sumarRemitoPendienteFacturar(cliente.ctaCteId, importePendFacturar)
-          } catch {
-            /* La cuenta corriente se actualiza de forma best-effort. */
-          }
-        }
-        try {
-          await crearVtaPendienteFacturar({
-            nombre: cliente.name,
-            clienteId: cliente.id,
-            ctaCteId: cliente.ctaCteId,
-            remitoId: creado.id,
-            importeTotal: importePendFacturar,
-            lineas: remito.items.map((it) => ({
-              productoId: it.productoId,
-              precioUnitario: it.precioUnitario ?? 0,
-              cantidad: it.cantidad,
-              // Tipo de producto (CO / COM) del Maestro: se etiqueta en el subelemento pendiente.
-              tipoMercaderia: it.tipo,
-              // Rentabilidad según la lista del cliente: se guarda para reusarla al facturar.
-              rentabilidad: it.rentabilidad,
-            })),
-          })
-        } catch {
-          /* El registro de "Vtas Pends de Facturar" se crea best-effort. */
-        }
-      }
-
-      dispatch({ type: 'goto', paso: 'remito-emision' })
-    } catch {
-      setErrorCreacion('No se pudo crear el remito en Monday. Reintentá en unos segundos.')
-    } finally {
-      setCreando(false)
-    }
+  const confirmarRemito = () => {
+    dispatch({ type: 'goto', paso: 'remito-emision' })
   }
 
   return (
@@ -557,27 +461,13 @@ export function RemitoEnvioView() {
         </button>
         <button
           type="button"
-          className="btn btn-green"
-          disabled={!puedeContinuar || creando}
-          aria-busy={creando}
+          className="btn btn-primary"
+          disabled={!puedeContinuar}
           onClick={confirmarRemito}
         >
           Continuar a emisión del remito <i className="fas fa-arrow-right" />
         </button>
       </div>
-
-      {creando && (
-        <ModalCargando
-          titulo="Registrando remito"
-          detalle="Estamos registrando el remito en el sistema. Espera unos segundos"
-        />
-      )}
-
-      {errorCreacion && (
-        <AvisoModal titulo="No se pudo confirmar el remito" onClose={() => setErrorCreacion(null)}>
-          {errorCreacion}
-        </AvisoModal>
-      )}
 
       {bloqueo.modal}
     </section>

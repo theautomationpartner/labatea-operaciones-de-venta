@@ -1,44 +1,29 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
-import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { addDays } from '@/lib/dates'
 import { pasosDe } from '@/lib/pasos'
 import { clienteLlevaIva } from '@/lib/precios'
-import { COMISION_PCT, comisionDe, impactoCredito, resumenPresupuesto } from '@/lib/selectors'
-import { faltantesPresupuesto } from '@/lib/validaciones'
-import { crearPresupuesto, mondayHabilitado } from '@/services/monday'
+import { descuentoDeFormaPago } from '@/lib/cobros'
+import { impactoCredito, resumenPresupuesto } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { Producto } from '@/types'
 import { BuscadorProducto } from './BuscadorProducto'
 import { CargaLinea } from './CargaLinea'
 import { FiltrosProductos } from './FiltrosProductos'
+import { FormaPagoSelect } from './FormaPagoSelect'
 import { ResumenBox } from './ResumenBox'
 import { TablaProductos, type FilaProducto } from './TablaProductos'
+import { useCotizacionProducto } from './useCotizacionProducto'
 
 /**
  * Paso 2 de armado de productos. Lo comparten PRESUPUESTAR y la venta DIRECTA:
  * misma lógica de catálogo, carga y totales; sólo cambia el encabezado y a dónde continúa.
  */
 export function ProductosView() {
-  const {
-    cliente,
-    lineas,
-    operacion,
-    tipoVenta,
-    tipoEntrega,
-    vendedor,
-    fechaEmision,
-    diasVigencia,
-    moneda,
-    presupuestoId,
-  } = useApp()
+  const { cliente, lineas, operacion, tipoVenta, tipoEntrega, formaPago, descuentosPago } = useApp()
   const dispatch = useDispatch()
-  const [seleccionado, setSeleccionado] = useState<Producto | null>(null)
-  // Confirmación del presupuesto: tapa la pantalla mientras se escribe en Monday.
-  const [confirmando, setConfirmando] = useState(false)
-  const [errorCreacion, setErrorCreacion] = useState<string | null>(null)
+  // Selección de producto con conversión bimonetaria (dólares → pesos con la cotización).
+  const { seleccionado, setSeleccionado, elegir, convirtiendo } = useCotizacionProducto()
   // Aviso de la búsqueda, que se muestra en el lugar del producto elegido.
   const [avisoBusqueda, setAvisoBusqueda] = useState('')
   // Ventana de advertencia: sin productos, o con datos incompletos para escribir en Monday.
@@ -46,10 +31,16 @@ export function ProductosView() {
     null,
   )
 
-  const esVenta = operacion === 'CARGAR VENTA'
+  const esVenta = operacion === 'VENTA'
+  /* Descuento por pronto pago de la forma de pago elegida (sólo en la venta). Se compone con el
+     descuento manual de cada línea en la tabla y en el resumen. */
+  const descFormaPago = esVenta ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
   /* El presupuesto no liquida IVA: ni en el precio unitario ni en los totales. La venta sí,
      así que la misma vista calcula distinto según de qué operación se trate. */
-  const resumen = useMemo(() => resumenPresupuesto(lineas, esVenta), [lineas, esVenta])
+  const resumen = useMemo(
+    () => resumenPresupuesto(lineas, esVenta, descFormaPago),
+    [lineas, esVenta, descFormaPago],
+  )
   /* El crédito se mide sobre el NETO (sin IVA), la misma base que usan el cierre y la venta
      con presupuesto previo: así lo que muestra el resumen y lo que evalúa el bloqueo coinciden. */
   const credito = useMemo(() => impactoCredito(cliente, resumen.neto), [cliente, resumen.neto])
@@ -82,14 +73,6 @@ export function ProductosView() {
   const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: esVenta })
   // Sólo en la venta: con el crédito excedido no se pueden cargar más productos.
   const cargaBloqueada = esVenta && bloqueo.excedido
-  /* Presupuesto: el aviso de crédito no frena, pero se muestra al continuar. Como la creación
-     sigue de largo (y desmonta la vista), el modal no se alcanzaría a ver; por eso el primer
-     click con crédito excedido sólo avisa, y el siguiente ya avanza. Vuelve a avisar si el
-     importe baja de la línea y la excede de nuevo. */
-  const [creditoAvisado, setCreditoAvisado] = useState(false)
-  useEffect(() => {
-    if (!bloqueo.excedido) setCreditoAvisado(false)
-  }, [bloqueo.excedido])
 
   const agregar = (cantidad: number, descuento: number) => {
     if (!seleccionado) return
@@ -111,93 +94,12 @@ export function ProductosView() {
       }.`,
     })
 
-  /** Datos que Monday necesita para crear el ítem y sus subitems. */
-  const validarParaMonday = (): boolean => {
-    const faltan = faltantesPresupuesto(
-      {
-        cliente,
-        lineas,
-        fechaEmision,
-        fechaVencimiento: addDays(fechaEmision, diasVigencia),
-        diasVigencia,
-      },
-      mondayHabilitado(),
-    )
-    if (faltan.length === 0) return true
-    setAviso({
-      titulo: 'Faltan datos para crear el presupuesto',
-      texto: 'No se puede registrar el presupuesto en Monday hasta completar estos datos:',
-      faltantes: faltan,
-    })
-    return false
-  }
-
-  /**
-   * Continuar a emisión confirma el presupuesto: crea el ítem con TODOS sus productos y recién
-   * ahí abre el paso siguiente. Es el único punto donde nace el presupuesto —antes también lo
-   * creaba "Generar PDF", y las dos vías terminaban duplicando ítems—.
-   *
-   * Si algún producto no entró, no se avanza: el paso de emisión trabajaría sobre un
-   * presupuesto incompleto. Un ítem ya creado no se vuelve a crear, así que reintentar no
-   * duplica nada.
-   */
-  const confirmarYContinuar = async () => {
-    if (confirmando) return
-    if (lineas.length === 0) {
-      avisoSinProductos()
-      return
-    }
-    // Cliente bloqueado (siempre) o VENTA con crédito excedido: frena acá y muestra el aviso.
-    if (bloqueo.frenar()) return
-    // PRESUPUESTO con crédito excedido: avisa (no frena). Al cerrar el modal y volver a continuar,
-    // avanza. Así el aviso salta al hacer click en continuar, sin bloquear la operación.
-    if (bloqueo.excedido && !creditoAvisado) {
-      setCreditoAvisado(true)
-      bloqueo.frenar({ avisarSiempre: true })
-      return
-    }
-    if (!validarParaMonday()) return
-
-    if (presupuestoId) {
-      dispatch({ type: 'goto', paso: 'emision' })
-      return
-    }
-
-    setConfirmando(true)
-    setErrorCreacion(null)
-    try {
-      const creado = await crearPresupuesto({
-        cliente,
-        vendedor,
-        lineas,
-        fechaEmision,
-        fechaVencimiento: addDays(fechaEmision, diasVigencia),
-        diasVigencia,
-        rentabilidad: resumen.rentabilidad,
-        moneda,
-      })
-      if (creado.subitemsCreados !== lineas.length) {
-        setErrorCreacion(
-          `El presupuesto se creó pero quedó incompleto: entraron ${creado.subitemsCreados} de ${lineas.length} productos` +
-            (creado.productosSinCrear.length > 0
-              ? ` (faltan: ${creado.productosSinCrear.join(', ')})`
-              : '') +
-            '. Revisalo en Monday antes de emitirlo.',
-        )
-        return
-      }
-      dispatch({ type: 'setPresupuestoId', value: creado.id })
-      dispatch({ type: 'goto', paso: 'emision' })
-    } catch {
-      setErrorCreacion('No se pudo crear el presupuesto en Monday. Reintentá en unos segundos.')
-    } finally {
-      setConfirmando(false)
-    }
-  }
-
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={1} />
+      <PasoHeader
+        pasos={pasosDe(operacion, tipoVenta, tipoEntrega)}
+        actual={1}
+      />
 
       <PasoTitulo
         numero={2}
@@ -207,13 +109,16 @@ export function ProductosView() {
         }.`}
       />
 
+      {/* Forma de Pago: sólo en la VENTA, justo debajo del título y la descripción. */}
+      {esVenta && <FormaPagoSelect />}
+
       {/* Buscador, filtros y carga de línea conviven en una sola card. */}
       <div className="card">
         <div className="search-area">
           <BuscadorProducto
             lista={cliente.list ?? 'L1'}
             conIva={conIva}
-            onSelect={setSeleccionado}
+            onSelect={elegir}
             variante="v2"
             onAviso={setAvisoBusqueda}
           />
@@ -225,6 +130,7 @@ export function ProductosView() {
           aviso={avisoBusqueda}
           onAdd={agregar}
           bloqueado={cargaBloqueada}
+          convirtiendo={convirtiendo}
         />
       </div>
 
@@ -235,6 +141,8 @@ export function ProductosView() {
         onCantidad={(id, cantidad) => dispatch({ type: 'setCantidadLinea', id, cantidad })}
         onDescuento={(id, descuento) => dispatch({ type: 'setDescuentoLinea', id, descuento })}
         cantidadMin={1}
+        descFormaPago={descFormaPago}
+        mostrarIva={esVenta}
       />
 
       <ResumenBox
@@ -244,12 +152,9 @@ export function ProductosView() {
         limite={cliente.limit}
         // El presupuesto no muestra IVA: no lo liquida.
         mostrarIva={esVenta}
-        comision={
-          // La comisión se liquida sobre el neto (ya bonificado), no sobre el bruto.
-          esVenta && tipoVenta
-            ? { pct: COMISION_PCT[tipoVenta], monto: comisionDe(resumen.neto, tipoVenta) }
-            : undefined
-        }
+        /* En el presupuesto se muestra ÚNICAMENTE el total, etiquetado "TOTAL PRESUPUESTADO". */
+        soloTotal={!esVenta}
+        totalLabel={esVenta ? 'TOTAL' : 'TOTAL PRESUPUESTADO'}
       />
 
       <footer className="page-footer">
@@ -265,8 +170,6 @@ export function ProductosView() {
           <button
             type="button"
             className="btn-primary"
-            disabled={confirmando}
-            aria-busy={confirmando}
             onClick={() => {
               if (esVenta) {
                 if (lineas.length === 0) {
@@ -277,7 +180,10 @@ export function ProductosView() {
                 dispatch({ type: 'goto', paso: 'cobro' })
                 return
               }
-              void confirmarYContinuar()
+              /* PRESUPUESTO: avanzar a emisión es una transición local y silenciosa. El ítem NO se
+                 crea acá: nace al hacer click en "Emitir Presupuesto". Sin queries ni modales. */
+              if (lineas.length === 0) return
+              dispatch({ type: 'goto', paso: 'emision' })
             }}
           >
             {esVenta ? 'Continuar a cobro' : 'Continuar a emisión'}{' '}
@@ -290,22 +196,6 @@ export function ProductosView() {
         <AvisoModal titulo={aviso.titulo} faltantes={aviso.faltantes} onClose={() => setAviso(null)}>
           {aviso.texto}
         </AvisoModal>
-      )}
-
-      {/* El presupuesto quedó a medias en el board: no se abre la emisión hasta resolverlo. */}
-      {errorCreacion && (
-        <AvisoModal titulo="No se pudo confirmar el presupuesto" onClose={() => setErrorCreacion(null)}>
-          {errorCreacion}
-        </AvisoModal>
-      )}
-
-      {/* Tapa la pantalla mientras se escribe en Monday: es una secuencia que no conviene
-          interrumpir ni disparar dos veces. Mismo tratamiento que el cierre de la venta. */}
-      {confirmando && (
-        <ModalCargando
-          titulo="Registrando presupuesto..."
-          detalle="Estamos registrando el presupuesto en el sistema. Espera unos segundos"
-        />
       )}
 
       {bloqueo.modal}

@@ -4,15 +4,20 @@ import { NRO_REMITO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
+import { round2 } from '@/lib/format'
 import { pasosDe } from '@/lib/pasos'
 import {
   afectarEntregaAnterior,
+  crearRemito,
+  crearVtaPendienteFacturar,
   emitirRemito,
   esperarRemitoPdf,
   getHojaTalonario,
   marcarHojaUsada,
   mondayHabilitado,
+  sumarRemitoPendienteFacturar,
   type HojaTalonario,
+  type LineaRemito,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ResumenRemitoEmision } from './ResumenRemitoEmision'
@@ -83,31 +88,109 @@ export function RemitoEmisionView() {
   const bloqueo = useBloqueoCredito(0)
 
   /**
-   * Emite el remito: escribe las observaciones y pasa su estado a "Emitir" —lo que dispara la
-   * automatización que genera el PDF—, además de asentar en los subelementos de la venta la
-   * cantidad entregada (emisión ANTERIOR). Después espera a que el archivo aparezca en la columna.
+   * "Emitir Remito" es el ÚNICO disparador de la creación en Monday (ejecución diferida): a este
+   * paso se llega sin remito creado. Acá se crea el remito (cabecera + un subelemento por
+   * producto), se `await`ea su confirmación, y recién entonces se lo emite —escribe las
+   * observaciones y pasa su estado a "Emitir", lo que dispara la automatización del PDF—, además
+   * de asentar en los subelementos de la venta la cantidad entregada (emisión ANTERIOR). Un remito
+   * ya creado (reintento tras un fallo del PDF) no se vuelve a crear.
    */
   const emitir = async () => {
     if (!cliente) return
+    if (estado === 'generando') return
     // Sin talonario "En USO" con hoja "Pend de Usar" no se numera el remito: se frena y se avisa.
     if (talonarioError || !talonario) {
       setAvisoTalonario(true)
       return
     }
     if (bloqueo.frenar()) return
-    /* Sin ítem no hay nada que emitir. El remito nace al confirmar la entrega: si se llegó sin
-       remito creado, hay que volver al paso anterior y confirmarla. */
-    const id = remito.remitoId
-    if (!id) {
-      setError(
-        'El remito todavía no está creado. Volvé al paso anterior y confirmá la entrega para crearlo.',
-      )
+    if (remito.items.length === 0) {
+      setError('Agregá al menos un producto antes de emitir el remito.')
       setEstado('error')
       return
     }
     setEstado('generando')
     setError(null)
     try {
+      /* Creación diferida: el remito nace al emitir, no al confirmar la entrega. Se `await`ea y se
+         corta si algún producto no entró. Idempotente: si ya existe, no se recrea. */
+      let id = remito.remitoId
+      if (!id) {
+        const { envio } = remito
+        const lineas: LineaRemito[] = remito.items.map((it) => ({
+          productoId: it.productoId,
+          nombre: it.nombre,
+          cantidad: it.cantidad,
+          pesoUnitario: it.peso ?? 0,
+          um: it.um,
+          // Sólo POSTERIOR lo usa: alimenta el "🤖Total $" del subelemento y el pendiente de facturar.
+          precioUnitario: it.precioUnitario,
+        }))
+        // Ventas de origen (emisión ANTERIOR), sin repetir: una línea por venta puede repetirse.
+        const ventaIds = Array.from(
+          new Set(remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
+        )
+        const creado = await crearRemito({
+          clienteId: cliente.id,
+          nombre: cliente.name,
+          tipoEmision: remito.tipoEmision ?? 'POSTERIOR',
+          responsable: envio.responsable,
+          destinoId: envio.destinoId,
+          transportistaId: envio.choferId,
+          vehiculoId: envio.vehiculoId,
+          comisionistaId: envio.comisionistaId,
+          clienteResponsable: envio.responsableNombre,
+          ventaIds,
+          lineas,
+        })
+        if (creado.subitemsCreados < lineas.length) {
+          setError(
+            'El remito se creó pero quedaron productos sin asentar. Revisá en Monday antes de emitir.',
+          )
+          setEstado('error')
+          return
+        }
+        id = creado.id
+        dispatch({ type: 'setRemitoCreado', value: id })
+
+        /* POSTERIOR: la mercadería entregada queda pendiente de facturar. Con el remito ya creado
+           (Σ cantidad × precio unitario = importe pendiente), se: (1) acumula ese importe en el
+           "🤖Remito Pends de Facturar" de la cuenta corriente, y (2) abre el registro en "Vtas Pends
+           de Facturar" (ítem + subítems) enlazado al remito y a la cuenta. Ambos best-effort. */
+        if ((remito.tipoEmision ?? 'POSTERIOR') === 'POSTERIOR') {
+          const importePendFacturar = round2(
+            remito.items.reduce((acc, it) => acc + round2(it.cantidad * (it.precioUnitario ?? 0)), 0),
+          )
+          if (cliente.ctaCteId) {
+            try {
+              await sumarRemitoPendienteFacturar(cliente.ctaCteId, importePendFacturar)
+            } catch {
+              /* La cuenta corriente se actualiza de forma best-effort. */
+            }
+          }
+          try {
+            await crearVtaPendienteFacturar({
+              nombre: cliente.name,
+              clienteId: cliente.id,
+              ctaCteId: cliente.ctaCteId,
+              remitoId: id,
+              importeTotal: importePendFacturar,
+              lineas: remito.items.map((it) => ({
+                productoId: it.productoId,
+                precioUnitario: it.precioUnitario ?? 0,
+                cantidad: it.cantidad,
+                // Tipo de producto (CO / COM) del Maestro: se etiqueta en el subelemento pendiente.
+                tipoMercaderia: it.tipo,
+                // Rentabilidad según la lista del cliente: se guarda para reusarla al facturar.
+                rentabilidad: it.rentabilidad,
+              })),
+            })
+          } catch {
+            /* El registro de "Vtas Pends de Facturar" se crea best-effort. */
+          }
+        }
+      }
+
       /* Estado "Emitir", observaciones y hoja del talonario en UNA sola mutación: es atómica, así
          no queda el remito emitido sin su número de hoja (ni al revés) si algo falla. */
       await emitirRemito(id, remito.observaciones, talonario.hojaId)
@@ -129,6 +212,8 @@ export function RemitoEmisionView() {
           pendienteEntregaId: it.pendienteEntregaId,
           ventaSubitemId: it.subitemId,
         })),
+        // El remito recién emitido se linkea a nivel ítem de cada pendiente de entrega.
+        id,
       ).catch(() => {
         /* La conciliación de entrega es best-effort: el remito ya quedó emitido. */
       })
@@ -202,7 +287,7 @@ export function RemitoEmisionView() {
         {/* Cierra el remito y reinicia la app. Sólo con el remito emitido y ya enviado. */}
         <button
           type="button"
-          className="btn btn-green"
+          className="btn btn-primary"
           disabled={!(estado === 'listo' && enviado)}
           onClick={() => dispatch({ type: 'reset' })}
         >

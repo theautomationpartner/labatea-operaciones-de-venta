@@ -9,7 +9,7 @@ export const PASOS_PRESUPUESTO = [
 export const PASOS_VENTA = [
   'Seleccionar cliente',
   'Cargar productos',
-  'Cierre de Venta',
+  'Cobro',
   'Emitir factura',
 ] as const
 
@@ -17,7 +17,7 @@ export const PASOS_VENTA = [
 export const PASOS_REMITO = [
   'Seleccionar cliente',
   'Seleccionar remito',
-  'Cierre de Venta',
+  'Cobro',
   'Emitir factura',
 ] as const
 
@@ -57,9 +57,19 @@ export function pasosDe(
   if (operacion === 'REMITO') {
     return tipoEmision === 'ANTERIOR' ? PASOS_REMITO_ANTERIOR : PASOS_REMITO_POSTERIOR
   }
-  if (operacion !== 'CARGAR VENTA') return PASOS_PRESUPUESTO
-  return esFlujoRemito(tipoEntrega) ? PASOS_REMITO : PASOS_VENTA
+  // La VENTA PROFORMA tiene un recorrido fijo de cuatro pasos: no configura venta ni entrega.
+  if (operacion === 'VENTA PROFORMA') return PASOS_VENTA
+  if (operacion !== 'VENTA') return PASOS_PRESUPUESTO
+  if (esFlujoRemito(tipoEntrega)) return PASOS_REMITO
+  // VENTA estándar: la etapa "Entrega de Mercadería" SÓLO aparece con entrega POSTERIOR.
+  return tipoEntrega === 'POSTERIOR'
+    ? ['Seleccionar cliente', 'Cargar productos', 'Cobro', 'Entrega de Mercadería', 'Emitir factura']
+    : PASOS_VENTA
 }
+
+/** Tras el "Cobro": si la entrega es POSTERIOR pasa por "Entrega de Mercadería"; si no, va a factura. */
+export const pasoTrasCobro = (tipoEntrega: TipoEntrega | null): Paso =>
+  tipoEntrega === 'POSTERIOR' ? 'entrega' : 'factura'
 
 /** Paso 2 de cada flujo: de dónde salen los productos de la operación. */
 export function pasoDeProductos(
@@ -68,7 +78,9 @@ export function pasoDeProductos(
   tipoEntrega: TipoEntrega | null,
 ): Paso {
   if (operacion === 'REMITO') return 'remito-productos'
-  if (operacion !== 'CARGAR VENTA') return 'productos'
+  // La VENTA PROFORMA arma la venta a partir de las proformas del cliente.
+  if (operacion === 'VENTA PROFORMA') return 'venta-proforma'
+  if (operacion !== 'VENTA') return 'productos'
   // La entrega ANTERIOR manda sobre el tipo de venta: siempre se factura desde el remito.
   if (esFlujoRemito(tipoEntrega)) return 'remito'
   return tipoVenta === 'CON PRESUPUESTO PREVIO' ? 'venta' : 'productos'
@@ -80,4 +92,9 @@ export const ENTREGAS: readonly TipoEntrega[] = ['POSTERIOR', 'ANTERIOR', 'SIMUL
 /** El remito se emite antes o después de facturar. */
 export const EMISIONES_REMITO: readonly TipoEmisionRemito[] = ['POSTERIOR', 'ANTERIOR']
 
-export const OPERACIONES: readonly Operacion[] = ['PRESUPUESTAR', 'CARGAR VENTA', 'REMITO']
+export const OPERACIONES: readonly Operacion[] = [
+  'PRESUPUESTAR',
+  'VENTA',
+  'VENTA PROFORMA',
+  'REMITO',
+]

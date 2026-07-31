@@ -144,9 +144,6 @@ function columnasLinea(
   return cv
 }
 
-/** Nombre del ítem del comprobante: sólo el cliente, sin la mercadería que factura. */
-const nombreComprobante = (cliente: Cliente): string => cliente.name
-
 /**
  * Crea todos los comprobantes de la venta con sus líneas. Devuelve uno por cada grupo, con
  * cuántas líneas se escribieron: si no son todas, el comprobante quedó incompleto y la vista
@@ -171,7 +168,8 @@ export async function crearComprobantes(
   // 1) Todos los comprobantes en UNA sola solicitud, con alias.
   const variables: Record<string, unknown> = { boardId: BOARDS.facturacion }
   const campos = comprobantes.map((c, i) => {
-    variables[`n${i}`] = nombreComprobante(datos.cliente)
+    // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+    variables[`n${i}`] = 'Facturación'
     variables[`cv${i}`] = JSON.stringify(columnasComprobante(c, datos))
     return `f${i}: create_item(board_id: $boardId, item_name: $n${i}, column_values: $cv${i}) { id }`
   })

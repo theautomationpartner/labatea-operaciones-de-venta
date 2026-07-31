@@ -11,8 +11,16 @@ const colorRentabilidad = (rentabilidad: number) => {
   return 'var(--p-danger)'
 }
 
+interface ResumenVentaCardProps {
+  resumen: ResumenVenta
+  /** Oculta el renglón "Subtotal" (VENTA PROFORMA: el importe ya viene de la proforma). */
+  ocultarSubtotal?: boolean
+  /** Reemplaza el IMPORTE TOTAL calculado por uno dado (VENTA PROFORMA: el total de la proforma). */
+  totalOverride?: number
+}
+
 /** Totales en una tarjeta; rentabilidad e impacto en el crédito de la venta, en la otra. */
-export function ResumenVentaCard({ resumen }: { resumen: ResumenVenta }) {
+export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverride }: ResumenVentaCardProps) {
   const colorCredito = resumen.critico ? 'var(--p-danger)' : 'var(--p-success)'
   const colorRent = colorRentabilidad(resumen.rentabilidad)
   const usado = Math.min(Math.max(resumen.usadoPct, 0), 100)
@@ -23,24 +31,22 @@ export function ResumenVentaCard({ resumen }: { resumen: ResumenVenta }) {
     <div className="totals-grid totals-grid--2" aria-label="Resumen de la venta">
       <div className="kpi-card">
         <div className="subtotal-lines">
-          {/* El subtotal es el bruto: la suma de la columna Subtotal de la tabla. */}
-          <div className="sub-row">
-            <span>Subtotal</span>
-            <span>{money(resumen.subtotal)}</span>
-          </div>
-          {resumen.descuento > 0 && (
+          {/* El subtotal es el bruto: la suma de la columna Subtotal de la tabla. En la VENTA no se
+              muestra el "Descuento total". En VENTA PROFORMA no se muestra (el total viene dado). */}
+          {!ocultarSubtotal && (
             <div className="sub-row">
-              <span>Descuento</span>
-              <span>− {money(resumen.descuento)}</span>
+              <span>Subtotal</span>
+              <span>{money(resumen.subtotal)}</span>
             </div>
           )}
-          <div className="sub-row">
-            <span>Comisión ({resumen.comisionPct}%)</span>
-            <span>{money(resumen.comision)}</span>
-          </div>
           <div className="total-row">
             <span>IMPORTE TOTAL</span>
-            <span>{money(resumen.total)}</span>
+            <span>{money(totalOverride ?? resumen.total)}</span>
+          </div>
+          {/* Comisión total (dinámica), DEBAJO del importe total y con el estilo de Subtotal. */}
+          <div className="sub-row">
+            <span>Comisión ($)</span>
+            <span>{money(resumen.comision)}</span>
           </div>
         </div>
       </div>

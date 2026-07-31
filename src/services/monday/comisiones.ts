@@ -12,7 +12,7 @@
  * PREVIO) o "Porc Com Pasiva" (DIRECTA).
  */
 import { round2 } from '@/lib/format'
-import type { TipoVenta } from '@/types'
+import type { TipoPago, TipoVenta } from '@/types'
 import { BOARDS, COL } from './columns'
 import { byId, numCol, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
@@ -21,6 +21,8 @@ import { mondayApi, mondayHabilitado } from './sdk'
 export interface LineaComision {
   /** Ítem del Maestro de Productos. Sin él la línea no se puede evaluar ni linkear. */
   productoId?: string
+  /** Nombre del producto: es el nombre del subítem de comisión. */
+  nombre: string
   cantidad: number
   precioUnitario: number
 }
@@ -28,9 +30,13 @@ export interface LineaComision {
 export interface DatosComision {
   /** Venta recién creada (board_relation_mm4d72qt). */
   ventaId: string
-  /** Nombre con el que nace el ítem de la comisión (por lo general, el del cliente). */
-  nombre: string
+  /** Cliente de la venta (board_relation_mm5s28j3). */
+  clienteId?: string
   tipoVenta: TipoVenta
+  /** Tipo de cobro de la operación: define el monto pendiente (POSTERIOR = total; SIMULTANEO = 0). */
+  tipoPago: TipoPago
+  /** Importe total de la venta (con IVA). Es el monto pendiente cuando el cobro es POSTERIOR. */
+  importeTotalVenta: number
   /** Fecha de emisión de la factura, en YYYY-MM-DD. */
   fecha: string
   /** POSTERIOR: id de la "Vta Pend de Cobro" (deuda). SIMULTANEO: undefined → se omite la columna. */
@@ -48,7 +54,8 @@ const esComisionable = (texto: string | null | undefined): boolean =>
  * El bulk de subítems espera (`await`) el id del ítem padre antes de correr.
  */
 export async function crearComisiones(datos: DatosComision): Promise<void> {
-  const { ventaId, nombre, tipoVenta, fecha, pendienteCobroId, lineas } = datos
+  const { ventaId, clienteId, tipoVenta, tipoPago, importeTotalVenta, fecha, pendienteCobroId, lineas } =
+    datos
   if (!mondayHabilitado()) return
 
   const conProd = lineas.filter((l) => l.productoId && l.cantidad > 0)
@@ -89,24 +96,37 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
     return conPresupuestoPrevio ? meta.pctActiva : meta.pctPasiva
   }
 
-  // MÓDULO 2: ítem padre de la comisión. La relación con el cobro sólo va si es POSTERIOR.
+  // MÓDULO 1: monto pendiente de cobro. POSTERIOR = total de la venta; SIMULTANEO = 0 explícito.
+  const montoPendiente = tipoPago === 'POSTERIOR' ? round2(importeTotalVenta) : 0
+
+  // MÓDULO 3: ítem padre de la comisión. La relación con el cobro sólo va si es POSTERIOR. El monto
+  // pendiente va como NÚMERO (no string); el estado nace en "Pend de Cobro" (por label). La comisión
+  // total en $ NO se escribe acá: la consolida el board por mirror desde los subítems comisionables.
   const cabecera: Record<string, unknown> = {
     [COL.comision.fecha]: { date: fecha },
     [COL.comision.venta]: { item_ids: [Number(ventaId)] },
+    [COL.comision.pendienteCobro]: montoPendiente,
+    [COL.comision.estado]: { label: 'Pend de Cobro' },
+  }
+  // MÓDULO 1: se linkea el cliente de la venta en la cabecera de la comisión.
+  if (clienteId && Number.isFinite(Number(clienteId))) {
+    cabecera[COL.comision.cliente] = { item_ids: [Number(clienteId)] }
   }
   if (pendienteCobroId && Number.isFinite(Number(pendienteCobroId))) {
     cabecera[COL.comision.cobroPendiente] = { item_ids: [Number(pendienteCobroId)] }
   }
 
+  // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.comisiones, name: nombre, cv: JSON.stringify(cabecera) },
+    { boardId: BOARDS.comisiones, name: 'Comisiones', cv: JSON.stringify(cabecera) },
   )
   const parentId = creado.create_item.id
 
-  // MÓDULO 3: bulk de subítems, uno por producto comisionable, con alias en una sola solicitud.
+  // Bulk de subítems, uno por producto comisionable, con alias en una sola solicitud. Cada subítem
+  // se nombra con su producto.
   const variables: Record<string, unknown> = { parentId }
   const campos = comisionables.map((l, i) => {
     const cv: Record<string, unknown> = {
@@ -115,7 +135,7 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
       [COL.comisionSub.precioUnit]: String(round2(l.precioUnitario)),
       [COL.comisionSub.comision]: String(round2(pctComision(l.productoId as string))),
     }
-    variables[`sn${i}`] = nombre
+    variables[`sn${i}`] = l.nombre
     variables[`scv${i}`] = JSON.stringify(cv)
     return `s${i}: create_subitem(parent_item_id: $parentId, item_name: $sn${i}, column_values: $scv${i}) { id }`
   })

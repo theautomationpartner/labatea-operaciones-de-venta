@@ -5,6 +5,95 @@
  * trabajo del paso a la derecha.
  */
 
+/* ===== Etapa "Proforma y Retenciones" (agente de retención) ===== */
+/* Alerta de bloqueo: texto chico, rojo y sin fondo. */
+.factura-v2 .proforma-alerta {
+  font-size: 12.5px;
+  color: var(--f-danger, #e44258);
+  margin: 0;
+}
+/* Layout bi-columna: datos + emisión a la izquierda; card y envío a la derecha. La columna de
+   datos toma el mismo ancho que el "Resumen del presupuesto" (minmax(360px, 503px)). */
+.factura-v2 .proforma-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 503px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+/* En pantallas angostas las columnas se apilan para no aplastar la card. */
+@media (max-width: 900px) {
+  .factura-v2 .proforma-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.factura-v2 .proforma-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+/* Panel de datos: mismo lenguaje que el "Resumen del presupuesto" (filas label/valor + separador). */
+.factura-v2 .proforma-datos {
+  display: flex;
+  flex-direction: column;
+}
+.factura-v2 .proforma-datos .rgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.factura-v2 .proforma-datos .rrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+}
+.factura-v2 .proforma-datos .rlabel {
+  color: var(--f-text-label);
+  font-weight: 500;
+}
+.factura-v2 .proforma-datos .rvalue {
+  font-weight: 700;
+  color: var(--f-text-main);
+  text-align: right;
+}
+.factura-v2 .proforma-datos .rsep {
+  height: 1px;
+  background: var(--f-border);
+  border: none;
+  margin: 18px 0;
+}
+.factura-v2 .proforma-card .comp-table {
+  width: 100%;
+}
+.factura-v2 .proforma-tot {
+  margin-top: 8px;
+}
+/* Botón de emisión de la proforma: azul, a lo ancho del panel de datos. */
+.factura-v2 .proforma-emitir {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Feedback bajo el botón de emisión: éxito en verde, error en rojo. */
+.factura-v2 .proforma-ok,
+.factura-v2 .proforma-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.factura-v2 .proforma-ok {
+  color: var(--green-dark, #027a48);
+}
+.factura-v2 .proforma-err {
+  color: var(--red, #e44258);
+}
+
 .factura-v2 {
   --f-border: #e4e7ec;
   --f-text-main: #1f2937;
@@ -395,9 +484,11 @@
 .factura-v2 .comp-tot-row {
   display: flex;
   align-items: baseline;
+  /* Rótulo a la izquierda y su importe a la derecha, separados por el ancho de la fila. */
   justify-content: space-between;
-  gap: 20px;
-  font-size: 13px;
+  gap: 12px;
+  /* Subtotal / IVA / Importe Total: 3px más grandes que antes (13 → 16). */
+  font-size: 16px;
   color: var(--f-text-label);
 }
 .factura-v2 .comp-tot-row b {
@@ -408,10 +499,12 @@
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid var(--f-border);
-  font-size: 14px;
+  /* Importe Total: 3px más grande (14 → 17) y en negrita (etiqueta y valor). */
+  font-size: 17px;
+  font-weight: 700;
 }
 .factura-v2 .comp-tot-row--total b {
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--f-success);
 }
@@ -445,6 +538,12 @@
   padding-top: 8px;
   margin-top: 16px;
   margin-bottom: 48px;
+}
+/* Grupo de acciones a la derecha del footer (Guardar Venta + Continuar). */
+.factura-v2 .actions-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .factura-v2 .btn-outline {
   background: #fff;

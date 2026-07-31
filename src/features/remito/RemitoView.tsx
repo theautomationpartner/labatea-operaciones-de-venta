@@ -3,6 +3,7 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
+import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { PASOS_REMITO } from '@/lib/pasos'
@@ -36,7 +37,7 @@ function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanc
 }
 
 /**
- * Paso 2 de CARGAR VENTA con entrega ANTERIOR, cualquiera sea el tipo de venta: la mercadería
+ * Paso 2 de VENTA con entrega ANTERIOR, cualquiera sea el tipo de venta: la mercadería
  * ya salió por remito, así que se traen del board los remitos del cliente que todavía tienen
  * algo que facturar y se listan todos sus productos con lo entregado, lo facturado y lo que
  * queda pendiente. De ahí se llevan a la factura con la cantidad elegida.
@@ -156,6 +157,9 @@ export function RemitoView() {
         titulo="Cargar productos"
         descripcion="Elegí los productos ya remitidos que quedan pendientes de facturar y ajustá la cantidad."
       />
+
+      {/* Forma de Pago de la venta, debajo del título y la descripción. */}
+      <FormaPagoSelect />
 
       {/* Resumen de remitos a la izquierda (filtro); todos sus productos, a la derecha. */}
       <div className="pend-grid">

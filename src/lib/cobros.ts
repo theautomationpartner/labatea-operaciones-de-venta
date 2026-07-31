@@ -4,7 +4,67 @@
  */
 import { parseDate } from '@/lib/dates'
 import { money, round2 } from '@/lib/format'
-import type { Cliente, CobroState, FormaPago, MovimientoPago, TipoPago } from '@/types'
+import type {
+  Cliente,
+  CobroState,
+  CondicionPago,
+  FormaPago,
+  FormaPagoVenta,
+  MovimientoPago,
+  TipoPago,
+  TipoTarjetaCobro,
+} from '@/types'
+
+/**
+ * Formas de pago de la VENTA, en el orden en que se ofrecen. Débito y crédito son opciones
+ * independientes: no hay un paso intermedio que pregunte el tipo de tarjeta.
+ */
+export const FORMAS_PAGO_VENTA: readonly FormaPagoVenta[] = [
+  'CONTADO',
+  'CUENTA CORRIENTE',
+  'TARJETA DE DEBITO',
+  'TARJETA DE CREDITO',
+]
+
+/**
+ * Formas de pago que puede elegir el cliente según su condición de pago pactada:
+ *   · CUENTA CORRIENTE → todas (contado, cuenta corriente y las dos tarjetas).
+ *   · cualquier otra (CONTADO, proveedores) → sólo CONTADO.
+ * Un cliente que no opera a cuenta corriente no puede diferir el pago.
+ */
+export const formasPagoDeCliente = (
+  condicion: CondicionPago | null | undefined,
+): readonly FormaPagoVenta[] => (condicion === 'CUENTA CORRIENTE' ? FORMAS_PAGO_VENTA : ['CONTADO'])
+
+/** Las dos tarjetas comparten el ramal de cobro (formulario de tarjeta). */
+export const esPagoConTarjeta = (forma: FormaPagoVenta | null): boolean =>
+  forma === 'TARJETA DE DEBITO' || forma === 'TARJETA DE CREDITO'
+
+/** Tipo de tarjeta que le corresponde a la forma de pago elegida. */
+export const tipoTarjetaDe = (forma: FormaPagoVenta | null): TipoTarjetaCobro =>
+  forma === 'TARJETA DE CREDITO' ? 'CREDITO' : 'DEBITO'
+
+/**
+ * Descuento por pronto pago que aplica una forma de pago de la VENTA. Los porcentajes viven en
+ * `descuentosPago` (config del sistema), keyados por medio de cobro; acá se traduce cada forma
+ * de venta a su medio: CONTADO paga como Efectivo, las tarjetas a su respectivo medio, y la
+ * CUENTA CORRIENTE no lleva bonificación (no es pronto pago). Sin forma elegida, 0%.
+ */
+export const descuentoDeFormaPago = (
+  forma: FormaPagoVenta | null,
+  descuentos: DescuentosPago,
+): number => {
+  switch (forma) {
+    case 'CONTADO':
+      return descuentos.Efectivo
+    case 'TARJETA DE DEBITO':
+      return descuentos['Tarjeta de débito']
+    case 'TARJETA DE CREDITO':
+      return descuentos['Tarjeta de crédito']
+    default:
+      return 0
+  }
+}
 
 export const FORMAS_PAGO: readonly FormaPago[] = [
   'Efectivo',
@@ -22,11 +82,11 @@ export type DescuentosPago = Record<FormaPago, number>
  * tablero "⚙️Configuracion - Sistema" (ítems de tipo "Medios de Pago"), no la app.
  */
 export const DESCUENTO_PAGO_DEFAULT: DescuentosPago = {
-  Efectivo: 5,
-  Transferencia: 3,
-  Cheque: 0,
-  'Tarjeta de débito': 0,
-  'Tarjeta de crédito': 0,
+  Efectivo: 6,
+  Transferencia: 6,
+  Cheque: 6,
+  'Tarjeta de débito': 5,
+  'Tarjeta de crédito': 3,
 }
 
 /** Color de la paleta monday que identifica cada forma de pago. */
@@ -106,15 +166,6 @@ export function chequeInvalido(m: MovimientoPago, fechaFactura: string): boolean
   if (!venc || !factura) return true
   return venc.getTime() <= factura.getTime()
 }
-
-export const esAgenteRetencion = (c: Cliente): boolean => c.agenteRetencion
-
-/**
- * Las retenciones se calculan en otra app. Hasta que esa integración exista, un agente
- * de retención no puede emitir la proforma desde acá.
- */
-export const MENSAJE_RETENCION =
-  'El cliente es agente de retención: cargá las retenciones calculadas para poder emitir la factura proforma.'
 
 /** Tipo de pago del CLIENTE: se deriva de su condición de pago y no se puede cambiar. */
 export const tipoPagoEfectivo = (c: Cliente): TipoPago =>
@@ -217,7 +268,7 @@ export function bloqueoCobro(
     // Lo que falta se mide contra lo cancelado (caja + descuentos), no contra la caja sola.
     const falta = resumen.totalACobrar - resumen.cancelado
     return falta > 0
-      ? `El cobro simultáneo exige el 100%: faltan cubrir ${moneda(falta)} de ${moneda(resumen.totalACobrar)}. Van ${moneda(resumen.totalCobrado)} cobrados más ${moneda(resumen.descuentoTotal)} de descuentos.`
+      ? 'El cobro simultáneo exige el 100% cobrado del total de la venta.'
       : `Lo cobrado más los descuentos supera el total de la venta en ${moneda(-falta)}: ajustá los movimientos.`
   }
   return null
@@ -241,26 +292,6 @@ export const cobroRegistrado = (
   fechaFactura: string,
   resumen?: ResumenCobro,
 ): boolean => cobro.confirmado && cobroConfirmable(cliente, cobro, fechaFactura, resumen)
-
-/**
- * Se puede pasar a emitir la factura.
- *
- * SIMULTÁNEO exige el recibo ya registrado: sin la plata cobrada no se factura. Incluye la
- * cuenta corriente que se eligió cobrar en el acto.
- * POSTERIOR se da por cerrado apenas se entra: no hay nada que cargar, y la deuda no se
- * escribe acá sino al finalizar la operación, con la factura ya emitida y enviada.
- */
-export function puedeEmitirFactura(
-  cliente: Cliente,
-  cobro: CobroState,
-  fechaFactura: string,
-  resumen?: ResumenCobro,
-): boolean {
-  if (esAgenteRetencion(cliente)) return false
-  if (bloqueoCobro(cliente, cobro, fechaFactura, resumen) !== null) return false
-  if (!cobroSimultaneoOperacion(cliente, cobro)) return true
-  return cobro.confirmado
-}
 
 /**
  * La etapa de cierre quedó cumplida. En posterior se asume cumplida de entrada: lo que la

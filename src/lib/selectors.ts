@@ -86,14 +86,22 @@ export interface ResumenPresupuesto {
 export function resumenPresupuesto(
   lineas: LineaPresupuesto[],
   conIva = true,
+  descFormaPago = 0,
 ): ResumenPresupuesto {
+  /* La forma de pago suma un descuento por pronto pago sobre el manual de cada línea (topeado en
+     100%): compone con la bonificación de la fila para el neto, el descuento y la rentabilidad. */
+  const descTotal = (l: LineaPresupuesto) => Math.min(l.descuento + descFormaPago, 100)
+  const totalCon = (l: LineaPresupuesto) =>
+    round2(l.producto.precio * l.cantidad * (1 - descTotal(l) / 100))
+  const rentCon = (l: LineaPresupuesto) =>
+    rentabilidadEfectiva(l.producto.rentabilidad, descTotal(l))
   // Los dos suman líneas ya redondeadas: es lo mismo que se ve producto por producto.
   const subtotal = round2(lineas.reduce((acc, l) => acc + subtotalLinea(l), 0))
-  const neto = round2(lineas.reduce((acc, l) => acc + totalLinea(l), 0))
+  const neto = round2(lineas.reduce((acc, l) => acc + totalCon(l), 0))
   // Cada línea pesa por su importe ya bonificado, y aporta su rentabilidad efectiva.
   const rentabilidad =
     neto > 0
-      ? lineas.reduce((acc, l) => acc + rentabilidadLinea(l) * (totalLinea(l) / neto), 0)
+      ? lineas.reduce((acc, l) => acc + rentCon(l) * (totalCon(l) / neto), 0)
       : 0
   const iva = conIva ? round2(neto * IVA_RATE) : 0
   return {
@@ -179,9 +187,8 @@ export interface ResumenVenta {
   descuento: number
   /** Suma de la columna Total: lo que se factura tras bonificar (sin IVA). */
   total: number
+  /** Comisión total: suma de las comisiones de los productos comisionables (dinámica). */
   comision: number
-  /** Alícuota aplicada, para rotular la métrica. */
-  comisionPct: number
   rentabilidad: number
   /** Crédito disponible del cliente antes de esta venta. */
   disponible: number
@@ -210,6 +217,17 @@ export function resumenVenta(
     0,
   )
 
+  /* Comisión por producto: SÓLO los comisionables, con el % que corresponde al tipo de venta.
+     CON PRESUPUESTO PREVIO → "Venta Activa" (porcComActiva); DIRECTA → "Venta Pasiva" (porcComPasiva).
+     El acumulador crece a medida que se suman productos comisionables. */
+  const comisionItem = (it: VentaItem): number => {
+    if (!it.comisionable) return 0
+    const pct =
+      tipoVenta === 'CON PRESUPUESTO PREVIO' ? (it.porcComActiva ?? 0) : (it.porcComPasiva ?? 0)
+    return round2((importeItem(it) * pct) / 100)
+  }
+  const comision = round2(items.reduce((acc, it) => acc + comisionItem(it), 0))
+
   const limite = cliente?.limit ?? 0
   const disponible = cliente?.disponible ?? 0
   const impacto = impactoCredito(cliente, total)
@@ -218,8 +236,7 @@ export function resumenVenta(
     subtotal,
     descuento: round2(subtotal - total),
     total,
-    comision: comisionDe(total, tipoVenta),
-    comisionPct: COMISION_PCT[tipoVenta],
+    comision,
     rentabilidad: total > 0 ? Math.round(rentPonderada / total) : 0,
     disponible,
     usadoPct: impacto.usadoPct,

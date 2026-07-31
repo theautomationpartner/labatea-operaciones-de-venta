@@ -9,21 +9,31 @@
 import { esFlujoRemito } from '@/lib/pasos'
 import { rentabilidadEfectiva } from '@/lib/selectors'
 import type { LineaVenta } from '@/services/monday'
-import type { FacturaItem, LineaPresupuesto, TipoEntrega, TipoVenta, VentaItem } from '@/types'
+import type {
+  FacturaItem,
+  LineaPresupuesto,
+  Operacion,
+  TipoEntrega,
+  TipoVenta,
+  VentaItem,
+} from '@/types'
 
 interface OrigenLineas {
+  /** La operación en curso: la VENTA PROFORMA arma sus líneas desde `ventaItems`, como el presupuesto. */
+  operacion: Operacion | null
   tipoVenta: TipoVenta | null
   tipoEntrega: TipoEntrega | null
   /** Venta DIRECTA: lo cargado desde el catálogo de productos. */
   lineas: LineaPresupuesto[]
-  /** Venta CON PRESUPUESTO PREVIO: lo tomado de los presupuestos vigentes. */
+  /** Venta CON PRESUPUESTO PREVIO y VENTA PROFORMA: lo tomado de presupuestos/proformas. */
   ventaItems: VentaItem[]
   /** Entrega ANTERIOR (cualquier tipo de venta): lo tomado de los remitos a facturar. */
   facturaItems: FacturaItem[]
 }
 
-/** Las líneas de la venta en curso, vengan del remito, del presupuesto o del catálogo. */
+/** Las líneas de la venta en curso, vengan del remito, del presupuesto/proforma o del catálogo. */
 export function lineasDeVenta({
+  operacion,
   tipoVenta,
   tipoEntrega,
   lineas,
@@ -42,6 +52,7 @@ export function lineasDeVenta({
       descuento: 0,
       rentabilidad: it.rent,
       codigo: it.codigo,
+      um: it.um,
       tipoMercaderia: it.tipo,
       proveedorId: it.proveedorId,
       proveedorNombre: it.proveedorNombre,
@@ -49,7 +60,8 @@ export function lineasDeVenta({
     }))
   }
 
-  if (tipoVenta === 'CON PRESUPUESTO PREVIO') {
+  // CON PRESUPUESTO PREVIO y VENTA PROFORMA comparten origen: los productos ya están en `ventaItems`.
+  if (tipoVenta === 'CON PRESUPUESTO PREVIO' || operacion === 'VENTA PROFORMA') {
     return ventaItems.map((it) => ({
       productoId: it.productoId,
       nombre: it.nombre,
@@ -72,9 +84,12 @@ export function lineasDeVenta({
     nombre: l.producto.nombre,
     cantidad: l.cantidad,
     precioUnitario: l.producto.precio,
+    // Precio original en USD (sólo si el producto estaba en dólares): auditoría de la venta.
+    precioUsd: l.producto.precioUsd,
     descuento: l.descuento,
     rentabilidad: rentabilidadEfectiva(l.producto.rentabilidad, l.descuento),
     codigo: l.producto.codigo,
+    um: l.producto.um,
     tipoMercaderia: l.producto.tipo,
     proveedorId: l.producto.provId,
     proveedorNombre: l.producto.provNombre,

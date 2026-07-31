@@ -9,6 +9,7 @@ import { PASOS_PRESUPUESTO } from '@/lib/pasos'
 import { resumenPresupuesto } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
 import {
+  crearPresupuesto,
   emitirPresupuesto,
   esperarPresupuestoPdf,
   mondayHabilitado,
@@ -22,7 +23,8 @@ type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
 
 /** Paso 3 de PRESUPUESTAR: revisión, PDF y envío a los contactos. */
 export function EmisionView() {
-  const { lineas, fechaEmision, diasVigencia, cliente, presupuestoId, nroPresupuesto } = useApp()
+  const { lineas, fechaEmision, diasVigencia, cliente, presupuestoId, nroPresupuesto, vendedor, moneda } =
+    useApp()
   const dispatch = useDispatch()
 
   // El presupuesto no liquida IVA: el importe total es el subtotal de sus productos.
@@ -53,13 +55,20 @@ export function EmisionView() {
   const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: false })
 
   /**
-   * Generar PDF ya NO crea el presupuesto: a este paso se llega con el ítem creado desde
-   * "Continuar a emisión". Acá sólo se pasa su estado a "Emitir" —lo que dispara Make.com— y
-   * se espera el archivo.
+   * "Emitir Presupuesto" es el ÚNICO disparador de la creación en Monday (ejecución diferida):
+   * a este paso se llega sin ítem creado. Acá se crea el ítem con todos sus productos, se
+   * `await`ea su confirmación, y recién entonces se pasa a "Emitir" —lo que dispara Make.com— y
+   * se espera el PDF. Un ítem ya creado (reintento tras un fallo del PDF) no se vuelve a crear.
    */
   const generar = async () => {
     if (!cliente) return
+    if (estado === 'generando') return
     if (bloqueo.frenar()) return
+    if (lineas.length === 0) {
+      setError('Agregá al menos un producto antes de emitir el presupuesto.')
+      setEstado('error')
+      return
+    }
     // Nada se manda a Monday si falta un dato del ítem o de sus subitems.
     const faltan = faltantesPresupuesto(
       { cliente, lineas, fechaEmision, fechaVencimiento: vencimiento, diasVigencia },
@@ -69,19 +78,33 @@ export function EmisionView() {
       setFaltantes(faltan)
       return
     }
-    /* Sin ítem no hay nada que emitir. No se crea acá: si se llegó sin presupuesto, hay que
-       volver al paso de productos y confirmarlo, que es donde nace. */
-    const id = presupuestoId
-    if (!id) {
-      setError(
-        'El presupuesto todavía no está creado. Volvé al paso de productos y confirmalo con "Continuar a emisión".',
-      )
-      setEstado('error')
-      return
-    }
     setEstado('generando')
     setError(null)
     try {
+      /* La creación del ítem se difiere hasta acá: nace al emitir, no al entrar al paso. Se
+         `await`ea y se corta si algún producto no entró. Idempotente: si ya existe, no se recrea. */
+      let id = presupuestoId
+      if (!id) {
+        const creado = await crearPresupuesto({
+          cliente,
+          vendedor,
+          lineas,
+          fechaEmision,
+          fechaVencimiento: vencimiento,
+          diasVigencia,
+          rentabilidad: resumen.rentabilidad,
+          moneda,
+        })
+        if (creado.subitemsCreados !== lineas.length) {
+          setError(
+            `El presupuesto se creó pero quedó incompleto: entraron ${creado.subitemsCreados} de ${lineas.length} productos. Revisalo en Monday antes de emitirlo.`,
+          )
+          setEstado('error')
+          return
+        }
+        id = creado.id
+        dispatch({ type: 'setPresupuestoId', value: id })
+      }
       await emitirPresupuesto(id)
       const generado = await esperarPresupuestoPdf(id)
       if (!activo.current) return
@@ -151,7 +174,7 @@ export function EmisionView() {
         {/* Cierra el presupuesto y reinicia la app. Sólo con el PDF generado y ya enviado. */}
         <button
           type="button"
-          className="btn btn-green"
+          className="btn btn-primary"
           disabled={!(estado === 'listo' && enviado)}
           onClick={() => dispatch({ type: 'reset' })}
         >

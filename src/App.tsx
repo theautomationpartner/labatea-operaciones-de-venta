@@ -1,10 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { pagoSimultaneo } from '@/lib/cobros'
-import { getDescuentosPago, getDiasVigencia, getTopesDescuento } from '@/services/monday'
+import {
+  getDescuentosPago,
+  getDiasVigencia,
+  getTasaCambioHoy,
+  getTopesDescuento,
+  getVendedores,
+} from '@/services/monday'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
 import { CobroView } from '@/features/cobro/CobroView'
+import { EntregaView } from '@/features/cobro/EntregaView'
 import { FacturaView } from '@/features/factura/FacturaView'
 import { ProductosView } from '@/features/productos/ProductosView'
 import { RemitoView } from '@/features/remito/RemitoView'
@@ -12,6 +19,7 @@ import { RemitoEmisionView } from '@/features/remitir/RemitoEmisionView'
 import { RemitoEnvioView } from '@/features/remitir/RemitoEnvioView'
 import { RemitoProductosView } from '@/features/remitir/RemitoProductosView'
 import { VentaView } from '@/features/venta/VentaView'
+import { VentaProformaView } from '@/features/venta/VentaProformaView'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Paso } from '@/types'
 
@@ -21,8 +29,10 @@ const VISTAS: Record<Paso, () => JSX.Element | null> = {
   productos: ProductosView,
   emision: EmisionView,
   venta: VentaView,
+  'venta-proforma': VentaProformaView,
   remito: RemitoView,
   cobro: CobroView,
+  entrega: EntregaView,
   factura: FacturaView,
   'remito-productos': RemitoProductosView,
   'remito-envio': RemitoEnvioView,
@@ -57,6 +67,18 @@ export function App() {
     getTopesDescuento()
       .then((topes) => vivo && dispatch({ type: 'setTopesDescuento', value: topes }))
       .catch(() => {})
+    /* Vendedores del equipo "Vendedores" (Monday): pueblan el selector de vendedor. Se piden una
+       sola vez, al montar la app. Ante un error se deja la lista vacía (y el selector deja de
+       estar "Cargando…") para no bloquear la operación. */
+    getVendedores()
+      .then((vs) => vivo && dispatch({ type: 'setVendedores', vendedores: vs }))
+      .catch(() => vivo && dispatch({ type: 'setVendedores', vendedores: [] }))
+    /* Tasa de cambio del dólar de HOY: se lee del board de Cotizaciones al iniciar y se guarda en
+       el estado global. Es el valor que se usa para convertir precios en dólares y como auditoría
+       en la venta. Ante un error queda en null (la UI lo refleja). */
+    getTasaCambioHoy()
+      .then((tasa) => vivo && dispatch({ type: 'setTasaCambio', value: tasa }))
+      .catch(() => vivo && dispatch({ type: 'setTasaCambio', value: null }))
     return () => {
       vivo = false
     }

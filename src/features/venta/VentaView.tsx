@@ -4,13 +4,13 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
+import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
-import { PASOS_VENTA } from '@/lib/pasos'
+import { pasosDe } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
   AVANCE_LABEL,
   avanceLinea,
-  COMISION_PCT,
   resumenVenta,
   ventaItemUid,
 } from '@/lib/selectors'
@@ -22,13 +22,14 @@ import { ResumenPresupuestos } from './ResumenPresupuestos'
 import { ResumenVentaCard } from './ResumenVentaCard'
 
 /**
- * Paso 2 de CARGAR VENTA con presupuesto previo: se traen del board los presupuestos que
+ * Paso 2 de VENTA con presupuesto previo: se traen del board los presupuestos que
  * todavía no vencieron y se listan todos sus productos en una sola lista, con lo presupuestado,
  * lo vendido y lo que queda disponible. De ahí se llevan a la venta con la cantidad elegida.
  */
 export function VentaView() {
-  const { cliente, tipoVenta, ventaItems } = useApp()
+  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems } = useApp()
   const dispatch = useDispatch()
+  // Flujo Proforma directo (agente de retención con entrega != POSTERIOR): crea la venta acá.
   // Presupuesto elegido como filtro de la lista de productos (toggle desde las cards).
   const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null)
   // Ventana de advertencia cuando se quiere continuar sin productos en la venta.
@@ -132,13 +133,16 @@ export function VentaView() {
 
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={PASOS_VENTA} actual={1} />
+      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={1} />
 
       <PasoTitulo
         numero={2}
         titulo="Cargar productos"
         descripcion="Elegí los productos disponibles de los presupuestos vigentes y ajustá la cantidad a vender."
       />
+
+      {/* Forma de Pago de la venta, debajo del título y la descripción. */}
+      <FormaPagoSelect />
 
       {/* Resumen de presupuestos a la izquierda (filtro); todos sus productos, a la derecha. */}
       <div className="pend-grid">
@@ -177,7 +181,6 @@ export function VentaView() {
       <TablaProductos
         titulo="Productos seleccionados para la Venta"
         filas={filas}
-        comisionPct={COMISION_PCT[tipo]}
         onRemove={(uid) => dispatch({ type: 'removeVentaItem', uid })}
         onCantidad={(uid, cantidad) => dispatch({ type: 'setVentaCantidad', uid, cantidad })}
       />
@@ -205,7 +208,7 @@ export function VentaView() {
               })
               return
             }
-            // El aviso de crédito se dispara acá, al continuar a cobro, y la venta frena.
+            // El aviso de crédito se dispara acá, al continuar, y la venta frena.
             if (bloqueo.frenar()) return
             dispatch({ type: 'goto', paso: 'cobro' })
           }}

@@ -37,6 +37,9 @@ const CANT_VENDIDA_POR_TANDA = 25
 /** Subelementos por solicitud, igual que en el presupuesto. */
 const PRODUCTOS_POR_TANDA = 25
 
+/** Alícuota de IVA por defecto cuando el producto no trae la suya. */
+const IVA_DEFECTO_VENTA = 21
+
 /**
  * Un producto de la venta, ya normalizado desde el flujo que lo haya cargado. Además de lo
  * que necesita el board de Ventas, la línea arrastra los datos fiscales del producto: son los
@@ -48,11 +51,16 @@ export interface LineaVenta {
   nombre: string
   cantidad: number
   precioUnitario: number
+  /** Precio original en dólares del producto, antes de convertir a pesos. Sólo viene si la moneda
+   *  del producto era "Dolares"; se registra como auditoría (numeric_mm5s58ej). */
+  precioUsd?: number
   /** Descuento aplicado a la línea, en %. */
   descuento: number
   /** Rentabilidad de la línea, en %. */
   rentabilidad: number
   codigo?: string
+  /** Unidad de medida del producto. Se muestra en la factura proforma. */
+  um?: string
   /** Tipo de mercadería: 'CO' (consignada) o 'COM' (común). Sin dato se factura como común. */
   tipoMercaderia?: string
   /** Proveedor de la mercadería consignada: cada uno se factura por separado. */
@@ -79,6 +87,12 @@ export interface DatosVenta {
   tipoPago: TipoPago
   /** Rentabilidad general de la venta, en %. */
   rentabilidad: number
+  /** Descuento por forma de pago (pronto pago), en %. Se compone con el desc. manual de cada línea. */
+  descFormaPago?: number
+  /** Tasa de cambio del dólar usada en la venta. Se registra como auditoría (numeric_mm5s5n54). */
+  tasaCambio?: number | null
+  /** Total en pesos de la venta (con IVA). Se escribe como número en "🤖Importe Total $". */
+  importeTotalPesos?: number
   /** Responsable logístico elegido en el Cierre de Venta. Se escribe en "✋Entrega" (dropdown). */
   responsableEntrega?: ResponsableEntrega
   /** Ruta de entrega confirmada (sólo La Batea). Se linkea en la venta y baja a los pendientes. */
@@ -120,11 +134,28 @@ const columnasLinea = (
   entregaPosterior: boolean,
   entregaAnterior: boolean,
   anteriorEstadoSubIdx: number | null,
+  descFormaPago: number,
 ): Record<string, unknown> => {
+  /* Descuento total de la línea (manual + forma de pago, topeado en 100%) y valores derivados:
+     Imp. Bonificado, IVA en $ y TOTAL con IVA de la línea. */
+  const descTotal = Math.min(l.descuento + descFormaPago, 100)
+  const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
+  const impBonifLinea = round2(bonifUnit * l.cantidad)
+  const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
+  const ivaLinea = round2((totalLinea * (l.iva ?? IVA_DEFECTO_VENTA)) / 100)
+
   const cv: Record<string, unknown> = {
     [COL.ventaSub.cantidad]: String(l.cantidad),
     [COL.ventaSub.precioUnit]: String(round2(l.precioUnitario)),
     [COL.ventaSub.descuento]: String(l.descuento),
+    // Descuento por forma de pago (pronto pago) elegido en la selección de productos.
+    [COL.ventaSub.descFormaPago]: String(descFormaPago),
+    // Imp. Bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100.
+    [COL.ventaSub.impBonificado]: String(impBonifLinea),
+    // IVA en $ de la línea, sobre el total ya bonificado.
+    [COL.ventaSub.iva]: String(ivaLinea),
+    // TOTAL de la línea con IVA = total bonificado + IVA.
+    [COL.ventaSub.totalConIva]: String(round2(totalLinea + ivaLinea)),
     [COL.ventaSub.rentabilidad]: String(Math.round(l.rentabilidad)),
   }
   if (entregaSimultanea) {
@@ -141,6 +172,8 @@ const columnasLinea = (
       index: anteriorEstadoSubIdx ?? VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada,
     }
   }
+  // Auditoría USD: sólo para productos que estaban en dólares, el precio original antes de convertir.
+  if (l.precioUsd != null) cv[COL.ventaSub.precioUnitUsd] = String(round2(l.precioUsd))
   // En el flujo de entrega ANTERIOR las líneas vienen del remito y no traen el producto.
   if (l.productoId) cv[COL.ventaSub.producto] = { item_ids: [Number(l.productoId)] }
   // Ítem de stock del producto (heredado del maestro o del presupuesto): se enlaza en el subítem.
@@ -196,6 +229,8 @@ async function crearPendientesEntrega(
     }
     if (clienteId) cv[COL.pendienteEntregaItem.cliente] = { item_ids: [Number(clienteId)] }
     if (l.productoId) cv[COL.pendienteEntregaItem.producto] = { item_ids: [Number(l.productoId)] }
+    // Ítem de "Stock y Movimientos" del producto: se linkea a nivel ítem del pendiente (POSTERIOR).
+    if (l.stockId) cv[COL.pendienteEntregaItem.stockMovimiento] = { item_ids: [Number(l.stockId)] }
     // Ruta de entrega de la venta: baja a cada pendiente para verla al remitar (venta ANTERIOR).
     if (rutaId && Number.isFinite(Number(rutaId))) {
       cv[COL.pendienteEntregaItem.ruta] = { item_ids: [Number(rutaId)] }
@@ -205,7 +240,8 @@ async function crearPendientesEntrega(
       cv[COL.pendienteEntregaItem.ventaSubelemento] = { item_ids: [Number(l.ventaSubitemId)] }
     }
     if (estadoIdx != null) cv[COL.pendienteEntregaItem.estado] = { index: estadoIdx }
-    variables[`pn${i}`] = l.nombre
+    // Ítem raíz del tablero de pendientes: nombre general; su ID lo asigna la customKey del board.
+    variables[`pn${i}`] = 'Entregas Pendientes'
     variables[`pcv${i}`] = JSON.stringify(cv)
     return `p${i}: create_item(board_id: ${BOARDS.pendientesEntrega}, item_name: $pn${i}, column_values: $pcv${i}) { id }`
   })
@@ -251,15 +287,36 @@ async function crearMovimientosStockSimultanea(lineas: LineaVentaCreada[]): Prom
 export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   const {
     clienteId,
-    nombre,
     tipoVenta,
     tipoEntrega,
     tipoPago,
     rentabilidad,
+    descFormaPago = 0,
+    tasaCambio,
+    importeTotalPesos,
     responsableEntrega,
     rutaId,
     lineas,
   } = datos
+
+  /* Totales de la venta a nivel ítem: descuento total (suma de importes bonificados), IVA total y
+     TOTAL (neto bonificado + IVA), con las mismas fórmulas que cada subelemento. */
+  const totales = lineas.reduce(
+    (acc, l) => {
+      const descTotal = Math.min(l.descuento + descFormaPago, 100)
+      const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
+      const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
+      const ivaLinea = round2((totalLinea * (l.iva ?? IVA_DEFECTO_VENTA)) / 100)
+      acc.desc += round2(bonifUnit * l.cantidad)
+      acc.neto += totalLinea
+      acc.iva += ivaLinea
+      return acc
+    },
+    { desc: 0, neto: 0, iva: 0 },
+  )
+  const descuentoTotal = round2(totales.desc)
+  const ivaTotal = round2(totales.iva)
+  const totalVenta = round2(totales.neto + ivaTotal)
 
   if (!mondayHabilitado()) {
     return { id: `mock-venta-${Date.now()}`, subitemsCreados: lineas.length }
@@ -302,6 +359,18 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     },
     [COL.venta.rentabilidad]: String(Math.round(rentabilidad)),
   }
+  // Auditoría: tasa de cambio del dólar usada en la venta (registro inmutable).
+  if (tasaCambio != null && tasaCambio > 0) {
+    cabecera[COL.venta.tasaCambio] = round2(tasaCambio)
+  }
+  // Totales de la venta: descuento total, IVA total y TOTAL (neto + IVA).
+  cabecera[COL.venta.descuentoTotal] = descuentoTotal
+  cabecera[COL.venta.ivaTotal] = ivaTotal
+  cabecera[COL.venta.total] = totalVenta
+  // Total en pesos de la venta: se envía como NÚMERO (no string) para las fórmulas del board.
+  if (importeTotalPesos != null) {
+    cabecera[COL.venta.importeTotalPesos] = round2(importeTotalPesos)
+  }
   // Con entrega simultánea la mercadería sale con la venta: nace "100% Entregada" (por índice).
   if (entregaSimultanea) {
     cabecera[COL.venta.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada }
@@ -327,7 +396,8 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.ventas, name: nombre, cv: JSON.stringify(cabecera) },
+    // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+    { boardId: BOARDS.ventas, name: 'Ventas', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
 
@@ -342,7 +412,14 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
       const n = desde + i
       variables[`n${n}`] = l.nombre
       variables[`cv${n}`] = JSON.stringify(
-        columnasLinea(l, entregaSimultanea, entregaPosterior, entregaAnterior, anteriorEstadoSubIdx),
+        columnasLinea(
+          l,
+          entregaSimultanea,
+          entregaPosterior,
+          entregaAnterior,
+          anteriorEstadoSubIdx,
+          descFormaPago,
+        ),
       )
       return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}) { id }`
     })

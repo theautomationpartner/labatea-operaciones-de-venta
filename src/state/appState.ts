@@ -14,6 +14,7 @@ import type {
   FacturaItem,
   FacturaState,
   Filtro,
+  FormaPagoVenta,
   LineaPresupuesto,
   LogEntry,
   MedioEnvio,
@@ -40,10 +41,19 @@ export interface AppState {
   operacion: Operacion | null
   vendedor: Vendedor | null
   cliente: Cliente | null
+  /** Vendedores del equipo "Vendedores" (Monday), leídos al iniciar la app. */
+  vendedores: Vendedor[]
+  /** La consulta de vendedores está en curso: el selector se muestra deshabilitado. */
+  vendedoresCargando: boolean
+  /** Tasa de cambio del dólar de HOY, leída al iniciar la app. null = todavía no hay dato. */
+  tasaCambio: number | null
 
   /* Configuración de la operación */
   tipoVenta: TipoVenta | null
   tipoEntrega: TipoEntrega | null
+  /* Forma de pago de la VENTA (elegida en la selección de productos): rige el ramal del cobro.
+     Débito y crédito son formas independientes; no hay un tipo de tarjeta aparte. */
+  formaPago: FormaPagoVenta | null
 
   /* Presupuesto en curso */
   /** Derivada: la fecha del día. No se edita. */
@@ -62,6 +72,8 @@ export interface AppState {
   presupuestoId: string | null
   /** ID del ítem de venta ya creado en "📈Ventas". Evita recrearla si se reintenta. */
   ventaId: string | null
+  /** ID del ítem de proforma creado en el board de Proformas (18424580497). null = todavía no. */
+  proformaId: string | null
   /** ID que va a llevar el presupuesto ("PRESUP-009"), leído del board al iniciar la operación. */
   nroPresupuesto: string | null
 
@@ -135,9 +147,14 @@ export const initialState: AppState = {
   operacion: null,
   vendedor: null,
   cliente: null,
+  vendedores: [],
+  // Arranca en true: la carga se dispara al montar la app y el selector nace deshabilitado.
+  vendedoresCargando: true,
+  tasaCambio: null,
 
   tipoVenta: null,
   tipoEntrega: null,
+  formaPago: null,
 
   fechaEmision: hoy(),
   diasVigencia: DIAS_VIGENCIA_INICIAL,
@@ -148,6 +165,7 @@ export const initialState: AppState = {
   lineas: [],
   presupuestoId: null,
   ventaId: null,
+  proformaId: null,
   nroPresupuesto: null,
 
   enviar: false,
@@ -204,16 +222,21 @@ export interface SeleccionRemito {
 export type Action =
   | { type: 'goto'; paso: Paso }
   | { type: 'setOperacion'; operacion: Operacion }
+  | { type: 'cambiarOperacion'; operacion: Operacion }
   | { type: 'setVendedor'; vendedor: Vendedor }
+  | { type: 'setVendedores'; vendedores: Vendedor[] }
+  | { type: 'setTasaCambio'; value: number | null }
   | { type: 'setCliente'; cliente: Cliente }
   | { type: 'setTipoVenta'; value: TipoVenta }
   | { type: 'setTipoEntrega'; value: TipoEntrega }
+  | { type: 'setFormaPago'; value: FormaPagoVenta }
   | { type: 'setDiasVigencia'; value: number }
   | { type: 'setMoneda'; value: Moneda }
   | { type: 'setTopesDescuento'; value: TopesDescuento }
   | { type: 'setDescuentosPago'; value: DescuentosPago }
   | { type: 'setPresupuestoId'; value: string | null }
   | { type: 'setVentaId'; value: string | null }
+  | { type: 'setProformaId'; value: string | null }
   | { type: 'setNroPresupuesto'; value: string | null }
   | { type: 'reset' }
   | { type: 'addFiltro'; filtro: Filtro }
@@ -229,6 +252,7 @@ export type Action =
   | { type: 'removeContacto'; id: string }
   | { type: 'setLog'; entries: LogEntry[] }
   | { type: 'agregarVentaSeleccion'; seleccion: SeleccionVenta[] }
+  | { type: 'setVentaSeleccion'; seleccion: SeleccionVenta[] }
   | { type: 'setVentaCantidad'; uid: string; cantidad: number }
   | { type: 'setVentaDescuento'; uid: string; descuento: number }
   | { type: 'removeVentaItem'; uid: string }
@@ -294,8 +318,35 @@ export function reducer(state: AppState, action: Action): AppState {
       }
     }
 
+    /* Deep reset al cambiar de operación con datos ya cargados: se descarta TODO lo de la
+       transacción (cliente, ítems, cobros, totales, ids) y la nueva operación arranca desde cero
+       en la etapa de "Selección de Cliente". Sólo se conservan la configuración del sistema y el
+       vendedor, que no dependen de la operación. */
+    case 'cambiarOperacion':
+      return {
+        ...initialState,
+        diasVigencia: state.diasVigencia,
+        fechaEmision: state.fechaEmision,
+        topesDescuento: state.topesDescuento,
+        descuentosPago: state.descuentosPago,
+        vendedor: state.vendedor,
+        // Los vendedores y la tasa de cambio se leen una sola vez al iniciar: no se vuelven a pedir.
+        vendedores: state.vendedores,
+        vendedoresCargando: state.vendedoresCargando,
+        tasaCambio: state.tasaCambio,
+        operacion: action.operacion,
+        paso: 'cliente',
+      }
+
     case 'setVendedor':
       return { ...state, vendedor: action.vendedor }
+
+    // Llegaron los vendedores del board: se guardan y el selector deja de estar "Cargando…".
+    case 'setVendedores':
+      return { ...state, vendedores: action.vendedores, vendedoresCargando: false }
+
+    case 'setTasaCambio':
+      return { ...state, tasaCambio: action.value }
 
     case 'setCliente':
       // Cambiar de cliente invalida el presupuesto y la venta en curso.
@@ -307,6 +358,8 @@ export function reducer(state: AppState, action: Action): AppState {
         presupuestoId: null,
         // La venta creada pertenece al cliente anterior: no puede arrastrarse.
         ventaId: null,
+        // La proforma emitida también es del cliente anterior.
+        proformaId: null,
         log: null,
         ventaItems: [],
         facturaItems: [],
@@ -321,7 +374,7 @@ export function reducer(state: AppState, action: Action): AppState {
         remito: { ...remitoInicial, tipoEmision: state.remito.tipoEmision },
       }
 
-    // Tipo de venta y de entrega reordenan el flujo de CARGAR VENTA: hay que reubicar el paso.
+    // Tipo de venta y de entrega reordenan el flujo de VENTA: hay que reubicar el paso.
     case 'setTipoVenta': {
       if (state.tipoVenta === action.value) return state
       // La entrega ANTERIOR es exclusiva de la venta DIRECTA: al pasar a CON PRESUPUESTO PREVIO se
@@ -331,7 +384,7 @@ export function reducer(state: AppState, action: Action): AppState {
           ? null
           : state.tipoEntrega
       const paso =
-        state.operacion === 'CARGAR VENTA'
+        state.operacion === 'VENTA'
           ? pasoDelModo(state.paso, state.operacion, action.value, tipoEntrega)
           : state.paso
       return { ...state, tipoVenta: action.value, tipoEntrega, paso }
@@ -340,11 +393,14 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setTipoEntrega': {
       if (state.tipoEntrega === action.value) return state
       const paso =
-        state.operacion === 'CARGAR VENTA'
+        state.operacion === 'VENTA'
           ? pasoDelModo(state.paso, state.operacion, state.tipoVenta, action.value)
           : state.paso
       return { ...state, tipoEntrega: action.value, paso }
     }
+
+    case 'setFormaPago':
+      return { ...state, formaPago: action.value }
 
     case 'setDiasVigencia':
       return { ...state, diasVigencia: action.value }
@@ -364,13 +420,24 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setVentaId':
       return { ...state, ventaId: action.value }
 
+    case 'setProformaId':
+      return { ...state, proformaId: action.value }
+
     case 'setNroPresupuesto':
       return { ...state, nroPresupuesto: action.value }
 
     /* Cancelar la operación: se descarta todo y se vuelve al inicio, conservando la
        configuración del sistema que no depende de la transacción. */
     case 'reset':
-      return { ...initialState, diasVigencia: state.diasVigencia, fechaEmision: state.fechaEmision }
+      return {
+        ...initialState,
+        diasVigencia: state.diasVigencia,
+        fechaEmision: state.fechaEmision,
+        // Los vendedores y la tasa de cambio ya se cargaron al iniciar: se conservan al reiniciar.
+        vendedores: state.vendedores,
+        vendedoresCargando: state.vendedoresCargando,
+        tasaCambio: state.tasaCambio,
+      }
 
     case 'addFiltro': {
       const { campo, valor } = action.filtro
@@ -464,6 +531,19 @@ export function reducer(state: AppState, action: Action): AppState {
         }))
       if (nuevos.length === 0) return state
       return { ...state, ventaItems: [...state.ventaItems, ...nuevos] }
+    }
+
+    /* Reemplaza por completo la venta con la selección dada. La venta CON PROFORMA es "todo o
+       nada" y exclusiva: al elegir una proforma entran todos sus productos y se descartan los de
+       la anterior. El descuento arranca en el de la línea (0 en la proforma). */
+    case 'setVentaSeleccion': {
+      const items = action.seleccion.map((s): VentaItem => ({
+        ...s.prod,
+        uid: s.uid,
+        aVender: s.cantidad,
+        desc: s.prod.descuento ?? 0,
+      }))
+      return { ...state, ventaItems: items }
     }
 
     // Sin tope: pasarse de lo presupuestado se puede escribir, y la tabla lo marca en rojo.

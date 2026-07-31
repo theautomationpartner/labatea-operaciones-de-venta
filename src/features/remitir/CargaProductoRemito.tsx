@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { BuscadorProducto } from '@/features/productos/BuscadorProducto'
 import { CargaLinea } from '@/features/productos/CargaLinea'
 import { FiltrosProductos } from '@/features/productos/FiltrosProductos'
+import { useCotizacionProducto } from '@/features/productos/useCotizacionProducto'
 import { clienteLlevaIva } from '@/lib/precios'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { Producto } from '@/types'
 
 /**
  * Carga de productos del remito POSTERIOR desde el catálogo. Reutiliza EXACTAMENTE la misma
@@ -18,7 +18,9 @@ import type { Producto } from '@/types'
 export function CargaProductoRemito() {
   const { cliente } = useApp()
   const dispatch = useDispatch()
-  const [seleccionado, setSeleccionado] = useState<Producto | null>(null)
+  // Selección con conversión bimonetaria (aunque el remito no muestre el precio, la conversión
+  // aplica: el precio convertido alimenta el importe pendiente de facturar).
+  const { seleccionado, setSeleccionado, elegir, convirtiendo } = useCotizacionProducto()
   // Aviso de la búsqueda (sin resultados / error), mostrado donde iría el producto elegido.
   const [avisoBusqueda, setAvisoBusqueda] = useState('')
 
@@ -35,7 +37,7 @@ export function CargaProductoRemito() {
         <BuscadorProducto
           lista={cliente?.list ?? 'L1'}
           conIva={clienteLlevaIva(cliente?.status ?? '')}
-          onSelect={setSeleccionado}
+          onSelect={elegir}
           variante="v2"
           onAviso={setAvisoBusqueda}
         />
@@ -47,6 +49,7 @@ export function CargaProductoRemito() {
         aviso={avisoBusqueda}
         onAdd={agregar}
         showFinancialData={false}
+        convirtiendo={convirtiendo}
       />
     </div>
   )

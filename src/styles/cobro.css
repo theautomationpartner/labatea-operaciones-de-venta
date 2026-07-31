@@ -46,7 +46,63 @@
    Una sola card: la barra de título que despliega y, pegadas sin margen, las sub-cards de
    "Tipo de cobro" y "Registrar cobro". El borde y el radio los pone el panel; las sub-cards
    sólo se separan entre sí con un filete. */
-.cobro-v2 .cobro-acc {
+/* CONTADO: las dos tarjetas EMITIR PROFORMA / REGISTRAR COBRO y el bloque de proforma. */
+.cobro-v2 .contado-tabs {
+  margin-bottom: 22px;
+}
+/* Tarjeta: formulario de cobro. Grilla de 3 columnas FIJAS: así al pasar de débito (Banco, Tipo)
+   a crédito (+ Cuotas) los dos primeros campos no se mueven (sin layout shift). */
+.cobro-v2 .tarjeta-cobro {
+  margin: 0;
+}
+.cobro-v2 .tarjeta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 240px));
+  gap: 24px;
+  margin-top: 6px;
+}
+.cobro-v2 .tarjeta-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cobro-v2 .tarjeta-campo label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+}
+.cobro-v2 .tarjeta-acts {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+/* Proforma embebida en el cobro: ocupa TODO el ancho del contenedor padre. Se neutraliza el box
+   de página del namespace `.factura-v2` (max-width / margin / padding centrados). */
+.cobro-v2 .cobro-proforma {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cobro-v2 .cobro-proforma.factura-v2 {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+/* Layout bi-columna: a la izquierda los Datos de la Proforma + el botón de emisión (~32%); a la
+   derecha la card de la Factura Proforma y el envío, apilados (~68%). Gap generoso entre columnas. */
+.cobro-v2 .cobro-proforma .proforma-grid {
+  grid-template-columns: minmax(0, 32fr) minmax(0, 68fr);
+  gap: 24px;
+}
+/* En pantallas angostas las dos columnas se apilan a ancho completo. */
+@media (max-width: 900px) {
+  .cobro-v2 .cobro-proforma .proforma-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cobro-v2 .cobro-acc,
+.cobro-v2 .cobro-static {
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -56,6 +112,12 @@
   box-shadow: var(--c-shadow-soft);
   /* Recorta las sub-cards contra las esquinas redondeadas del panel. */
   overflow: hidden;
+}
+/* Descripción del bloque de registro de cobro, debajo del título "Registrar cobro". */
+.cobro-v2 .cobro-card-desc {
+  margin: -4px 0 14px;
+  font-size: 13px;
+  color: var(--c-text-secondary);
 }
 /* Barra de título del panel: contiene el toggle, la decisión de cobrar y el tilde. */
 .cobro-v2 .cobro-acc-head {
@@ -145,7 +207,8 @@
   transform: rotate(180deg);
 }
 .cobro-v2 .cobro-acc-title {
-  font-size: 14px;
+  /* +5px sobre el tamaño base (14px): es una de las preguntas principales de la etapa. */
+  font-size: 19px;
   font-weight: 700;
   color: var(--c-text-main);
 }
@@ -331,7 +394,8 @@
   margin: 0 0 20px;
 }
 .cobro-v2 .cobro-card-sub {
-  font-size: 13px;
+  /* +2px sobre el tamaño base (13px). */
+  font-size: 15px;
   font-weight: 600;
   color: var(--c-text-main);
   margin: 24px 0 8px;
@@ -365,7 +429,8 @@
   min-width: 0;
 }
 .cobro-v2 .cobro-form-campo label {
-  font-size: 12px;
+  /* +2px sobre el tamaño base (12px) para más legibilidad y presencia del formulario. */
+  font-size: 14px;
   font-weight: 500;
   color: var(--c-text-secondary);
 }
@@ -405,7 +470,8 @@
   border-radius: var(--c-radius-md);
   background: var(--c-bg-input);
   color: var(--c-text-main);
-  font-size: 14px;
+  /* +2px sobre el tamaño base (14px). */
+  font-size: 16px;
 }
 .cobro-v2 .cobro-in:focus {
   outline: none;
@@ -439,7 +505,8 @@
   padding: 0 12px;
   background: none;
   color: var(--c-text-main);
-  font-size: 14px;
+  /* +2px sobre el tamaño base (14px). */
+  font-size: 16px;
 }
 .cobro-v2 .cobro-desc-in:focus {
   outline: none;
@@ -451,8 +518,108 @@
   background: #f4f5f7;
   border-left: 1px solid var(--c-border);
   color: var(--c-text-secondary);
-  font-size: 13px;
+  /* +2px sobre el tamaño base (13px), en línea con el resto de la fila. */
+  font-size: 15px;
   font-weight: 600;
+}
+
+/* --- Campos condicionales según el medio de cobro (cheque / transferencia / tarjeta) --- */
+/* Fila que aparece debajo de la principal, con una animación suave de entrada. */
+.cobro-v2 .cobro-cond {
+  flex-basis: 100%;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--c-border);
+  animation: cobro-cond-in 0.28s ease;
+}
+@keyframes cobro-cond-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.cobro-v2 .cobro-cond .cobro-form-campo {
+  flex: 1 1 200px;
+}
+/* Cheque: los dos campos de fecha reducidos a la mitad (20% del contenedor c/u). */
+.cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--fecha {
+  flex: 0 0 20%;
+  max-width: 20%;
+}
+/* Cheque: el número de cheque, un 15% más ancho que un campo normal (200px → 230px). */
+.cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--nro {
+  flex: 1 1 230px;
+}
+/* Transferencia: la cuenta bancaria, reducida un 40% respecto del 70% previo → 42%. */
+.cobro-v2 .cobro-cond .cobro-form-campo.cobro-form-campo--cuenta {
+  flex: 0 0 42%;
+  max-width: 42%;
+}
+.cobro-v2 .cobro-form-campo--drop {
+  flex: 2 1 320px;
+}
+/* Tarjeta: campos compactos (~30% c/u) — la dupla débito suma 60% y el trío crédito no desborda. */
+.cobro-v2 .cobro-cond.cobro-cond--tarjeta .cobro-form-campo {
+  flex: 0 0 30%;
+  max-width: 30%;
+}
+/* Asterisco rojo de campo obligatorio. */
+.cobro-v2 .cobro-req {
+  color: var(--c-danger);
+  font-weight: 700;
+}
+/* Zona de arrastrar y soltar el comprobante de transferencia. */
+.cobro-v2 .cobro-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1.5px dashed var(--c-border);
+  border-radius: var(--c-radius-md);
+  background: var(--c-bg-input);
+  color: var(--c-text-secondary);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.cobro-v2 .cobro-drop.is-over {
+  border-color: var(--c-primary);
+  background: #eef4ff;
+}
+.cobro-v2 .cobro-drop.has-file {
+  border-style: solid;
+  border-color: var(--c-success);
+  color: var(--c-text-main);
+}
+.cobro-v2 .cobro-drop-hint,
+.cobro-v2 .cobro-drop-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cobro-v2 .cobro-drop-x {
+  border: none;
+  background: none;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.cobro-v2 .cobro-drop-x:hover {
+  color: var(--c-danger);
 }
 
 /* --- Tabla de cobros registrados --- */
@@ -460,18 +627,26 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Ancho automático (no fijo): cada columna toma lo que necesita y los encabezados no cortan
+     en dos líneas; la tabla igual ocupa todo el ancho disponible. */
 }
 .cobro-v2 .cobro-tabla th {
   text-align: left;
   padding: 10px 12px;
-  font-size: 12px;
+  /* +2px sobre el tamaño base (12px). */
+  font-size: 14px;
   font-weight: 600;
   color: var(--c-text-secondary);
   border-bottom: 1px solid var(--c-border);
+  /* El encabezado siempre en una sola línea (sin salto). */
+  white-space: nowrap;
 }
 .cobro-v2 .cobro-tabla td {
   text-align: left;
   padding: 14px 12px;
+  /* +2px sobre el tamaño base de la tabla (13px). */
+  font-size: 15px;
+  white-space: nowrap;
   color: var(--c-text-main);
   border-bottom: 1px solid #f0f1f4;
 }
@@ -498,19 +673,40 @@
   color: var(--c-danger);
   border-color: var(--c-danger);
 }
-/* --- Acción del panel: cierra el bloque, abajo a la derecha del impacto --- */
+/* --- Footer del panel: en un mismo eje, las métricas y —a la derecha de TOTAL DESCUENTOS— el
+   botón de confirmación seguido del motivo de bloqueo del cobro. Alineado a la izquierda. --- */
 .cobro-v2 .cobro-card-acts {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 10px;
+  justify-content: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  /* Separación con la tabla: 25px de padding + 20px de margen que los empuja más abajo. */
+  margin-top: 20px;
+  padding-top: 25px;
+}
+/* Motivo de bloqueo del cobro, a la derecha del botón: texto en rojo, SIN fondo ni borde. */
+.cobro-v2 .cobro-bloqueo-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c-danger);
+  font-size: 13px;
+  font-weight: 600;
 }
 .cobro-v2 .cobro-err {
   font-size: 13px;
   font-weight: 600;
   color: var(--c-danger);
+}
+
+/* ===== Métricas destacadas del footer =====
+   "Total cobrado" y "Total descuentos", con el mismo layout de card/ícono de la cabecera,
+   alineadas a la IZQUIERDA y sobre un mismo eje horizontal entre sí. */
+.cobro-v2 .cobro-mets-tabla {
+  display: flex;
+  align-items: center;
+  gap: 40px;
 }
 
 /* ===== Impacto en cuenta corriente =====

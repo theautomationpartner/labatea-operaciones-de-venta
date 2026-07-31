@@ -25,7 +25,8 @@
   --c-badge-gray-text: #475569;
   --c-shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
 
-  max-width: 1200px;
+  /* Mismo ancho máximo que el resto de las etapas (Emitir y Enviar = 1480). */
+  max-width: 1480px;
   margin: 0 auto;
   /* Sin padding arriba: la barra fija del paso arranca pegada al borde del panel. */
   padding: 0 24px;
@@ -181,12 +182,13 @@
   font-size: 14px;
   gap: 8px;
 }
+/* Botón primario azul (estándar de la app), no el violeta del acento del cliente. */
 .cliente-v2 .btn-primary {
-  background: var(--c-primary);
+  background: var(--primary-blue);
   color: #fff;
 }
 .cliente-v2 .btn-primary:hover:not(:disabled):not(.dis) {
-  background: var(--c-primary-hover);
+  background: var(--primary-blue-hover);
 }
 .cliente-v2 .btn-primary.dis,
 .cliente-v2 .btn-primary:disabled {
@@ -314,6 +316,10 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
+/* Fila superior con exactamente TRES cajas (límite, saldo, remitos pendientes). */
+.cliente-v2 .kpi-grid--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
 .cliente-v2 .kpi-card {
   background: #f8fafc;
   border: 1px solid var(--c-border);
@@ -388,9 +394,17 @@
 }
 .cliente-v2 .credito-fila2 {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  /* La barra de uso (2ª columna) queda ~10% más ancha que antes (2fr → 2.2fr). */
+  grid-template-columns: 1fr 2.2fr;
   gap: 16px;
   align-items: stretch;
+}
+/* Crédito disponible sin caja: fondo y borde fuera, sólo el texto (título + valor). */
+.cliente-v2 .kpi-card--plano {
+  background: transparent;
+  border: none;
+  padding: 0;
+  justify-content: center;
 }
 /* Sin barra (el crédito no rige en esta operación): la card ocupa toda la fila. */
 .cliente-v2 .credito-fila2--solo {
@@ -410,13 +424,85 @@
   width: 100%;
 }
 
+/* ===== Fila inferior del crédito: crédito disponible + línea utilizada a la IZQUIERDA, y la barra
+   de uso ocupando el resto del ancho ===== */
+.cliente-v2 .credito-fila-inferior {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.cliente-v2 .credito-metrica {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  flex: 0 0 auto;
+}
+/* Crédito disponible y línea utilizada (etiqueta + valor) van 2px más grandes. */
+.cliente-v2 .credito-metrica .kpi-label {
+  font-size: 15px;
+}
+.cliente-v2 .credito-metrica .kpi-value {
+  font-size: 22px;
+}
+/* La barra de crédito utilizado toma todo el ancho restante del contenedor. */
+.cliente-v2 .credito-fila-inferior .credito-uso {
+  flex: 1;
+  min-width: 240px;
+}
+
+/* ===== Estado vacío (sin cliente): cajas quietas que preservan layout, bordes y tamaños.
+   SIN animación ni parpadeo: son contenedores estáticos esperando la información. ===== */
+.cliente-v2 .skeleton {
+  display: block;
+  background: #eef1f6;
+  border-radius: 6px;
+}
+.cliente-v2 .skeleton--valor {
+  height: 24px;
+  width: 130px;
+}
+.cliente-v2 .skeleton--linea {
+  height: 14px;
+  margin-bottom: 10px;
+}
+.cliente-v2 .skeleton--corto {
+  width: 90px;
+}
+.cliente-v2 .skeleton--titulo {
+  height: 22px;
+  width: 220px;
+}
+.cliente-v2 .skeleton--medio {
+  width: 260px;
+}
+.cliente-v2 .skeleton--badge {
+  display: inline-block;
+  height: 24px;
+  width: 96px;
+  border-radius: 16px;
+  margin: 0 8px 8px 0;
+}
+.cliente-v2 .skeleton--estado {
+  height: 18px;
+  width: 130px;
+  margin-bottom: 10px;
+}
+
 /* En anchos angostos (widget/modal de Monday) las filas se apilan sin desbordar. */
 @media (max-width: 680px) {
   .cliente-v2 .kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .cliente-v2 .credito-fila2 {
-    grid-template-columns: 1fr;
+  .cliente-v2 .kpi-grid--3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .cliente-v2 .credito-fila-inferior {
+    gap: 24px;
   }
 }
 
@@ -426,15 +512,33 @@
   font-weight: 700;
   margin-bottom: 20px;
 }
-.cliente-v2 .form-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+/* Fechas + moneda en una sola fila horizontal, compacta. */
+.cliente-v2 .datos-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 24px;
 }
 .cliente-v2 .form-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* Contenedores ~40% más angostos que el input original (229px → ~138px). */
+.cliente-v2 .datos-row .form-group {
+  width: 138px;
+  flex: 0 0 auto;
+}
+/* Las tres fechas son datos planos: sin caja de input, sólo ícono + texto. */
+.cliente-v2 .dato-plano {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-main);
+  min-height: 40px;
 }
 .cliente-v2 .form-group > label {
   font-size: 13px;

@@ -1,45 +1,18 @@
 import type { ResumenCobro } from '@/lib/cobros'
 import { money } from '@/lib/format'
 import type { Cliente } from '@/types'
+import { MetricaCobro } from './MetricaCobro'
 
 interface CabeceraCobroProps {
   cliente: Cliente
   resumen: ResumenCobro
 }
 
-/** Métrica de la cabecera: icono en pastilla, rótulo y cifra. */
-function Metrica({
-  icono,
-  tono,
-  rotulo,
-  valor,
-  nota,
-}: {
-  icono: string
-  tono: 'azul' | 'verde' | 'rojo'
-  rotulo: string
-  valor: string
-  /** Aclaración al pie de la cifra, cuando el número solo no explica la cuenta. */
-  nota?: string
-}) {
-  return (
-    <div className="cobro-cab-met">
-      <span className={`cobro-cab-ic cobro-cab-ic--${tono}`}>
-        <i className={`fas ${icono}`} />
-      </span>
-      <div className="cobro-cab-campo">
-        <span className="cobro-cab-lbl cobro-cab-lbl--met">{rotulo}</span>
-        <span className={`cobro-cab-num cobro-cab-num--${tono}`}>{valor}</span>
-        {nota && <span className="cobro-cab-nota">{nota}</span>}
-      </div>
-    </div>
-  )
-}
-
 /**
- * Cabecera del cierre de venta: de quién es la venta, bajo qué condición se cobra y los tres
- * números que resumen el cobro. Vive dentro del desplegable, arriba del formulario, para que
- * al cargar cada pago se vea cuánto falta.
+ * Cabecera del cierre de venta: de quién es la venta, bajo qué condición se cobra y los números
+ * que resumen el cobro. Vive dentro del desplegable, arriba del formulario, para que al cargar
+ * cada pago se vea cuánto falta. Las tres métricas van juntas: TOTAL VENTA, TOTAL COBRADO y
+ * DIFERENCIA.
  */
 export function CabeceraCobro({ cliente, resumen }: CabeceraCobroProps) {
   /* Sin recortar en cero: si lo cargado se pasa del total, el número tiene que decirlo.
@@ -66,30 +39,24 @@ export function CabeceraCobro({ cliente, resumen }: CabeceraCobroProps) {
       <span className="cobro-cab-sep" />
 
       <div className="cobro-cab-mets">
-        <Metrica
+        <MetricaCobro
           icono="fa-file-invoice-dollar"
           tono="azul"
-          rotulo="TOTAL A COBRAR"
+          rotulo="TOTAL VENTA"
           valor={money(resumen.totalACobrar)}
         />
-        {/* Los descuentos cancelan igual que la plata: sin la nota, la resta no cierra. */}
-        <Metrica
+        <MetricaCobro
           icono="fa-hand-holding-dollar"
           tono="verde"
           rotulo="TOTAL COBRADO"
           valor={money(resumen.totalCobrado)}
-          nota={
-            resumen.descuentoTotal > 0
-              ? `+ ${money(resumen.descuentoTotal)} en descuentos`
-              : undefined
-          }
         />
-        <Metrica
+        <MetricaCobro
           icono="fa-receipt"
           tono="rojo"
-          rotulo="RESTANTE"
+          rotulo="DIFERENCIA"
           valor={restante < 0 ? `- ${money(-restante)}` : money(restante)}
-          nota={restante < 0 ? 'Se pasa del total a cobrar' : undefined}
+          nota={restante < 0 ? 'Se pasa del total de la venta' : undefined}
         />
       </div>
     </div>

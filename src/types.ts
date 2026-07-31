@@ -1,6 +1,6 @@
 /** Modelo de dominio. La capa de servicio (v2) debe devolver exactamente estas formas. */
 
-export type Operacion = 'PRESUPUESTAR' | 'CARGAR VENTA' | 'REMITO'
+export type Operacion = 'PRESUPUESTAR' | 'VENTA' | 'VENTA PROFORMA' | 'REMITO'
 
 export type Paso =
   | 'inicio'
@@ -8,14 +8,18 @@ export type Paso =
   | 'productos'
   | 'emision'
   | 'venta'
+  | 'venta-proforma'
   | 'remito'
   | 'cobro'
+  | 'entrega'
   | 'factura'
   | 'remito-productos'
   | 'remito-envio'
   | 'remito-emision'
 
 export interface Vendedor {
+  /** ID numérico del usuario de Monday. Se guarda para asignar la venta en las mutaciones. */
+  id: string
   ini: string
   name: string
   color: string
@@ -47,6 +51,32 @@ export interface CuentaBancaria {
 
 /** Por dónde se identificó la cuenta al transferir. */
 export type MedioTransferencia = 'CBU' | 'ALIAS'
+
+/** Marca de la tarjeta, para los cobros con débito o crédito. */
+export type TarjetaTipo = 'VISA' | 'MASTERCARD'
+
+/** Formato de un cheque: papel (físico) o electrónico. */
+export type FormatoCheque = 'FISICO' | 'eCheq'
+
+/**
+ * Forma de pago elegida en la selección de productos de una VENTA: define el ramal del cobro.
+ * Débito y crédito son formas de pago INDEPENDIENTES —no un subtipo de "tarjetas"—, así que se
+ * eligen de una sola vez, sin un segundo selector.
+ */
+export type FormaPagoVenta =
+  | 'CONTADO'
+  | 'CUENTA CORRIENTE'
+  | 'TARJETA DE DEBITO'
+  | 'TARJETA DE CREDITO'
+
+/** Qué tipo de tarjeta es una forma de pago con tarjeta. Lo usa el formulario del cobro. */
+export type TipoTarjetaCobro = 'DEBITO' | 'CREDITO'
+
+/** Cuenta bancaria propia de La Batea (ítems "Ctas Bancarias Propias" del board de config). */
+export interface CuentaPropia {
+  id: string
+  name: string
+}
 
 export interface Cliente {
   /** ID del ítem en Monday: se usa para linkear y consultar, no se muestra. */
@@ -94,6 +124,11 @@ export interface Producto {
   codigo: string
   nombre: string
   precio: number
+  /** Precio de lista en su moneda (con IVA si corresponde) SIN redondear. En productos en dólares
+   *  se convierte a pesos con la tasa del día usando este valor de precisión completa, y recién el
+   *  resultado en pesos se redondea (convertir el precio ya redondeado a 2 dec pierde el 3er
+   *  decimal del dólar, que al cambio son ~1,5 pesos). */
+  precioBase?: number
   rentabilidad: number
   provCod: string
   provNombre: string
@@ -101,6 +136,12 @@ export interface Producto {
   provId?: string
   /** Tipo de mercadería: 'CO' (consignada) o 'COM' (común). Parte la venta en comprobantes. */
   tipo: string
+  /** Moneda del producto ("Dolares" / "Pesos"). En dólares, el precio se convierte a pesos con la
+   *  tasa de cambio del día antes de cargarlo. */
+  moneda?: string
+  /** Precio ORIGINAL en dólares, guardado antes de convertir a pesos. Sólo se setea cuando el
+   *  producto estaba en "Dolares"; sirve de auditoría en la venta (numeric_mm5s58ej). */
+  precioUsd?: number
   /**
    * Alícuota de IVA del producto, en % ("✋IVA" del maestro). Se lee al cargar el producto y
    * viaja con la línea: es la que se declara en cada línea del comprobante.
@@ -161,8 +202,21 @@ export interface PresupuestoProducto {
   descuento?: number
   /** Tipo de mercadería espejado del maestro: 'CO' (consignada) o 'COM'. */
   tipo?: string
+  /** Si el producto admite comisión (mirror "✋Comision" del subelemento del presupuesto). */
+  comisionable?: boolean
+  /** % de comisión del producto (del Maestro): Activa = CON PRESUPUESTO PREVIO, Pasiva = DIRECTA. */
+  porcComActiva?: number
+  porcComPasiva?: number
   /** Alícuota de IVA del producto, en %. Se declara en la línea del comprobante. */
   iva?: number
+  /** Unidad de medida del producto. La venta CON PROFORMA la mapea del subelemento (lookup). */
+  um?: string
+  /** Valores YA calculados leídos del subelemento de la proforma (venta CON PROFORMA), para
+   *  mostrarlos tal cual en la tabla en vez de recalcularlos: importe bonificado por unidad, IVA en
+   *  $ de la línea y total de la línea. */
+  impBonificado?: number
+  ivaMonto?: number
+  totalLinea?: number
   /** Proveedor del producto: la mercadería consignada se factura por proveedor. */
   proveedorId?: string
   proveedorNombre?: string
@@ -270,7 +324,7 @@ export type FormaPago =
   | 'Tarjeta de débito'
   | 'Tarjeta de crédito'
 
-/** Un pago concreto del cobro. La forma de pago define su descuento. */
+/** Un pago concreto del cobro. La forma de pago define su descuento y qué datos extra pide. */
 export interface MovimientoPago {
   id: string
   formaPago: FormaPago
@@ -278,10 +332,19 @@ export interface MovimientoPago {
   referencia: string
   /** Sólo cheque: debe vencer después de la emisión de la factura. */
   chequeVencimiento: string
-  /** Sólo transferencia: a qué cuenta del cliente entró el dinero. */
-  cuentaBancaria?: CuentaBancaria | null
-  /** Sólo transferencia: si la cuenta se identificó por CBU o por alias. */
-  medioTransferencia?: MedioTransferencia | null
+  /** Cheque: número, fecha de emisión (dd/mm/aaaa) y banco emisor. */
+  numeroCheque?: string
+  fechaEmisionCheque?: string
+  bancoEmisor?: string
+  /** Cheque: formato del documento, físico o electrónico (eCheq). */
+  formatoCheque?: FormatoCheque
+  /** Transferencia: nombre de la cuenta propia elegida y del archivo de comprobante cargado. */
+  cuentaPropia?: string | null
+  comprobanteNombre?: string
+  /** Tarjeta (débito/crédito): banco y marca; las cuotas sólo aplican al crédito. */
+  bancoTarjeta?: string
+  tipoTarjeta?: TarjetaTipo | null
+  cuotas?: number
 }
 
 /**

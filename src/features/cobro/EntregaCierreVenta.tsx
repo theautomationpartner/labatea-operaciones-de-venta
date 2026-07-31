@@ -3,7 +3,8 @@ import { getComisionistas, getRutasEntrega, type RutaEntrega } from '@/services/
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Comisionista, ResponsableEntrega } from '@/types'
 
-/** Las tres opciones de quién entrega, iguales a las del Remito. */
+/** Las tres opciones de quién entrega, iguales a las del Remito. El padding interno lo pone el CSS
+ *  (uniforme en las tres), no cada card. */
 const OPCIONES: { id: ResponsableEntrega; label: string; icon: string; desc: string }[] = [
   { id: 'LA_BATEA', label: 'La Batea', icon: 'fa-truck-fast', desc: 'Flota propia de La Batea' },
   { id: 'COMISIONISTA', label: 'Comisionista', icon: 'fa-people-carry-box', desc: 'Traslado tercerizado' },
@@ -74,21 +75,19 @@ export function EntregaCierreVenta() {
     dispatch({ type: 'setEntregaVenta', patch: { rutaId: id, rutaNombre: r?.name ?? '' } })
   }
 
-  // Elegir el mismo responsable lo deselecciona; cambiarlo limpia los datos anteriores.
+  /* Radio group de opción única: elegir una reemplaza a la anterior. El estado es mutable y se
+     puede cambiar libremente entre las tres en cualquier momento; cambiar de opción limpia los
+     datos de la que estaba elegida. */
   const elegir = (id: ResponsableEntrega) =>
-    dispatch({
-      type: 'setEntregaVentaResponsable',
-      value: responsable === id ? null : id,
-    })
+    dispatch({ type: 'setEntregaVentaResponsable', value: id })
 
-  /* La opción elegida está "completa" cuando tiene sus datos: es lo que enciende el tilde. */
+  /* La opción elegida está "completa" cuando tiene sus datos: es lo que enciende el tilde. El
+     cliente responsable no pide datos extra, así que alcanza con elegirlo. */
   const entregaCompleta = esLaBatea
     ? entregaVenta.rutaConfirmada
     : esComisionista
       ? Boolean(entregaVenta.comisionistaId)
       : responsable === 'CLIENTE'
-        ? entregaVenta.responsableNombre.trim().length > 0
-        : false
 
   /* Se puede plegar una vez elegida una opción; hasta entonces queda siempre abierto (como el
      Remito). Al plegarlo se muestra un resumen corto en la cabecera. */
@@ -99,7 +98,7 @@ export function EntregaCierreVenta() {
     : esComisionista
       ? `Comisionista · ${entregaVenta.comisionistaNombre || '—'}`
       : responsable === 'CLIENTE'
-        ? `Cliente · ${entregaVenta.responsableNombre || '—'}`
+        ? 'Cliente'
         : ''
 
   return (
@@ -117,7 +116,8 @@ export function EntregaCierreVenta() {
           </button>
         )}
 
-        <span className="font-b">
+        {/* +5px sobre el tamaño base: es una de las preguntas principales de la etapa. */}
+        <span className="font-b" style={{ fontSize: 19 }}>
           <i className="fas fa-truck" /> ¿Quién entrega la mercadería?
         </span>
 
@@ -133,8 +133,9 @@ export function EntregaCierreVenta() {
 
       {cuerpoVisible && (
         <div className="cobro-acc-body">
-          {/* Al elegir una, las otras dos quedan anuladas (deshabilitadas). */}
-          <div className="entrega-opts">
+          {/* Radio group: una sola activa a la vez, pero todas siguen clickeables para poder
+              cambiar libremente de opción. Cada card lleva su padding propio. */}
+          <div className="entrega-opts" role="radiogroup" aria-label="¿Quién entrega la mercadería?">
             {OPCIONES.map((opt) => {
               const activa = responsable === opt.id
               return (
@@ -142,8 +143,8 @@ export function EntregaCierreVenta() {
                   type="button"
                   key={opt.id}
                   className={`entrega-opt ${activa ? 'active' : ''}`}
-                  disabled={responsable !== null && !activa}
-                  aria-pressed={activa}
+                  role="radio"
+                  aria-checked={activa}
                   onClick={() => elegir(opt.id)}
                 >
                   <span className="entrega-opt-ic">
@@ -260,26 +261,7 @@ export function EntregaCierreVenta() {
             </div>
           )}
 
-          {/* CLIENTE RESPONSABLE: nombre de quien retira (igual que el Remito). */}
-          {responsable === 'CLIENTE' && (
-            <div className="card card--config card--flush entrega-form">
-              <h3 className="ctitle">
-                <i className="fas fa-user-check" /> Cliente responsable
-              </h3>
-              <div className="igp">
-                <label htmlFor="entrega-resp-nombre">Nombre del responsable</label>
-                <input
-                  id="entrega-resp-nombre"
-                  className="full"
-                  placeholder="Ingresá el nombre del responsable"
-                  value={entregaVenta.responsableNombre}
-                  onChange={(e) =>
-                    dispatch({ type: 'setEntregaVenta', patch: { responsableNombre: e.target.value } })
-                  }
-                />
-              </div>
-            </div>
-          )}
+          {/* CLIENTE RESPONSABLE: es sólo una opción clickeable, sin datos extra que cargar. */}
         </div>
       )}
     </div>

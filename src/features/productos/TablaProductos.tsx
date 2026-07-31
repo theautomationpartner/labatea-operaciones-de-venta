@@ -19,26 +19,62 @@ export interface FilaProducto {
   producto?: Producto
   /** Tope de unidades. Los botones no lo pasan; escrito a mano, marca la celda en rojo. */
   cantidadMax?: number
+  /** Valores YA calculados (venta CON PROFORMA): se muestran tal cual, sin recalcular. Importe
+   *  bonificado por unidad, IVA en $ de la línea y total de la línea, leídos de la proforma. */
+  impBonif?: number
+  ivaMonto?: number
+  totalLinea?: number
 }
 
 interface TablaProductosProps {
   titulo: string
   filas: FilaProducto[]
-  onRemove: (id: string) => void
+  /** Quitar una línea. Se omite en modo sólo lectura (la columna de acciones no se muestra). */
+  onRemove?: (id: string) => void
   /** Habilita editar la cantidad desde la tabla (el tope lo pone el reducer). */
   onCantidad?: (id: string, cantidad: number) => void
   /** Habilita editar el descuento desde la tabla. Sólo se avisa con un valor válido. */
   onDescuento?: (id: string, descuento: number) => void
+  /**
+   * Sólo lectura estricta: sin edición de cantidad/descuento (no se pasan los handlers) y sin
+   * columna de acciones (no se puede quitar una línea). La venta CON PROFORMA la usa: todo o nada.
+   */
+  soloLectura?: boolean
   /** Piso de la cantidad: 1 en el presupuesto (una línea en cero no existe), 0 en la venta. */
   cantidadMin?: number
-  /** Presente sólo en la venta: agrega la columna de comisión. */
-  comisionPct?: number
+  /**
+   * Descuento por forma de pago (pronto pago), en puntos porcentuales. Se compone con el
+   * descuento manual de cada fila para la bonificación, el total y el IVA. 0 = sin forma de pago.
+   */
+  descFormaPago?: number
+  /** Muestra la columna "IVA ($)" antes del total. Sólo en la VENTA, que sí liquida IVA. */
+  mostrarIva?: boolean
   /** Se monta dentro de la misma card, debajo de la tabla. */
   footer?: ReactNode
 }
 
-const subtotalDe = (f: FilaProducto) => round2(f.precio * f.cantidad)
-const totalDe = (f: FilaProducto) => round2(subtotalDe(f) * (1 - f.descuento / 100))
+/** Alícuota de IVA por defecto cuando el producto no trae la suya. */
+const IVA_DEFECTO = 21
+
+/** Descuento total de la fila: el manual más el de la forma de pago, topeado en 100%. */
+const descTotalDe = (f: FilaProducto, descFormaPago: number) =>
+  Math.min(f.descuento + descFormaPago, 100)
+
+/**
+ * Importe bonificado de UNA unidad, en pesos: precio × (%desc manual + %desc forma de pago).
+ * Es lo que se descuenta por unidad, no el precio resultante. Si la fila ya trae el valor calculado
+ * (venta CON PROFORMA), se usa ése tal cual.
+ */
+const bonifUnitDe = (f: FilaProducto, descFormaPago: number) =>
+  f.impBonif ?? round2(f.precio * (descTotalDe(f, descFormaPago) / 100))
+
+/** Importe total de la línea: (precio unitario − bonificación por unidad) × cantidad (o el guardado). */
+const subtotalDe = (f: FilaProducto, descFormaPago: number) =>
+  f.totalLinea ?? round2((f.precio - bonifUnitDe(f, descFormaPago)) * f.cantidad)
+
+/** IVA en pesos de la línea, sobre el importe ya bonificado (o el guardado). */
+const ivaDe = (f: FilaProducto, descFormaPago: number) =>
+  f.ivaMonto ?? round2((subtotalDe(f, descFormaPago) * (f.producto?.iva ?? IVA_DEFECTO)) / 100)
 
 /**
  * Descuento editable en la fila. Guarda lo tipeado para poder escribir "1," o "1.5" sin
@@ -99,8 +135,8 @@ function CeldaDescuento({
 }
 
 /**
- * Tabla de líneas de la operación. La comparten PRESUPUESTAR y CARGAR VENTA: misma
- * estructura y mismo comportamiento, salvo la cantidad editable y la comisión.
+ * Tabla de líneas de la operación. La comparten PRESUPUESTAR y VENTA: misma
+ * estructura y mismo comportamiento, salvo la cantidad editable.
  */
 export function TablaProductos({
   titulo,
@@ -108,13 +144,15 @@ export function TablaProductos({
   onRemove,
   onCantidad,
   onDescuento,
+  soloLectura = false,
   cantidadMin = 0,
-  comisionPct,
+  descFormaPago = 0,
+  mostrarIva = false,
   footer,
 }: TablaProductosProps) {
   const [expandidas, setExpandidas] = useState<ReadonlySet<string>>(new Set())
-  const conComision = comisionPct !== undefined
-  const columnas = conComision ? 11 : 10
+  // Base 10; +1 con la columna de IVA ($); −1 sin la columna de acciones (sólo lectura).
+  const columnas = 10 + (mostrarIva ? 1 : 0) - (soloLectura ? 1 : 0)
 
   const toggle = (id: string) =>
     setExpandidas((prev) => {
@@ -135,13 +173,13 @@ export function TablaProductos({
             <th style={{ width: 40 }} />
             <th colSpan={2}>Producto</th>
             <th className="ta-c">Cant.</th>
-            <th className="ta-r">P. unit.</th>
-            <th className="ta-r">Subtotal</th>
+            <th className="ta-r">P. Unit</th>
             <th className="ta-c">Desc.</th>
             <th className="ta-c col-rent">Rentab.</th>
-            {conComision && <th className="ta-c">Comis.</th>}
-            <th className="ta-r">Total</th>
-            <th className="ta-c">Acc.</th>
+            <th className="ta-r">Importe Bonif.</th>
+            {mostrarIva && <th className="ta-r">IVA ($)</th>}
+            <th className="ta-r">Importe Total</th>
+            {!soloLectura && <th className="ta-c">Acc.</th>}
           </tr>
         </thead>
         <tbody>
@@ -149,7 +187,7 @@ export function TablaProductos({
             const abierta = expandidas.has(fila.id)
             const tope = fila.cantidadMax
             const excede = tope !== undefined && fila.cantidad > tope
-            const rentFila = rentabilidadEfectiva(fila.rentabilidad, fila.descuento)
+            const rentFila = rentabilidadEfectiva(fila.rentabilidad, descTotalDe(fila, descFormaPago))
             return (
               <Fragment key={fila.id}>
                 <tr>
@@ -213,9 +251,6 @@ export function TablaProductos({
                   <td className="ta-r" style={{ fontWeight: 600 }}>
                     {money(fila.precio)}
                   </td>
-                  <td className="ta-r" style={{ fontWeight: 600 }}>
-                    {money(subtotalDe(fila))}
-                  </td>
                   <td className="ta-c" style={{ fontWeight: 600 }}>
                     {onDescuento ? (
                       <CeldaDescuento fila={fila} onDescuento={onDescuento} />
@@ -231,22 +266,29 @@ export function TablaProductos({
                   >
                     {pctDec(rentFila)}
                   </td>
-                  {conComision && (
-                    <td className="ta-c" style={{ fontWeight: 600 }}>
-                      {comisionPct}%
+                  {/* Importe Bonif.: lo bonificado por unidad en $ (desc manual + forma de pago). */}
+                  <td className="ta-r" style={{ fontWeight: 600 }}>
+                    {money(bonifUnitDe(fila, descFormaPago))}
+                  </td>
+                  {/* IVA ($): sobre el importe ya bonificado de la línea. Sólo en la venta. */}
+                  {mostrarIva && (
+                    <td className="ta-r" style={{ fontWeight: 600 }}>
+                      {money(ivaDe(fila, descFormaPago))}
                     </td>
                   )}
                   <td className="ta-r" style={{ fontWeight: 700 }}>
-                    {money(totalDe(fila))}
+                    {money(subtotalDe(fila, descFormaPago))}
                   </td>
-                  <td className="ta-c">
-                    <i
-                      className="far fa-trash-alt trash"
-                      role="button"
-                      aria-label={`Quitar ${fila.nombre}`}
-                      onClick={() => onRemove(fila.id)}
-                    />
-                  </td>
+                  {!soloLectura && (
+                    <td className="ta-c">
+                      <i
+                        className="far fa-trash-alt trash"
+                        role="button"
+                        aria-label={`Quitar ${fila.nombre}`}
+                        onClick={() => onRemove?.(fila.id)}
+                      />
+                    </td>
+                  )}
                 </tr>
 
                 {abierta && fila.producto && (

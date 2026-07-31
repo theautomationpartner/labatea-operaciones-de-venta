@@ -80,7 +80,8 @@
   font-size: 15px;
   border: 1px solid var(--p-border);
   border-radius: var(--p-radius-md);
-  background: var(--p-bg-input);
+  /* Fondo blanco, igual que el buscador de clientes: unifica el aspecto de los dos buscadores. */
+  background: #fff;
   outline: none;
   transition: all 0.2s;
   color: var(--p-text-main);
@@ -651,7 +652,8 @@
   background: none;
 }
 .productos-v2 .tablec th {
-  padding: 12px 18px;
+  /* Padding horizontal ajustado para dar lugar a la columna "P. Unit c/Desc" sin desbordar. */
+  padding: 12px 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--p-text-secondary);
@@ -659,7 +661,7 @@
   white-space: nowrap;
 }
 .productos-v2 .tablec td {
-  padding: 16px 18px;
+  padding: 16px 12px;
   font-size: 14px;
   border-bottom: 1px solid var(--p-border);
   vertical-align: middle;
@@ -668,7 +670,7 @@
 .productos-v2 .tablec td.ta-r,
 .productos-v2 .tablec th.ta-r {
   white-space: nowrap;
-  min-width: 132px;
+  min-width: 108px;
 }
 .productos-v2 .tablec td.ta-c,
 .productos-v2 .tablec th.ta-c {
@@ -684,7 +686,7 @@
 }
 /* El nombre del producto es lo único que cede ancho cuando falta espacio. */
 .productos-v2 .tablec tbody td:nth-child(3) {
-  min-width: 260px;
+  min-width: 200px;
 }
 .productos-v2 .tablec tbody tr:hover {
   background: #f9fafb;
@@ -811,15 +813,16 @@
 }
 .productos-v2 .sub-row {
   display: flex;
+  /* Rótulo a la izquierda y su importe a la derecha, separados por todo el ancho de la fila. */
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   font-size: 14px;
   color: var(--p-text-secondary);
 }
 .productos-v2 .total-row {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   font-size: 18px;
   font-weight: 800;
   color: var(--p-text-main);
@@ -832,14 +835,23 @@
   color: var(--p-text-secondary);
   font-weight: 600;
   text-transform: uppercase;
+  /* Pequeña separación con los indicadores que lleva debajo. */
+  padding-bottom: 5px;
 }
-/* Rentabilidad y crédito en una sola tarjeta: dos anillos y el detalle de importes. */
+/* Rentabilidad y crédito en una sola tarjeta: dos anillos y el detalle de importes, separados
+   por una LÍNEA DIVISORA VERTICAL con padding parejo a ambos lados. */
 .productos-v2 .indicadores-layout {
   display: flex;
   align-items: center;
+  justify-content: space-around;
   gap: 24px;
   margin-top: 8px;
   flex-wrap: wrap;
+}
+/* Divisor vertical entre la rentabilidad (primer anillo) y el bloque de crédito. */
+.productos-v2 .indicadores-layout > .donut-container:first-child {
+  border-right: 1px solid var(--p-border);
+  padding-right: 24px;
 }
 .productos-v2 .indicadores-layout .credit-details {
   min-width: 200px;
@@ -1208,9 +1220,20 @@
 }
 
 /* --- Totales de dos columnas (factura: sin rentabilidad) --- */
-/* Dos tarjetas: la de indicadores necesita ancho para los dos anillos y los importes. */
+/* Importes (izq.) y rentabilidad+crédito (der.) forman UN ÚNICO panel: sin gap ni margen entre
+   ellos. La card de importes pierde su borde/redondeo derecho para unirse con la de la derecha. */
 .productos-v2 .totals-grid--2 {
   grid-template-columns: 1fr 1.8fr;
+  column-gap: 0;
+}
+.productos-v2 .totals-grid--2 > .kpi-card:first-child {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.productos-v2 .totals-grid--2 > .kpi-card:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 /* Fila con control dentro de una tarjeta de totales (¿es con envío?). */
 .productos-v2 .kpi-control {

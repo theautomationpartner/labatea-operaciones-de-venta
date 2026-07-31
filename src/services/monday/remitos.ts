@@ -290,7 +290,6 @@ async function indicesVentaRemito(): Promise<{ posterior: number | null; anterio
 export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
   const {
     clienteId,
-    nombre,
     tipoEmision,
     responsable,
     destinoId,
@@ -346,7 +345,8 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv, create_labels_if_missing: true) { id }
     }`,
-    { boardId: BOARDS.remitos, name: nombre, cv: JSON.stringify(cabecera) },
+    // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+    { boardId: BOARDS.remitos, name: 'Remito', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
 
@@ -462,7 +462,8 @@ export async function crearVtaPendienteFacturar(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.vtasPendFacturar, name: nombre, cv: JSON.stringify(cabecera) },
+    // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+    { boardId: BOARDS.vtasPendFacturar, name: 'Vtas Pend de Facturar', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
 
@@ -766,16 +767,27 @@ export interface LineaEntregaAnterior {
   ventaSubitemId?: string
 }
 
-/** BULK A: crea el subítem de historial de entrega en cada "Pends de Entrega" (por lote, con alias). */
-async function bulkAEntrega(items: LineaEntregaAnterior[]): Promise<void> {
+/**
+ * BULK A: crea el subítem de historial de entrega en cada "Pends de Entrega" (por lote, con alias)
+ * y, en la MISMA solicitud, linkea el remito emitido en la columna a nivel ítem del pendiente
+ * (board_relation_mkwbvma5). El id del remito se reusa como `item_id` del cambio de columna.
+ */
+async function bulkAEntrega(items: LineaEntregaAnterior[], remitoId?: string): Promise<void> {
   const conPend = items.filter((l) => l.pendienteEntregaId && l.cantidad > 0)
   if (conPend.length === 0) return
   const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
     `query { boards(ids: [${BOARDS.pendientesEntregaSub}]) { columns(ids: ["${COL.pendienteEntregaSub.tipoRto}"]) { settings_str } } }`,
   )
   const idx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, ['RTO Entrega A Cliente'])
+  // Valor del enlace al remito (mismo para todos los pendientes), sólo si vino un id válido.
+  const rcv =
+    remitoId && Number.isFinite(Number(remitoId))
+      ? JSON.stringify({ [COL.pendienteEntregaItem.remito]: { item_ids: [Number(remitoId)] } })
+      : null
   const variables: Record<string, unknown> = {}
-  const campos = conPend.map((l, i) => {
+  const campos: string[] = []
+  const decls: string[] = []
+  conPend.forEach((l, i) => {
     const cv: Record<string, unknown> = {
       [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
     }
@@ -783,10 +795,20 @@ async function bulkAEntrega(items: LineaEntregaAnterior[]): Promise<void> {
     variables[`p${i}`] = l.pendienteEntregaId
     variables[`pn${i}`] = l.nombre
     variables[`pcv${i}`] = JSON.stringify(cv)
-    return `p${i}: create_subitem(parent_item_id: $p${i}, item_name: $pn${i}, column_values: $pcv${i}) { id }`
+    decls.push(`$p${i}: ID!, $pn${i}: String!, $pcv${i}: JSON!`)
+    campos.push(
+      `p${i}: create_subitem(parent_item_id: $p${i}, item_name: $pn${i}, column_values: $pcv${i}) { id }`,
+    )
+    // Enlace del remito a nivel ítem del pendiente, reutilizando su id como item_id.
+    if (rcv) {
+      variables[`rcv${i}`] = rcv
+      decls.push(`$rcv${i}: JSON!`)
+      campos.push(
+        `r${i}: change_multiple_column_values(item_id: $p${i}, board_id: ${BOARDS.pendientesEntrega}, column_values: $rcv${i}) { id }`,
+      )
+    }
   })
-  const decl = conPend.map((_, i) => `$p${i}: ID!, $pn${i}: String!, $pcv${i}: JSON!`).join(', ')
-  await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, variables)
+  await mondayApi(`mutation (${decls.join(', ')}) { ${campos.join('\n')} }`, variables)
 }
 
 /** BULK B: acumula lo entregado en el subelemento de la Venta (numeric_mm54v0jd; nulo → 0). */
@@ -823,9 +845,12 @@ async function bulkBVenta(items: LineaEntregaAnterior[]): Promise<void> {
  * Se lanzan con `Promise.all` (no encadenadas: NO se espera A para lanzar B). El llamador la dispara
  * sin bloquear el cierre del remito (fire-and-forget).
  */
-export async function afectarEntregaAnterior(items: LineaEntregaAnterior[]): Promise<void> {
+export async function afectarEntregaAnterior(
+  items: LineaEntregaAnterior[],
+  remitoId?: string,
+): Promise<void> {
   if (!mondayHabilitado()) return
-  await Promise.all([bulkAEntrega(items), bulkBVenta(items)])
+  await Promise.all([bulkAEntrega(items, remitoId), bulkBVenta(items)])
 }
 
 /** Una línea a conciliar: su cantidad remitada y los ítems de pendiente/stock a afectar. */

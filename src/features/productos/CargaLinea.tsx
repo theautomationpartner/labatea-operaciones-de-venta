@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { money, pctDec } from '@/lib/format'
+import { money, pctDec, round2 } from '@/lib/format'
 import { rentabilidadEfectiva } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
@@ -18,6 +18,8 @@ interface CargaLineaProps {
    * cantidad: es un documento logístico (remito), no financiero. Por defecto se muestran.
    */
   showFinancialData?: boolean
+  /** Se está trayendo la cotización del dólar para convertir el precio: input en carga y "Agregar" off. */
+  convirtiendo?: boolean
 }
 
 /**
@@ -31,6 +33,7 @@ export function CargaLinea({
   onAdd,
   bloqueado = false,
   showFinancialData = true,
+  convirtiendo = false,
 }: CargaLineaProps) {
   const { topesDescuento } = useApp()
   const [cantidad, setCantidad] = useState(1)
@@ -59,6 +62,14 @@ export function CargaLinea({
      previsto coincide con el que termina en la lista. Se recalcula en cada tecleo/cambio. */
   const rentabilidadPrevista = producto
     ? rentabilidadEfectiva(producto.rentabilidad, Number(descuento) || 0)
+    : 0
+
+  /* Importe total de esta configuración, recalculado en vivo con cada cambio de cantidad o
+     descuento (ambos son estado → re-render):
+       Paso 1: precio unitario con su descuento = precio − (precio × desc%/100)
+       Paso 2: × cantidad */
+  const importeTotal = producto
+    ? round2(producto.precio * (1 - (Number(descuento) || 0) / 100) * cantidad)
     : 0
 
   return (
@@ -136,13 +147,15 @@ export function CargaLinea({
             <>
               <div className="control-item">
                 <label htmlFor="pprice">Precio</label>
-                {/* El precio sale de la lista del cliente en Monday: se muestra, no se edita. */}
+                {/* El precio sale de la lista del cliente en Monday: se muestra, no se edita. Si el
+                    producto está en dólares, mientras llega la cotización se muestra "Convirtiendo…";
+                    al resolverse, el input ya trae el precio convertido a pesos. */}
                 <input
                   id="pprice"
                   type="text"
                   className="std-input"
                   placeholder="$ 0"
-                  value={producto ? money(producto.precio) : ''}
+                  value={convirtiendo ? 'Convirtiendo…' : producto ? money(producto.precio) : ''}
                   readOnly
                 />
               </div>
@@ -189,6 +202,21 @@ export function CargaLinea({
                   aria-label="Rentabilidad prevista del producto con el descuento aplicado"
                 />
               </div>
+
+              {/* Importe total de la configuración: reacciona en vivo a la cantidad y el descuento. */}
+              <div className="control-item control-item--total">
+                <label htmlFor="ptotal">Importe Total</label>
+                <input
+                  id="ptotal"
+                  type="text"
+                  className="std-input"
+                  readOnly
+                  placeholder="$ 0"
+                  value={producto ? money(importeTotal) : ''}
+                  style={{ color: 'var(--primary-blue)', fontWeight: 800 }}
+                  aria-label="Importe total del producto con el descuento y la cantidad aplicados"
+                />
+              </div>
             </>
           )}
 
@@ -198,19 +226,34 @@ export function CargaLinea({
             <button
               type="button"
               className="btn-primary"
-              disabled={!producto || !descuentoOk.ok || bloqueado}
+              disabled={!producto || !descuentoOk.ok || bloqueado || convirtiendo}
+              aria-busy={convirtiendo}
               title={
-                bloqueado
-                  ? 'Se alcanzó el límite de crédito: quitá productos para poder cargar más.'
-                  : descuentoOk.ok
-                    ? ''
-                    : descuentoOk.mensaje
+                convirtiendo
+                  ? 'Convirtiendo el precio a pesos con la cotización del dólar…'
+                  : bloqueado
+                    ? 'Se alcanzó el límite de crédito: quitá productos para poder cargar más.'
+                    : descuentoOk.ok
+                      ? ''
+                      : descuentoOk.mensaje
               }
               onClick={() =>
-                producto && descuentoOk.ok && !bloqueado && onAdd(cantidad, Number(descuento) || 0)
+                producto &&
+                descuentoOk.ok &&
+                !bloqueado &&
+                !convirtiendo &&
+                onAdd(cantidad, Number(descuento) || 0)
               }
             >
-              <i className="fas fa-plus" /> Agregar
+              {convirtiendo ? (
+                <>
+                  <i className="fas fa-circle-notch spin" /> Convirtiendo…
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-plus" /> Agregar
+                </>
+              )}
             </button>
           </div>
         </div>

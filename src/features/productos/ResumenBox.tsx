@@ -8,10 +8,14 @@ interface ResumenBoxProps {
   credito: ImpactoCredito
   /** Límite de crédito asignado al cliente. */
   limite: number
-  /** Sólo en CARGAR VENTA: el presupuesto no liquida comisión. */
+  /** Sólo en VENTA: el presupuesto no liquida comisión. */
   comision?: { pct: number; monto: number }
-  /** Sólo en CARGAR VENTA: el presupuesto no liquida IVA, así que no lo muestra. */
+  /** Sólo en VENTA: el presupuesto no liquida IVA, así que no lo muestra. */
   mostrarIva?: boolean
+  /** Muestra ÚNICAMENTE el total (sin Subtotal ni Descuento global). */
+  soloTotal?: boolean
+  /** Etiqueta del renglón de total (ej. "TOTAL PRESUPUESTADO"). */
+  totalLabel?: string
 }
 
 /** Umbrales del semáforo de rentabilidad general de la operación. */
@@ -32,6 +36,8 @@ export function ResumenBox({
   limite,
   comision,
   mostrarIva = true,
+  soloTotal = false,
+  totalLabel = 'TOTAL',
 }: ResumenBoxProps) {
   const colorCredito = credito.critico ? 'var(--p-danger)' : 'var(--p-success)'
   const colorRent = colorRentabilidad(resumen.rentabilidad)
@@ -43,34 +49,39 @@ export function ResumenBox({
     <div className="totals-grid totals-grid--2" aria-label={titulo}>
       <div className="kpi-card">
         <div className="subtotal-lines">
-          {/* El subtotal es el bruto: la suma de la columna Subtotal de la tabla. */}
-          <div className="sub-row">
-            <span>Subtotal</span>
-            <span>{money(resumen.subtotal)}</span>
+          {/* Con `soloTotal` no se muestran Subtotal, Descuento ni IVA: sólo el total final. */}
+          {!soloTotal && (
+            <>
+              {/* El subtotal es el bruto: la suma de la columna Subtotal de la tabla. */}
+              <div className="sub-row">
+                <span>Subtotal</span>
+                <span>{money(resumen.subtotal)}</span>
+              </div>
+              {/* El descuento se muestra SIEMPRE, aunque sea $0 (renglón fijo). */}
+              <div className="sub-row">
+                <span>Descuento</span>
+                <span>{resumen.descuento > 0 ? `− ${money(resumen.descuento)}` : money(0)}</span>
+              </div>
+              {/* IVA sólo en Cargar Venta; en Presupuestar no se declara. */}
+              {mostrarIva && (
+                <div className="sub-row">
+                  <span>IVA (21%)</span>
+                  <span>{money(resumen.iva)}</span>
+                </div>
+              )}
+            </>
+          )}
+          <div className="total-row">
+            <span>{totalLabel}</span>
+            <span>{money(resumen.total)}</span>
           </div>
-          {/* Sólo aparece si alguna línea se bonificó; si no, subtotal y total coinciden. */}
-          {resumen.descuento > 0 && (
-            <div className="sub-row">
-              <span>Descuento</span>
-              <span>− {money(resumen.descuento)}</span>
-            </div>
-          )}
-          {mostrarIva && (
-            <div className="sub-row">
-              <span>IVA (21%)</span>
-              <span>{money(resumen.iva)}</span>
-            </div>
-          )}
-          {comision && (
+          {/* Comisión (sólo Ventas): DEBAJO del total, con la misma jerarquía que Subtotal/Descuento. */}
+          {!soloTotal && comision && (
             <div className="sub-row">
               <span>Comisión ({comision.pct}%)</span>
               <span>{money(comision.monto)}</span>
             </div>
           )}
-          <div className="total-row">
-            <span>TOTAL</span>
-            <span>{money(resumen.total)}</span>
-          </div>
         </div>
       </div>
 

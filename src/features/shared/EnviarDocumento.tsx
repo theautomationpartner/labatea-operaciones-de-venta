@@ -10,6 +10,7 @@ import {
   dispararEnvio,
   dispararEnvioFactura,
   dispararEnvioRemito,
+  enviarProforma,
   ENVIO_ESTADO,
   ENVIO_FACTURA_ESTADO,
   getContactosCliente,
@@ -64,18 +65,26 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
-  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, remito } = useApp()
+  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, proformaId, remito } =
+    useApp()
   const dispatch = useDispatch()
   const esFactura = documento === 'factura'
-  const articulo = esFactura ? 'la' : 'el'
+  const articulo = documento === 'factura' || documento === 'proforma' ? 'la' : 'el'
   /* El envío no consume línea nueva: el bloqueo sólo mira el estado del cliente, no un importe
      (por eso va con cero). Y el PRESUPUESTO no frena por crédito: se envía siempre. */
   const bloqueo = useBloqueoCredito(0, { bloqueante: documento !== 'presupuesto' })
-  // Estado del envío: gobierna el botón y la línea de feedback al pie de la card.
+  // Estado del envío: gobierna íntegramente el botón (idle / loading / success / error).
   const [estadoEnvio, setEstadoEnvio] = useState<EstadoEnvio>('idle')
-  // Lo que dice la columna de estado en Monday mientras la automatización trabaja.
-  const [estadoMonday, setEstadoMonday] = useState('')
+  // Progreso que reporta la columna de estado en Monday: es el callback de las funciones `seguir*`.
+  const [, setEstadoMonday] = useState('')
+  // Detalle del error, que se muestra a la derecha del botón cuando el envío falla.
+  const [errorMsg, setErrorMsg] = useState('')
   const enviando = estadoEnvio === 'enviando'
+  /* Pasar a error: guarda el detalle y tiñe el botón de rojo, con el mensaje a su derecha. */
+  const fallar = (msg: string) => {
+    setErrorMsg(msg)
+    setEstadoEnvio('error')
+  }
 
   /**
    * Los contactos del cliente se traen al entrar al paso, así ya están listos cuando el
@@ -134,7 +143,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         },
       ],
     })
-    setEstadoEnvio('error')
+    fallar(`El PDF ${articulo} ${documento} aún no figura en Monday. Esperá a que se genere y reintentá.`)
   }
 
   const confirmar = async () => {
@@ -143,6 +152,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
     setEstadoMonday('')
+    setErrorMsg('')
     try {
       /* Antes de enviar cualquier documento se valida que el PDF EXISTA en la columna del
          tablero que corresponde. Sin documento generado no se dispara el envío. */
@@ -156,7 +166,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         await dispararEnvioFactura(ventaId)
         const final = await seguirEnvioFactura(ventaId, setEstadoMonday)
         if (final === ENVIO_FACTURA_ESTADO.error) {
-          setEstadoEnvio('error')
+          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
           return
         }
       } else if (documento === 'presupuesto' && presupuestoId) {
@@ -171,7 +181,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         // 3) Se sigue la columna de estado hasta que la automatización la cierra.
         const final = await seguirEnvio(presupuestoId, setEstadoMonday)
         if (final === ENVIO_ESTADO.error) {
-          setEstadoEnvio('error')
+          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
           return
         }
       } else if (documento === 'remito' && remito.remitoId) {
@@ -190,9 +200,12 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         // 3) Se sigue la columna de estado hasta que la automatización la cierra.
         const final = await seguirEnvioRemito(remito.remitoId, setEstadoMonday)
         if (/error/i.test(final)) {
-          setEstadoEnvio('error')
+          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
           return
         }
+      } else if (documento === 'proforma' && proformaId) {
+        // Proforma: se despacha desde el ítem de la proforma (contactos + medio + estado "Enviar").
+        await enviarProforma(proformaId, contactoItemIds(), medioEnvio)
       }
       dispatch({ type: 'setLog', entries: construirLog(contactos, documento, numero) })
       setEstadoEnvio('enviado')
@@ -209,7 +222,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
           },
         ],
       })
-      setEstadoEnvio('error')
+      fallar(`Falló el envío ${articulo === 'la' ? 'de la' : 'del'} ${documento} en Monday. Reintentá.`)
     }
   }
 
@@ -318,62 +331,50 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
               })}
             </div>
 
-            <button
-              type="button"
-              className="btn-block btn-block--enviar"
-              /* Ya enviado: el botón pasa a verde para confirmar el éxito; violeta mientras tanto. */
-              style={{
-                background: estadoEnvio === 'enviado' ? 'var(--green)' : '#575ce5',
-                marginTop: 16,
-              }}
-              disabled={contactos.length === 0 || enviando || estadoEnvio === 'enviado'}
-              aria-busy={enviando}
-              onClick={confirmar}
-            >
-              {enviando ? (
-                <>
-                  <i className="fas fa-circle-notch spin" /> Enviando...
-                </>
-              ) : estadoEnvio === 'enviado' ? (
-                <>
-                  <i className="fas fa-check" /> Enviado
-                </>
-              ) : (
-                '🛫 Confirmar y Enviar'
-              )}
-            </button>
+            {/* Todo el feedback vive DENTRO del botón (idle / loading / success / error); el
+                detalle del error va a su derecha. Sin líneas de texto sueltas debajo. */}
+            <div className="enviar-row">
+              <button
+                type="button"
+                className="btn-block btn-block--enviar"
+                style={{
+                  background:
+                    estadoEnvio === 'enviado'
+                      ? 'var(--green)'
+                      : estadoEnvio === 'error'
+                        ? 'var(--red)'
+                        : 'var(--primary-blue)',
+                }}
+                disabled={contactos.length === 0 || enviando || estadoEnvio === 'enviado'}
+                aria-busy={enviando}
+                onClick={confirmar}
+              >
+                {enviando ? (
+                  <>
+                    <i className="fas fa-circle-notch spin" /> Enviando...
+                  </>
+                ) : estadoEnvio === 'enviado' ? (
+                  <>
+                    <i className="fas fa-check" /> Enviado exitosamente
+                  </>
+                ) : estadoEnvio === 'error' ? (
+                  <>
+                    <i className="fas fa-xmark" /> Error de Envío
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-paper-plane" /> Confirmar y Enviar
+                  </>
+                )}
+              </button>
 
-            {/* Estado del envío: una sola línea, no una entrada por contacto. */}
-            {estadoEnvio !== 'idle' && (
-              <div className={`envio-estado envio-estado--${estadoEnvio}`} role="status" aria-live="polite">
-                {enviando && (
-                  <>
-                    <i className="fas fa-circle-notch spin" />
-                    {/* Mientras dura, se muestra lo que dice la columna de estado en Monday. */}
-                    <span>{estadoMonday ? `${estadoMonday}…` : 'Enviando…'}</span>
-                  </>
-                )}
-                {estadoEnvio === 'enviado' && (
-                  <>
-                    <i className="fas fa-circle-check tilde-lento" />
-                    <span>
-                      Enviado · {numero} a {contactos.length}{' '}
-                      {contactos.length === 1 ? 'contacto' : 'contactos'}
-                    </span>
-                  </>
-                )}
-                {estadoEnvio === 'error' && (
-                  <>
-                    <i className="fas fa-circle-xmark" />
-                    <span>
-                      {/error/i.test(estadoMonday)
-                        ? 'El envío falló en Monday. Revisá los contactos y reintentá.'
-                        : 'No se pudo enviar. Reintentá en unos segundos.'}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
+              {/* Detalle del error, inmediatamente a la derecha del botón y en rojo. */}
+              {estadoEnvio === 'error' && errorMsg && (
+                <span className="enviar-error" role="alert">
+                  {errorMsg}
+                </span>
+              )}
+            </div>
           </>
         ))}
 

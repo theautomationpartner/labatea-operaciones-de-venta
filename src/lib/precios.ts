@@ -26,3 +26,17 @@ export function precioConIva(precioLista: number, ivaPct: number, llevaIva: bool
   if (!llevaIva || !ivaPct) return round2(precioLista)
   return round2(precioLista * (1 + ivaPct / 100))
 }
+
+/**
+ * Igual que `precioConIva` pero SIN redondear: es el precio de lista con IVA (si corresponde) a
+ * precisión completa. Lo usa la conversión de un producto en dólares, que multiplica este valor por
+ * la tasa del día y redondea RECIÉN el resultado en pesos. Redondear el dólar a 2 decimales antes de
+ * convertir pierde el tercer decimal, que al cambio equivale a más de un peso.
+ */
+export function precioListaSinRedondear(
+  precioLista: number,
+  ivaPct: number,
+  llevaIva: boolean,
+): number {
+  return !llevaIva || !ivaPct ? precioLista : precioLista * (1 + ivaPct / 100)
+}

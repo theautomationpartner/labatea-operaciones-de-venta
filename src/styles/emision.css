@@ -85,6 +85,9 @@
 .emision-v2 .rvalue--green {
   color: var(--e-success);
 }
+.emision-v2 .rvalue--red {
+  color: var(--red);
+}
 /* Importe total: el dato que más se mira de la ficha. */
 .emision-v2 .rvalue--total {
   font-size: 18px;

@@ -69,7 +69,7 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
 export async function registrarCobroSimultaneo(
   datos: DatosCobroSimultaneo,
 ): Promise<{ id: string }> {
-  const { totalACobrar, cancelado, balances, ctaCteId, nombreCliente } = datos
+  const { totalACobrar, cancelado, balances, ctaCteId } = datos
   if (round2(cancelado) !== round2(totalACobrar)) {
     throw new Error('El cobro simultáneo exige cancelar el 100% del total de la venta.')
   }
@@ -82,28 +82,24 @@ export async function registrarCobroSimultaneo(
   }
   if (ctaCteId) cabecera[COL.cobro.ctaCte] = { item_ids: [Number(ctaCteId)] }
 
-  const creado = await mondayApi<{
-    create_item: { id: string; column_values: { text: string | null }[] }
-  }>(
+  // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+  const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
-      create_item(board_id: $boardId, item_name: $name, column_values: $cv) {
-        id
-        column_values(ids: ["${COL.cobro.pulseId}"]) { text }
-      }
+      create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.cobros, name: nombreCliente, cv: JSON.stringify(cabecera) },
+    { boardId: BOARDS.cobros, name: 'Recibo', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
-  const pulseRecibo = creado.create_item.column_values[0]?.text || itemId
 
-  // Los movimientos van en tandas, en una sola solicitud cada una.
+  // Los movimientos van en tandas, en una sola solicitud cada una. Cada subelemento se nombra con
+  // su forma de pago.
   for (let desde = 0; desde < balances.length; desde += MOVIMIENTOS_POR_TANDA) {
     const tanda = balances.slice(desde, desde + MOVIMIENTOS_POR_TANDA)
     const alias = tanda.map((_, i) => `m${desde + i}`)
     const variables: Record<string, unknown> = { parentId: itemId }
     const partes = tanda.map((b, i) => {
       const a = alias[i]
-      variables[`n${desde + i}`] = `${pulseRecibo} - ${b.movimiento.formaPago}`
+      variables[`n${desde + i}`] = b.movimiento.formaPago
       variables[`c${desde + i}`] = JSON.stringify(columnasMovimiento(b))
       return `${a}: create_subitem(parent_item_id: $parentId, item_name: $n${desde + i}, column_values: $c${desde + i}) { id }`
     })
@@ -115,14 +111,6 @@ export async function registrarCobroSimultaneo(
       variables,
     )
   }
-
-  // El recibo se renombra con su ID del board, igual que el presupuesto.
-  await mondayApi(
-    `mutation ($id: ID!, $board: ID!, $name: String!) {
-      change_simple_column_value(item_id: $id, board_id: $board, column_id: "name", value: $name) { id }
-    }`,
-    { id: itemId, board: BOARDS.cobros, name: pulseRecibo },
-  )
 
   return { id: itemId }
 }

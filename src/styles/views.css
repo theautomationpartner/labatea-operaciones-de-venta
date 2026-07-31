@@ -301,6 +301,7 @@
   flex: 1;
 }
 .cfg-l {
+  display: block;
   font-size: 12px;
   color: var(--text-gray);
   font-weight: 500;
@@ -322,6 +323,20 @@
 }
 .cfg-sel:disabled {
   cursor: not-allowed;
+}
+/* Sin outline de foco: la opción elegida no queda con un borde alrededor. */
+.cfg-sel:focus,
+.cfg-sel:focus-visible {
+  outline: none;
+}
+
+/* Forma de pago de la VENTA: misma caja de configuración, a todo el ancho del paso. */
+.forma-pago {
+  margin: 2px 0 20px;
+}
+/* Ancho reducido un 70% respecto del total (queda en el 30% del ancho del paso). */
+.forma-pago .cfgbox {
+  width: 30%;
 }
 
 /* ===== VISTA PRODUCTOS ===== */
@@ -431,19 +446,20 @@
   justify-content: space-between;
   align-items: center;
 }
+/* Hover de la lista de productos a seleccionar: gris muy claro y suave (gray-100), sólo como
+   feedback de posicionamiento, sin ser invasivo. */
 .ritem:hover {
-  background: #f8f9fa;
+  background: #f3f4f6;
 }
 .ritem-name {
   font-weight: 600;
   font-size: 13px;
 }
-/* Fila ya elegida: queda marcada para poder seguir cargando del mismo resultado. */
-.ritem--elegido {
-  background: #f0faf3;
-}
+/* Fila ya elegida: fondo gris estático, el mismo tono sutil de las cajas vacías del skeleton
+   (#eef1f6). No cambia al pasar el mouse: es un estado, no una acción. */
+.ritem--elegido,
 .ritem--elegido:hover {
-  background: #e6f6ec;
+  background: #eef1f6;
 }
 .ritem-meta {
   display: inline-flex;
@@ -1876,7 +1892,7 @@
   background: #fff5f6;
 }
 
-/* ===== VISTA CARGAR VENTA ===== */
+/* ===== VISTA VENTA ===== */
 .venta-grid {
   display: grid;
   grid-template-columns: 340px 1fr;
@@ -2275,7 +2291,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px;
+  /* Padding interno uniforme (24px en los 4 lados): el contenido respira, alejado del borde. */
+  padding: 24px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -2329,9 +2346,15 @@
 .entrega-form {
   margin-top: 16px;
 }
-/* Responsable logístico del Cierre de Venta: separado del bloque del cobro. */
-.entrega-cierre {
-  margin-top: 16px;
+/* Responsable logístico del Cierre de Venta: respiro amplio respecto del bloque de cobro / impacto
+   en cuenta corriente. Se sube la especificidad (`.cobro-v2 .cobro-acc.entrega-cierre`) porque
+   `.cobro-v2 .cobro-acc { margin: 0 }` pisaba un `.entrega-cierre` suelto. */
+.cobro-v2 .cobro-acc.entrega-cierre {
+  margin-top: 40px;
+}
+/* Refuerzo de especificidad: garantiza el padding interno de las 3 tarjetas en el cierre de venta. */
+.cobro-v2 .entrega-opts .entrega-opt {
+  padding: 24px;
 }
 /* Ruta de entrega (La Batea): select compacto + botón de confirmación + tilde de éxito. */
 .ruta-row {

@@ -4,7 +4,7 @@ import type { TipoEntrega, TipoVenta } from '@/types'
 
 const TIPOS_VENTA: TipoVenta[] = ['CON PRESUPUESTO PREVIO', 'DIRECTA']
 
-/** Configuración exclusiva de CARGAR VENTA. Nada viene preseleccionado. */
+/** Configuración exclusiva de VENTA. Nada viene preseleccionado. */
 export function VentaConfig() {
   const { tipoVenta, tipoEntrega } = useApp()
   const dispatch = useDispatch()

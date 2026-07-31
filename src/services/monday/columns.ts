@@ -11,6 +11,8 @@ export const BOARDS = {
   presupuestos: 18421035513,
   /** Board de subelementos del presupuesto (uno por producto). */
   presupuestosSub: 18421035575,
+  /** "Proformas": origen de la venta CON PROFORMA. Un ítem por proforma, con un subítem por producto. */
+  proformas: 18424580497,
   config: 18421035530,
   ctaCte: 18421858736,
   /** Movimientos de la cuenta corriente (subelementos de la Cta Cte del cliente). */
@@ -55,6 +57,8 @@ export const BOARDS = {
   destinos: 18421035523,
   /** "🚛Vehículos": la flota propia de La Batea. */
   vehiculos: 18421035528,
+  /** "Cotizaciones": el último ítem trae la cotización del dólar del momento. */
+  cotizaciones: 18422367325,
   /** "🛣️Rutas de Transporte": las rutas de entrega que se asignan a la venta. */
   rutasEntrega: 18421708745,
   /** "Pend Venta de Liq CYO": un ítem por producto consignado (cuenta y orden) facturado. */
@@ -244,6 +248,9 @@ export const COL = {
     /** "🤖Código Sistema Prov": espeja el código del proveedor conectado. */
     proveedorCodigo: 'lookup_mm5fh97p',
     tipoMercaderia: 'color_mm48hm74',
+    /** "Moneda" del producto (status): "Dolares" / "Pesos". En dólares el precio se convierte a
+     *  pesos con la cotización antes de cargarlo. */
+    moneda: 'color_mm4kwdj6',
     /** "✋️Comision": indica si el producto es comisionable ("SI" / "NO"). */
     comisionable: 'color_mm51p0wn',
     /** "✋️Porc Com Activa": % de comisión de la venta CON PRESUPUESTO PREVIO. */
@@ -317,6 +324,8 @@ export const COL = {
     cantidad: 'numeric_mksesd2',
     rentabilidad: 'numeric_mm4cmpa6',
     precioUnit: 'numeric_mkw85hdw',
+    /** "P. Unit con Desc": precio unitario con el descuento ya aplicado (precio × (1 − desc%/100)). */
+    precioConDesc: 'numeric_mm5rddvm',
     /** Subtotal en pesos: fórmula del board (cant × precio si la moneda es Pesos). NO se setea. */
     subtotal: 'formula_mm58pwc',
     /** Subtotal en dólares: misma fórmula para moneda Dólares. Tampoco se setea. */
@@ -328,11 +337,74 @@ export const COL = {
     estadoUso: 'color_mm54j58z',
     /** "Reflejo" del Tipo de Mercadería del producto conectado: CO / COM. */
     tipoMercaderia: 'lookup_mm5gym7g',
+    /** Mirror de "✋Comision" del producto: indica si es comisionable ("SI" / "NO"). */
+    comisionable: 'lookup_mm5rqwf8',
     /** "🧮Stock y Movimientos": ítem de stock del producto. Se hereda del Maestro al presupuestar
      *  y viaja a la venta (CON PRESUPUESTO PREVIO). */
     stock: 'board_relation_mm5pzc9y',
     /** ID del subelemento; se usa para renombrarlo. */
     pulseId: 'pulse_id_mkw8mfdg',
+  },
+  // Board "Proformas" (18424580497): origen de la venta CON PROFORMA y destino al emitir una proforma.
+  proforma: {
+    /** "Connect Boards" al cliente (Personas): filtra las proformas del cliente elegido. */
+    cliente: 'board_relation_mm582k6v',
+    /** "🤖Importe Total" (lookup): total de la proforma. */
+    importe: 'lookup_mm5qxprp',
+    /** "🤖Rentabilidad % GENERAL" (numérico): rentabilidad general de la proforma. */
+    rentabilidad: 'numeric_mm52rk7t',
+    /** Descuento total de la venta (suma de los importes bonificados de todas las líneas). */
+    descuentoTotal: 'numeric_mm5s8vjg',
+    /** IVA total de la venta (en $). */
+    ivaTotal: 'numeric_mm5ssfpm',
+    /** TOTAL de la venta (neto bonificado + IVA). También es el importe que se muestra por proforma. */
+    total: 'numeric_mm5sw8n2',
+    /** Tipo de venta (status): "CON PRESUPUESTO PREVIO" / "DIRECTA". */
+    tipoVenta: 'color_mm5142e4',
+    /** Tipo de entrega (status): POSTERIOR / ANTERIOR / SIMULTANEA. */
+    tipoEntrega: 'color_mm489k2j',
+    /** Tipo de cobro (status): la proforma exige contado → siempre "SIMULTANEO". */
+    tipoCobro: 'color_mm5b7t0d',
+    /** "✋Estado Proforma": ciclo de vida de la proforma. Nace "Pendiente de Venta" y pasa a
+     *  "Usada" cuando se factura. Sólo las "Pendiente de Venta" se listan para facturar. */
+    estadoVenta: 'color_mm5smnqe',
+    /** Estado de emisión del PDF: ponerlo en "Emitir" dispara la generación del documento. */
+    estadoPdf: 'color_mm4dqxq3',
+    /** "Contactos" (board_relation): destinatarios del envío de la proforma. */
+    contactos: 'board_relation_mm5njnad',
+    /** Medio de envío (dropdown): Whatsapp / Email. */
+    medioEnvio: 'dropdown_mm5njprp',
+    /** Acción de envío (status): ponerlo en "Enviar" dispara el despacho. */
+    estadoEnvio: 'color_mm5spfvt',
+  },
+  // Columnas del subelemento de la Proforma (un producto cada uno):
+  proformaSub: {
+    /** Producto conectado en el Maestro (id + nombre del ítem vinculado). */
+    producto: 'board_relation_mkwctrv6',
+    /** "U.M." (lookup): unidad de medida del producto. */
+    unidadMedida: 'lookup_mm5hr4p9',
+    /** Cantidad vendida (numérico). */
+    cantidad: 'numeric_mksesd2',
+    /** "🤖Precio Unit $": precio unitario convertido a PESOS (numérico). */
+    precioUnit: 'numeric_mkw85hdw',
+    /** "🤖Precio Unit u$": precio unitario en DÓLARES; sólo si el producto estaba en dólares. */
+    precioUnitUsd: 'numeric_mm5stwa2',
+    /** "🤖Desc % x Prod": descuento manual del producto, en %. 0 si no se aplicó ninguno. */
+    descuento: 'numeric_mm472cqy',
+    /** "🤖Desc % x Forma de Pago": descuento por pronto pago (CONTADO), en %. */
+    descFormaPago: 'numeric_mm5svkh2',
+    /** "🤖Imp. Bonificado": monto bonificado POR UNIDAD = precio × (desc prod + desc forma de pago)/100. */
+    impBonificado: 'numeric_mm5sh5y',
+    /** "🤖IVA ($)": IVA en pesos de la línea, sobre el total ya bonificado. */
+    iva: 'numeric_mm5sdnjb',
+    /** "🤖Total": total de la línea = (precio − Imp. Bonificado) × cantidad. */
+    total: 'numeric_mm5sb969',
+    /** Rentabilidad de la línea (numérico). */
+    rentabilidad: 'numeric_mm4cmpa6',
+    /** Subtotal de la línea (fórmula del board). */
+    subtotal: 'formula_mm47w359',
+    /** "🧮Stock y Movimientos": ítem de stock del producto asociado. */
+    stock: 'board_relation_mm5pz6kz',
   },
   // Cabecera del recibo (board 18421035524). Sólo se crea en el cobro SIMULTÁNEO.
   cobro: {
@@ -404,6 +476,16 @@ export const COL = {
     /** "✋🛣️Rutas de Transporte": ruta de entrega asignada a la venta (board 18421708745). */
     ruta: 'board_relation_mm5nr3d5',
     rentabilidad: 'numeric_mm52rk7t',
+    /** "🤖Tasa de Cambio": tasa del dólar usada en la venta, registrada como auditoría inmutable. */
+    tasaCambio: 'numeric_mm5s5n54',
+    /** Descuento total de la venta (suma de los importes bonificados de las líneas). */
+    descuentoTotal: 'numeric_mm5s9czk',
+    /** IVA total de la venta (en $). */
+    ivaTotal: 'numeric_mm5skvne',
+    /** TOTAL de la venta = subtotal − descuento total + IVA total (neto bonificado + IVA). */
+    total: 'numeric_mm5s9zx5',
+    /** "🤖Importe Total $": total en pesos de la venta. Se envía como número. */
+    importeTotalPesos: 'numeric_mm5qbwer',
     /** "🤖Estado de Entrega": cuánto de la venta ya se entregó (a nivel venta). */
     estadoEntrega: 'color_mm58xjgj',
     /** "🤖ID VTA": el número de venta ("VTA-016"), el que se muestra en la card. */
@@ -419,13 +501,34 @@ export const COL = {
     contactos: 'board_relation_mm5gq7z7',
     /** "🤖Enviar por:": dropdown Whatsapp / Email para el envío de la factura. */
     medioEnvio: 'dropdown_mm5gkf4f',
+    /* ===== Flujo Proforma y Retenciones (cliente agente de retención) ===== */
+    /** Estado de emisión de la factura proforma: ponerlo en "Emitir" dispara la generación. */
+    estadoProforma: 'color_mm4dqxq3',
+    /** "👤Contactos" del envío de la proforma. */
+    contactosProforma: 'board_relation_mm5njnad',
+    /** "🤖Enviar por:" de la proforma (dropdown Whatsapp / Email). */
+    medioEnvioProforma: 'dropdown_mm5njprp',
+    /** Estado de envío de la proforma: ponerlo en "Enviar" dispara la distribución. */
+    estadoEnvioProforma: 'color_mm5n6zrn',
   },
   // Un producto de la venta (subelemento de 📈Ventas).
   ventaSub: {
     producto: 'board_relation_mkwctrv6',
     cantidad: 'numeric_mksesd2',
     precioUnit: 'numeric_mkw85hdw',
+    /** "🤖Precio Unit u$": precio original en dólares del producto, antes de convertir a pesos.
+     *  Sólo se escribe para productos cuya moneda era "Dolares" (auditoría). */
+    precioUnitUsd: 'numeric_mm5s58ej',
+    /** "🤖Desc % x Prod": descuento manual del producto, en %. */
     descuento: 'numeric_mm472cqy',
+    /** "🤖Desc % x Forma de Pago": descuento por forma de pago (pronto pago), en %. */
+    descFormaPago: 'numeric_mm5sm8na',
+    /** "🤖Imp. Bonificado": monto bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100. */
+    impBonificado: 'numeric_mm5swn31',
+    /** "🤖IVA $": IVA en pesos de la línea, sobre el total ya bonificado. */
+    iva: 'numeric_mm5sbr3m',
+    /** "🤖TOTAL $": total de la línea CON IVA = total bonificado + IVA. */
+    totalConIva: 'numeric_mm5sqgp',
     rentabilidad: 'numeric_mm4cmpa6',
     /** "🤖Cant Entregada Simult": sólo se llena si la entrega es simultánea a la venta. */
     cantEntregadaSimult: 'numeric_mm54fxxh',
@@ -562,6 +665,10 @@ export const COL = {
     /** "🛣️Rutas de Transporte": ruta de entrega del pendiente (board 18421708745). Se hereda de la
      *  venta al crearlo y se muestra al remitar (venta ANTERIOR). */
     ruta: 'board_relation_mm5pa9v3',
+    /** "🧾🚚 Remitos Ventas": el remito que entregó lo pendiente. Se linkea al emitir el remito ANTERIOR. */
+    remito: 'board_relation_mkwbvma5',
+    /** "🧮Stock y Movimientos": ítem de stock del producto. Se linkea al crear el pendiente (venta POSTERIOR). */
+    stockMovimiento: 'board_relation_mm5qqera',
     /** "🤖Q RTO Neto": cantidad ya entregada (mirror de los subítems de entrega). */
     entregada: 'lookup_mkwb1xhh',
     /** "🤖Pend de Entrega": lo que falta entregar (fórmula = Q VTA − Q RTO Neto). */
@@ -633,10 +740,17 @@ export const COL = {
   comision: {
     /** "🤖Fecha Emision Vta": fecha de emisión de la factura (YYYY-MM-DD). */
     fecha: 'date_mm4dxd48',
+    /** "🤖Cliente": el cliente de la venta que originó la comisión (board_relation a Personas). */
+    cliente: 'board_relation_mm5s28j3',
     /** "📈Ventas": la venta que originó la comisión. */
     venta: 'board_relation_mm4d72qt',
     /** "💰Vtas Pend de Cobro": la deuda del cobro POSTERIOR. Se omite en el cobro SIMULTANEO. */
     cobroPendiente: 'board_relation_mm4dzhr1',
+    /** "🤖Pend de Cobro(TRAER)": monto pendiente de cobro (total de la venta si POSTERIOR; 0 si
+     *  SIMULTANEO). Se envía como número. */
+    pendienteCobro: 'numeric_mm5p3bqc',
+    /** "🤖Estado de Comision": nace en "Pend de Cobro". */
+    estado: 'color_mm5by36r',
   },
   // Subelemento de "💲Registro de Comisiones" (board 18421035638): un producto comisionable.
   comisionSub: {
@@ -662,6 +776,13 @@ export const COL = {
     /** "Archivo": PDF de la factura. NUNCA se escribe en el create_item (columna file); se adjunta
      *  aparte referenciando el asset del comprobante (asset_ids). */
     pdf: 'file_mm5pb2vh',
+  },
+  // Ítem de "Cotizaciones" (board 18422367325): un ítem por día con la tasa de cambio.
+  cotizacion: {
+    /** Tasa de cambio del dólar (numérico). */
+    dolar: 'numeric_mm5at943',
+    /** Fecha de la cotización (columna date). Se busca el ítem cuya fecha es HOY. */
+    fecha: 'date_mm5qc046',
   },
   // Destino de entrega (board 18421035523).
   destino: {

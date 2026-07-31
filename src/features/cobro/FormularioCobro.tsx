@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { FORMAS_PAGO } from '@/lib/cobros'
-import { parseDate } from '@/lib/dates'
-import { money } from '@/lib/format'
-import { getCuentasBancarias } from '@/services/monday'
-import { useApp, useDispatch } from '@/state/hooks'
-import type { CuentaBancaria, FormaPago, MedioTransferencia, MovimientoPago } from '@/types'
+import { aIso, desdeIso, parseDate } from '@/lib/dates'
+import { getCuentasBancariasPropias } from '@/services/monday'
+import { useDispatch } from '@/state/hooks'
+import type { CuentaPropia, FormaPago, FormatoCheque, MovimientoPago, TarjetaTipo } from '@/types'
 
 type Borrador = Omit<MovimientoPago, 'id'>
 
@@ -13,15 +12,21 @@ const BORRADOR_VACIO: Borrador = {
   importe: 0,
   referencia: '',
   chequeVencimiento: '',
-  cuentaBancaria: null,
-  medioTransferencia: null,
+  numeroCheque: '',
+  fechaEmisionCheque: '',
+  bancoEmisor: '',
+  formatoCheque: 'FISICO',
+  cuentaPropia: null,
+  comprobanteNombre: '',
+  bancoTarjeta: '',
+  tipoTarjeta: null,
+  cuotas: 0,
 }
 
-/** Cómo se nombra una cuenta en el selector: banco y número, que es lo que se reconoce. */
-const rotuloCuenta = (c: CuentaBancaria): string =>
-  `${c.banco || 'Sin banco'} - ${c.numeroCuenta || 'Sin número'}`
+const TIPOS_TARJETA: TarjetaTipo[] = ['VISA', 'MASTERCARD']
+const FORMATOS_CHEQUE: FormatoCheque[] = ['FISICO', 'eCheq']
 
-/** Estado de la consulta de cuentas: gobierna el spinner y qué se puede elegir. */
+/** Estado de la consulta de cuentas propias: gobierna el spinner y qué se puede elegir. */
 type EstadoCuentas = 'idle' | 'cargando' | 'listo' | 'error'
 
 /** El cheque tiene que vencer después de la emisión de la factura. */
@@ -32,6 +37,9 @@ function chequeMal(b: Borrador, fechaFactura: string): boolean {
   return !venc || !factura || venc.getTime() <= factura.getTime()
 }
 
+/** Asterisco rojo que marca un campo obligatorio. */
+const Req = () => <span className="cobro-req"> *</span>
+
 interface FormularioCobroProps {
   fechaFactura: string
   /** Cobro ya registrado en Monday: se muestra, no se edita. */
@@ -39,39 +47,39 @@ interface FormularioCobroProps {
 }
 
 /**
- * Carga de un pago: al agregarlo pasa a la tabla de cobros registrados. La fecha no se pide
- * acá — es la del cobro, y se muestra en la primera columna de esa tabla.
+ * Carga de un pago: al agregarlo pasa a la tabla de cobros registrados. Según el medio de cobro
+ * pide datos distintos (cheque, transferencia o tarjeta), que aparecen en una fila condicional
+ * debajo de la principal y bloquean el "+ Agregar" hasta estar completos.
  */
 export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioCobroProps) {
-  const { descuentosPago, cliente } = useApp()
   const dispatch = useDispatch()
   const [borrador, setBorrador] = useState<Borrador>(BORRADOR_VACIO)
-  // Cuentas bancarias del cliente: se piden recién cuando hacen falta.
-  const [cuentas, setCuentas] = useState<CuentaBancaria[]>([])
+  // Cuentas bancarias propias de La Batea: se piden recién al elegir "Transferencia".
+  const [cuentas, setCuentas] = useState<CuentaPropia[]>([])
   const [estadoCuentas, setEstadoCuentas] = useState<EstadoCuentas>('idle')
+  // Feedback del drag & drop del comprobante de transferencia.
+  const [dragOver, setDragOver] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const esCheque = borrador.formaPago === 'Cheque'
   const esTransferencia = borrador.formaPago === 'Transferencia'
+  const esDebito = borrador.formaPago === 'Tarjeta de débito'
+  const esCredito = borrador.formaPago === 'Tarjeta de crédito'
+  const esTarjeta = esDebito || esCredito
   const malCheque = chequeMal(borrador, fechaFactura)
-  /* Una transferencia sin cuenta identificada no se puede conciliar después: hasta que no se
-     elija una de las cuentas activas del cliente, el movimiento no se agrega. */
-  const faltaCuenta = esTransferencia && !borrador.cuentaBancaria
-  const puedeAgregar = borrador.importe > 0 && !malCheque && !faltaCuenta && !bloqueado
 
-  /* Las cuentas se consultan al elegir "Transferencia", no antes: la mayoría de los cobros no
-     las necesita. El ref recuerda de qué cliente ya se trajeron, así volver a Transferencia no
-     dispara otra consulta. `estadoCuentas` NO puede ir en las deps: al setearlo, el efecto se
-     re-ejecutaría y su cleanup cancelaría la consulta que acaba de lanzar. */
-  const clienteId = cliente?.id
-  const cuentasDe = useRef<string | null>(null)
+  /* Las cuentas propias se consultan una sola vez, al entrar por primera vez a "Transferencia":
+     el ref evita re-consultar al volver. `estadoCuentas` NO puede ir en las deps (su set
+     re-ejecutaría el efecto y cancelaría la consulta recién lanzada). */
+  const cuentasCargadas = useRef(false)
   useEffect(() => {
-    if (!esTransferencia || !clienteId || cuentasDe.current === clienteId) return
+    if (!esTransferencia || cuentasCargadas.current) return
     let vivo = true
     setEstadoCuentas('cargando')
-    getCuentasBancarias(clienteId)
+    getCuentasBancariasPropias()
       .then((cs) => {
         if (!vivo) return
-        cuentasDe.current = clienteId
+        cuentasCargadas.current = true
         setCuentas(cs)
         setEstadoCuentas('listo')
       })
@@ -79,10 +87,26 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
     return () => {
       vivo = false
     }
-  }, [esTransferencia, clienteId])
-  // Lo que realmente entra a caja por este pago: el importe menos su descuento.
-  const descuentoPct = descuentosPago[borrador.formaPago] ?? 0
-  const importeFinal = borrador.importe - (borrador.importe * descuentoPct) / 100
+  }, [esTransferencia])
+
+  /* Cada medio de cobro exige sus datos: hasta que estén completos y válidos, no se agrega. */
+  const chequeCompleto =
+    !!borrador.numeroCheque?.trim() &&
+    !!borrador.fechaEmisionCheque?.trim() &&
+    !!borrador.chequeVencimiento?.trim() &&
+    !malCheque &&
+    !!borrador.bancoEmisor?.trim()
+  const transfCompleta = !!borrador.cuentaPropia && !!borrador.comprobanteNombre
+  const tarjetaCompleta =
+    !!borrador.bancoTarjeta?.trim() && !!borrador.tipoTarjeta && (!esCredito || (borrador.cuotas ?? 0) > 0)
+  const extrasCompletos = esCheque
+    ? chequeCompleto
+    : esTransferencia
+      ? transfCompleta
+      : esTarjeta
+        ? tarjetaCompleta
+        : true
+  const puedeAgregar = borrador.importe > 0 && extrasCompletos && !bloqueado
 
   const agregar = () => {
     dispatch({ type: 'agregarMovimientoPago', movimiento: borrador })
@@ -91,25 +115,26 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
 
   /** Cambiar de forma de pago descarta lo que sólo valía para la anterior. */
   const cambiarForma = (formaPago: FormaPago) =>
-    setBorrador({
-      ...borrador,
-      formaPago,
-      cuentaBancaria: null,
-      medioTransferencia: null,
-      chequeVencimiento: '',
-    })
+    setBorrador({ ...BORRADOR_VACIO, formaPago, importe: borrador.importe, referencia: borrador.referencia })
+
+  const tomarArchivo = (f: File | null) =>
+    setBorrador({ ...borrador, comprobanteNombre: f?.name ?? '' })
 
   return (
     <fieldset className="cobro-form" disabled={bloqueado}>
       <div className="cobro-form-campo cobro-form-campo--forma">
-        <label htmlFor="cobro-forma">Forma de pago *</label>
+        <label htmlFor="cobro-forma">Seleccionar Medio de Cobro</label>
         <select
           id="cobro-forma"
           className="cobro-in"
           value={borrador.formaPago}
           onChange={(e) => cambiarForma(e.target.value as FormaPago)}
         >
-          {FORMAS_PAGO.map((f) => (
+          {/* En el cobro de contado no se ofrecen tarjetas: son formas de pago de la venta y
+              tienen su propio ramal (TARJETA DE DEBITO / TARJETA DE CREDITO). */}
+          {FORMAS_PAGO.filter(
+            (f) => f !== 'Tarjeta de débito' && f !== 'Tarjeta de crédito',
+          ).map((f) => (
             <option key={f} value={f}>
               {f}
             </option>
@@ -118,7 +143,10 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
       </div>
 
       <div className="cobro-form-campo cobro-form-campo--importe">
-        <label htmlFor="cobro-importe">Importe *</label>
+        <label htmlFor="cobro-importe">
+          Importe
+          <Req />
+        </label>
         <input
           id="cobro-importe"
           className="cobro-in"
@@ -131,53 +159,6 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
         />
       </div>
 
-      {/* El descuento lo fija la forma de pago: se muestra, no se edita. */}
-      <div className="cobro-form-campo cobro-form-campo--desc">
-        <label htmlFor="cobro-desc">Desc. %</label>
-        <div className="cobro-desc-box">
-          <input id="cobro-desc" className="cobro-desc-in" value={descuentoPct} readOnly />
-          <span className="cobro-desc-suf">%</span>
-        </div>
-      </div>
-
-      {/* Resultado de aplicar el descuento: no se edita, se calcula. */}
-      <div className="cobro-form-campo cobro-form-campo--final">
-        <label htmlFor="cobro-final">Importe final</label>
-        <input
-          id="cobro-final"
-          className="cobro-in cobro-in--calc"
-          value={borrador.importe > 0 ? money(importeFinal) : ''}
-          placeholder="$ 0"
-          readOnly
-          tabIndex={-1}
-        />
-      </div>
-
-      <div className="cobro-form-campo cobro-form-campo--ref">
-        <label htmlFor="cobro-ref">N° de referencia</label>
-        <input
-          id="cobro-ref"
-          className="cobro-in"
-          placeholder="Ej: TXF-00012589"
-          value={borrador.referencia}
-          onChange={(e) => setBorrador({ ...borrador, referencia: e.target.value })}
-        />
-      </div>
-
-      {esCheque && (
-        <div className="cobro-form-campo cobro-form-campo--cheque">
-          <label htmlFor="cobro-cheque">Vencimiento del cheque *</label>
-          <input
-            id="cobro-cheque"
-            className={`cobro-in ${malCheque ? 'cobro-in--error' : ''}`}
-            placeholder="dd/mm/aaaa"
-            value={borrador.chequeVencimiento}
-            onChange={(e) => setBorrador({ ...borrador, chequeVencimiento: e.target.value })}
-          />
-          {malCheque && <span className="cobro-in-err">Posterior a {fechaFactura}</span>}
-        </div>
-      )}
-
       <div className="cobro-form-campo cobro-form-campo--accion">
         <button
           type="button"
@@ -189,80 +170,230 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
         </button>
       </div>
 
-      {/* Transferencia: a qué cuenta del cliente entró la plata y por dónde se identificó. */}
+      {/* CHEQUE: número, fechas y banco emisor (fila condicional con animación de entrada). */}
+      {esCheque && (
+        <div className="cobro-cond" key="cheque">
+          <div className="cobro-form-campo cobro-campo--nro">
+            <label htmlFor="cobro-cheque-nro">
+              Número de cheque
+              <Req />
+            </label>
+            <input
+              id="cobro-cheque-nro"
+              className="cobro-in"
+              placeholder="Ej: 00123456"
+              value={borrador.numeroCheque ?? ''}
+              onChange={(e) => setBorrador({ ...borrador, numeroCheque: e.target.value })}
+            />
+          </div>
+          <div className="cobro-form-campo cobro-campo--fecha">
+            <label htmlFor="cobro-cheque-emision">
+              Fecha de emisión
+              <Req />
+            </label>
+            <input
+              id="cobro-cheque-emision"
+              type="date"
+              className="cobro-in"
+              value={aIso(borrador.fechaEmisionCheque ?? '')}
+              onChange={(e) =>
+                setBorrador({ ...borrador, fechaEmisionCheque: desdeIso(e.target.value) })
+              }
+            />
+          </div>
+          <div className="cobro-form-campo cobro-campo--fecha">
+            <label htmlFor="cobro-cheque-venc">
+              Fecha de vencimiento
+              <Req />
+            </label>
+            <input
+              id="cobro-cheque-venc"
+              type="date"
+              className={`cobro-in ${malCheque && borrador.chequeVencimiento ? 'cobro-in--error' : ''}`}
+              value={aIso(borrador.chequeVencimiento)}
+              onChange={(e) =>
+                setBorrador({ ...borrador, chequeVencimiento: desdeIso(e.target.value) })
+              }
+            />
+            {malCheque && borrador.chequeVencimiento && (
+              <span className="cobro-in-err">Posterior a {fechaFactura}</span>
+            )}
+          </div>
+          <div className="cobro-form-campo cobro-campo--formato">
+            <label htmlFor="cobro-cheque-formato">
+              Formato
+              <Req />
+            </label>
+            <select
+              id="cobro-cheque-formato"
+              className="cobro-in"
+              value={borrador.formatoCheque ?? 'FISICO'}
+              onChange={(e) =>
+                setBorrador({ ...borrador, formatoCheque: e.target.value as FormatoCheque })
+              }
+            >
+              {FORMATOS_CHEQUE.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="cobro-form-campo">
+            <label htmlFor="cobro-cheque-banco">
+              Banco emisor
+              <Req />
+            </label>
+            <input
+              id="cobro-cheque-banco"
+              className="cobro-in"
+              placeholder="Ej: Banco Nación"
+              value={borrador.bancoEmisor ?? ''}
+              onChange={(e) => setBorrador({ ...borrador, bancoEmisor: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFERENCIA: cuenta propia de destino + comprobante (drag & drop). */}
       {esTransferencia && (
-        <div className="cobro-transf">
-          {estadoCuentas === 'cargando' && (
-            <span className="cobro-transf-cargando" role="status">
-              <i className="fas fa-circle-notch spin" /> Buscando cuentas bancarias del cliente…
-            </span>
-          )}
+        <div className="cobro-cond" key="transferencia">
+          <div className="cobro-form-campo cobro-form-campo--cuenta">
+            <label htmlFor="cobro-cuenta">
+              Cuenta bancaria
+              <Req />
+            </label>
+            <select
+              id="cobro-cuenta"
+              className="cobro-in"
+              value={borrador.cuentaPropia ?? ''}
+              disabled={estadoCuentas !== 'listo' || cuentas.length === 0}
+              onChange={(e) => setBorrador({ ...borrador, cuentaPropia: e.target.value || null })}
+            >
+              <option value="">
+                {estadoCuentas === 'cargando' || estadoCuentas === 'idle'
+                  ? 'Buscando cuentas…'
+                  : estadoCuentas === 'error'
+                    ? 'No se pudieron traer las cuentas'
+                    : cuentas.length === 0
+                      ? 'No hay cuentas propias cargadas'
+                      : 'Seleccionar cuenta…'}
+              </option>
+              {cuentas.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {estadoCuentas === 'error' && (
-            <span className="cobro-in-err">
-              No se pudieron traer las cuentas bancarias. Reintentá cambiando de forma de pago.
-            </span>
-          )}
-
-          {estadoCuentas === 'listo' && cuentas.length === 0 && (
-            <span className="cobro-in-err">
-              {cliente?.name ?? 'El cliente'} no tiene cuentas bancarias activas cargadas: no se
-              puede registrar una transferencia.
-            </span>
-          )}
-
-          {estadoCuentas === 'listo' && cuentas.length > 0 && (
-            <>
-              <div className="cobro-form-campo cobro-form-campo--cuenta">
-                <label htmlFor="cobro-cuenta">Cuenta bancaria *</label>
-                <select
-                  id="cobro-cuenta"
-                  className="cobro-in"
-                  value={borrador.cuentaBancaria?.id ?? ''}
-                  onChange={(e) =>
-                    setBorrador({
-                      ...borrador,
-                      cuentaBancaria: cuentas.find((c) => c.id === e.target.value) ?? null,
-                      // Cambiar de cuenta invalida el medio elegido para la anterior.
-                      medioTransferencia: null,
-                    })
-                  }
-                >
-                  <option value="">Seleccionar cuenta…</option>
-                  {cuentas.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {rotuloCuenta(c)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* El medio sólo tiene sentido con una cuenta ya elegida. */}
-              {borrador.cuentaBancaria && (
-                <div className="cobro-form-campo cobro-form-campo--medio">
-                  <label htmlFor="cobro-medio">Medio de transferencia</label>
-                  <select
-                    id="cobro-medio"
-                    className="cobro-in"
-                    value={borrador.medioTransferencia ?? ''}
-                    onChange={(e) =>
-                      setBorrador({
-                        ...borrador,
-                        medioTransferencia: (e.target.value || null) as MedioTransferencia | null,
-                      })
-                    }
+          <div className="cobro-form-campo cobro-form-campo--drop">
+            <label>
+              Comprobante de transferencia
+              <Req />
+            </label>
+            <div
+              className={`cobro-drop ${dragOver ? 'is-over' : ''} ${
+                borrador.comprobanteNombre ? 'has-file' : ''
+              }`}
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragOver(true)
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setDragOver(false)
+                tomarArchivo(e.dataTransfer.files?.[0] ?? null)
+              }}
+            >
+              <input
+                ref={fileRef}
+                type="file"
+                hidden
+                onChange={(e) => tomarArchivo(e.target.files?.[0] ?? null)}
+              />
+              {borrador.comprobanteNombre ? (
+                <span className="cobro-drop-file">
+                  <i className="fas fa-file-lines" /> {borrador.comprobanteNombre}
+                  <button
+                    type="button"
+                    className="cobro-drop-x"
+                    aria-label="Quitar el comprobante"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      tomarArchivo(null)
+                    }}
                   >
-                    <option value="">Seleccionar…</option>
-                    <option value="CBU">CBU</option>
-                    <option value="ALIAS">ALIAS</option>
-                  </select>
-                </div>
+                    <i className="fas fa-xmark" />
+                  </button>
+                </span>
+              ) : (
+                <span className="cobro-drop-hint">
+                  <i className="fas fa-cloud-arrow-up" /> Arrastrá y soltá el comprobante, o hacé
+                  click para elegirlo
+                </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
 
-              {faltaCuenta && (
-                <span className="cobro-in-err">Elegí la cuenta para poder agregar el pago.</span>
-              )}
-            </>
+      {/* TARJETA (débito/crédito): banco + marca; las cuotas sólo en crédito. */}
+      {esTarjeta && (
+        <div className="cobro-cond cobro-cond--tarjeta" key="tarjeta">
+          <div className="cobro-form-campo">
+            <label htmlFor="cobro-tarj-banco">
+              Banco
+              <Req />
+            </label>
+            <input
+              id="cobro-tarj-banco"
+              className="cobro-in"
+              placeholder="Ej: Banco Galicia"
+              value={borrador.bancoTarjeta ?? ''}
+              onChange={(e) => setBorrador({ ...borrador, bancoTarjeta: e.target.value })}
+            />
+          </div>
+          <div className="cobro-form-campo">
+            <label htmlFor="cobro-tarj-tipo">
+              Tipo
+              <Req />
+            </label>
+            <select
+              id="cobro-tarj-tipo"
+              className="cobro-in"
+              value={borrador.tipoTarjeta ?? ''}
+              onChange={(e) =>
+                setBorrador({ ...borrador, tipoTarjeta: (e.target.value || null) as TarjetaTipo | null })
+              }
+            >
+              <option value="">Seleccionar…</option>
+              {TIPOS_TARJETA.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          {esCredito && (
+            <div className="cobro-form-campo">
+              <label htmlFor="cobro-tarj-cuotas">
+                Cantidad de cuotas
+                <Req />
+              </label>
+              <input
+                id="cobro-tarj-cuotas"
+                className="cobro-in"
+                inputMode="numeric"
+                placeholder="Ej: 3"
+                value={borrador.cuotas || ''}
+                onChange={(e) =>
+                  setBorrador({ ...borrador, cuotas: Number(e.target.value.replace(/\D/g, '')) || 0 })
+                }
+              />
+            </div>
           )}
         </div>
       )}
