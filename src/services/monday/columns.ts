@@ -317,19 +317,33 @@ export const COL = {
     estadoVenta: 'color_mm54y5vc',
     /** Moneda del presupuesto ("✋Moneda"): de ella dependen las fórmulas de subtotal $ / $u. */
     moneda: 'color_mkwgfyv1',
+    /** "🤖TOTAL EN PESOS $": neto en pesos del presupuesto (columna numérica, se escribe al crear). */
+    totalPesos: 'numeric_mm5w1sm5',
+    /** "🤖TOTAL EN DOLARES $u": neto en dólares del presupuesto (columna numérica, se escribe al crear). */
+    totalUsd: 'numeric_mm5wfyfe',
   },
   // Columnas del subelemento (un producto de la lista):
   presupuestoSub: {
     producto: 'board_relation_mm57gxye',
     cantidad: 'numeric_mksesd2',
     rentabilidad: 'numeric_mm4cmpa6',
+    /** "🤖Precio Unit $": precio unitario en pesos (productos en pesos). */
     precioUnit: 'numeric_mkw85hdw',
-    /** "P. Unit con Desc": precio unitario con el descuento ya aplicado (precio × (1 − desc%/100)). */
-    precioConDesc: 'numeric_mm5rddvm',
-    /** Subtotal en pesos: fórmula del board (cant × precio si la moneda es Pesos). NO se setea. */
-    subtotal: 'formula_mm58pwc',
-    /** Subtotal en dólares: misma fórmula para moneda Dólares. Tampoco se setea. */
-    subtotalUsd: 'formula_mm5f75gm',
+    /** "🤖Precio Unit $u": precio unitario en dólares (productos en dólares). */
+    precioUnitUsd: 'numeric_mm5wpag',
+    /** "🤖Importe Bonif.": monto bonificado por unidad (precio × desc%/100), en la moneda del producto. */
+    importeBonif: 'numeric_mm5rddvm',
+    /** "🤖Precio Bonif": precio unitario ya bonificado (precio − importe bonif.), en la moneda del producto. */
+    precioBonif: 'numeric_mm5w6h1x',
+    /** "🤖TOTAL $": total de la línea en pesos (productos en pesos). */
+    totalPesos: 'numeric_mm5w3qtg',
+    /** "🤖TOTAL $u": total de la línea en dólares (productos en dólares). */
+    totalUsd: 'numeric_mm5wrcvx',
+    /** "🤖 Moneda" (mirror del producto): "Pesos" / "Dolares". */
+    moneda: 'lookup_mm5e3e8f',
+    /** "🤖IVA (%)": alícuota de IVA del producto (del Maestro). Se guarda para la venta; el
+     *  presupuesto no la liquida. */
+    iva: 'numeric_mm5wt7hg',
     descuento: 'numeric_mm472cqy',
     /** "🤖 Cant Vendida": unidades del producto ya llevadas a una venta. */
     cantVendida: 'numeric_mm54546t',
@@ -353,6 +367,8 @@ export const COL = {
     importe: 'lookup_mm5qxprp',
     /** "🤖Rentabilidad % GENERAL" (numérico): rentabilidad general de la proforma. */
     rentabilidad: 'numeric_mm52rk7t',
+    /** "🤖Tasa de Cambio": tasa del dólar usada al armar la proforma (auditoría a nivel ítem). */
+    tasaCambio: 'numeric_mm5w6j5s',
     /** Descuento total de la venta (suma de los importes bonificados de todas las líneas). */
     descuentoTotal: 'numeric_mm5s8vjg',
     /** IVA total de la venta (en $). */
@@ -395,6 +411,8 @@ export const COL = {
     descFormaPago: 'numeric_mm5svkh2',
     /** "🤖Imp. Bonificado": monto bonificado POR UNIDAD = precio × (desc prod + desc forma de pago)/100. */
     impBonificado: 'numeric_mm5sh5y',
+    /** "🤖Precio Bonif $": precio unitario ya bonificado (precio − imp. bonificado), en pesos. */
+    precioBonif: 'numeric_mm5wv840',
     /** "🤖IVA ($)": IVA en pesos de la línea, sobre el total ya bonificado. */
     iva: 'numeric_mm5sdnjb',
     /** "🤖Total": total de la línea = (precio − Imp. Bonificado) × cantidad. */
@@ -525,6 +543,8 @@ export const COL = {
     descFormaPago: 'numeric_mm5sm8na',
     /** "🤖Imp. Bonificado": monto bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100. */
     impBonificado: 'numeric_mm5swn31',
+    /** "🤖Precio Bonif": precio unitario ya bonificado (precio − imp. bonificado por unidad), en pesos. */
+    precioBonif: 'numeric_mm5wm552',
     /** "🤖IVA $": IVA en pesos de la línea, sobre el total ya bonificado. */
     iva: 'numeric_mm5sbr3m',
     /** "🤖TOTAL $": total de la línea CON IVA = total bonificado + IVA. */

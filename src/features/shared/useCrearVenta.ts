@@ -62,11 +62,13 @@ export function useCrearVenta() {
       facturaItems: state.facturaItems,
     })
 
-    // Total en pesos (con IVA): neto bonificado × (1 + IVA). Va al board como número.
-    const neto = productos.reduce(
-      (acc, p) => acc + p.precioUnitario * p.cantidad * (1 - p.descuento / 100),
-      0,
-    )
+    /* Total en pesos (con IVA): neto bonificado × (1 + IVA). El neto incluye el descuento por forma
+       de pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual. */
+    const descFormaPago = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
+    const neto = productos.reduce((acc, p) => {
+      const descTotal = Math.min((p.descuento ?? 0) + descFormaPago, 100)
+      return acc + p.precioUnitario * p.cantidad * (1 - descTotal / 100)
+    }, 0)
     const importeTotalPesos = round2(neto * (1 + IVA_RATE))
 
     let ventaId = state.ventaId
@@ -78,7 +80,7 @@ export function useCrearVenta() {
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
         ...datosCobroVenta(cliente, cobro),
         rentabilidad: rentabilidadVenta,
-        descFormaPago: descuentoDeFormaPago(state.formaPago, state.descuentosPago),
+        descFormaPago,
         tasaCambio: state.tasaCambio,
         importeTotalPesos,
         responsableEntrega: esEntregaPosterior

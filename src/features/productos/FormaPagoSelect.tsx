@@ -10,7 +10,8 @@ import type { FormaPagoVenta } from '@/types'
  * de "tarjetas", así que ya no hay un segundo selector de tipo. Comparte la caja de
  * configuración (`cfgbox`) del paso de cliente, así el control se lee igual en toda la app.
  */
-export function FormaPagoSelect() {
+/** `bloqueado`: post-emisión, el selector queda deshabilitado (no se cambia la forma de pago). */
+export function FormaPagoSelect({ bloqueado = false }: { bloqueado?: boolean }) {
   const { formaPago, cliente } = useApp()
   const dispatch = useDispatch()
   // Las opciones dependen de la condición de pago del cliente: sólo la cuenta corriente las habilita
@@ -31,6 +32,7 @@ export function FormaPagoSelect() {
             id="forma-pago"
             className={`cfg-sel ${formaPago ? '' : 'cfg-sel--ph'}`}
             value={formaPago ?? ''}
+            disabled={bloqueado}
             onChange={(e) =>
               dispatch({ type: 'setFormaPago', value: e.target.value as FormaPagoVenta })
             }

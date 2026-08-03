@@ -51,6 +51,7 @@ import {
 } from './columns'
 import { DESCUENTO_MAX_DEFAULT, DESCUENTO_MIN_DEFAULT } from '@/lib/selectors'
 import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
 import { construirBulkSubitems } from './carritoSubitems'
 import { byId, num, numCol, sumaMirror, valor, type CV, type MondayItem } from './parse'
@@ -434,6 +435,10 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     moneda: valor(c[COL.producto.moneda]),
     // La alícuota viaja con el producto: es la que se declara en la línea del comprobante.
     iva: numCol(c[COL.producto.iva]),
+    // Comisión del producto (para la venta DIRECTA se usa el % de venta pasiva).
+    comisionable: valor(c[COL.producto.comisionable]).trim().toUpperCase() === 'SI',
+    porcComActiva: numCol(c[COL.producto.porcComActiva]),
+    porcComPasiva: numCol(c[COL.producto.porcComPasiva]),
     rubro: valor(c[COL.producto.rubro]),
     subrubro: valor(c[COL.producto.subrubro]),
     categoria: valor(c[COL.producto.categoria]),
@@ -475,6 +480,9 @@ const columnasProducto = (lista: ListaPrecio): string =>
     COL.producto.tipoMercaderia,
     COL.producto.moneda,
     COL.producto.iva,
+    COL.producto.comisionable,
+    COL.producto.porcComActiva,
+    COL.producto.porcComPasiva,
     COL.producto.stock,
     columnaPrecio(lista),
     ...(COL.margen[lista] ? [COL.margen[lista] as string] : []),
@@ -875,6 +883,10 @@ export interface DatosPresupuesto {
   rentabilidad: number
   /** Moneda del presupuesto: define cuál de las dos fórmulas de subtotal se completa. */
   moneda: Moneda
+  /** Total en pesos (neto de los productos en pesos): "🤖TOTAL EN PESOS $". */
+  totalPesos: number
+  /** Total en dólares (neto de los productos en dólares): "🤖TOTAL EN DOLARES $u". */
+  totalUsd: number
 }
 
 /** dd/MM/yyyy → yyyy-MM-dd (formato que espera la columna date de Monday). */
@@ -920,9 +932,9 @@ async function crearSubitemSuelto(itemId: string, linea: LineaPresupuesto): Prom
  * lugar donde nace el presupuesto; emitirlo es un paso aparte (`emitirPresupuesto`).
  *
  * Flujo (board real 18421035513):
- *   1. `create_item` con la cabecera. El ítem nace con el nombre general del tablero
- *      ("Presupuestos"); su ID lo asigna la customKey del board (pulse_id_mkwb5sj3), sin renombrado
- *      del lado de la app.
+ *   1. `create_item` con la cabecera. El ítem nace con el nombre ESTÁTICO "Presupuesto" (sin
+ *      concatenar clave ni fecha); su ID de negocio lo asigna la customKey del board
+ *      (pulse_id_mkwb5sj3), sin renombrado del lado de la app.
  *   2. UNA solicitud con todos los subitems (los fragmentos del carrito, con alias `s0`, `s1`…),
  *      cada uno con el nombre de su producto, más un reintento suelto por cada línea que no volvió.
  *
@@ -938,8 +950,17 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
       productosSinCrear: [],
     }
   }
-  const { cliente, lineas, fechaEmision, fechaVencimiento, diasVigencia, rentabilidad, moneda } =
-    datos
+  const {
+    cliente,
+    lineas,
+    fechaEmision,
+    fechaVencimiento,
+    diasVigencia,
+    rentabilidad,
+    moneda,
+    totalPesos,
+    totalUsd,
+  } = datos
 
   // Cabecera. El vendedor (person) se deja vacío: todavía no hay vendedores cargados en Monday.
   const emision = fechaMonday(fechaEmision)
@@ -954,17 +975,21 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     // De esta columna dependen las fórmulas de subtotal: en "Dolares" se completa
     // formula_mm5f75gm ($u x prod) y en "Pesos", formula_mm58pwc ($ x prod).
     [COL.presupuesto.moneda]: { label: MONEDA_LABEL[moneda] },
+    // Totales globales calculados en la UI (desglose bimonetario): pesos y dólares por separado.
+    [COL.presupuesto.totalPesos]: String(round2(totalPesos)),
+    [COL.presupuesto.totalUsd]: String(round2(totalUsd)),
   }
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
   if (vencimiento) cabecera[COL.presupuesto.fechaVencimiento] = { date: vencimiento }
 
-  // 1) Crear el ítem base con el nombre general del tablero. El ID de negocio ("PRESUP-009") lo
-  //    asigna la customKey del board; la app ya no lo lee ni renombra el ítem.
+  // 1) Crear el ítem con el nombre ESTÁTICO "Presupuesto". No se concatena la clave del ítem ni la
+  //    fecha de emisión: el ID de negocio ("PRESUP-009") lo asigna la customKey del board, y la app
+  //    ya no lee ni renombra el ítem.
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
     }`,
-    { boardId: BOARDS.presupuestos, name: 'Presupuestos', cv: JSON.stringify(cabecera) },
+    { boardId: BOARDS.presupuestos, name: 'Presupuesto', cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
 
@@ -1178,7 +1203,23 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
   const proveedor = prodCols[COL.producto.proveedor]?.linked_items?.[0]
   const presupuestada = numCol(c[COL.presupuestoSub.cantidad])
   const vendida = numCol(c[COL.presupuestoSub.cantVendida])
+  /* Presupuesto bimonetario: el precio se lee de la columna de la moneda del producto. En dólares,
+     de "Precio Unit $u"; en pesos, de "Precio Unit $". La moneda viaja para que la venta CON
+     PRESUPUESTO PREVIO sepa si tiene que convertirlo a pesos con la tasa del día. */
+  const moneda = valor(c[COL.presupuestoSub.moneda])
+  const precio = esDolar(moneda)
+    ? numCol(c[COL.presupuestoSub.precioUnitUsd])
+    : numCol(c[COL.presupuestoSub.precioUnit])
+  // Importe bonificado por unidad guardado en el presupuesto (en la moneda del producto). Es la
+  // base sobre la que la venta suma el descuento por forma de pago. Se convierte a pesos junto con
+  // el precio si el producto era en dólares.
+  const impBonificado = numCol(c[COL.presupuestoSub.importeBonif])
+  // Alícuota de IVA de la línea: se lee del propio subelemento ("🤖IVA (%)"); si un presupuesto
+  // viejo no la tiene, se cae a la del producto conectado.
+  const iva = numCol(c[COL.presupuestoSub.iva]) || numCol(prodCols[COL.producto.iva])
   return {
+    moneda,
+    impBonificado,
     /* El nombre viene del producto conectado en "📦Producto Seleccionado"
        (board_relation_mm57gxye), NUNCA del nombre del subítem —que se renombra con IDs
        ("12580972657 · 12580960919") y no dice nada al usuario—. Sin producto conectado se
@@ -1189,7 +1230,7 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     vend: vendida,
     // Disponible = presupuestada − vendida. Nunca baja de cero.
     pend: Math.max(presupuestada - vendida, 0),
-    precio: numCol(c[COL.presupuestoSub.precioUnit]),
+    precio,
     rent: numCol(c[COL.presupuestoSub.rentabilidad]),
     descuento: numCol(c[COL.presupuestoSub.descuento]),
     /* El tipo de mercadería sale de la mirror del subelemento; si no vino, del propio producto
@@ -1199,7 +1240,7 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     comisionable: valor(c[COL.presupuestoSub.comisionable]).trim().toUpperCase() === 'SI',
     porcComActiva: numCol(prodCols[COL.producto.porcComActiva]),
     porcComPasiva: numCol(prodCols[COL.producto.porcComPasiva]),
-    iva: numCol(prodCols[COL.producto.iva]),
+    iva,
     proveedorId: proveedor?.id,
     proveedorNombre: proveedor?.name ?? '',
     estadoUso: c[COL.presupuestoSub.estadoUso]?.text ?? '',
@@ -1288,7 +1329,7 @@ export async function getPresupuestosVigentes(clienteItemId: string): Promise<Pr
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {

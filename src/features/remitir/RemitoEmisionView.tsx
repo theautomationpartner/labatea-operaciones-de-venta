@@ -28,14 +28,16 @@ type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
 
 /** Paso 4 de REMITO: resumen, generación del PDF del remito y envío a los contactos del cliente. */
 export function RemitoEmisionView() {
-  const { cliente, operacion, tipoVenta, tipoEntrega, remito } = useApp()
+  const { cliente, operacion, tipoVenta, tipoEntrega, remito, documentoEmitido, documentoEnviado } =
+    useApp()
   const dispatch = useDispatch()
+  /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
+     el botón "Emitir Remito" no se reactiva al volver a esta etapa. */
+  const emitido = documentoEmitido
 
   /* Generación del PDF: pone el remito en "Emitir" (dispara la automatización) y espera el archivo. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
   const [error, setError] = useState<string | null>(null)
-  // El envío se completó: junto con el remito ya emitido habilita "Finalizar Operación".
-  const [enviado, setEnviado] = useState(false)
 
   /* Talonario "En USO" y su primera hoja "Pend de Usar": son la numeración del remito. Sin ellos
      no se puede emitir (botón deshabilitado + aviso). Se chequea al entrar al paso. */
@@ -97,6 +99,9 @@ export function RemitoEmisionView() {
    */
   const emitir = async () => {
     if (!cliente) return
+    // Anti-duplicado: si el remito ya se emitió con éxito (incluso tras volver con el stepper), la
+    // acción se anula internamente y NO se vuelve a emitir el documento.
+    if (documentoEmitido) return
     if (estado === 'generando') return
     // Sin talonario "En USO" con hoja "Pend de Usar" no se numera el remito: se frena y se avisa.
     if (talonarioError || !talonario) {
@@ -222,12 +227,15 @@ export function RemitoEmisionView() {
       if (!activo.current) return
       if (generado) {
         setEstado('listo')
+        // Bandera GLOBAL de emisión exitosa: persiste al navegar con el stepper.
+        dispatch({ type: 'setDocumentoEmitido', value: true })
       } else if (mondayHabilitado()) {
         setError('El PDF está tardando más de lo esperado. Reintentá en unos segundos.')
         setEstado('error')
       } else {
         // Modo local (sin token): no hay archivo real, se muestra el visor vacío.
         setEstado('listo')
+        dispatch({ type: 'setDocumentoEmitido', value: true })
       }
     } catch {
       if (!activo.current) return
@@ -256,7 +264,7 @@ export function RemitoEmisionView() {
         <div className="emision-col">
           <ResumenRemitoEmision
             generando={estado === 'generando'}
-            emitido={estado === 'listo'}
+            emitido={emitido}
             onEmitir={emitir}
             talonarioNombre={talonario?.talonarioNombre}
             hojaNombre={talonario?.hojaNombre}
@@ -268,11 +276,7 @@ export function RemitoEmisionView() {
             variables); se neutraliza el box de página del namespace para que encaje en la columna. */}
         <div className="factura-v2" style={{ padding: 0, maxWidth: 'none', margin: 0 }}>
           <RemitoAGenerar numero={NRO_REMITO} items={remito.items} />
-          <EnviarDocumento
-            documento="remito"
-            numero={NRO_REMITO}
-            onEnviado={() => setEnviado(true)}
-          />
+          <EnviarDocumento documento="remito" numero={NRO_REMITO} />
         </div>
       </div>
 
@@ -288,7 +292,7 @@ export function RemitoEmisionView() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!(estado === 'listo' && enviado)}
+          disabled={!(emitido && documentoEnviado)}
           onClick={() => dispatch({ type: 'reset' })}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación

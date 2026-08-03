@@ -5,7 +5,13 @@ import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { pasosDe } from '@/lib/pasos'
 import { clienteLlevaIva } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
-import { impactoCredito, resumenPresupuesto } from '@/lib/selectors'
+import {
+  comisionVentaDirecta,
+  impactoCredito,
+  resumenPresupuesto,
+  resumenPresupuestoBimoneda,
+} from '@/lib/selectors'
+import { hayDocumentoEmitido } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import { BuscadorProducto } from './BuscadorProducto'
 import { CargaLinea } from './CargaLinea'
@@ -20,8 +26,13 @@ import { useCotizacionProducto } from './useCotizacionProducto'
  * misma lógica de catálogo, carga y totales; sólo cambia el encabezado y a dónde continúa.
  */
 export function ProductosView() {
-  const { cliente, lineas, operacion, tipoVenta, tipoEntrega, formaPago, descuentosPago } = useApp()
+  const state = useApp()
+  const { cliente, lineas, operacion, tipoVenta, tipoEntrega, formaPago, descuentosPago, tasaCambio } =
+    state
   const dispatch = useDispatch()
+  /* GUARDRAIL post-emisión: si ya se emitió un documento oficial en el tablero, esta etapa queda en
+     SOLO LECTURA (no se agregan/editan/quitan productos): la emisión es irreversible. */
+  const bloqueadoPorEmision = hayDocumentoEmitido(state)
   // Selección de producto con conversión bimonetaria (dólares → pesos con la cotización).
   const { seleccionado, setSeleccionado, elegir, convirtiendo } = useCotizacionProducto()
   // Aviso de la búsqueda, que se muestra en el lugar del producto elegido.
@@ -41,9 +52,27 @@ export function ProductosView() {
     () => resumenPresupuesto(lineas, esVenta, descFormaPago),
     [lineas, esVenta, descFormaPago],
   )
+  /* PRESUPUESTO bimonetario: los productos en dólares NO se convierten. Se separan los totales en
+     pesos y en dólares, y el neto en dólares se proyecta a pesos (a la tasa del día) sólo para
+     medir el crédito. La rentabilidad ponderada sale de este mismo cálculo. */
+  const bimoneda = useMemo(
+    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0),
+    [lineas, tasaCambio],
+  )
   /* El crédito se mide sobre el NETO (sin IVA), la misma base que usan el cierre y la venta
-     con presupuesto previo: así lo que muestra el resumen y lo que evalúa el bloqueo coinciden. */
-  const credito = useMemo(() => impactoCredito(cliente, resumen.neto), [cliente, resumen.neto])
+     con presupuesto previo. En el presupuesto se usa el neto proyectado a pesos (ARS + USD×tasa),
+     que ya incluye los dólares convertidos; en la venta, el neto directo. */
+  const importeCredito = esVenta ? resumen.neto : bimoneda.netoProyectado
+  /* Comisión de la venta DIRECTA: se paga por los productos comisionables, con su % de venta
+     pasiva sobre el neto de la línea. El presupuesto no liquida comisión. */
+  const comision = useMemo(
+    () => (esVenta ? comisionVentaDirecta(lineas, descFormaPago) : 0),
+    [esVenta, lineas, descFormaPago],
+  )
+  const credito = useMemo(
+    () => impactoCredito(cliente, importeCredito),
+    [cliente, importeCredito],
+  )
   const filas = useMemo<FilaProducto[]>(
     () =>
       lineas.map((l) => ({
@@ -70,7 +99,7 @@ export function ProductosView() {
      cargan más ítems si se excedió); el PRESUPUESTO sólo avisa y deja seguir. El aviso salta al
      hacer click en continuar (no en vivo). El cliente bloqueado siempre frena. Se mide sobre el
      neto, igual que el impacto de crédito del resumen. */
-  const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: esVenta })
+  const bloqueo = useBloqueoCredito(importeCredito, { bloqueante: esVenta })
   // Sólo en la venta: con el crédito excedido no se pueden cargar más productos.
   const cargaBloqueada = esVenta && bloqueo.excedido
 
@@ -109,52 +138,87 @@ export function ProductosView() {
         }.`}
       />
 
-      {/* Forma de Pago: sólo en la VENTA, justo debajo del título y la descripción. */}
-      {esVenta && <FormaPagoSelect />}
+      {/* Forma de Pago: sólo en la VENTA, justo debajo del título y la descripción. Post-emisión
+          queda deshabilitada (no se puede cambiar el ramal del cobro ya facturado). */}
+      {esVenta && <FormaPagoSelect bloqueado={bloqueadoPorEmision} />}
 
-      {/* Buscador, filtros y carga de línea conviven en una sola card. */}
-      <div className="card">
-        <div className="search-area">
-          <BuscadorProducto
-            lista={cliente.list ?? 'L1'}
-            conIva={conIva}
-            onSelect={elegir}
-            variante="v2"
-            onAviso={setAvisoBusqueda}
-          />
-          <FiltrosProductos />
+      {/* Con un documento ya emitido, la búsqueda y la carga desaparecen: sólo se avisa que la etapa
+          quedó bloqueada. Si no, buscador, filtros y carga de línea conviven en una sola card. */}
+      {bloqueadoPorEmision ? (
+        <div className="card aviso-bloqueo">
+          <i className="fas fa-lock" /> El documento ya fue emitido en Monday: la selección de
+          productos quedó bloqueada y no puede modificarse.
         </div>
-        <CargaLinea
-          key={seleccionado?.codigo ?? 'vacio'}
-          producto={seleccionado}
-          aviso={avisoBusqueda}
-          onAdd={agregar}
-          bloqueado={cargaBloqueada}
-          convirtiendo={convirtiendo}
-        />
-      </div>
+      ) : (
+        <div className="card">
+          <div className="search-area">
+            <BuscadorProducto
+              lista={cliente.list ?? 'L1'}
+              conIva={conIva}
+              onSelect={elegir}
+              variante="v2"
+              onAviso={setAvisoBusqueda}
+            />
+            <FiltrosProductos />
+          </div>
+          <CargaLinea
+            key={seleccionado?.codigo ?? 'vacio'}
+            producto={seleccionado}
+            aviso={avisoBusqueda}
+            onAdd={agregar}
+            bloqueado={cargaBloqueada}
+            convirtiendo={convirtiendo}
+          />
+        </div>
+      )}
 
+      {/* Post-emisión: la tabla pasa a SOLO LECTURA (sin editar cantidad/descuento ni quitar). */}
       <TablaProductos
         titulo="Productos seleccionados"
         filas={filas}
-        onRemove={(id) => dispatch({ type: 'removeLinea', id })}
-        onCantidad={(id, cantidad) => dispatch({ type: 'setCantidadLinea', id, cantidad })}
-        onDescuento={(id, descuento) => dispatch({ type: 'setDescuentoLinea', id, descuento })}
+        onRemove={bloqueadoPorEmision ? undefined : (id) => dispatch({ type: 'removeLinea', id })}
+        onCantidad={
+          bloqueadoPorEmision
+            ? undefined
+            : (id, cantidad) => dispatch({ type: 'setCantidadLinea', id, cantidad })
+        }
+        onDescuento={
+          bloqueadoPorEmision
+            ? undefined
+            : (id, descuento) => dispatch({ type: 'setDescuentoLinea', id, descuento })
+        }
+        soloLectura={bloqueadoPorEmision}
         cantidadMin={1}
         descFormaPago={descFormaPago}
         mostrarIva={esVenta}
+        /* Columna "Moneda" + importes en dólares con `$u` en verde: sólo en el presupuesto. */
+        mostrarMoneda={!esVenta}
       />
 
       <ResumenBox
         titulo={esVenta ? 'Resumen de la venta' : 'Resumen del presupuesto'}
-        resumen={resumen}
+        /* En el presupuesto, la rentabilidad del donut sale del cálculo bimonetario (ponderado en
+           pesos-equivalente); el resto de los totales los aporta `bimoneda`. */
+        resumen={esVenta ? resumen : { ...resumen, rentabilidad: bimoneda.rentabilidad }}
         credito={credito}
         limite={cliente.limit}
         // El presupuesto no muestra IVA: no lo liquida.
         mostrarIva={esVenta}
-        /* En el presupuesto se muestra ÚNICAMENTE el total, etiquetado "TOTAL PRESUPUESTADO". */
-        soloTotal={!esVenta}
-        totalLabel={esVenta ? 'TOTAL' : 'TOTAL PRESUPUESTADO'}
+        // Comisión: sólo en la venta DIRECTA (el presupuesto no la liquida).
+        comision={esVenta ? comision : undefined}
+        totalLabel={esVenta ? 'TOTAL' : 'TOTAL EN PESOS'}
+        /* El presupuesto es bimonetario: desglose ARS/USD y aclaración de conversión del crédito. */
+        bimoneda={
+          esVenta
+            ? undefined
+            : {
+                subtotalArs: bimoneda.ars.subtotal,
+                descuentoArs: bimoneda.ars.descuento,
+                totalArs: bimoneda.ars.neto,
+                totalUsd: bimoneda.usd.neto,
+                hayDolares: bimoneda.hayDolares,
+              }
+        }
       />
 
       <footer className="page-footer">

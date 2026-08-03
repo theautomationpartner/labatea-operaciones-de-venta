@@ -31,23 +31,48 @@ export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverri
     <div className="totals-grid totals-grid--2" aria-label="Resumen de la venta">
       <div className="kpi-card">
         <div className="subtotal-lines">
-          {/* El subtotal es el bruto: la suma de la columna Subtotal de la tabla. En la VENTA no se
-              muestra el "Descuento total". En VENTA PROFORMA no se muestra (el total viene dado). */}
+          {/* Desglose del importe (VENTA normal): Subtotal bruto, el descuento total —la suma de la
+              columna Importe Bonif.—, que se resta, y el IVA, que se suma sobre el neto. En VENTA
+              PROFORMA no se muestra: el total viene dado por la proforma. */}
           {!ocultarSubtotal && (
+            <>
+              <div className="sub-row">
+                <span>Subtotal</span>
+                <span>{money(resumen.subtotal)}</span>
+              </div>
+              {/* Descuento total = suma de los importes bonificados; se resta del subtotal. */}
+              <div className="sub-row">
+                <span>Descuento</span>
+                <span>
+                  {resumen.descuento > 0 ? `− ${money(resumen.descuento)}` : money(0)}
+                </span>
+              </div>
+              {/* Gravado = suma de la columna Importe Total (Subtotal − Descuento): el neto antes
+                  del IVA. Va debajo del Descuento. */}
+              <div className="sub-row">
+                <span>Gravado ($)</span>
+                <span>{money(resumen.total)}</span>
+              </div>
+              {/* IVA total sobre el neto (Subtotal − Descuento); se suma para el importe total. */}
+              <div className="sub-row">
+                <span>IVA ($)</span>
+                <span>{money(resumen.iva)}</span>
+              </div>
+            </>
+          )}
+          {/* TOTAL = Subtotal − Descuento + IVA (neto con impuestos). La VENTA PROFORMA lo
+              reemplaza por el total de la proforma. */}
+          <div className="total-row">
+            <span>TOTAL</span>
+            <span>{money(totalOverride ?? resumen.total + resumen.iva)}</span>
+          </div>
+          {/* Comisión total (dinámica), si hay productos comisionables. DEBAJO del total. */}
+          {resumen.comision > 0 && (
             <div className="sub-row">
-              <span>Subtotal</span>
-              <span>{money(resumen.subtotal)}</span>
+              <span>Comisión ($)</span>
+              <span>{money(resumen.comision)}</span>
             </div>
           )}
-          <div className="total-row">
-            <span>IMPORTE TOTAL</span>
-            <span>{money(totalOverride ?? resumen.total)}</span>
-          </div>
-          {/* Comisión total (dinámica), DEBAJO del importe total y con el estilo de Subtotal. */}
-          <div className="sub-row">
-            <span>Comisión ($)</span>
-            <span>{money(resumen.comision)}</span>
-          </div>
         </div>
       </div>
 

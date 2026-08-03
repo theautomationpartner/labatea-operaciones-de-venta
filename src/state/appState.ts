@@ -1,7 +1,9 @@
 /** Estado único del flujo de operaciones y su reducer. Sin dependencias de React. */
 import { DIAS_VIGENCIA_INICIAL } from '@/data/mock'
 import { hoy } from '@/lib/dates'
-import { pasoDeProductos } from '@/lib/pasos'
+import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
+import { pasoDeProductos, pasosKeysDe } from '@/lib/pasos'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
@@ -37,6 +39,9 @@ import type {
 
 export interface AppState {
   paso: Paso
+  /** Índice del paso MÁS AVANZADO alcanzado en la operación en curso: hasta ahí se puede navegar
+   *  con el stepper (los pasos futuros quedan bloqueados). Se reinicia al empezar/cambiar la operación. */
+  pasoMaxIdx: number
   /* Nada viene preseteado: el vendedor elige todo explícitamente. */
   operacion: Operacion | null
   vendedor: Vendedor | null
@@ -74,6 +79,14 @@ export interface AppState {
   ventaId: string | null
   /** ID del ítem de proforma creado en el board de Proformas (18424580497). null = todavía no. */
   proformaId: string | null
+  /**
+   * Éxito PERSISTENTE de la etapa de emisión: el documento (presupuesto/remito) ya se emitió con
+   * éxito en esta operación. Evita re-disparar la mutación irreversible al volver con el stepper.
+   * (La factura de venta usa `factura.comprobantes`, que ya persiste su emisión.)
+   */
+  documentoEmitido: boolean
+  /** Éxito PERSISTENTE del envío ("Confirmar y Enviar"): el documento ya se despachó a los contactos. */
+  documentoEnviado: boolean
   /** ID que va a llevar el presupuesto ("PRESUP-009"), leído del board al iniciar la operación. */
   nroPresupuesto: string | null
 
@@ -144,6 +157,7 @@ const entregaVentaInicial: EntregaVentaState = {
 
 export const initialState: AppState = {
   paso: 'inicio',
+  pasoMaxIdx: 0,
   operacion: null,
   vendedor: null,
   cliente: null,
@@ -166,6 +180,8 @@ export const initialState: AppState = {
   presupuestoId: null,
   ventaId: null,
   proformaId: null,
+  documentoEmitido: false,
+  documentoEnviado: false,
   nroPresupuesto: null,
 
   enviar: false,
@@ -237,6 +253,8 @@ export type Action =
   | { type: 'setPresupuestoId'; value: string | null }
   | { type: 'setVentaId'; value: string | null }
   | { type: 'setProformaId'; value: string | null }
+  | { type: 'setDocumentoEmitido'; value: boolean }
+  | { type: 'setDocumentoEnviado'; value: boolean }
   | { type: 'setNroPresupuesto'; value: string | null }
   | { type: 'reset' }
   | { type: 'addFiltro'; filtro: Filtro }
@@ -263,6 +281,7 @@ export type Action =
   | { type: 'agregarMovimientoPago'; movimiento: Omit<MovimientoPago, 'id'> }
   | { type: 'removeMovimientoPago'; id: string }
   | { type: 'confirmarCobro'; cobroId?: string; deudaId?: string; saldoAnterior?: number }
+  | { type: 'desconfirmarCobro' }
   | { type: 'setFactura'; patch: Partial<FacturaState> }
   | { type: 'registrarFactura' }
   | { type: 'emitirFactura'; comprobantes: ComprobanteEmitido[] }
@@ -290,6 +309,41 @@ const nuevoId = (): string =>
 export const maxAVender = (prod: PresupuestoProducto): number => prod.pend
 
 /**
+ * VENTA CON PRESUPUESTO PREVIO: un producto presupuestado en DÓLARES no se mantiene en USD en la
+ * venta. Se convierte a pesos con la tasa de cambio del día (precio × tasa) y se re-etiqueta como
+ * "Pesos"; el resto de los importes de la línea —importe bonificado, IVA y total— derivan del precio
+ * unitario, así que quedan automáticamente en pesos al renderizarse y al escribirse en la API. Un
+ * producto en pesos (o si la tasa aún no está disponible) se devuelve sin tocar.
+ */
+export function convertirProductoAPesos(
+  prod: PresupuestoProducto,
+  tasa: number | null,
+): PresupuestoProducto {
+  if (!esDolar(prod.moneda) || !tasa || tasa <= 0) return prod
+  return {
+    ...prod,
+    precio: round2(prod.precio * tasa),
+    // El importe bonificado guardado (en dólares) se convierte con la misma tasa: es la base sobre
+    // la que la venta aplica el descuento por forma de pago, ya en pesos.
+    impBonificado:
+      prod.impBonificado != null ? round2(prod.impBonificado * tasa) : prod.impBonificado,
+    moneda: 'Pesos',
+  }
+}
+
+/**
+ * Hay un documento oficial YA EMITIDO en el tablero en esta sesión: presupuesto o remito (PDF),
+ * proforma o factura. La emisión hacia Monday es IRREVERSIBLE, así que mientras exista no puede
+ * modificarse ningún dato de las etapas anteriores (selección de productos, cantidades, precios):
+ * quedan en solo lectura para que la base de datos y la interfaz no queden desincronizadas.
+ */
+export const hayDocumentoEmitido = (s: AppState): boolean =>
+  s.documentoEmitido ||
+  Boolean(s.proformaId) ||
+  s.factura.comprobantes.length > 0 ||
+  s.remito.emitido
+
+/**
  * Los selectores de operación viven en todos los pasos, así que el modo puede cambiar
  * en cualquier momento. 'inicio' y 'cliente' son comunes a ambos flujos; el resto
  * pertenece a una operación, y al cambiarla hay que caer en su paso equivalente.
@@ -306,14 +360,29 @@ function pasoDelModo(
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'goto':
-      return { ...state, paso: action.paso }
+    case 'goto': {
+      /* Al ir a un paso se recuerda el índice MÁS AVANZADO alcanzado: volver atrás no lo baja, así
+         el stepper deja volver a saltar hacia adelante a las etapas ya completadas. */
+      const keys = pasosKeysDe(
+        state.operacion,
+        state.tipoVenta,
+        state.tipoEntrega,
+        state.remito.tipoEmision,
+      )
+      const idx = keys.indexOf(action.paso)
+      const pasoMaxIdx = idx >= 0 ? Math.max(state.pasoMaxIdx, idx) : state.pasoMaxIdx
+      return { ...state, paso: action.paso, pasoMaxIdx }
+    }
 
     case 'setOperacion': {
       if (state.operacion === action.operacion) return state
       return {
         ...state,
         operacion: action.operacion,
+        // Nueva operación: se reinicia el progreso navegable del stepper y las banderas de éxito.
+        pasoMaxIdx: 0,
+        documentoEmitido: false,
+        documentoEnviado: false,
         paso: pasoDelModo(state.paso, action.operacion, state.tipoVenta, state.tipoEntrega),
       }
     }
@@ -354,6 +423,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         cliente: action.cliente,
+        // Otro cliente reinicia la transacción: progreso del stepper y banderas de éxito.
+        pasoMaxIdx: 0,
+        documentoEmitido: false,
+        documentoEnviado: false,
         lineas: [],
         presupuestoId: null,
         // La venta creada pertenece al cliente anterior: no puede arrastrarse.
@@ -387,7 +460,16 @@ export function reducer(state: AppState, action: Action): AppState {
         state.operacion === 'VENTA'
           ? pasoDelModo(state.paso, state.operacion, action.value, tipoEntrega)
           : state.paso
-      return { ...state, tipoVenta: action.value, tipoEntrega, paso }
+      // Cambia el orden/las etapas del flujo: se reinician progreso y banderas de éxito.
+      return {
+        ...state,
+        tipoVenta: action.value,
+        tipoEntrega,
+        paso,
+        pasoMaxIdx: 0,
+        documentoEmitido: false,
+        documentoEnviado: false,
+      }
     }
 
     case 'setTipoEntrega': {
@@ -396,7 +478,15 @@ export function reducer(state: AppState, action: Action): AppState {
         state.operacion === 'VENTA'
           ? pasoDelModo(state.paso, state.operacion, state.tipoVenta, action.value)
           : state.paso
-      return { ...state, tipoEntrega: action.value, paso }
+      // Cambia el orden/las etapas del flujo: se reinician progreso y banderas de éxito.
+      return {
+        ...state,
+        tipoEntrega: action.value,
+        paso,
+        pasoMaxIdx: 0,
+        documentoEmitido: false,
+        documentoEnviado: false,
+      }
     }
 
     case 'setFormaPago':
@@ -422,6 +512,12 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'setProformaId':
       return { ...state, proformaId: action.value }
+
+    case 'setDocumentoEmitido':
+      return { ...state, documentoEmitido: action.value }
+
+    case 'setDocumentoEnviado':
+      return { ...state, documentoEnviado: action.value }
 
     case 'setNroPresupuesto':
       return { ...state, nroPresupuesto: action.value }
@@ -522,13 +618,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const existentes = new Set(state.ventaItems.map((it) => it.uid))
       const nuevos = action.seleccion
         .filter((s) => !existentes.has(s.uid))
-        // El descuento arranca en el que traía la línea del presupuesto y se puede editar.
-        .map((s): VentaItem => ({
-          ...s.prod,
-          uid: s.uid,
-          aVender: s.cantidad,
-          desc: s.prod.descuento ?? 0,
-        }))
+        // El descuento arranca en el que traía la línea del presupuesto y se puede editar. Un
+        // producto presupuestado en dólares se convierte a pesos con la tasa del día antes de entrar.
+        .map((s): VentaItem => {
+          const prod = convertirProductoAPesos(s.prod, state.tasaCambio)
+          return { ...prod, uid: s.uid, aVender: s.cantidad, desc: prod.descuento ?? 0 }
+        })
       if (nuevos.length === 0) return state
       return { ...state, ventaItems: [...state.ventaItems, ...nuevos] }
     }
@@ -620,6 +715,12 @@ export function reducer(state: AppState, action: Action): AppState {
           saldoAnterior: action.saldoAnterior ?? state.cobro.saldoAnterior,
         },
       }
+
+    /* Reabre el cobro: la venta cambió (se editaron productos) y el total ya no coincide con lo
+       cobrado. Se limpia la confirmación para exigir registrar la diferencia antes de avanzar. */
+    case 'desconfirmarCobro':
+      if (!state.cobro.confirmado) return state
+      return { ...state, cobro: { ...state.cobro, confirmado: false } }
 
     /* Editar la ficha invalida el registro y, con él, la emisión. Los comprobantes ya creados
        NO se borran: existen en el board, y son los que impiden volver a emitir por duplicado. */

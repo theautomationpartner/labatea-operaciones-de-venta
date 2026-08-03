@@ -951,6 +951,28 @@
   color: var(--p-text-main);
   white-space: nowrap;
 }
+/* Aviso de etapa bloqueada tras emitir un documento oficial (guardrail post-emisión). */
+.productos-v2 .aviso-bloqueo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .aviso-bloqueo i {
+  color: var(--yellow, #e2a500);
+  font-size: 16px;
+}
+
+/* Aclaración de la conversión de dólares bajo la métrica de crédito (presupuesto bimonetario). */
+.productos-v2 .credito-nota-usd {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--p-text-secondary);
+  font-style: italic;
+}
 
 /* ===== Footer ===== */
 .productos-v2 .page-footer {

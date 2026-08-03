@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
   balancePagos,
+  cobroSimultaneoOperacion,
+  descuentoDeFormaPago,
   esPagoConTarjeta,
   resumenCobro,
   tipoTarjetaDe,
@@ -10,7 +12,7 @@ import {
 } from '@/lib/cobros'
 import { round2 } from '@/lib/format'
 import { esFlujoRemito, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
-import { IVA_RATE, resumenFactura, resumenVenta } from '@/lib/selectors'
+import { IVA_RATE, resumenFactura, resumenPresupuesto, resumenVenta } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { CabeceraCobro } from './CabeceraCobro'
@@ -52,25 +54,32 @@ export function CobroView() {
   /* Neto de la venta (sin IVA): es la base del crédito. La línea del cliente se mide sobre el
      neto, igual que en la selección de productos, no sobre el total con IVA. De dónde sale
      depende del flujo por el que se armó. */
-  const netoVenta = useMemo(
-    () =>
-      // La entrega ANTERIOR manda sobre el tipo de venta: se factura lo remitido.
-      esFlujoRemito(tipoEntrega)
-        ? // La factura aplana varios remitos: ya no hay un descuento único por remito.
-          resumenFactura(state.facturaItems, cliente, 0).neto
-        : // CON PRESUPUESTO PREVIO y la VENTA PROFORMA arman la venta en `ventaItems`.
-          tipoVenta === 'CON PRESUPUESTO PREVIO' || operacion === 'VENTA PROFORMA'
-          ? resumenVenta(state.ventaItems, cliente, tipoVenta ?? 'CON PRESUPUESTO PREVIO').total
-          : round2(
-              state.lineas.reduce(
-                (acc, l) => acc + round2(l.producto.precio * l.cantidad * (1 - l.descuento / 100)),
-                0,
-              ),
-            ),
-    [state, cliente, tipoVenta, tipoEntrega],
-  )
-  /* Lo que hay que cobrar es el TOTAL con IVA: es el importe que va a la factura, no el neto. */
-  const totalVenta = useMemo(() => round2(netoVenta * (1 + IVA_RATE)), [netoVenta])
+  /* Descuento por forma de pago (pronto pago): el cobro NO lo aplica por movimiento, así que tiene
+     que estar YA descontado en el importe a cobrar —igual que en el resumen del paso anterior—. */
+  const descFormaPago = descuentoDeFormaPago(formaPago, state.descuentosPago)
+  /* Neto (base del crédito) y TOTAL con IVA de la venta, calculados con las MISMAS fórmulas que el
+     resumen del paso anterior (incluido el descuento por forma de pago). El total resultante es el
+     valor de la métrica "TOTAL" de esa card: es el que se cobra, se adeuda o va a la proforma. */
+  const { netoVenta, totalVenta } = useMemo(() => {
+    // La entrega ANTERIOR manda sobre el tipo de venta: se factura lo remitido (sin forma de pago).
+    if (esFlujoRemito(tipoEntrega)) {
+      const neto = resumenFactura(state.facturaItems, cliente, 0).neto
+      return { netoVenta: neto, totalVenta: round2(neto * (1 + IVA_RATE)) }
+    }
+    // CON PRESUPUESTO PREVIO y la VENTA PROFORMA arman la venta en `ventaItems`.
+    if (tipoVenta === 'CON PRESUPUESTO PREVIO' || operacion === 'VENTA PROFORMA') {
+      const r = resumenVenta(
+        state.ventaItems,
+        cliente,
+        tipoVenta ?? 'CON PRESUPUESTO PREVIO',
+        descFormaPago,
+      )
+      return { netoVenta: r.total, totalVenta: round2(r.total + r.iva) }
+    }
+    // Venta DIRECTA armada desde el catálogo: mismo cálculo que el ResumenBox de la venta.
+    const r = resumenPresupuesto(state.lineas, true, descFormaPago)
+    return { netoVenta: r.neto, totalVenta: r.total }
+  }, [state, cliente, tipoVenta, tipoEntrega, descFormaPago])
 
   /* El cobro de contado NO aplica descuentos por medio de pago: lo cobrado es el importe cargado,
      y "Total Cobrado" debe dar exactamente el total de la venta (Diferencia 0) para avanzar. */
@@ -79,6 +88,20 @@ export function CobroView() {
     [cobro.movimientos],
   )
   const resumen = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
+
+  /* MÓDULO 2 · reactividad del cobro: si la venta cambió (se editaron productos en un paso anterior)
+     y lo cobrado ya no cubre el total, se reabre el cobro confirmado para exigir registrar la
+     diferencia antes de volver a avanzar. Sólo aplica al cobro SIMULTÁNEO, que exige el 100%. */
+  useEffect(() => {
+    if (
+      cliente &&
+      cobro.confirmado &&
+      cobroSimultaneoOperacion(cliente, cobro) &&
+      !mismoImporte(resumen.cancelado, resumen.totalACobrar)
+    ) {
+      dispatch({ type: 'desconfirmarCobro' })
+    }
+  }, [cliente, cobro, resumen.cancelado, resumen.totalACobrar, dispatch])
   /* Bloqueo por crédito. Lo que consume la línea es el NETO de la venta —la misma base que la
      selección de productos—, no el total con IVA: medir el bloqueo sobre el bruto frenaba
      ventas que en el resumen todavía mostraban crédito disponible. Y si la venta se cobra

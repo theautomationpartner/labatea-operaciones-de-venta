@@ -71,6 +71,30 @@ export function pasosDe(
 export const pasoTrasCobro = (tipoEntrega: TipoEntrega | null): Paso =>
   tipoEntrega === 'POSTERIOR' ? 'entrega' : 'factura'
 
+/**
+ * Claves de `Paso` en el MISMO orden que las etiquetas de `pasosDe`: mapea el índice del stepper
+ * a la etapa a la que se navega al hacer clic en su círculo. Debe quedar sincronizada con `pasosDe`
+ * (misma cantidad y orden), y con `pasoDeProductos` para el paso 2.
+ */
+export function pasosKeysDe(
+  operacion: Operacion | null,
+  tipoVenta: TipoVenta | null,
+  tipoEntrega: TipoEntrega | null,
+  tipoEmision: TipoEmisionRemito | null = null,
+): readonly Paso[] {
+  void tipoEmision // el remito comparte las mismas claves en ANTERIOR y POSTERIOR
+  if (operacion === 'REMITO') {
+    return ['cliente', 'remito-productos', 'remito-envio', 'remito-emision']
+  }
+  if (operacion === 'VENTA PROFORMA') return ['cliente', 'venta-proforma', 'cobro', 'factura']
+  if (operacion !== 'VENTA') return ['cliente', 'productos', 'emision'] // PRESUPUESTAR
+  const prod = pasoDeProductos(operacion, tipoVenta, tipoEntrega)
+  if (esFlujoRemito(tipoEntrega)) return ['cliente', 'remito', 'cobro', 'factura']
+  return tipoEntrega === 'POSTERIOR'
+    ? ['cliente', prod, 'cobro', 'entrega', 'factura']
+    : ['cliente', prod, 'cobro', 'factura']
+}
+
 /** Paso 2 de cada flujo: de dónde salen los productos de la operación. */
 export function pasoDeProductos(
   operacion: Operacion | null,

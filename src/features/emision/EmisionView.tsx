@@ -6,7 +6,7 @@ import { NRO_PRESUPUESTO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { addDays } from '@/lib/dates'
 import { PASOS_PRESUPUESTO } from '@/lib/pasos'
-import { resumenPresupuesto } from '@/lib/selectors'
+import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
 import {
   crearPresupuesto,
@@ -23,12 +23,32 @@ type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
 
 /** Paso 3 de PRESUPUESTAR: revisión, PDF y envío a los contactos. */
 export function EmisionView() {
-  const { lineas, fechaEmision, diasVigencia, cliente, presupuestoId, nroPresupuesto, vendedor, moneda } =
-    useApp()
+  const {
+    lineas,
+    fechaEmision,
+    diasVigencia,
+    cliente,
+    presupuestoId,
+    nroPresupuesto,
+    vendedor,
+    moneda,
+    tasaCambio,
+    documentoEmitido,
+    documentoEnviado,
+  } = useApp()
   const dispatch = useDispatch()
+  /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
+     el botón "Emitir Presupuesto" no se reactiva al volver a esta etapa. */
+  const emitido = documentoEmitido
 
   // El presupuesto no liquida IVA: el importe total es el subtotal de sus productos.
   const resumen = useMemo(() => resumenPresupuesto(lineas, false), [lineas])
+  /* Totales bimonetarios (pesos y dólares por separado): los mismos que muestra el paso de armado.
+     Se escriben en el ítem del presupuesto al crearlo (TOTAL EN PESOS / TOTAL EN DOLARES). */
+  const bimoneda = useMemo(
+    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0),
+    [lineas, tasaCambio],
+  )
   const vencimiento = useMemo(
     () => addDays(fechaEmision, diasVigencia),
     [fechaEmision, diasVigencia],
@@ -37,8 +57,6 @@ export function EmisionView() {
   /* Generación del PDF: crea el presupuesto en "Emitir" (dispara Make.com) y espera el archivo. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
   const [error, setError] = useState<string | null>(null)
-  // El envío se completó: junto con el PDF ya generado habilita "Finalizar Operación".
-  const [enviado, setEnviado] = useState(false)
   // Datos que faltan para escribir el presupuesto en Monday; frenan la generación.
   const [faltantes, setFaltantes] = useState<string[] | null>(null)
   // Si se sale del paso mientras se espera el PDF, no actualizamos estado desmontado.
@@ -62,6 +80,9 @@ export function EmisionView() {
    */
   const generar = async () => {
     if (!cliente) return
+    // Anti-duplicado: si el presupuesto ya se emitió con éxito (incluso tras volver con el stepper),
+    // la acción se anula internamente y NO se vuelve a crear/emitir el documento.
+    if (documentoEmitido) return
     if (estado === 'generando') return
     if (bloqueo.frenar()) return
     if (lineas.length === 0) {
@@ -94,6 +115,8 @@ export function EmisionView() {
           diasVigencia,
           rentabilidad: resumen.rentabilidad,
           moneda,
+          totalPesos: bimoneda.ars.neto,
+          totalUsd: bimoneda.usd.neto,
         })
         if (creado.subitemsCreados !== lineas.length) {
           setError(
@@ -110,12 +133,15 @@ export function EmisionView() {
       if (!activo.current) return
       if (generado) {
         setEstado('listo')
+        // Bandera GLOBAL de emisión exitosa: persiste al navegar con el stepper.
+        dispatch({ type: 'setDocumentoEmitido', value: true })
       } else if (mondayHabilitado()) {
         setError('El PDF está tardando más de lo esperado. Reintentá en unos segundos.')
         setEstado('error')
       } else {
         // Modo local (sin token): no hay archivo real, se muestra la maqueta.
         setEstado('listo')
+        dispatch({ type: 'setDocumentoEmitido', value: true })
       }
     } catch {
       if (!activo.current) return
@@ -142,7 +168,7 @@ export function EmisionView() {
             resumen={resumen}
             vencimiento={vencimiento}
             generando={estado === 'generando'}
-            emitido={estado === 'listo'}
+            emitido={emitido}
             onGenerar={generar}
           />
         </div>
@@ -150,16 +176,8 @@ export function EmisionView() {
         {/* Bajo `.factura-v2` para reutilizar el desplegable de comprobantes (clases `comp-*` y sus
             variables); se neutraliza el box de página del namespace para que encaje en la columna. */}
         <div className="factura-v2" style={{ padding: 0, maxWidth: 'none', margin: 0 }}>
-          <PresupuestoAGenerar
-            numero={nroPresupuesto ?? NRO_PRESUPUESTO}
-            lineas={lineas}
-            total={resumen.total}
-          />
-          <EnviarDocumento
-            documento="presupuesto"
-            numero={nroPresupuesto ?? NRO_PRESUPUESTO}
-            onEnviado={() => setEnviado(true)}
-          />
+          <PresupuestoAGenerar numero={nroPresupuesto ?? NRO_PRESUPUESTO} lineas={lineas} />
+          <EnviarDocumento documento="presupuesto" numero={nroPresupuesto ?? NRO_PRESUPUESTO} />
         </div>
       </div>
 
@@ -175,7 +193,7 @@ export function EmisionView() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!(estado === 'listo' && enviado)}
+          disabled={!(emitido && documentoEnviado)}
           onClick={() => dispatch({ type: 'reset' })}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación

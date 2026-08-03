@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { money, pctDec, round2 } from '@/lib/format'
+import { money, moneyU, pctDec, round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { rentabilidadEfectiva } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
@@ -71,6 +72,11 @@ export function CargaLinea({
   const importeTotal = producto
     ? round2(producto.precio * (1 - (Number(descuento) || 0) / 100) * cantidad)
     : 0
+
+  /* Producto en dólares (presupuesto bimonetario): el precio y el importe se muestran en su moneda
+     original, con prefijo `$u` y en verde. En la venta el producto ya llega convertido a pesos. */
+  const dolar = esDolar(producto?.moneda)
+  const fmtMonto = dolar ? moneyU : money
 
   return (
     <div
@@ -155,8 +161,9 @@ export function CargaLinea({
                   type="text"
                   className="std-input"
                   placeholder="$ 0"
-                  value={convirtiendo ? 'Convirtiendo…' : producto ? money(producto.precio) : ''}
+                  value={convirtiendo ? 'Convirtiendo…' : producto ? fmtMonto(producto.precio) : ''}
                   readOnly
+                  style={dolar ? { color: 'var(--green-dark)', fontWeight: 700 } : undefined}
                 />
               </div>
 
@@ -212,8 +219,8 @@ export function CargaLinea({
                   className="std-input"
                   readOnly
                   placeholder="$ 0"
-                  value={producto ? money(importeTotal) : ''}
-                  style={{ color: 'var(--primary-blue)', fontWeight: 800 }}
+                  value={producto ? fmtMonto(importeTotal) : ''}
+                  style={{ color: dolar ? 'var(--green-dark)' : 'var(--primary-blue)', fontWeight: 800 }}
                   aria-label="Importe total del producto con el descuento y la cantidad aplicados"
                 />
               </div>

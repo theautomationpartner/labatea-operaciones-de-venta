@@ -11,6 +11,8 @@ interface TablaRemitoProps {
    * documento de sólo cantidades y no expone importes.
    */
   mostrarImporte?: boolean
+  /** Post-emisión: la tabla pasa a SOLO LECTURA (cantidades no editables, sin quitar líneas). */
+  soloLectura?: boolean
 }
 
 /** Total de la línea: cantidad a entregar × precio unitario. */
@@ -21,9 +23,15 @@ const totalLinea = (it: RemitoItem): number => round2(it.cantidad * (it.precioUn
  * En POSTERIOR, además, muestra precio unitario, total por producto y el importe pendiente de
  * facturar, que es la suma de todos los totales.
  */
-export function TablaRemito({ items, onCantidad, onRemove, mostrarImporte = false }: TablaRemitoProps) {
-  // Sin importes: 6 columnas. Con importes (POSTERIOR): 8 (precio unitario + total).
-  const colSpanVacio = mostrarImporte ? 8 : 6
+export function TablaRemito({
+  items,
+  onCantidad,
+  onRemove,
+  mostrarImporte = false,
+  soloLectura = false,
+}: TablaRemitoProps) {
+  // Sin importes: 6 columnas. Con importes (POSTERIOR): 8. −1 sin la columna de acciones (sólo lectura).
+  const colSpanVacio = (mostrarImporte ? 8 : 6) - (soloLectura ? 1 : 0)
   const importePendFacturar = round2(items.reduce((acc, it) => acc + totalLinea(it), 0))
 
   const tabla = (
@@ -38,7 +46,7 @@ export function TablaRemito({ items, onCantidad, onRemove, mostrarImporte = fals
             <th className="ta-c">Unidad de medida</th>
             {mostrarImporte && <th className="ta-c">Precio unitario</th>}
             {mostrarImporte && <th className="ta-c">Total por producto</th>}
-            <th className="ta-c">Acc.</th>
+            {!soloLectura && <th className="ta-c">Acc.</th>}
           </tr>
         </thead>
         <tbody>
@@ -60,38 +68,42 @@ export function TablaRemito({ items, onCantidad, onRemove, mostrarImporte = fals
                 </td>
                 <td style={{ fontWeight: 600 }}>{it.nombre}</td>
 
-                <td className="ta-c">
-                  <span className={`qbox ${excede ? 'qbox--error' : ''}`}>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      aria-label={`Cantidad a remitar de ${it.nombre}`}
-                      aria-invalid={excede}
-                      title={excede ? `No se puede remitar más de ${tope} pendientes` : ''}
-                      value={it.cantidad}
-                      onChange={(e) =>
-                        onCantidad(it.uid, Number(e.target.value.replace(/\D/g, '')) || 0)
-                      }
-                    />
-                    <span className="qbtns">
-                      <button
-                        type="button"
-                        aria-label={`Sumar una unidad de ${it.nombre}`}
-                        disabled={tope !== undefined && it.cantidad >= tope}
-                        onClick={() => onCantidad(it.uid, it.cantidad + 1)}
-                      >
-                        <i className="fas fa-angle-up" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Restar una unidad de ${it.nombre}`}
-                        disabled={it.cantidad === 0}
-                        onClick={() => onCantidad(it.uid, it.cantidad - 1)}
-                      >
-                        <i className="fas fa-angle-down" />
-                      </button>
+                <td className="ta-c" style={{ fontWeight: 600 }}>
+                  {soloLectura ? (
+                    it.cantidad
+                  ) : (
+                    <span className={`qbox ${excede ? 'qbox--error' : ''}`}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        aria-label={`Cantidad a remitar de ${it.nombre}`}
+                        aria-invalid={excede}
+                        title={excede ? `No se puede remitar más de ${tope} pendientes` : ''}
+                        value={it.cantidad}
+                        onChange={(e) =>
+                          onCantidad(it.uid, Number(e.target.value.replace(/\D/g, '')) || 0)
+                        }
+                      />
+                      <span className="qbtns">
+                        <button
+                          type="button"
+                          aria-label={`Sumar una unidad de ${it.nombre}`}
+                          disabled={tope !== undefined && it.cantidad >= tope}
+                          onClick={() => onCantidad(it.uid, it.cantidad + 1)}
+                        >
+                          <i className="fas fa-angle-up" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Restar una unidad de ${it.nombre}`}
+                          disabled={it.cantidad === 0}
+                          onClick={() => onCantidad(it.uid, it.cantidad - 1)}
+                        >
+                          <i className="fas fa-angle-down" />
+                        </button>
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </td>
 
                 <td className="ta-c" style={{ fontWeight: 600 }}>
@@ -105,14 +117,16 @@ export function TablaRemito({ items, onCantidad, onRemove, mostrarImporte = fals
                   </td>
                 )}
 
-                <td className="ta-c">
-                  <i
-                    className="far fa-trash-alt trash"
-                    role="button"
-                    aria-label={`Quitar ${it.nombre}`}
-                    onClick={() => onRemove(it.uid)}
-                  />
-                </td>
+                {!soloLectura && (
+                  <td className="ta-c">
+                    <i
+                      className="far fa-trash-alt trash"
+                      role="button"
+                      aria-label={`Quitar ${it.nombre}`}
+                      onClick={() => onRemove(it.uid)}
+                    />
+                  </td>
+                )}
               </tr>
             )
           })}

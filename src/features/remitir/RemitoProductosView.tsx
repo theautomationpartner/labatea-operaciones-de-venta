@@ -6,7 +6,7 @@ import { PendientesSelector, type PendienteFila } from '@/features/shared/Pendie
 import { AVANCE_COLOR, AVANCE_LABEL_ENTREGA, avanceLinea, remitoItemUid } from '@/lib/selectors'
 import { pasosDe } from '@/lib/pasos'
 import { getVentasEntregaPendiente } from '@/services/monday'
-import { type SeleccionRemito } from '@/state/appState'
+import { hayDocumentoEmitido, type SeleccionRemito } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { VentaEntregaPendiente, VentaEntregaProducto } from '@/types'
 import { CargaProductoRemito } from './CargaProductoRemito'
@@ -32,9 +32,12 @@ function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanc
  * entregar. Tabla común.
  */
 export function RemitoProductosView() {
-  const { cliente, operacion, tipoVenta, tipoEntrega, remito } = useApp()
+  const state = useApp()
+  const { cliente, operacion, tipoVenta, tipoEntrega, remito } = state
   const dispatch = useDispatch()
   const esAnterior = remito.tipoEmision === 'ANTERIOR'
+  /* GUARDRAIL post-emisión: con el remito ya emitido, la carga de productos queda en SOLO LECTURA. */
+  const bloqueadoPorEmision = hayDocumentoEmitido(state)
   // Aviso al intentar avanzar sin productos en el remito.
   const [sinProductos, setSinProductos] = useState(false)
 
@@ -136,7 +139,12 @@ export function RemitoProductosView() {
         }
       />
 
-      {esAnterior ? (
+      {bloqueadoPorEmision ? (
+        <div className="card aviso-bloqueo">
+          <i className="fas fa-lock" /> El remito ya fue emitido en Monday: la carga de productos
+          quedó bloqueada y no puede modificarse.
+        </div>
+      ) : esAnterior ? (
         /* Sin panel lateral: la tabla de pendientes ocupa el 100% del ancho, con su buscador y
            su botonera arriba. */
         <PendientesSelector
@@ -177,6 +185,8 @@ export function RemitoProductosView() {
         onRemove={(uid) => dispatch({ type: 'removeRemitoItem', uid })}
         // POSTERIOR: la venta se factura después, así que se muestran precios e importe pendiente.
         mostrarImporte={!esAnterior}
+        // Post-emisión: cantidades no editables y sin quitar líneas.
+        soloLectura={bloqueadoPorEmision}
       />
 
       <footer className="page-footer">

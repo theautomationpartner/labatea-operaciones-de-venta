@@ -221,6 +221,8 @@ export interface DatosProforma {
   rentabilidad: number
   /** Descuento por forma de pago (pronto pago CONTADO), en %. Se compone con el desc. manual. */
   descFormaPago?: number
+  /** Tasa de cambio del dólar usada en la operación. Se registra a nivel ítem (auditoría). */
+  tasaCambio?: number | null
   lineas: LineaVenta[]
 }
 
@@ -243,7 +245,8 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   if (!mondayHabilitado()) {
     return { id: `mock-${Date.now()}`, subitemsCreados: datos.lineas.length }
   }
-  const { clienteId, tipoVenta, tipoEntrega, rentabilidad, descFormaPago = 0, lineas } = datos
+  const { clienteId, tipoVenta, tipoEntrega, rentabilidad, descFormaPago = 0, tasaCambio, lineas } =
+    datos
 
   /* Valores por línea (mismas fórmulas que la tabla de la factura proforma), calculados una vez:
      alimentan tanto los totales del ítem cabecera como cada subelemento. */
@@ -271,6 +274,9 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
     [COL.proforma.rentabilidad]: Math.round(rentabilidad),
     // Totales de la venta (auditoría a nivel ítem).
     [COL.proforma.descuentoTotal]: descuentoTotal,
+    ...(tasaCambio != null && tasaCambio > 0
+      ? { [COL.proforma.tasaCambio]: round2(tasaCambio) }
+      : {}),
     [COL.proforma.ivaTotal]: ivaTotal,
     [COL.proforma.total]: totalVenta,
   }
@@ -299,6 +305,8 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
       [COL.proformaSub.descFormaPago]: descFormaPago,
       // Imp. Bonificado POR UNIDAD (desc manual + desc forma de pago).
       [COL.proformaSub.impBonificado]: bonifUnit,
+      // Precio Bonif = precio unitario (en pesos, ya convertido) menos la bonificación por unidad.
+      [COL.proformaSub.precioBonif]: round2(l.precioUnitario - bonifUnit),
       // IVA ($) de la línea sobre el total ya bonificado.
       [COL.proformaSub.iva]: ivaLinea,
       // Total de la línea (precio − Imp. Bonificado) × cantidad.

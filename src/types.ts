@@ -147,6 +147,12 @@ export interface Producto {
    * viaja con la línea: es la que se declara en cada línea del comprobante.
    */
   iva?: number
+  /** Si el producto admite comisión ("✋Comision" del maestro = "SI"). */
+  comisionable?: boolean
+  /** % de comisión de la venta CON PRESUPUESTO PREVIO ("Porc Com Activa"). */
+  porcComActiva?: number
+  /** % de comisión de la venta DIRECTA ("Porc Com Pasiva"). */
+  porcComPasiva?: number
   /** Taxonomía del Maestro de Productos (columnas dropdown). Texto tal cual viene de Monday
    *  (puede traer varias etiquetas separadas por coma). Se usa para filtrar la búsqueda. */
   rubro?: string
@@ -200,6 +206,9 @@ export interface PresupuestoProducto {
   rent: number
   /** Descuento con el que se presupuestó la línea (%). */
   descuento?: number
+  /** Moneda del producto presupuestado ("Pesos" / "Dolares"). Un producto en dólares se convierte
+   *  a pesos al llevarlo a la venta CON PRESUPUESTO PREVIO (a la tasa del día). */
+  moneda?: string
   /** Tipo de mercadería espejado del maestro: 'CO' (consignada) o 'COM'. */
   tipo?: string
   /** Si el producto admite comisión (mirror "✋Comision" del subelemento del presupuesto). */

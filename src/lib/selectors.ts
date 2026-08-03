@@ -4,6 +4,7 @@
  */
 import { aplicaCredito, creditoDisponibleProyectado, creditoResultante } from '@/lib/credito'
 import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import type {
   Cliente,
   FacturaItem,
@@ -114,6 +115,83 @@ export function resumenPresupuesto(
   }
 }
 
+/** Totales de una sola moneda dentro del presupuesto bimonetario. */
+export interface TotalMoneda {
+  /** Bruto: Σ (precio × cantidad), sin descuentos. */
+  subtotal: number
+  /** Lo bonificado sobre el bruto: subtotal − neto. */
+  descuento: number
+  /** Neto tras bonificar (el presupuesto no liquida IVA). */
+  neto: number
+}
+
+export interface ResumenBimoneda {
+  /** Productos presupuestados en pesos. */
+  ars: TotalMoneda
+  /** Productos presupuestados en dólares (en su moneda original, SIN convertir). */
+  usd: TotalMoneda
+  /** Neto total llevado a pesos: ARS + USD × tasa. Sólo para medir el impacto en el crédito. */
+  netoProyectado: number
+  /** Rentabilidad ponderada por el importe de cada línea en pesos-equivalente. */
+  rentabilidad: number
+  /** Hay al menos un producto en dólares en el presupuesto. */
+  hayDolares: boolean
+}
+
+/** Los tres totales de una moneda, extraídos de un `ResumenPresupuesto`. */
+const totalMoneda = (r: ResumenPresupuesto): TotalMoneda => ({
+  subtotal: r.subtotal,
+  descuento: r.descuento,
+  neto: r.neto,
+})
+
+/**
+ * Totales BIMONETARIOS del presupuesto. Los productos en dólares se presupuestan en su moneda
+ * (no se convierten): se separan de los de pesos y cada grupo tiene su propio subtotal/descuento/
+ * neto. El neto en dólares se lleva a pesos con la tasa del día SÓLO para `netoProyectado`, que es
+ * lo que se resta del crédito disponible del cliente. La rentabilidad se pondera por el importe de
+ * cada línea en pesos-equivalente para que el indicador tenga una sola escala.
+ */
+export function resumenPresupuestoBimoneda(
+  lineas: LineaPresupuesto[],
+  tasa: number,
+): ResumenBimoneda {
+  const t = tasa > 0 ? tasa : 0
+  const arsLineas = lineas.filter((l) => !esDolar(l.producto.moneda))
+  const usdLineas = lineas.filter((l) => esDolar(l.producto.moneda))
+  const ars = resumenPresupuesto(arsLineas, false)
+  const usd = resumenPresupuesto(usdLineas, false)
+  // Cada línea pesa por su importe en pesos: las de dólares, convertidas con la tasa del día.
+  const pesoLinea = (l: LineaPresupuesto) =>
+    esDolar(l.producto.moneda) ? totalLinea(l) * t : totalLinea(l)
+  const base = lineas.reduce((acc, l) => acc + pesoLinea(l), 0)
+  const rentabilidad =
+    base > 0 ? lineas.reduce((acc, l) => acc + rentabilidadLinea(l) * (pesoLinea(l) / base), 0) : 0
+  return {
+    ars: totalMoneda(ars),
+    usd: totalMoneda(usd),
+    netoProyectado: round2(ars.neto + usd.neto * t),
+    rentabilidad,
+    hayDolares: usdLineas.length > 0,
+  }
+}
+
+/**
+ * Comisión total de una venta DIRECTA armada desde el catálogo: suma, sobre los productos
+ * comisionables, del importe NETO de la línea (ya bonificado, con el descuento por forma de pago)
+ * por su % de comisión de venta pasiva (la que rige la venta DIRECTA).
+ */
+export function comisionVentaDirecta(lineas: LineaPresupuesto[], descFormaPago = 0): number {
+  const descTotal = (l: LineaPresupuesto) => Math.min(l.descuento + descFormaPago, 100)
+  return round2(
+    lineas.reduce((acc, l) => {
+      if (!l.producto.comisionable) return acc
+      const neto = round2(l.producto.precio * l.cantidad * (1 - descTotal(l) / 100))
+      return acc + round2((neto * (l.producto.porcComPasiva ?? 0)) / 100)
+    }, 0),
+  )
+}
+
 export interface CreditoCliente {
   disponible: number
   usadoPct: number
@@ -183,10 +261,14 @@ export function impactoCredito(cliente: Cliente | null, importe: number): Impact
 export interface ResumenVenta {
   /** Suma de la columna Subtotal de la tabla: cantidad × precio, sin descuentos. */
   subtotal: number
-  /** Lo bonificado sobre el bruto: subtotal − total. */
+  /** Lo bonificado sobre el bruto: subtotal − total. Es la suma de los importes bonificados de
+   *  todas las líneas (la columna "Importe Bonif." llevada a total). Se resta del subtotal. */
   descuento: number
-  /** Suma de la columna Total: lo que se factura tras bonificar (sin IVA). */
+  /** Suma de la columna Total: el neto que se factura tras bonificar (SIN IVA). */
   total: number
+  /** IVA total: se calcula sobre el neto de cada línea con su propia alícuota, y se suma al neto
+   *  para llegar al importe total con impuestos. */
+  iva: number
   /** Comisión total: suma de las comisiones de los productos comisionables (dinámica). */
   comision: number
   rentabilidad: number
@@ -205,15 +287,24 @@ export function resumenVenta(
   items: VentaItem[],
   cliente: Cliente | null,
   tipoVenta: TipoVenta,
+  descFormaPago = 0,
 ): ResumenVenta {
+  /* El descuento por forma de pago (pronto pago) se compone con el descuento de cada línea, topeado
+     en 100%: baja el neto y la rentabilidad igual que en la venta DIRECTA. Con 0 (sin forma de pago
+     que descuente) el cálculo queda idéntico al anterior. */
+  const descTotal = (it: VentaItem) => Math.min((it.desc ?? 0) + descFormaPago, 100)
   // Cada línea entra ya bonificada, y aporta la rentabilidad que le queda tras el descuento.
-  const importeItem = (it: VentaItem) =>
-    round2(it.precio * it.aVender * (1 - (it.desc ?? 0) / 100))
+  const importeItem = (it: VentaItem) => round2(it.precio * it.aVender * (1 - descTotal(it) / 100))
   // El bruto es el de la columna Subtotal: cantidad × precio, antes de bonificar.
   const subtotal = round2(items.reduce((acc, it) => acc + round2(it.precio * it.aVender), 0))
   const total = round2(items.reduce((acc, it) => acc + importeItem(it), 0))
+  /* IVA de cada línea sobre su NETO ya bonificado, con la alícuota propia del producto (21% por
+     defecto). El total se suma al neto para el importe con impuestos. */
+  const iva = round2(
+    items.reduce((acc, it) => acc + round2((importeItem(it) * (it.iva ?? 21)) / 100), 0),
+  )
   const rentPonderada = items.reduce(
-    (acc, it) => acc + rentabilidadEfectiva(it.rent, it.desc ?? 0) * importeItem(it),
+    (acc, it) => acc + rentabilidadEfectiva(it.rent, descTotal(it)) * importeItem(it),
     0,
   )
 
@@ -236,6 +327,7 @@ export function resumenVenta(
     subtotal,
     descuento: round2(subtotal - total),
     total,
+    iva,
     comision,
     rentabilidad: total > 0 ? Math.round(rentPonderada / total) : 0,
     disponible,

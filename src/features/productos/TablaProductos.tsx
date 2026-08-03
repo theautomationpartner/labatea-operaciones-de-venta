@@ -1,5 +1,6 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { money, pctDec, round2 } from '@/lib/format'
+import { money, moneyU, pctDec, round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { rentabilidadEfectiva } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
@@ -49,12 +50,20 @@ interface TablaProductosProps {
   descFormaPago?: number
   /** Muestra la columna "IVA ($)" antes del total. Sólo en la VENTA, que sí liquida IVA. */
   mostrarIva?: boolean
+  /**
+   * Muestra la columna "Moneda" (antes de "Cant.") y, en las líneas en dólares, renderiza los
+   * importes con el prefijo `$u` en verde. Sólo en el PRESUPUESTO, que es bimonetario.
+   */
+  mostrarMoneda?: boolean
   /** Se monta dentro de la misma card, debajo de la tabla. */
   footer?: ReactNode
 }
 
 /** Alícuota de IVA por defecto cuando el producto no trae la suya. */
 const IVA_DEFECTO = 21
+
+/** Verde de los importes en dólares en la tabla del presupuesto bimonetario. */
+const VERDE_USD = 'var(--green-dark)'
 
 /** Descuento total de la fila: el manual más el de la forma de pago, topeado en 100%. */
 const descTotalDe = (f: FilaProducto, descFormaPago: number) =>
@@ -67,6 +76,13 @@ const descTotalDe = (f: FilaProducto, descFormaPago: number) =>
  */
 const bonifUnitDe = (f: FilaProducto, descFormaPago: number) =>
   f.impBonif ?? round2(f.precio * (descTotalDe(f, descFormaPago) / 100))
+
+/**
+ * Precio unitario YA bonificado: precio − importe bonificado por unidad. Es el precio final por
+ * unidad que se está cobrando, en tiempo real según el descuento y la forma de pago.
+ */
+const precioBonifDe = (f: FilaProducto, descFormaPago: number) =>
+  round2(f.precio - bonifUnitDe(f, descFormaPago))
 
 /** Importe total de la línea: (precio unitario − bonificación por unidad) × cantidad (o el guardado). */
 const subtotalDe = (f: FilaProducto, descFormaPago: number) =>
@@ -148,11 +164,12 @@ export function TablaProductos({
   cantidadMin = 0,
   descFormaPago = 0,
   mostrarIva = false,
+  mostrarMoneda = false,
   footer,
 }: TablaProductosProps) {
   const [expandidas, setExpandidas] = useState<ReadonlySet<string>>(new Set())
-  // Base 10; +1 con la columna de IVA ($); −1 sin la columna de acciones (sólo lectura).
-  const columnas = 10 + (mostrarIva ? 1 : 0) - (soloLectura ? 1 : 0)
+  // Base 11 (incluye P. Bonif); +1 con IVA ($); +1 con Moneda; −1 sin acciones (sólo lectura).
+  const columnas = 11 + (mostrarIva ? 1 : 0) + (mostrarMoneda ? 1 : 0) - (soloLectura ? 1 : 0)
 
   const toggle = (id: string) =>
     setExpandidas((prev) => {
@@ -172,13 +189,15 @@ export function TablaProductos({
           <tr>
             <th style={{ width: 40 }} />
             <th colSpan={2}>Producto</th>
+            {mostrarMoneda && <th className="ta-c">Moneda</th>}
             <th className="ta-c">Cant.</th>
             <th className="ta-r">P. Unit</th>
             <th className="ta-c">Desc.</th>
             <th className="ta-c col-rent">Rentab.</th>
             <th className="ta-r">Importe Bonif.</th>
-            {mostrarIva && <th className="ta-r">IVA ($)</th>}
+            <th className="ta-r">P. Bonif</th>
             <th className="ta-r">Importe Total</th>
+            {mostrarIva && <th className="ta-r">IVA ($)</th>}
             {!soloLectura && <th className="ta-c">Acc.</th>}
           </tr>
         </thead>
@@ -188,6 +207,11 @@ export function TablaProductos({
             const tope = fila.cantidadMax
             const excede = tope !== undefined && fila.cantidad > tope
             const rentFila = rentabilidadEfectiva(fila.rentabilidad, descTotalDe(fila, descFormaPago))
+            /* Línea en dólares (presupuesto bimonetario): sus importes van con prefijo `$u` y en
+               verde. En la venta —mono-moneda— nunca se cumple, así que no altera esa tabla. */
+            const dolar = esDolar(fila.producto?.moneda)
+            const fmt = dolar ? moneyU : money
+            const colUsd = dolar ? VERDE_USD : undefined
             return (
               <Fragment key={fila.id}>
                 <tr>
@@ -209,6 +233,13 @@ export function TablaProductos({
                     </span>
                     <span style={{ marginLeft: 12, fontWeight: 600 }}>{fila.nombre}</span>
                   </td>
+
+                  {/* Moneda del producto: "USD" (verde) para dólares, "ARS" para pesos. */}
+                  {mostrarMoneda && (
+                    <td className="ta-c" style={{ fontWeight: 700, color: colUsd }}>
+                      {dolar ? 'USD' : 'ARS'}
+                    </td>
+                  )}
 
                   <td className="ta-c" style={{ fontWeight: 600 }}>
                     {onCantidad ? (
@@ -248,8 +279,8 @@ export function TablaProductos({
                     )}
                   </td>
 
-                  <td className="ta-r" style={{ fontWeight: 600 }}>
-                    {money(fila.precio)}
+                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
+                    {fmt(fila.precio)}
                   </td>
                   <td className="ta-c" style={{ fontWeight: 600 }}>
                     {onDescuento ? (
@@ -266,19 +297,25 @@ export function TablaProductos({
                   >
                     {pctDec(rentFila)}
                   </td>
-                  {/* Importe Bonif.: lo bonificado por unidad en $ (desc manual + forma de pago). */}
-                  <td className="ta-r" style={{ fontWeight: 600 }}>
-                    {money(bonifUnitDe(fila, descFormaPago))}
+                  {/* Importe Bonif.: lo bonificado por unidad (desc manual + forma de pago). En
+                      dólares se mantiene en su moneda, con prefijo `$u` y en verde. */}
+                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
+                    {fmt(bonifUnitDe(fila, descFormaPago))}
                   </td>
-                  {/* IVA ($): sobre el importe ya bonificado de la línea. Sólo en la venta. */}
+                  {/* P. Bonif: precio unitario − importe bonificado = precio final por unidad. */}
+                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
+                    {fmt(precioBonifDe(fila, descFormaPago))}
+                  </td>
+                  {/* Importe Total de la línea. */}
+                  <td className="ta-r" style={{ fontWeight: 700, color: colUsd }}>
+                    {fmt(subtotalDe(fila, descFormaPago))}
+                  </td>
+                  {/* IVA ($): última columna, sobre el importe ya bonificado de la línea. Sólo en la venta. */}
                   {mostrarIva && (
                     <td className="ta-r" style={{ fontWeight: 600 }}>
                       {money(ivaDe(fila, descFormaPago))}
                     </td>
                   )}
-                  <td className="ta-r" style={{ fontWeight: 700 }}>
-                    {money(subtotalDe(fila, descFormaPago))}
-                  </td>
                   {!soloLectura && (
                     <td className="ta-c">
                       <i

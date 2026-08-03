@@ -138,6 +138,28 @@
   font-weight: 700;
   flex-shrink: 0;
 }
+/* Navegación del stepper: los pasos YA alcanzados son clickeables (cursor de mano + realce sutil
+   del círculo al pasar/enfocar). NO se toca el estilo de estado (done/cur/off). Los pasos futuros,
+   bloqueados, muestran cursor de "no permitido". */
+.step--nav {
+  cursor: pointer;
+}
+.step--nav .sic {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.step--nav:hover .sic {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.16);
+}
+.step--nav:focus-visible {
+  outline: none;
+}
+.step--nav:focus-visible .sic {
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.4);
+}
+.step--locked {
+  cursor: not-allowed;
+}
 .sline {
   height: 3px;
   flex: 1;
@@ -162,13 +184,13 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  /* Contenedor de consulta: la cabecera se reordena según el ANCHO REAL del panel (no del viewport),
+     que en Monday depende de los paneles laterales. Vale para todas las vistas del wizard. */
+  container-type: inline-size;
 }
 /* Los márgenes laterales negativos compensan el padding del contenedor del paso: la barra
    llega de borde a borde, y su contenido queda alineado con el resto. */
 .paso-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   background: #fff;
   border-bottom: 1px solid #e4e7ec;
   margin: 0 -24px;
@@ -187,7 +209,7 @@
 }
 /* Contexto de la transacción: los selectores del header conservan EXACTAMENTE el estilo de la
    pantalla de inicio (etiqueta oscura arriba, caja azul con borde y ancho 220×38, chevron). Sólo se
-   quita el margen inferior del grupo para que entre en la barra sticky; el resto se hereda del base. */
+   quita el margen inferior del grupo para que entre en la barra de contexto; el resto se hereda del base. */
 .paso-header-sel {
   /* Antes `0 0 auto` (no encogía): forzaba al stepper a un hueco demasiado chico y lo hacía
      desbordar. Ahora puede encoger y su barra interna (`.topsel`, ya con `flex-wrap`) envuelve
@@ -225,6 +247,18 @@
   white-space: normal;
   max-width: 92px;
   line-height: 1.15;
+}
+
+/* MÓDULO 1 · Notebook / panel angosto: cuando el ancho no alcanza y el stepper baja a su propia
+   línea, se ancla a la IZQUIERDA (alineado con los selectores) en vez de quedar a la derecha, para
+   una jerarquía visual limpia. Se mide el ancho REAL del panel (container query), no el viewport. */
+@container (max-width: 1200px) {
+  .paso-header-steps {
+    justify-content: flex-start;
+  }
+  .paso-header-steps .stepper {
+    justify-content: flex-start;
+  }
 }
 
 /* Salir de la operación: acompaña al título del paso, no a la barra de contexto. */

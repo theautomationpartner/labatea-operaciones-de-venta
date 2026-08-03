@@ -7,7 +7,7 @@ import { TablaProductos, type FilaProducto } from '@/features/productos/TablaPro
 import { pasosDe } from '@/lib/pasos'
 import { resumenVenta, ventaItemUid } from '@/lib/selectors'
 import { getProformasCliente, type ProformaVigente } from '@/services/monday'
-import type { SeleccionVenta } from '@/state/appState'
+import { hayDocumentoEmitido, type SeleccionVenta } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ResumenProformas } from './ResumenProformas'
 import { ResumenVentaCard } from './ResumenVentaCard'
@@ -19,8 +19,12 @@ import { ResumenVentaCard } from './ResumenVentaCard'
  * elegida por defecto.
  */
 export function VentaProformaView() {
-  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems } = useApp()
+  const state = useApp()
+  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems } = state
   const dispatch = useDispatch()
+  /* GUARDRAIL post-emisión: emitido un documento oficial, no se puede cambiar la proforma de origen
+     (la tabla ya es de sólo lectura). La emisión hacia Monday es irreversible. */
+  const bloqueadoPorEmision = hayDocumentoEmitido(state)
 
   const [proformas, setProformas] = useState<ProformaVigente[]>([])
   const [cargando, setCargando] = useState(false)
@@ -118,7 +122,8 @@ export function VentaProformaView() {
           cargando={cargando}
           error={error}
           seleccionada={seleccionada}
-          onSelect={(id) => setSeleccionada(id)}
+          // Post-emisión no se cambia la proforma de origen: la selección queda fija.
+          onSelect={bloqueadoPorEmision ? () => {} : (id) => setSeleccionada(id)}
         />
         <TablaProductos
           titulo="Productos de la proforma"

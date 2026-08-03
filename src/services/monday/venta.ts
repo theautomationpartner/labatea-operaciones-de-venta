@@ -152,6 +152,8 @@ const columnasLinea = (
     [COL.ventaSub.descFormaPago]: String(descFormaPago),
     // Imp. Bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100.
     [COL.ventaSub.impBonificado]: String(impBonifLinea),
+    // Precio Bonif = precio unitario (en pesos, ya convertido) menos la bonificación por unidad.
+    [COL.ventaSub.precioBonif]: String(round2(l.precioUnitario - bonifUnit)),
     // IVA en $ de la línea, sobre el total ya bonificado.
     [COL.ventaSub.iva]: String(ivaLinea),
     // TOTAL de la línea con IVA = total bonificado + IVA.

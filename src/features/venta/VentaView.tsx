@@ -6,6 +6,8 @@ import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
+import { descuentoDeFormaPago } from '@/lib/cobros'
+import { round2 } from '@/lib/format'
 import { pasosDe } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
@@ -15,7 +17,7 @@ import {
   ventaItemUid,
 } from '@/lib/selectors'
 import { getPresupuestosVigentes, type PresupuestoVigente } from '@/services/monday'
-import { maxAVender, type SeleccionVenta } from '@/state/appState'
+import { hayDocumentoEmitido, maxAVender, type SeleccionVenta } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { PresupuestoProducto } from '@/types'
 import { ResumenPresupuestos } from './ResumenPresupuestos'
@@ -26,9 +28,20 @@ import { ResumenVentaCard } from './ResumenVentaCard'
  * todavía no vencieron y se listan todos sus productos en una sola lista, con lo presupuestado,
  * lo vendido y lo que queda disponible. De ahí se llevan a la venta con la cantidad elegida.
  */
+/** Alícuota de IVA por defecto cuando un producto no trae la suya. */
+const IVA_DEFECTO = 21
+
 export function VentaView() {
-  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems } = useApp()
+  const state = useApp()
+  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems, formaPago, descuentosPago } = state
   const dispatch = useDispatch()
+  /* GUARDRAIL post-emisión: con un documento oficial ya emitido, la carga de productos queda en
+     SOLO LECTURA (la emisión hacia Monday es irreversible). */
+  const bloqueadoPorEmision = hayDocumentoEmitido(state)
+  /* Descuento por forma de pago (pronto pago) de la venta: CONTADO 6%, débito 5%, crédito 3%
+     (definidos en la config del sistema). Se compone con el descuento del presupuesto en la tabla
+     y en el resumen, y se refleja también al escribir la venta en Monday. */
+  const descFormaPago = descuentoDeFormaPago(formaPago, descuentosPago)
   // Flujo Proforma directo (agente de retención con entrega != POSTERIOR): crea la venta acá.
   // Presupuesto elegido como filtro de la lista de productos (toggle desde las cards).
   const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null)
@@ -67,7 +80,10 @@ export function VentaView() {
 
   // Sólo se llega acá con la venta configurada como CON PRESUPUESTO PREVIO.
   const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
-  const resumen = useMemo(() => resumenVenta(ventaItems, cliente, tipo), [ventaItems, cliente, tipo])
+  const resumen = useMemo(
+    () => resumenVenta(ventaItems, cliente, tipo, descFormaPago),
+    [ventaItems, cliente, tipo, descFormaPago],
+  )
   // Venta: bloqueante. No se avanza al cierre si el cliente está bloqueado o la venta se pasa de
   // su línea; el aviso salta al hacer click en "Continuar a cobro".
   const bloqueo = useBloqueoCredito(resumen.total, { bloqueante: true })
@@ -102,22 +118,40 @@ export function VentaView() {
     return { pendientes: filas, prodPorUid: porUid }
   }, [presupuestos, yaEnLaVenta])
 
-  // El precio, la rentabilidad y el descuento son los del presupuesto; acá el descuento no se edita.
+  /* El precio, la rentabilidad y el descuento son los del presupuesto; acá el descuento no se edita.
+     Los importes ya vienen en pesos (los productos en dólares se convirtieron al entrar). Se
+     precalculan tres valores por línea, en este orden:
+       1. IVA ($) = Precio Unitario (ARS) × tasa de IVA de la línea.
+       2. Importe Bonif = bonificación del presupuesto + Precio Unitario × % de la forma de pago.
+       3. Total Final  = (Precio Unitario − Importe Bonif) × cantidad. */
   const filas = useMemo<FilaProducto[]>(
     () =>
-      ventaItems.map((it) => ({
-        id: it.uid,
-        codigo: it.codigo,
-        nombre: it.nombre,
-        cantidad: it.aVender,
-        precio: it.precio,
-        descuento: it.desc,
-        rentabilidad: it.rent,
-        // Ficha del catálogo para el desplegable de stock, cuando el código coincide.
-        producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
-        cantidadMax: maxAVender(it),
-      })),
-    [ventaItems],
+      ventaItems.map((it) => {
+        const precio = it.precio
+        const bonifPresupuesto = it.impBonificado ?? round2(precio * ((it.desc ?? 0) / 100))
+        const bonifFormaPago = round2(precio * (descFormaPago / 100))
+        const impBonif = round2(bonifPresupuesto + bonifFormaPago)
+        // Importe Total de la línea, ya bonificado (con la forma de pago aplicada).
+        const totalLinea = round2((precio - impBonif) * it.aVender)
+        return {
+          id: it.uid,
+          codigo: it.codigo,
+          nombre: it.nombre,
+          cantidad: it.aVender,
+          precio,
+          descuento: it.desc,
+          rentabilidad: it.rent,
+          // Ficha del catálogo para el desplegable de stock, cuando el código coincide.
+          producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
+          cantidadMax: maxAVender(it),
+          impBonif,
+          totalLinea,
+          // IVA ($) = alícuota aplicada sobre el importe YA bonificado de la línea (el importe real
+          // que se cobra), no sobre el precio de lista.
+          ivaMonto: round2((totalLinea * (it.iva ?? IVA_DEFECTO)) / 100),
+        }
+      }),
+    [ventaItems, descFormaPago],
   )
 
   if (!cliente) return null
@@ -141,48 +175,68 @@ export function VentaView() {
         descripcion="Elegí los productos disponibles de los presupuestos vigentes y ajustá la cantidad a vender."
       />
 
-      {/* Forma de Pago de la venta, debajo del título y la descripción. */}
-      <FormaPagoSelect />
+      {/* Forma de Pago de la venta, debajo del título y la descripción. Post-emisión, bloqueada. */}
+      <FormaPagoSelect bloqueado={bloqueadoPorEmision} />
 
-      {/* Resumen de presupuestos a la izquierda (filtro); todos sus productos, a la derecha. */}
-      <div className="pend-grid">
-        <ResumenPresupuestos
-          presupuestos={presupuestos}
-          cargando={cargando}
-          error={error}
-          seleccionado={filtroOrigen}
-          onSelect={(id) => setFiltroOrigen((prev) => (prev === id ? null : id))}
-        />
-        <PendientesSelector
-          titulo="Todos los productos presupuestados"
-          hint="Seleccioná los productos, ajustá la cantidad a vender (no puede superar lo disponible) y confirmalos para agregarlos a la venta."
-          vacio={
-            cargando
-              ? 'Buscando los presupuestos vigentes del cliente…'
-              : error
-                ? 'No se pudieron traer los productos presupuestados. Reintentá en unos segundos.'
-                : 'Este cliente no tiene presupuestos vigentes con productos disponibles.'
-          }
-          colReferencia="Presupuestada"
-          colResuelta="Vendida"
-          colPend="Disponible"
-          colAccion="A vender"
-          mostrarTipo
-          filas={pendientes}
-          filtroOrigen={filtroOrigen}
-          onVerTodos={() => setFiltroOrigen(null)}
-          onConfirmar={confirmar}
-        />
-      </div>
+      {/* Post-emisión: se oculta el selector de productos (no se agregan más ítems a la venta). */}
+      {bloqueadoPorEmision ? (
+        <div className="card aviso-bloqueo">
+          <i className="fas fa-lock" /> El documento ya fue emitido en Monday: la carga de productos
+          quedó bloqueada y no puede modificarse.
+        </div>
+      ) : (
+        /* Resumen de presupuestos a la izquierda (filtro); todos sus productos, a la derecha. */
+        <div className="pend-grid">
+          <ResumenPresupuestos
+            presupuestos={presupuestos}
+            cargando={cargando}
+            error={error}
+            seleccionado={filtroOrigen}
+            onSelect={(id) => setFiltroOrigen((prev) => (prev === id ? null : id))}
+          />
+          <PendientesSelector
+            titulo="Todos los productos presupuestados"
+            hint="Seleccioná los productos, ajustá la cantidad a vender (no puede superar lo disponible) y confirmalos para agregarlos a la venta."
+            vacio={
+              cargando
+                ? 'Buscando los presupuestos vigentes del cliente…'
+                : error
+                  ? 'No se pudieron traer los productos presupuestados. Reintentá en unos segundos.'
+                  : 'Este cliente no tiene presupuestos vigentes con productos disponibles.'
+            }
+            colReferencia="Presupuestada"
+            colResuelta="Vendida"
+            colPend="Disponible"
+            colAccion="A vender"
+            mostrarTipo
+            filas={pendientes}
+            filtroOrigen={filtroOrigen}
+            onVerTodos={() => setFiltroOrigen(null)}
+            onConfirmar={confirmar}
+          />
+        </div>
+      )}
 
       {/* Se llena al confirmar productos de la lista de pendientes. En la venta presupuestada el
           descuento queda fijo al del presupuesto: se puede editar la cantidad, pero NO el
-          descuento (por eso no se pasa `onDescuento`; la celda lo muestra en modo lectura). */}
+          descuento (por eso no se pasa `onDescuento`; la celda lo muestra en modo lectura).
+          Post-emisión, la tabla completa pasa a SOLO LECTURA (sin editar cantidad ni quitar). */}
       <TablaProductos
         titulo="Productos seleccionados para la Venta"
         filas={filas}
-        onRemove={(uid) => dispatch({ type: 'removeVentaItem', uid })}
-        onCantidad={(uid, cantidad) => dispatch({ type: 'setVentaCantidad', uid, cantidad })}
+        onRemove={
+          bloqueadoPorEmision ? undefined : (uid) => dispatch({ type: 'removeVentaItem', uid })
+        }
+        onCantidad={
+          bloqueadoPorEmision
+            ? undefined
+            : (uid, cantidad) => dispatch({ type: 'setVentaCantidad', uid, cantidad })
+        }
+        soloLectura={bloqueadoPorEmision}
+        // La venta liquida IVA: se muestra la columna "IVA ($)". El descuento por forma de pago
+        // alimenta la rentabilidad efectiva (los importes ya vienen precalculados en las filas).
+        mostrarIva
+        descFormaPago={descFormaPago}
       />
 
       <ResumenVentaCard resumen={resumen} />

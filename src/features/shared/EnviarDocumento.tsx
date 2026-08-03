@@ -65,7 +65,7 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
-  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, proformaId, remito } =
+  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, proformaId, remito, documentoEnviado } =
     useApp()
   const dispatch = useDispatch()
   const esFactura = documento === 'factura'
@@ -80,6 +80,10 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
   // Detalle del error, que se muestra a la derecha del botón cuando el envío falla.
   const [errorMsg, setErrorMsg] = useState('')
   const enviando = estadoEnvio === 'enviando'
+  /* Éxito PERSISTENTE: el envío ya se completó (bandera global) o se acaba de completar (estado
+     local). Sobrevive a la navegación con el stepper, así el botón NO vuelve a habilitarse ni pierde
+     su color de éxito al volver a esta etapa. */
+  const enviadoOk = documentoEnviado || estadoEnvio === 'enviado'
   /* Pasar a error: guarda el detalle y tiñe el botón de rojo, con el mensaje a su derecha. */
   const fallar = (msg: string) => {
     setErrorMsg(msg)
@@ -147,7 +151,9 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
   }
 
   const confirmar = async () => {
-    if (enviando) return
+    // Anti-duplicado: si el envío ya se ejecutó con éxito (incluso tras navegar con el stepper), la
+    // acción se anula internamente y NO se vuelve a disparar la mutación de envío.
+    if (enviando || enviadoOk) return
     // El envío es una salida del sistema: no sale nada de un cliente bloqueado o excedido.
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
@@ -208,6 +214,9 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         await enviarProforma(proformaId, contactoItemIds(), medioEnvio)
       }
       dispatch({ type: 'setLog', entries: construirLog(contactos, documento, numero) })
+      // Bandera GLOBAL de éxito: persiste el envío para que el botón quede bloqueado y en verde
+      // aunque el usuario navegue con el stepper y vuelva a esta etapa.
+      dispatch({ type: 'setDocumentoEnviado', value: true })
       setEstadoEnvio('enviado')
       onEnviado?.()
     } catch {
@@ -337,15 +346,16 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
               <button
                 type="button"
                 className="btn-block btn-block--enviar"
+                /* MÓDULO 3 · el fondo verde de éxito depende de la bandera GLOBAL (`enviadoOk`): se
+                   conserva al volver a esta etapa con el stepper. */
                 style={{
-                  background:
-                    estadoEnvio === 'enviado'
-                      ? 'var(--green)'
-                      : estadoEnvio === 'error'
-                        ? 'var(--red)'
-                        : 'var(--primary-blue)',
+                  background: enviadoOk
+                    ? 'var(--green)'
+                    : estadoEnvio === 'error'
+                      ? 'var(--red)'
+                      : 'var(--primary-blue)',
                 }}
-                disabled={contactos.length === 0 || enviando || estadoEnvio === 'enviado'}
+                disabled={contactos.length === 0 || enviando || enviadoOk}
                 aria-busy={enviando}
                 onClick={confirmar}
               >
@@ -353,7 +363,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                   <>
                     <i className="fas fa-circle-notch spin" /> Enviando...
                   </>
-                ) : estadoEnvio === 'enviado' ? (
+                ) : enviadoOk ? (
                   <>
                     <i className="fas fa-check" /> Enviado exitosamente
                   </>

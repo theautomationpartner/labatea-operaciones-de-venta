@@ -101,6 +101,7 @@ export function CobroProforma() {
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
         rentabilidad: rentabilidadGeneral,
         descFormaPago,
+        tasaCambio: state.tasaCambio,
         lineas: productos,
       })
       // El estado de "emitida" se deriva de este id global: sobrevive a la navegación entre pasos.
@@ -274,6 +275,12 @@ export function CobroProforma() {
                     <b>{money(total)}</b>
                   </div>
                 </div>
+
+                {/* Recordatorio del descuento por pago anticipado / contado, vigente en factura. */}
+                <p className="comp-leyenda">
+                  <i className="fas fa-circle-info" /> Recordamos que se encuentra vigente el
+                  descuento en factura del 6% por pago anticipado o cdo.
+                </p>
               </div>
             )}
           </div>

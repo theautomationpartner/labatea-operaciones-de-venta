@@ -1,14 +1,9 @@
 import { useState } from 'react'
 import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { getCotizacionDolar } from '@/services/monday'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
-
-/** El producto está en dólares (tolerante a acentos y mayúsculas). */
-const esDolar = (moneda?: string): boolean => {
-  const m = (moneda ?? '').trim().toLowerCase()
-  return m === 'dolares' || m === 'dólares'
-}
 
 /**
  * Convierte un producto en dólares a pesos con la tasa dada, PRESERVANDO el precio original en USD
@@ -36,13 +31,19 @@ const aPesos = (producto: Producto, tasa: number): Producto => {
  * moneda local. Sólo si la tasa global aún no llegó se cae a la cotización del board (fallback).
  */
 export function useCotizacionProducto() {
-  const { tasaCambio } = useApp()
+  const { tasaCambio, operacion } = useApp()
   const [seleccionado, setSeleccionado] = useState<Producto | null>(null)
   const [convirtiendo, setConvirtiendo] = useState(false)
 
   const elegir = async (producto: Producto | null) => {
     // Pesos (o sin producto): flujo normal, sin conversión.
     if (!producto || !esDolar(producto.moneda)) {
+      setSeleccionado(producto)
+      return
+    }
+    /* PRESUPUESTAR es BIMONETARIO: un producto en dólares se presupuesta en su moneda original,
+       sin convertir a pesos. La conversión sólo corre en la VENTA, que es mono-moneda (ARS). */
+    if (operacion === 'PRESUPUESTAR') {
       setSeleccionado(producto)
       return
     }

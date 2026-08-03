@@ -17,6 +17,12 @@ const ARS = new Intl.NumberFormat('es-AR', {
 /** "$ 10.465,78" — formato usado en toda la app, siempre con sus dos decimales. */
 export const money = (n: number): string => `$ ${ARS.format(round2(n))}`
 
+/**
+ * "$u 10.465,78" — importe en DÓLARES del presupuesto bimonetario. Mismo formato de miles y
+ * decimales que `money`, con el prefijo `$u` que lo distingue de los importes en pesos.
+ */
+export const moneyU = (n: number): string => `$u ${ARS.format(round2(n))}`
+
 export const pct = (n: number): string => `${Math.round(n)}%`
 
 const DEC = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
