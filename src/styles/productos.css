@@ -28,6 +28,9 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Contenedor de consulta: los grids internos (resumen de métricas) se reordenan según el ANCHO
+     DISPONIBLE de la sección —que en Monday depende de los paneles laterales—, no del viewport. */
+  container-type: inline-size;
 }
 .productos-v2 input,
 .productos-v2 button,
@@ -273,7 +276,11 @@
 .productos-v2 .controls-group {
   display: flex;
   align-items: flex-end;
-  gap: 16px;
+  /* `flex-wrap: wrap` evita que el botón "Agregar" (último ítem) se desborde de la card cuando el
+     ancho no alcanza: los controles envuelven a una línea nueva en vez de salirse. El `row-gap`
+     (12px) los separa al colapsar. */
+  flex-wrap: wrap;
+  gap: 12px 16px;
 }
 .productos-v2 .control-item {
   display: flex;
@@ -440,8 +447,11 @@
 /* ===== Stock y cobertura ===== */
 .productos-v2 .stock {
   display: flex;
-  gap: 24px;
-  align-items: center;
+  /* Permite que "Proveedor" y el bloque de stock/cobertura se apilen cuando falta ancho, en vez de
+     comprimirse hasta solaparse. */
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: flex-start;
   font-size: 13px;
 }
 /* Sólo en el preview del producto elegido: filete punteado contra los controles. */
@@ -487,18 +497,24 @@
   color: #b58200;
 }
 .productos-v2 .stock-main {
-  flex: 1;
+  flex: 1 1 340px;
   display: flex;
-  gap: 24px;
-  align-items: center;
+  /* Clave del solapamiento: las cajas de stock y la barra de cobertura eran una fila horizontal
+     sin `flex-wrap`; al angostar se aplastaban una sobre otra. Ahora la cobertura BAJA debajo de
+     las cajas cuando no entran al lado. */
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: flex-start;
   min-width: 0;
 }
 /* `min-width: 0` en los dos bloques: si no, las cards imponen su ancho mínimo y le
    comen el espacio a la barra de cobertura. */
 .productos-v2 .stock-boxes {
   display: flex;
+  /* Las 3 cajas también envuelven entre sí cuando la línea es muy angosta. */
+  flex-wrap: wrap;
   gap: 12px;
-  flex: 1 1 0;
+  flex: 1 1 320px;
   min-width: 0;
   margin-bottom: 0;
 }
@@ -506,7 +522,9 @@
 .productos-v2 .stock-box {
   position: relative;
   display: block;
-  flex: 1 1 0;
+  /* Base de ~130px: en pantallas anchas siguen creciendo por igual, pero al angostar envuelven en
+     vez de aplastarse por debajo de su contenido. */
+  flex: 1 1 130px;
   min-width: 0;
   border: 1px solid var(--p-border);
   border-radius: 6px;
@@ -540,7 +558,7 @@
   pointer-events: none;
 }
 .productos-v2 .cov-wrap {
-  flex: 1.5;
+  flex: 1.5 1 240px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1234,6 +1252,26 @@
 .productos-v2 .totals-grid--2 > .kpi-card:last-child {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+/* Cuando el ancho disponible no alcanza para las dos cards del resumen una al lado de la otra, se
+   APILAN en una sola columna. Así la card de "Rentabilidad y crédito" toma el ancho completo y sus
+   dos donuts + los datos de crédito entran en una fila sin envolver ni desacomodarse (que es lo que
+   pasaba en el viewport de notebook). Al apilarse dejan de ir "pegadas": se les restaura el borde y
+   las esquinas redondeadas, y se separan con un gap. */
+@container (max-width: 820px) {
+  .productos-v2 .totals-grid,
+  .productos-v2 .totals-grid--2 {
+    grid-template-columns: 1fr;
+    row-gap: 16px;
+  }
+  .productos-v2 .totals-grid--2 > .kpi-card:first-child {
+    border-right: 1px solid var(--p-border);
+    border-radius: var(--p-radius-lg);
+  }
+  .productos-v2 .totals-grid--2 > .kpi-card:last-child {
+    border-radius: var(--p-radius-lg);
+  }
 }
 /* Fila con control dentro de una tarjeta de totales (¿es con envío?). */
 .productos-v2 .kpi-control {

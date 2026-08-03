@@ -177,7 +177,11 @@
 .paso-header-in {
   display: flex;
   align-items: center;
-  gap: 24px;
+  /* `flex-wrap: wrap` es la clave del arreglo: cuando el ancho no alcanza para los selectores + el
+     stepper en la misma fila, el stepper BAJA a una línea nueva en vez de desbordar su caja y
+     pintarse encima de los selectores. El `row-gap` (12px) evita que queden pegados al colapsar. */
+  flex-wrap: wrap;
+  gap: 12px 24px;
   max-width: 1480px;
   margin: 0 auto;
 }
@@ -185,7 +189,11 @@
    pantalla de inicio (etiqueta oscura arriba, caja azul con borde y ancho 220×38, chevron). Sólo se
    quita el margen inferior del grupo para que entre en la barra sticky; el resto se hereda del base. */
 .paso-header-sel {
-  flex: 0 0 auto;
+  /* Antes `0 0 auto` (no encogía): forzaba al stepper a un hueco demasiado chico y lo hacía
+     desbordar. Ahora puede encoger y su barra interna (`.topsel`, ya con `flex-wrap`) envuelve
+     sus propios controles cuando falta ancho. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .paso-header-sel .topsel {
   margin-bottom: 0;
@@ -193,7 +201,9 @@
 /* El avance vive a la DERECHA: ocupa el ancho restante pero el stepper se pega al borde derecho
    en vez de estirarse por todo el espacio. */
 .paso-header-steps {
-  flex: 1;
+  /* `flex-basis: auto` (no 0%) hace que el stepper mida por su contenido: si no entra junto a los
+     selectores, envuelve a su propia línea; ya en su línea, `flex-grow: 1` lo lleva a la derecha. */
+  flex: 1 1 auto;
   display: flex;
   justify-content: flex-end;
   min-width: 0;
