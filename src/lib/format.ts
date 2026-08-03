@@ -29,3 +29,25 @@ const DEC = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 })
 
 /** "1,5%" — porcentaje con decimales sólo cuando los tiene (descuentos). */
 export const pctDec = (n: number): string => `${DEC.format(n)}%`
+
+/** Número → texto AR para un input de importe (miles con punto, coma decimal, sin símbolo). */
+export const importeATexto = (n: number): string => (Number.isFinite(n) ? DEC.format(n) : '')
+
+/**
+ * Da formato ARGENTINO a lo tecleado en un input de importe: miles con punto y decimales con coma
+ * (hasta 2). Devuelve el `texto` ya formateado para el input y el `valor` numérico para el estado.
+ * Se descartan los puntos de miles y todo lo que no sea dígito o la coma decimal, así el usuario
+ * puede escribir de corrido. Ej.: "30409" → { texto: "30.409", valor: 30409 };
+ * "30409,5" → { texto: "30.409,5", valor: 30409.5 }.
+ */
+export function formatearImporteAR(entrada: string): { texto: string; valor: number } {
+  const limpio = entrada.replace(/\./g, '').replace(/[^\d,]/g, '')
+  const iComa = limpio.indexOf(',')
+  const enteroRaw = (iComa >= 0 ? limpio.slice(0, iComa) : limpio).replace(/^0+(?=\d)/, '')
+  const decRaw = iComa >= 0 ? limpio.slice(iComa + 1).replace(/,/g, '').slice(0, 2) : ''
+  // Miles con punto en la parte entera; si sólo se tecleó la coma, se muestra "0,".
+  const enteroFmt = (enteroRaw || (iComa >= 0 ? '0' : '')).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const texto = iComa >= 0 ? `${enteroFmt},${decRaw}` : enteroFmt
+  const valor = round2(Number(`${enteroRaw || '0'}.${decRaw || '0'}`))
+  return { texto, valor }
+}

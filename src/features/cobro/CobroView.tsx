@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AvisoModal } from '@/components/ui/AvisoModal'
 import { Modal } from '@/components/ui/Modal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
@@ -120,36 +121,28 @@ export function CobroView() {
   const [tarjetaConfirmada, setTarjetaConfirmada] = useState(false)
   /* Modal de cierre de la venta con proforma (Guardar Venta): al aceptar limpia todo el estado. */
   const [guardando, setGuardando] = useState(false)
+  /* Aviso al intentar continuar con la diferencia sin cancelar: falta cobrar (>0) o se cobró de más (<0). */
+  const [avisoDif, setAvisoDif] = useState<'falta' | 'exceso' | null>(null)
 
   if (!cliente) return null
 
   /* El cobro cierra cuando lo cobrado (sin descuentos) iguala el total de la venta SIN considerar
-     los centavos. Es la validación para poder confirmar y avanzar. */
+     los centavos. Es la validación para poder avanzar. */
   const cobroCompleto =
     cobro.movimientos.length > 0 && mismoImporte(resumen.cancelado, resumen.totalACobrar)
-  /* Motivo por el que el cobro todavía no cierra (se muestra al lado del botón). */
+  /* Diferencia entre lo que hay que cobrar y lo cargado, SIN recortar: >0 falta cobrar, <0 se cobró
+     de más. Es la métrica DIFERENCIA de la cabecera. */
+  const restante = round2(resumen.totalACobrar - resumen.cancelado)
+  /* Motivo por el que el cobro todavía no cierra (hint en vivo dentro de la card). */
   const bloqueoMsg =
     cobro.movimientos.length > 0 && !cobroCompleto
-      ? 'El total cobrado debe igualar el total de la venta (sin contar los centavos).'
+      ? restante < 0
+        ? 'El total cobrado supera el total de la venta: ajustá los importes para no cobrar de más.'
+        : 'El total cobrado debe igualar el total de la venta (sin contar los centavos).'
       : null
   /* El responsable logístico (y su ruta) se pregunta SÓLO en la entrega POSTERIOR. */
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
 
-  /**
-   * "Confirmar Cobro" es una confirmación LOCAL: marca el cobro como cargado en el estado, pero
-   * NO escribe nada en Monday. El registro real —el recibo del cobro simultáneo o la deuda del
-   * pago posterior— se difiere y se dispara fire-and-forget al "Finalizar Operación", junto con
-   * la creación de la venta. Acá sólo se valida el crédito y se pliega el desplegable.
-   */
-  const registrar = async (): Promise<boolean> => {
-    if (cobro.confirmado) return true
-    if (bloqueo.frenar()) return false
-    dispatch({ type: 'confirmarCobro' })
-    return true
-  }
-  /* Pasar a la factura. La deuda del pago posterior NO se escribe acá: el cliente recién queda
-     endeudado cuando la factura legal está emitida y enviada, así que su registro vive en el
-     cierre de la operación (modal de "Finalizar Operación"). */
   /* Avanzar es una transición de UI local y 100% silenciosa: la venta NO se crea acá, su creación
      se traslada al "Finalizar Operación". Con entrega POSTERIOR se pasa antes por "Entrega de
      Mercadería"; si no, directo a la factura. */
@@ -157,21 +150,45 @@ export function CobroView() {
     dispatch({ type: 'goto', paso: pasoTrasCobro(tipoEntrega) })
   }
 
-  /* Ya confirmado: el registro queda a la vista pero no se edita más. */
-  const bloqueado = cobro.confirmado
+  /* Ya no hay botón "Confirmar cobro": el registro de cobros queda SIEMPRE editable durante la
+     etapa (importes y movimientos). La confirmación se hace implícita al continuar, recién cuando
+     la diferencia es 0. */
+  const bloqueado = false
 
   /* CONTADO·EMITIR PROFORMA no continúa a otra etapa: la venta se cierra ahí mismo con "Guardar
      Venta" (dentro de CobroProforma), que limpia el estado. Por eso el pie no ofrece "Continuar". */
   const enProforma = formaPago === 'CONTADO' && contadoTab === 'proforma'
 
-  /* Se puede avanzar según la forma de pago: CUENTA CORRIENTE alcanza con ver el impacto; las
-     tarjetas exigen confirmar los datos; CONTADO·cobro exige el cobro confirmado (Diferencia 0). */
-  const puedeContinuar =
-    formaPago === 'CUENTA CORRIENTE'
-      ? true
-      : conTarjeta
-        ? tarjetaConfirmada
-        : cobro.confirmado
+  /**
+   * Continuar a la etapa siguiente. En CONTADO·cobro se VALIDA que la diferencia sea 0 (sin
+   * centavos): si falta cobrar (>0) o se cobró de más (<0) se avisa por modal y no se avanza. Recién
+   * con la diferencia en 0 se confirma el cobro (para el registro diferido) y se avanza.
+   */
+  const continuar = () => {
+    if (enProforma) return
+    if (formaPago === 'CUENTA CORRIENTE') {
+      if (bloqueo.frenar()) return
+      continuarAFactura()
+      return
+    }
+    // Tarjeta: el botón ya está deshabilitado hasta confirmar los datos.
+    if (conTarjeta) {
+      continuarAFactura()
+      return
+    }
+    // CONTADO · REGISTRAR COBRO: la diferencia tiene que estar cancelada al 100%.
+    if (!cobroCompleto) {
+      setAvisoDif(restante < 0 ? 'exceso' : 'falta')
+      return
+    }
+    if (bloqueo.frenar()) return
+    dispatch({ type: 'confirmarCobro' })
+    continuarAFactura()
+  }
+
+  /* El botón "Continuar" queda clickeable en CONTADO·cobro (valida al hacer click) y en cuenta
+     corriente; con tarjeta, sólo tras confirmar sus datos; en EMITIR PROFORMA, inhabilitado. */
+  const continuarDeshabilitado = enProforma || (conTarjeta && !tarjetaConfirmada)
 
   return (
     <section className="view cobro-v2 paso-layout">
@@ -265,30 +282,15 @@ export function CobroView() {
               <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
               <TablaMovimientos balances={balances} bloqueado={bloqueado} />
 
-              {/* Footer de la card: el botón de confirmación (la métrica TOTAL COBRADO ahora vive
-                  arriba, junto a TOTAL VENTA y DIFERENCIA); a su derecha, el motivo que traba el
-                  cobro si el total cobrado no llega al de la venta. */}
-              <div className="cobro-card-acts">
-                <button
-                  type="button"
-                  className="cobro-btn cobro-btn--primary"
-                  disabled={!cobroCompleto || cobro.confirmado}
-                  onClick={registrar}
-                >
-                  {cobro.confirmado ? (
-                    <>
-                      <i className="fas fa-check" /> Cobro confirmado
-                    </>
-                  ) : (
-                    'Confirmar Cobro'
-                  )}
-                </button>
-                {bloqueoMsg && (
+              {/* Sin botón "Confirmar cobro": la diferencia se valida al Continuar. Acá sólo se avisa
+                  en vivo si el total cobrado todavía no iguala el de la venta (falta o se cobró de más). */}
+              {bloqueoMsg && (
+                <div className="cobro-card-acts">
                   <span className="cobro-bloqueo-inline">
                     <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -321,18 +323,17 @@ export function CobroView() {
             <button
               type="button"
               className="cobro-btn cobro-btn--primary"
-              /* EMITIR PROFORMA no avanza a otra etapa: el botón se muestra pero queda inhabilitado. */
-              disabled={enProforma || !puedeContinuar}
+              /* EMITIR PROFORMA no avanza; tarjeta exige confirmar sus datos. CONTADO·cobro queda
+                 clickeable: la diferencia se valida al hacer click (modal si no está en 0). */
+              disabled={continuarDeshabilitado}
               title={
                 enProforma
                   ? 'La venta con proforma se cierra con "Guardar Venta", no continúa a otra etapa.'
-                  : puedeContinuar
-                    ? undefined
-                    : conTarjeta
-                      ? 'Confirmá los datos de la tarjeta para continuar.'
-                      : 'Registrá el cobro de la venta para poder emitir la factura.'
+                  : conTarjeta && !tarjetaConfirmada
+                    ? 'Confirmá los datos de la tarjeta para continuar.'
+                    : undefined
               }
-              onClick={continuarAFactura}
+              onClick={continuar}
             >
               {esEntregaPosterior
                 ? 'Continuar a Entrega de Mercadería'
@@ -343,6 +344,18 @@ export function CobroView() {
         </div>
 
         {bloqueo.modal}
+
+        {/* Diferencia sin cancelar: no se puede avanzar hasta cobrar el 100% exacto de la venta. */}
+        {avisoDif && (
+          <AvisoModal
+            titulo="No se puede continuar todavía"
+            onClose={() => setAvisoDif(null)}
+          >
+            {avisoDif === 'falta'
+              ? 'Para continuar tenés que cancelar el 100% de la diferencia: registrá o ajustá los importes hasta que el total cobrado iguale el total de la venta.'
+              : 'Ajustá los importes ingresados para no cobrar de más: el total cobrado supera el total de la venta.'}
+          </AvisoModal>
+        )}
 
         {/* Cierre de la venta con proforma: informa que quedó registrada y, al aceptar, limpia todo
             el estado global (vuelve al inicio). La factura se emitirá luego sobre esa proforma. */}

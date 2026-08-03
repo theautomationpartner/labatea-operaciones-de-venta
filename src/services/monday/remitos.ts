@@ -24,6 +24,7 @@ import {
   CATEGORIA_TRANSPORTISTA_INDEX,
   COL,
   MEDIO_ENVIO_LABELS,
+  personCol,
   REMITO_EMISION_ESTADO,
   REMITO_ENVIO_ESTADO,
   REMITO_VENTA_INDEX,
@@ -202,6 +203,8 @@ export interface LineaRemito {
 export interface DatosRemito {
   /** Ítem del cliente del remito. */
   clienteId?: string
+  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
+  vendedorId?: string | null
   /** Nombre con el que nace el ítem del remito. */
   nombre: string
   tipoEmision: TipoEmisionRemito
@@ -290,6 +293,7 @@ async function indicesVentaRemito(): Promise<{ posterior: number | null; anterio
 export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
   const {
     clienteId,
+    vendedorId,
     tipoEmision,
     responsable,
     destinoId,
@@ -319,6 +323,9 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
     [COL.remito.pesoTotal]: String(round2(pesoTotal)),
   }
   if (clienteId) cabecera[COL.remito.cliente] = { item_ids: [Number(clienteId)] }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedorId)
+  if (personaVendedor) cabecera[COL.remito.vendedor] = personaVendedor
 
   // Datos de la entrega según quién la hace. Cada conectada va con el id del ítem elegido.
   if (responsable === 'LA_BATEA') {

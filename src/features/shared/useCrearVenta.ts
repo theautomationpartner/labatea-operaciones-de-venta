@@ -75,6 +75,7 @@ export function useCrearVenta() {
     if (!ventaId) {
       const creada = await crearVenta({
         clienteId: cliente.id,
+        vendedorId: state.vendedor?.id ?? null,
         nombre: cliente.name,
         tipoVenta: tipoVenta ?? 'DIRECTA',
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',

@@ -15,6 +15,7 @@ import { round2 } from '@/lib/format'
 import {
   BOARDS,
   COL,
+  personCol,
   FACT_PENDIENTE_ESTADO_INDEX,
   FORMA_PAGO_LABEL,
 } from './columns'
@@ -37,6 +38,8 @@ export interface DatosCobroSimultaneo {
   balances: BalancePago[]
   /** Ítem de Cta Cte del cliente, para dejar el recibo conectado a su cuenta. */
   ctaCteId?: string
+  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
+  vendedorId?: string | null
   /** Nombre del cliente: es el nombre provisorio del ítem hasta que se lo renombra. */
   nombreCliente: string
 }
@@ -69,7 +72,7 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
 export async function registrarCobroSimultaneo(
   datos: DatosCobroSimultaneo,
 ): Promise<{ id: string }> {
-  const { totalACobrar, cancelado, balances, ctaCteId } = datos
+  const { totalACobrar, cancelado, balances, ctaCteId, vendedorId } = datos
   if (round2(cancelado) !== round2(totalACobrar)) {
     throw new Error('El cobro simultáneo exige cancelar el 100% del total de la venta.')
   }
@@ -81,6 +84,9 @@ export async function registrarCobroSimultaneo(
     [COL.cobro.totalCobrado]: String(round2(cancelado)),
   }
   if (ctaCteId) cabecera[COL.cobro.ctaCte] = { item_ids: [Number(ctaCteId)] }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedorId)
+  if (personaVendedor) cabecera[COL.cobro.vendedor] = personaVendedor
 
   // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
   const creado = await mondayApi<{ create_item: { id: string } }>(

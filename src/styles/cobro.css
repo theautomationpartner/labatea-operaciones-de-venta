@@ -673,6 +673,36 @@
   color: var(--c-danger);
   border-color: var(--c-danger);
 }
+/* Importe editable de un pago cargado: caja con prefijo "$" para ajustar la DIFERENCIA a 0. */
+.cobro-v2 .cobro-imp-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 4px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg-card);
+}
+.cobro-v2 .cobro-imp-edit:focus-within {
+  border-color: var(--c-primary, #0073ea);
+  box-shadow: 0 0 0 2px rgba(0, 115, 234, 0.15);
+}
+.cobro-v2 .cobro-imp-pre {
+  color: var(--c-text-secondary);
+  font-weight: 600;
+}
+.cobro-v2 .cobro-imp-edit input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text-main);
+  text-align: right;
+}
 /* --- Footer del panel: en un mismo eje, las métricas y —a la derecha de TOTAL DESCUENTOS— el
    botón de confirmación seguido del motivo de bloqueo del cobro. Alineado a la izquierda. --- */
 .cobro-v2 .cobro-card-acts {

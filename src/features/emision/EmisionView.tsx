@@ -176,7 +176,11 @@ export function EmisionView() {
         {/* Bajo `.factura-v2` para reutilizar el desplegable de comprobantes (clases `comp-*` y sus
             variables); se neutraliza el box de página del namespace para que encaje en la columna. */}
         <div className="factura-v2" style={{ padding: 0, maxWidth: 'none', margin: 0 }}>
-          <PresupuestoAGenerar numero={nroPresupuesto ?? NRO_PRESUPUESTO} lineas={lineas} />
+          <PresupuestoAGenerar
+            numero={nroPresupuesto ?? NRO_PRESUPUESTO}
+            lineas={lineas}
+            emitido={emitido}
+          />
           <EnviarDocumento documento="presupuesto" numero={nroPresupuesto ?? NRO_PRESUPUESTO} />
         </div>
       </div>

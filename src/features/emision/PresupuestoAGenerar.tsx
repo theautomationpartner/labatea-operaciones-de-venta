@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { money, moneyU, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import type { LineaPresupuesto } from '@/types'
@@ -7,6 +8,8 @@ interface PresupuestoAGenerarProps {
   /** ID del presupuesto que se va a registrar: es el título del desplegable. */
   numero: string
   lineas: LineaPresupuesto[]
+  /** El presupuesto ya se emitió en el tablero en esta sesión: tilda el check en verde. */
+  emitido?: boolean
 }
 
 /** Verde de los importes en dólares (mismo tono que la tabla y el resumen del presupuesto). */
@@ -23,9 +26,17 @@ const bonifUnitDe = (l: LineaPresupuesto): number => round2(l.producto.precio * 
 const totalDe = (l: LineaPresupuesto): number =>
   round2(l.producto.precio * (1 - l.descuento / 100) * l.cantidad)
 
-/** Suma de los totales de las líneas de una moneda (pesos o dólares). */
+/** Suma de los totales (ya bonificados) de las líneas de una moneda (pesos o dólares). */
 const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
   round2(lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l), 0))
+
+/** Suma del BRUTO (precio × cantidad, sin bonificar) de las líneas de una moneda. */
+const brutoMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
+  round2(
+    lineas
+      .filter((l) => esUsd(l) === usd)
+      .reduce((acc, l) => acc + l.producto.precio * l.cantidad, 0),
+  )
 
 /**
  * El presupuesto a registrar, con el mismo desplegable que los comprobantes de la factura: una
@@ -37,12 +48,16 @@ const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
  * muestran con prefijo `$u` en verde. Precio unitario, Importe Bonif. y Subtotal por línea son los
  * mismos valores que se escriben en las columnas del subelemento en Monday.
  */
-export function PresupuestoAGenerar({ numero, lineas }: PresupuestoAGenerarProps) {
+export function PresupuestoAGenerar({ numero, lineas, emitido = false }: PresupuestoAGenerarProps) {
   const [abierta, setAbierta] = useState(true)
 
   const totalPesos = totalMoneda(lineas, false)
   const totalUsd = totalMoneda(lineas, true)
   const hayDolares = lineas.some(esUsd)
+  // Totales estándar en pesos: bruto, descuento (bruto − neto) y gravado (= neto). El presupuesto
+  // NO liquida IVA, así que el IVA es 0 y el Total coincide con el Gravado.
+  const brutoPesos = brutoMoneda(lineas, false)
+  const descuentoPesos = round2(brutoPesos - totalPesos)
 
   return (
     <div className="comprobantes">
@@ -81,6 +96,16 @@ export function PresupuestoAGenerar({ numero, lineas }: PresupuestoAGenerarProps
               )}
             </div>
           </div>
+
+          {/* Check de emisión: verde cuando el presupuesto ya se emitió en el tablero. */}
+          <span className="comp-estado">
+            <span
+              className={`cobro-ok ${emitido ? 'on' : ''}`}
+              title={emitido ? 'Presupuesto emitido' : 'Pendiente de emisión'}
+            >
+              <i className="fas fa-check" />
+            </span>
+          </span>
         </div>
 
         {abierta && (
@@ -127,19 +152,16 @@ export function PresupuestoAGenerar({ numero, lineas }: PresupuestoAGenerarProps
               </tbody>
             </table>
 
-            {/* Pie del listado: cada moneda con su propio total, sin mezclarlas. */}
-            <div className="comp-tot">
-              <div className="comp-tot-row comp-tot-row--total">
-                <span>TOTAL EN PESOS</span>
-                <b>{money(totalPesos)}</b>
-              </div>
-              {hayDolares && (
-                <div className="comp-tot-row comp-tot-row--total" style={{ color: VERDE_USD }}>
-                  <span>TOTAL EN DOLARES</span>
-                  <b>{moneyU(totalUsd)}</b>
-                </div>
-              )}
-            </div>
+            {/* Totales estándar (mismas clases/posición que factura y proforma). El presupuesto no
+                liquida IVA (IVA = 0, Total = Gravado). El total en dólares va aparte, en verde. */}
+            <TotalesDoc
+              subtotal={brutoPesos}
+              descuento={descuentoPesos}
+              gravado={totalPesos}
+              iva={0}
+              total={totalPesos}
+              totalUsd={hayDolares ? totalUsd : null}
+            />
           </div>
         )}
       </div>

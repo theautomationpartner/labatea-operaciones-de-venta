@@ -8,6 +8,7 @@ import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { pasosDe } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
@@ -33,7 +34,8 @@ const IVA_DEFECTO = 21
 
 export function VentaView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems, formaPago, descuentosPago } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems, formaPago, descuentosPago, tasaCambio } =
+    state
   const dispatch = useDispatch()
   /* GUARDRAIL post-emisión: con un documento oficial ya emitido, la carga de productos queda en
      SOLO LECTURA (la emisión hacia Monday es irreversible). */
@@ -98,6 +100,12 @@ export function VentaView() {
         const uid = ventaItemUid(p.id, i)
         const estado = avanceLinea(prod.vend, prod.pend)
         porUid.set(uid, prod)
+        /* Subtotal del producto en el presupuesto: para los productos en pesos, el TOTAL $ guardado
+           en el subelemento (numeric_mm5w3qtg); para los dolarizados —que no tienen ese total en
+           pesos— se convierte el precio unitario a pesos y se multiplica por la cant. disponible. */
+        const subtotal = esDolar(prod.moneda)
+          ? round2(prod.precio * (tasaCambio ?? 0) * prod.pend)
+          : prod.subtotalPesos || round2(prod.precio * prod.pend)
         filas.push({
           uid,
           codigo: prod.codigo,
@@ -108,6 +116,9 @@ export function VentaView() {
           resuelta: prod.vend,
           pend: prod.pend,
           tipo: prod.tipo,
+          // Subtotal (en pesos) y rentabilidad (%) leídos/derivados del subelemento del presupuesto.
+          subtotal,
+          rentabilidad: prod.rent,
           estadoColor: AVANCE_COLOR[estado],
           // El board ya dice en qué estado de uso está la línea; si no, se deriva del avance.
           estadoLabel: prod.estadoUso || AVANCE_LABEL[estado],
@@ -116,7 +127,7 @@ export function VentaView() {
       })
     }
     return { pendientes: filas, prodPorUid: porUid }
-  }, [presupuestos, yaEnLaVenta])
+  }, [presupuestos, yaEnLaVenta, tasaCambio])
 
   /* El precio, la rentabilidad y el descuento son los del presupuesto; acá el descuento no se edita.
      Los importes ya vienen en pesos (los productos en dólares se convirtieron al entrar). Se
@@ -208,7 +219,10 @@ export function VentaView() {
             colResuelta="Vendida"
             colPend="Disponible"
             colAccion="A vender"
-            mostrarTipo
+            // Sin columna "Tipo" (el dato se usa para dividir la mercadería al facturar, no se muestra).
+            // Se muestran el Subtotal (en pesos) y la Rentabilidad del producto en el presupuesto.
+            mostrarSubtotal
+            mostrarRentabilidad
             filas={pendientes}
             filtroOrigen={filtroOrigen}
             onVerTodos={() => setFiltroOrigen(null)}
@@ -259,6 +273,15 @@ export function VentaView() {
                 titulo: 'No hay productos seleccionados',
                 texto:
                   'Tenés que agregar al menos un producto a la venta para continuar. Elegilos de los presupuestos vigentes del cliente y confirmalos.',
+              })
+              return
+            }
+            // La forma de pago define el ramal del cobro: es obligatoria para avanzar.
+            if (!formaPago) {
+              setAviso({
+                titulo: 'Falta la forma de pago',
+                texto:
+                  'Seleccioná la forma de pago del cliente antes de continuar a la siguiente etapa.',
               })
               return
             }

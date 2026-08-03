@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
+import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { money, round2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
@@ -66,12 +67,14 @@ export function CobroProforma() {
     [productos, descFormaPago],
   )
 
-  /* Totales de la factura, tomados del mismo cálculo del paso de selección: el neto es la suma de
-     los "Total" de cada línea, y el IVA en $ se liquida sobre ese neto (21%). */
-  const { neto, iva, total } = useMemo(() => {
+  /* Totales de la factura, tomados del mismo cálculo del paso de selección: el bruto es Σ (precio ×
+     cantidad); el neto (gravado), la suma de los "Total" de cada línea; el descuento, su diferencia;
+     y el IVA en $ se liquida sobre el neto (21%). */
+  const { bruto, neto, descuento, iva, total } = useMemo(() => {
     const n = round2(filas.reduce((acc, f) => acc + f.totalLinea, 0))
+    const b = round2(filas.reduce((acc, f) => acc + f.precioUnitario * f.cantidad, 0))
     const impuesto = round2(n * IVA_RATE)
-    return { neto: n, iva: impuesto, total: round2(n + impuesto) }
+    return { bruto: b, neto: n, descuento: round2(b - n), iva: impuesto, total: round2(n + impuesto) }
   }, [filas])
 
   // Rentabilidad general: promedio ponderado por el total de cada línea (ya bonificado).
@@ -96,6 +99,7 @@ export function CobroProforma() {
     try {
       const creada = await crearProforma({
         clienteId: cliente!.id,
+        vendedorId: state.vendedor?.id ?? null,
         nombre: cliente!.name,
         tipoVenta: tipoVenta ?? 'DIRECTA',
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
@@ -219,6 +223,16 @@ export function CobroProforma() {
                   <span className="comp-head-val comp-head-val--imp">{money(total)}</span>
                 </div>
               </div>
+
+              {/* Check de emisión: verde cuando la proforma ya se emitió en el tablero (proformaId). */}
+              <span className="comp-estado">
+                <span
+                  className={`cobro-ok ${emitida ? 'on' : ''}`}
+                  title={emitida ? 'Proforma emitida' : 'Pendiente de emisión'}
+                >
+                  <i className="fas fa-check" />
+                </span>
+              </span>
             </div>
 
             {abierta && (
@@ -261,20 +275,14 @@ export function CobroProforma() {
                   </tbody>
                 </table>
 
-                <div className="comp-tot proforma-tot">
-                  <div className="comp-tot-row">
-                    <span>Subtotal</span>
-                    <b>{money(neto)}</b>
-                  </div>
-                  <div className="comp-tot-row">
-                    <span>IVA en $</span>
-                    <b>{money(iva)}</b>
-                  </div>
-                  <div className="comp-tot-row comp-tot-row--total">
-                    <span>Importe Total</span>
-                    <b>{money(total)}</b>
-                  </div>
-                </div>
+                {/* Totales estándar (mismas clases/posición que factura y presupuesto). */}
+                <TotalesDoc
+                  subtotal={bruto}
+                  descuento={descuento}
+                  gravado={neto}
+                  iva={iva}
+                  total={total}
+                />
 
                 {/* Recordatorio del descuento por pago anticipado / contado, vigente en factura. */}
                 <p className="comp-leyenda">

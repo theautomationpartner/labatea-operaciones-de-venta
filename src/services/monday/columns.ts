@@ -4,6 +4,18 @@
  */
 import type { CondicionIVA, ListaPrecio } from '@/types'
 
+/**
+ * Valor de una columna Person para la API v2: asigna un único usuario por su id
+ * (`{ personsAndTeams: { persons: [{ id }] } }`). Devuelve `null` si el id no es válido, para poder
+ * omitir la columna sin romper la mutación.
+ */
+export const personCol = (
+  id: string | number | null | undefined,
+): { personsAndTeams: { persons: { id: number }[] } } | null => {
+  const n = Number(id)
+  return Number.isFinite(n) && n > 0 ? { personsAndTeams: { persons: [{ id: n }] } } : null
+}
+
 export const BOARDS = {
   personas: 18420688238,
   productos: 18421035535,
@@ -361,6 +373,8 @@ export const COL = {
   },
   // Board "Proformas" (18424580497): origen de la venta CON PROFORMA y destino al emitir una proforma.
   proforma: {
+    /** "🤖Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'person',
     /** "Connect Boards" al cliente (Personas): filtra las proformas del cliente elegido. */
     cliente: 'board_relation_mm582k6v',
     /** "🤖Importe Total" (lookup): total de la proforma. */
@@ -426,6 +440,8 @@ export const COL = {
   },
   // Cabecera del recibo (board 18421035524). Sólo se crea en el cobro SIMULTÁNEO.
   cobro: {
+    /** "🤖Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'multiple_person_mm5s28s6',
     /** "🤖Importe Total a Cobrar": lleva el total cobrado, que en simultáneo es el 100%. */
     totalCobrado: 'numeric_mm5gch94',
     ctaCte: 'board_relation_mkwb7fmp',
@@ -479,6 +495,8 @@ export const COL = {
   },
   // Cabecera de la venta (board 18421035510).
   venta: {
+    /** "✋Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'person',
     cliente: 'board_relation_mm582k6v',
     /** "✋️Tipo De Vta": Directa / C-Presup Previo. */
     tipoVenta: 'color_mm5142e4',
@@ -570,6 +588,8 @@ export const COL = {
   },
   // Cabecera del remito de venta (board 18421035529).
   remito: {
+    /** "🤖Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'multiple_person_mm51xr9f',
     /** "Cliente": es por donde se acotan los remitos al cliente elegido. */
     cliente: 'board_relation_mm5act3k',
     /** "✋Venta": Anterior / Posterior, según cuándo se factura lo entregado. */
@@ -758,6 +778,8 @@ export const COL = {
   },
   // Ítem de "💲Registro de Comisiones" (board 18421035548): la comisión de una venta.
   comision: {
+    /** "🤖Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'multiple_person_mm5r4xx7',
     /** "🤖Fecha Emision Vta": fecha de emisión de la factura (YYYY-MM-DD). */
     fecha: 'date_mm4dxd48',
     /** "🤖Cliente": el cliente de la venta que originó la comisión (board_relation a Personas). */

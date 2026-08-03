@@ -36,6 +36,7 @@ import { DESCUENTO_PAGO_DEFAULT, FORMAS_PAGO, type DescuentosPago } from '@/lib/
 import {
   BOARDS,
   COL,
+  personCol,
   CONFIG_DESCUENTO_ITEM,
   CTA_BANCARIA_ACTIVA_INDEX,
   CONFIG_DIAS_VIGENCIA_ITEM,
@@ -960,9 +961,9 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     moneda,
     totalPesos,
     totalUsd,
+    vendedor,
   } = datos
 
-  // Cabecera. El vendedor (person) se deja vacío: todavía no hay vendedores cargados en Monday.
   const emision = fechaMonday(fechaEmision)
   const vencimiento = fechaMonday(fechaVencimiento)
   const cabecera: Record<string, unknown> = {
@@ -981,6 +982,9 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   }
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
   if (vencimiento) cabecera[COL.presupuesto.fechaVencimiento] = { date: vencimiento }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedor?.id)
+  if (personaVendedor) cabecera[COL.presupuesto.vendedor] = personaVendedor
 
   // 1) Crear el ítem con el nombre ESTÁTICO "Presupuesto". No se concatena la clave del ítem ni la
   //    fecha de emisión: el ID de negocio ("PRESUP-009") lo asigna la customKey del board, y la app
@@ -1220,6 +1224,8 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
   return {
     moneda,
     impBonificado,
+    // Subtotal en pesos guardado en el subelemento (vacío en los dolarizados: se calcula en la vista).
+    subtotalPesos: numCol(c[COL.presupuestoSub.totalPesos]),
     /* El nombre viene del producto conectado en "📦Producto Seleccionado"
        (board_relation_mm57gxye), NUNCA del nombre del subítem —que se renombra con IDs
        ("12580972657 · 12580960919") y no dice nada al usuario—. Sin producto conectado se
@@ -1329,7 +1335,7 @@ export async function getPresupuestosVigentes(clienteItemId: string): Promise<Pr
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {

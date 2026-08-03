@@ -32,6 +32,7 @@ import type {
   TipoEmisionRemito,
   TipoEntrega,
   TipoVenta,
+  UsuarioActual,
   Vendedor,
   VentaEntregaProducto,
   VentaItem,
@@ -50,6 +51,8 @@ export interface AppState {
   vendedores: Vendedor[]
   /** La consulta de vendedores está en curso: el selector se muestra deshabilitado. */
   vendedoresCargando: boolean
+  /** Usuario logueado en Monday: vendedor por defecto y permisos del selector. null = sin sesión. */
+  usuarioActual: UsuarioActual | null
   /** Tasa de cambio del dólar de HOY, leída al iniciar la app. null = todavía no hay dato. */
   tasaCambio: number | null
 
@@ -162,6 +165,7 @@ export const initialState: AppState = {
   vendedor: null,
   cliente: null,
   vendedores: [],
+  usuarioActual: null,
   // Arranca en true: la carga se dispara al montar la app y el selector nace deshabilitado.
   vendedoresCargando: true,
   tasaCambio: null,
@@ -241,6 +245,7 @@ export type Action =
   | { type: 'cambiarOperacion'; operacion: Operacion }
   | { type: 'setVendedor'; vendedor: Vendedor }
   | { type: 'setVendedores'; vendedores: Vendedor[] }
+  | { type: 'setUsuarioActual'; usuario: UsuarioActual | null }
   | { type: 'setTasaCambio'; value: number | null }
   | { type: 'setCliente'; cliente: Cliente }
   | { type: 'setTipoVenta'; value: TipoVenta }
@@ -280,6 +285,7 @@ export type Action =
   | { type: 'setRegistrarCobro'; value: boolean }
   | { type: 'agregarMovimientoPago'; movimiento: Omit<MovimientoPago, 'id'> }
   | { type: 'removeMovimientoPago'; id: string }
+  | { type: 'setMovimientoImporte'; id: string; importe: number }
   | { type: 'confirmarCobro'; cobroId?: string; deudaId?: string; saldoAnterior?: number }
   | { type: 'desconfirmarCobro' }
   | { type: 'setFactura'; patch: Partial<FacturaState> }
@@ -307,6 +313,12 @@ const nuevoId = (): string =>
 
 /** Lo presupuestado que queda por vender: es el tope de la línea en la venta. */
 export const maxAVender = (prod: PresupuestoProducto): number => prod.pend
+
+/** Vendedor por defecto: el que coincide con el usuario logueado (mismo id de Monday), si existe. */
+const vendedorPorDefecto = (
+  vendedores: Vendedor[],
+  usuario: UsuarioActual | null,
+): Vendedor | null => (usuario ? vendedores.find((v) => v.id === usuario.id) ?? null : null)
 
 /**
  * VENTA CON PRESUPUESTO PREVIO: un producto presupuestado en DÓLARES no se mantiene en USD en la
@@ -402,6 +414,8 @@ export function reducer(state: AppState, action: Action): AppState {
         // Los vendedores y la tasa de cambio se leen una sola vez al iniciar: no se vuelven a pedir.
         vendedores: state.vendedores,
         vendedoresCargando: state.vendedoresCargando,
+        // La sesión de Monday no depende de la operación: se conserva.
+        usuarioActual: state.usuarioActual,
         tasaCambio: state.tasaCambio,
         operacion: action.operacion,
         paso: 'cliente',
@@ -410,9 +424,24 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setVendedor':
       return { ...state, vendedor: action.vendedor }
 
-    // Llegaron los vendedores del board: se guardan y el selector deja de estar "Cargando…".
+    /* Llegaron los vendedores del board: se guardan y el selector deja de estar "Cargando…". Si
+       todavía no hay vendedor elegido, se preselecciona el que coincide con el usuario logueado. */
     case 'setVendedores':
-      return { ...state, vendedores: action.vendedores, vendedoresCargando: false }
+      return {
+        ...state,
+        vendedores: action.vendedores,
+        vendedoresCargando: false,
+        vendedor: state.vendedor ?? vendedorPorDefecto(action.vendedores, state.usuarioActual),
+      }
+
+    /* Llegó la sesión de Monday: se guarda y, si no hay vendedor elegido, se preselecciona el
+       vendedor que coincide con el usuario logueado (default por RBAC). */
+    case 'setUsuarioActual':
+      return {
+        ...state,
+        usuarioActual: action.usuario,
+        vendedor: state.vendedor ?? vendedorPorDefecto(state.vendedores, action.usuario),
+      }
 
     case 'setTasaCambio':
       return { ...state, tasaCambio: action.value }
@@ -529,10 +558,13 @@ export function reducer(state: AppState, action: Action): AppState {
         ...initialState,
         diasVigencia: state.diasVigencia,
         fechaEmision: state.fechaEmision,
-        // Los vendedores y la tasa de cambio ya se cargaron al iniciar: se conservan al reiniciar.
+        // Los vendedores, la sesión y la tasa de cambio ya se cargaron al iniciar: se conservan.
         vendedores: state.vendedores,
         vendedoresCargando: state.vendedoresCargando,
+        usuarioActual: state.usuarioActual,
         tasaCambio: state.tasaCambio,
+        // Nueva operación: el vendedor vuelve al del usuario logueado (default por RBAC).
+        vendedor: vendedorPorDefecto(state.vendedores, state.usuarioActual),
       }
 
     case 'addFiltro': {
@@ -699,6 +731,20 @@ export function reducer(state: AppState, action: Action): AppState {
           ...state.cobro,
           confirmado: false,
           movimientos: state.cobro.movimientos.filter((m) => m.id !== action.id),
+        },
+      }
+
+    /* Editar el importe de un pago ya cargado (para ajustar la DIFERENCIA a 0): reabre la
+       confirmación, igual que agregar o quitar un movimiento. */
+    case 'setMovimientoImporte':
+      return {
+        ...state,
+        cobro: {
+          ...state.cobro,
+          confirmado: false,
+          movimientos: state.cobro.movimientos.map((m) =>
+            m.id === action.id ? { ...m, importe: action.importe } : m,
+          ),
         },
       }
 

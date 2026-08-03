@@ -10,7 +10,7 @@ import { PRESUPUESTOS } from '@/data/mock'
 import { num, numCol, valor, byId, type CV, type MondayItem } from './parse'
 import { round2 } from '@/lib/format'
 import type { MedioEnvio, PresupuestoProducto, TipoEntrega, TipoVenta } from '@/types'
-import { BOARDS, COL, MEDIO_ENVIO_LABELS } from './columns'
+import { BOARDS, COL, MEDIO_ENVIO_LABELS, personCol } from './columns'
 import type { LineaVenta } from './venta'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -213,6 +213,8 @@ const numId = (v?: string): number | null => {
 /** Datos para materializar la proforma en Monday. Vienen del cobro de contado. */
 export interface DatosProforma {
   clienteId: string
+  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
+  vendedorId?: string | null
   /** Nombre del ítem de la proforma (se usa el del cliente). */
   nombre: string
   tipoVenta: TipoVenta
@@ -245,8 +247,16 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   if (!mondayHabilitado()) {
     return { id: `mock-${Date.now()}`, subitemsCreados: datos.lineas.length }
   }
-  const { clienteId, tipoVenta, tipoEntrega, rentabilidad, descFormaPago = 0, tasaCambio, lineas } =
-    datos
+  const {
+    clienteId,
+    vendedorId,
+    tipoVenta,
+    tipoEntrega,
+    rentabilidad,
+    descFormaPago = 0,
+    tasaCambio,
+    lineas,
+  } = datos
 
   /* Valores por línea (mismas fórmulas que la tabla de la factura proforma), calculados una vez:
      alimentan tanto los totales del ítem cabecera como cada subelemento. */
@@ -282,6 +292,9 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   }
   const clienteNum = numId(clienteId)
   if (clienteNum != null) cabecera[COL.proforma.cliente] = { item_ids: [clienteNum] }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedorId)
+  if (personaVendedor) cabecera[COL.proforma.vendedor] = personaVendedor
 
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {

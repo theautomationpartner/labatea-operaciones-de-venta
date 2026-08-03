@@ -201,9 +201,11 @@
   align-items: center;
   /* `flex-wrap: wrap` es la clave del arreglo: cuando el ancho no alcanza para los selectores + el
      stepper en la misma fila, el stepper BAJA a una línea nueva en vez de desbordar su caja y
-     pintarse encima de los selectores. El `row-gap` (12px) evita que queden pegados al colapsar. */
+     pintarse encima de los selectores. El `row-gap` (8px) es el "padding-top" que separa el stepper
+     de los elementos de arriba SÓLO cuando rebalsa (una sola fila no lo aplica). El `column-gap`
+     (24px) separa los grupos cuando comparten fila. */
   flex-wrap: wrap;
-  gap: 12px 24px;
+  gap: 8px 24px;
   max-width: 1480px;
   margin: 0 auto;
 }

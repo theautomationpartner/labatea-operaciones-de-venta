@@ -332,11 +332,50 @@
 
 /* Forma de pago de la VENTA: misma caja de configuración, a todo el ancho del paso. */
 .forma-pago {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
   margin: 2px 0 20px;
 }
 /* Ancho reducido un 70% respecto del total (queda en el 30% del ancho del paso). */
 .forma-pago .cfgbox {
   width: 30%;
+  min-width: 240px;
+  flex: 0 0 auto;
+}
+/* MÓDULO 1 · descuento por forma de pago: título arriba, valor (%) debajo. Reactivo. */
+.forma-pago-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.forma-pago-desc-lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-gray, #667085);
+}
+.forma-pago-desc-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--green-dark, #00874d);
+}
+/* MÓDULO 2 · aclaración: texto plano SIN fondo ni borde, con ícono de info. */
+.forma-pago-nota {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-gray, #667085);
+  background: none;
+}
+.forma-pago-nota i {
+  color: var(--primary-blue, #0073ea);
+  flex-shrink: 0;
 }
 
 /* ===== VISTA PRODUCTOS ===== */

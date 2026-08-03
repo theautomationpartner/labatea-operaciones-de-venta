@@ -28,8 +28,16 @@ type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
 
 /** Paso 4 de REMITO: resumen, generación del PDF del remito y envío a los contactos del cliente. */
 export function RemitoEmisionView() {
-  const { cliente, operacion, tipoVenta, tipoEntrega, remito, documentoEmitido, documentoEnviado } =
-    useApp()
+  const {
+    cliente,
+    vendedor,
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+    remito,
+    documentoEmitido,
+    documentoEnviado,
+  } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
      el botón "Emitir Remito" no se reactiva al volver a esta etapa. */
@@ -137,6 +145,7 @@ export function RemitoEmisionView() {
         )
         const creado = await crearRemito({
           clienteId: cliente.id,
+          vendedorId: vendedor?.id ?? null,
           nombre: cliente.name,
           tipoEmision: remito.tipoEmision ?? 'POSTERIOR',
           responsable: envio.responsable,

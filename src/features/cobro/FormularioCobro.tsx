@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FORMAS_PAGO } from '@/lib/cobros'
 import { aIso, desdeIso, parseDate } from '@/lib/dates'
+import { formatearImporteAR } from '@/lib/format'
 import { getCuentasBancariasPropias } from '@/services/monday'
 import { useDispatch } from '@/state/hooks'
 import type { CuentaPropia, FormaPago, FormatoCheque, MovimientoPago, TarjetaTipo } from '@/types'
@@ -54,6 +55,8 @@ interface FormularioCobroProps {
 export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioCobroProps) {
   const dispatch = useDispatch()
   const [borrador, setBorrador] = useState<Borrador>(BORRADOR_VACIO)
+  // Texto formateado (miles con punto, coma decimal) del importe del borrador.
+  const [importeTexto, setImporteTexto] = useState('')
   // Cuentas bancarias propias de La Batea: se piden recién al elegir "Transferencia".
   const [cuentas, setCuentas] = useState<CuentaPropia[]>([])
   const [estadoCuentas, setEstadoCuentas] = useState<EstadoCuentas>('idle')
@@ -111,6 +114,7 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
   const agregar = () => {
     dispatch({ type: 'agregarMovimientoPago', movimiento: borrador })
     setBorrador(BORRADOR_VACIO)
+    setImporteTexto('')
   }
 
   /** Cambiar de forma de pago descarta lo que sólo valía para la anterior. */
@@ -147,15 +151,19 @@ export function FormularioCobro({ fechaFactura, bloqueado = false }: FormularioC
           Importe
           <Req />
         </label>
+        {/* Importe como número con separador de miles (formato AR): "30409" → "30.409"; la coma
+            agrega centavos. Se guarda el número en el borrador. */}
         <input
           id="cobro-importe"
           className="cobro-in"
-          inputMode="numeric"
+          inputMode="decimal"
           placeholder="$ 0"
-          value={borrador.importe || ''}
-          onChange={(e) =>
-            setBorrador({ ...borrador, importe: Number(e.target.value.replace(/\D/g, '')) || 0 })
-          }
+          value={importeTexto}
+          onChange={(e) => {
+            const { texto, valor } = formatearImporteAR(e.target.value)
+            setImporteTexto(texto)
+            setBorrador({ ...borrador, importe: valor })
+          }}
         />
       </div>
 

@@ -13,7 +13,7 @@
  */
 import { round2 } from '@/lib/format'
 import type { TipoPago, TipoVenta } from '@/types'
-import { BOARDS, COL } from './columns'
+import { BOARDS, COL, personCol } from './columns'
 import { byId, numCol, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -32,6 +32,8 @@ export interface DatosComision {
   ventaId: string
   /** Cliente de la venta (board_relation_mm5s28j3). */
   clienteId?: string
+  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
+  vendedorId?: string | null
   tipoVenta: TipoVenta
   /** Tipo de cobro de la operación: define el monto pendiente (POSTERIOR = total; SIMULTANEO = 0). */
   tipoPago: TipoPago
@@ -54,7 +56,7 @@ const esComisionable = (texto: string | null | undefined): boolean =>
  * El bulk de subítems espera (`await`) el id del ítem padre antes de correr.
  */
 export async function crearComisiones(datos: DatosComision): Promise<void> {
-  const { ventaId, clienteId, tipoVenta, tipoPago, importeTotalVenta, fecha, pendienteCobroId, lineas } =
+  const { ventaId, clienteId, vendedorId, tipoVenta, tipoPago, importeTotalVenta, fecha, pendienteCobroId, lineas } =
     datos
   if (!mondayHabilitado()) return
 
@@ -112,6 +114,9 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
   if (clienteId && Number.isFinite(Number(clienteId))) {
     cabecera[COL.comision.cliente] = { item_ids: [Number(clienteId)] }
   }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedorId)
+  if (personaVendedor) cabecera[COL.comision.vendedor] = personaVendedor
   if (pendienteCobroId && Number.isFinite(Number(pendienteCobroId))) {
     cabecera[COL.comision.cobroPendiente] = { item_ids: [Number(pendienteCobroId)] }
   }

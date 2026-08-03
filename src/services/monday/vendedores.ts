@@ -8,11 +8,39 @@
  *     (y admins) activos. El id numérico del usuario viaja como valor para asignar la venta.
  */
 import { VENDEDORES } from '@/data/mock'
-import type { Vendedor } from '@/types'
+import type { UsuarioActual, Vendedor } from '@/types'
 import { mondayApi, mondayHabilitado } from './sdk'
 
 /** Nombre del equipo de Monday cuyos usuarios son los vendedores. */
 const TEAM_VENDEDORES = 'Vendedores'
+
+/**
+ * IDs de usuarios de Monday con privilegio para emitir a nombre de OTRO vendedor (Gerentes /
+ * Supervisores), ADEMÁS de los admins. Completar con los ids reales del equipo. Vacío = sólo los
+ * admins pueden elegir otro vendedor.
+ */
+export const IDS_VENDEDOR_PRIVILEGIADO: readonly string[] = []
+
+/**
+ * ¿El usuario puede emitir a nombre de OTRO vendedor? Sí para los admins de Monday y los ids
+ * privilegiados. Sin usuario (modo local o error al leer la sesión) NO se bloquea, para no trabar
+ * la operación en desarrollo.
+ */
+export const puedeElegirVendedor = (u: UsuarioActual | null): boolean =>
+  !u || u.isAdmin || IDS_VENDEDOR_PRIVILEGIADO.includes(u.id)
+
+/**
+ * Usuario logueado en Monday (query `me`). Se lee una vez al iniciar la app: define el vendedor por
+ * defecto y los permisos del selector. Sin token (modo local) devuelve null: no hay sesión.
+ */
+export async function getUsuarioActual(): Promise<UsuarioActual | null> {
+  if (!mondayHabilitado()) return null
+  const data = await mondayApi<{ me: { id: string; name: string; is_admin: boolean } | null }>(
+    `query { me { id name is_admin } }`,
+  )
+  const me = data.me
+  return me ? { id: String(me.id), name: me.name, isAdmin: Boolean(me.is_admin) } : null
+}
 
 /** Paleta de colores para el avatar del vendedor, asignada por posición. */
 const COLORES_VENDEDOR = [

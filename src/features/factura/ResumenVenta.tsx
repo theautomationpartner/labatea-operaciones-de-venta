@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
+import { money } from '@/lib/format'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Cliente } from '@/types'
 
@@ -9,6 +10,8 @@ interface ResumenVentaProps {
   cantidadProductos: number
   /** Comprobantes que salieron de evaluar la mercadería. */
   cantidadFacturas: number
+  /** Total (en pesos) que se va a facturar: la suma de los comprobantes de la operación. */
+  totalAFacturar: number
   /** Comprobantes ya escritos en el board: con alguno, no se vuelve a emitir. */
   emitidos: number
   emitiendo: boolean
@@ -50,6 +53,7 @@ export function ResumenVenta({
   cliente,
   cantidadProductos,
   cantidadFacturas,
+  totalAFacturar,
   emitidos,
   emitiendo,
   onEmitir,
@@ -89,6 +93,10 @@ export function ResumenVenta({
         </Fila>
         <Fila label="Fecha de cierre" requerido={false}>
           {fechaEmision}
+        </Fila>
+        {/* Total (en pesos) que se va a facturar en esta operación: destacado. */}
+        <Fila label="Total a Facturar" requerido={false} tono="total">
+          {money(totalAFacturar)}
         </Fila>
       </div>
 

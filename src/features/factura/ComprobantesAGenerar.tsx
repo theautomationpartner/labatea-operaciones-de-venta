@@ -1,8 +1,15 @@
 import { useState } from 'react'
+import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { addDays } from '@/lib/dates'
-import { alicuotaDe, precioFacturado, type ComprobanteAGenerar } from '@/lib/facturacion'
-import { money } from '@/lib/format'
+import { precioFacturado, type ComprobanteAGenerar } from '@/lib/facturacion'
+import { money, round2 } from '@/lib/format'
+import type { LineaVenta } from '@/services/monday/venta'
 import type { ComprobanteEmitido, LetraComprobante } from '@/types'
+
+/** Bruto de la línea (sin bonificar): precio unitario × cantidad. */
+const brutoLinea = (l: LineaVenta): number => round2(l.precioUnitario * l.cantidad)
+/** Importe bonificado de la línea: el descuento aplicado (bruto − neto facturado). */
+const bonifLinea = (l: LineaVenta): number => round2((l.precioUnitario - precioFacturado(l)) * l.cantidad)
 
 interface ComprobantesAGenerarProps {
   comprobantes: ComprobanteAGenerar[]
@@ -60,6 +67,8 @@ function CardComprobante({
 }) {
   const [abierta, setAbierta] = useState(true)
   const consignada = comprobante.tipo === 'CONSIGNADA'
+  // Bruto del comprobante: suma de los subtotales de línea (precio × cantidad), sin bonificar.
+  const brutoComprobante = round2(comprobante.lineas.reduce((acc, l) => acc + brutoLinea(l), 0))
   // Sin cabecera creada o con líneas faltantes, el comprobante no se da por emitido.
   const completo = Boolean(emitido?.id) && emitido!.lineasCreadas >= emitido!.lineasEsperadas
   const incompleto = Boolean(emitido) && !completo
@@ -116,9 +125,8 @@ function CardComprobante({
               <tr>
                 <th>Producto</th>
                 <th className="ta-c">Cant.</th>
-                <th className="ta-c">Tipo</th>
-                <th className="ta-c">IVA %</th>
-                <th className="ta-r">Total</th>
+                <th className="ta-r">Importe Bonif.</th>
+                <th className="ta-r">Subtotal</th>
               </tr>
             </thead>
             <tbody>
@@ -129,15 +137,10 @@ function CardComprobante({
                     <span className="comp-nom">{l.nombre}</span>
                   </td>
                   <td className="ta-c">{l.cantidad}</td>
-                  {/* La mercadería consignada se distingue en dorado, como en el resto de la app. */}
-                  <td className={`ta-c comp-tipo ${consignada ? 'comp-tipo--co' : ''}`}>
-                    {l.tipoMercaderia || '—'}
-                  </td>
-                  <td className="ta-c">{alicuotaDe(l)}%</td>
-                  {/* El total sale del precio ya bonificado: el comprobante no lleva descuento. */}
-                  <td className="ta-r comp-total-prod">
-                    {money(precioFacturado(l) * l.cantidad)}
-                  </td>
+                  {/* Importe bonificado (descuento) de la línea. */}
+                  <td className="ta-r">{money(bonifLinea(l))}</td>
+                  {/* Subtotal bruto de la línea: precio × cantidad, antes de la bonificación. */}
+                  <td className="ta-r comp-total-prod">{money(brutoLinea(l))}</td>
                 </tr>
               ))}
             </tbody>
@@ -164,20 +167,16 @@ function CardComprobante({
               )}
             </div>
 
-            <div className="comp-tot">
-              <div className="comp-tot-row">
-                <span>Subtotal</span>
-                <b>{money(comprobante.subtotal)}</b>
-              </div>
-              <div className="comp-tot-row">
-                <span>IVA</span>
-                <b>{money(comprobante.iva)}</b>
-              </div>
-              <div className="comp-tot-row comp-tot-row--total">
-                <span>Total</span>
-                <b>{money(comprobante.total)}</b>
-              </div>
-            </div>
+            {/* Totales estándar (mismas clases/posición que proforma y presupuesto). El "Gravado" es
+                el neto ya bonificado (comprobante.subtotal); el "Subtotal" es el bruto y el
+                "Descuento" la diferencia entre ambos. */}
+            <TotalesDoc
+              subtotal={brutoComprobante}
+              descuento={round2(brutoComprobante - comprobante.subtotal)}
+              gravado={comprobante.subtotal}
+              iva={comprobante.iva}
+              total={comprobante.total}
+            />
           </div>
 
           {/* Lo consignado se factura por cuenta y orden de quien es dueño de la mercadería. */}

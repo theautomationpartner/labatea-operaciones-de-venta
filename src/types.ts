@@ -25,6 +25,15 @@ export interface Vendedor {
   color: string
 }
 
+/** Usuario logueado en Monday: define el vendedor por defecto y los permisos de la UI (RBAC). */
+export interface UsuarioActual {
+  /** ID numérico del usuario de Monday (query `me`). */
+  id: string
+  name: string
+  /** Admin de Monday: puede emitir a nombre de cualquier vendedor. */
+  isAdmin: boolean
+}
+
 export type ActividadCliente = 'Activo' | 'Inactivo'
 export type SituacionCliente = 'Liberado con crédito' | 'Liberado sin crédito' | 'Bloqueado'
 
@@ -226,6 +235,9 @@ export interface PresupuestoProducto {
   impBonificado?: number
   ivaMonto?: number
   totalLinea?: number
+  /** Subtotal en pesos del subelemento del presupuesto ("🤖TOTAL $", numeric_mm5w3qtg). En productos
+   *  dolarizados viene vacío: el subtotal en pesos se calcula con la tasa del día en la vista. */
+  subtotalPesos?: number
   /** Proveedor del producto: la mercadería consignada se factura por proveedor. */
   proveedorId?: string
   proveedorNombre?: string

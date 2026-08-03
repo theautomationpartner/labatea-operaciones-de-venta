@@ -22,6 +22,7 @@ import type {
 import {
   BOARDS,
   COL,
+  personCol,
   ENTREGA_RESPONSABLE_LABEL,
   VENTA_COBRO_INDEX,
   VENTA_ENTREGA_ESTADO_INDEX,
@@ -75,6 +76,8 @@ export interface LineaVenta {
 export interface DatosVenta {
   /** Ítem del cliente en el board de Personas. */
   clienteId?: string
+  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
+  vendedorId?: string | null
   /** Nombre con el que nace el ítem de la venta. */
   nombre: string
   tipoVenta: TipoVenta
@@ -289,6 +292,7 @@ async function crearMovimientosStockSimultanea(lineas: LineaVentaCreada[]): Prom
 export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   const {
     clienteId,
+    vendedorId,
     tipoVenta,
     tipoEntrega,
     tipoPago,
@@ -386,6 +390,9 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     }
   }
   if (clienteId) cabecera[COL.venta.cliente] = { item_ids: [Number(clienteId)] }
+  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const personaVendedor = personCol(vendedorId)
+  if (personaVendedor) cabecera[COL.venta.vendedor] = personaVendedor
   // Responsable logístico → dropdown por label. Ruta → board_relation (sólo si La Batea la confirmó).
   if (responsableEntrega) {
     cabecera[COL.venta.responsableEntrega] = { labels: [ENTREGA_RESPONSABLE_LABEL[responsableEntrega]] }

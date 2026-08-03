@@ -240,6 +240,15 @@ export function ProductosView() {
                   avisoSinProductos()
                   return
                 }
+                // La forma de pago define el ramal del cobro: es obligatoria para avanzar.
+                if (!formaPago) {
+                  setAviso({
+                    titulo: 'Falta la forma de pago',
+                    texto:
+                      'Seleccioná la forma de pago del cliente antes de continuar a la siguiente etapa.',
+                  })
+                  return
+                }
                 if (bloqueo.frenar()) return
                 dispatch({ type: 'goto', paso: 'cobro' })
                 return

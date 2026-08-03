@@ -4,6 +4,7 @@ import { Dropdown } from '@/components/ui/Dropdown'
 import { Modal } from '@/components/ui/Modal'
 import { hoy } from '@/lib/dates'
 import { OPERACIONES } from '@/lib/pasos'
+import { puedeElegirVendedor } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Operacion, Vendedor } from '@/types'
 
@@ -119,18 +120,21 @@ function OperacionSelector() {
 }
 
 function VendedorSelector() {
-  const { vendedor, vendedores, vendedoresCargando } = useApp()
+  const { vendedor, vendedores, vendedoresCargando, usuarioActual } = useApp()
   const dispatch = useDispatch()
   // Mientras se traen los vendedores del board, el selector queda deshabilitado con el placeholder.
   const etiqueta = vendedoresCargando
     ? 'Cargando vendedores...'
     : (vendedor?.name ?? 'Seleccionar...')
+  /* RBAC: sólo los admins (o ids privilegiados) pueden emitir a nombre de OTRO vendedor. El resto
+     ve el selector bloqueado, fijo en el vendedor por defecto (su propio usuario). */
+  const bloqueado = vendedoresCargando || !puedeElegirVendedor(usuarioActual)
   return (
     <Dropdown<Vendedor>
       label={<span className={vendedor ? '' : 'selbox-ph'}>{etiqueta}</span>}
       items={vendedores}
       itemKey={(v) => v.id}
-      disabled={vendedoresCargando}
+      disabled={bloqueado}
       renderItem={(v) => (
         <>
           <Avatar ini={v.ini} color={v.color} />

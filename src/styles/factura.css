@@ -194,6 +194,12 @@
   color: var(--f-text-main);
   text-align: right;
 }
+/* "Total a Facturar": campo destacado (mismo tratamiento que el total del resumen de emisión). */
+.factura-v2 .rvalue--total {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--f-success);
+}
 .factura-v2 .resumen-obs {
   margin-top: 20px;
 }

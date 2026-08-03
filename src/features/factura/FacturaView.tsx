@@ -167,6 +167,7 @@ export function FacturaView() {
     void crearComisiones({
       ventaId: vId,
       clienteId: cliente.id,
+      vendedorId: state.vendedor?.id ?? null,
       tipoVenta: tipoVenta ?? 'DIRECTA',
       // Tipo de cobro de la operación e importe total (con IVA): definen el monto pendiente de cobro.
       tipoPago: datosCobroVenta(cliente, cobro).tipoPago,
@@ -231,6 +232,7 @@ export function FacturaView() {
           cancelado: resumenC.cancelado,
           balances,
           ctaCteId: cliente.ctaCteId,
+          vendedorId: state.vendedor?.id ?? null,
           nombreCliente: cliente.name,
         })
         await vincularVentaAlCobro(id, vId)
@@ -364,6 +366,7 @@ export function FacturaView() {
           cliente={cliente}
           cantidadProductos={productos.length}
           cantidadFacturas={comprobantes.length}
+          totalAFacturar={totalVenta}
           emitidos={factura.comprobantes.length}
           emitiendo={emitiendo}
           onEmitir={emitir}

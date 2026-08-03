@@ -5,6 +5,7 @@ import {
   getDiasVigencia,
   getTasaCambioHoy,
   getTopesDescuento,
+  getUsuarioActual,
   getVendedores,
 } from '@/services/monday'
 import { ClienteView } from '@/features/cliente/ClienteView'
@@ -73,6 +74,11 @@ export function App() {
     getVendedores()
       .then((vs) => vivo && dispatch({ type: 'setVendedores', vendedores: vs }))
       .catch(() => vivo && dispatch({ type: 'setVendedores', vendedores: [] }))
+    /* Usuario logueado en Monday (query `me`): define el vendedor por defecto y los permisos del
+       selector (RBAC). Ante un error queda sin sesión (no bloquea el selector). */
+    getUsuarioActual()
+      .then((u) => vivo && dispatch({ type: 'setUsuarioActual', usuario: u }))
+      .catch(() => vivo && dispatch({ type: 'setUsuarioActual', usuario: null }))
     /* Tasa de cambio del dólar de HOY: se lee del board de Cotizaciones al iniciar y se guarda en
        el estado global. Es el valor que se usa para convertir precios en dólares y como auditoría
        en la venta. Ante un error queda en null (la UI lo refleja). */

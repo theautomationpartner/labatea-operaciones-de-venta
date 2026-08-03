@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { esConsignada } from '@/lib/facturacion'
-import { money } from '@/lib/format'
+import { money, pctDec } from '@/lib/format'
 
 /** Una línea pendiente, ya resuelta por la vista: origen, cantidades y estado. */
 export interface PendienteFila {
@@ -24,8 +24,10 @@ export interface PendienteFila {
   tipo?: string
   /** Precio unitario del producto (sólo se muestra con `mostrarPrecios`). */
   precio?: number
-  /** Subtotal de la línea, tal como lo trae la fuente (sólo con `mostrarPrecios`). */
+  /** Subtotal de la línea, tal como lo trae la fuente (con `mostrarPrecios` o `mostrarSubtotal`). */
   subtotal?: number
+  /** Rentabilidad del producto en % (sólo se muestra con `mostrarRentabilidad`). */
+  rentabilidad?: number
   /** Unidad de medida del producto (sólo se muestra con `mostrarUm`). */
   um?: string
   /** Ruta de entrega asignada al pendiente (sólo se muestra con `mostrarRuta`). */
@@ -60,6 +62,10 @@ interface PendientesSelectorProps {
   dividirTipo?: boolean
   /** Suma las columnas de precio unitario y subtotal por línea (venta pendiente de facturar). */
   mostrarPrecios?: boolean
+  /** Suma la columna de Subtotal por línea (venta presupuestada). */
+  mostrarSubtotal?: boolean
+  /** Suma la columna de Rentabilidad (%) por línea (venta presupuestada). */
+  mostrarRentabilidad?: boolean
   /** Suma la columna de unidad de medida por línea (remito de venta ANTERIOR). */
   mostrarUm?: boolean
   /** Suma la columna de ruta de entrega por línea (remito de venta ANTERIOR). */
@@ -90,6 +96,8 @@ export function PendientesSelector({
   mostrarTipo = false,
   dividirTipo = false,
   mostrarPrecios = false,
+  mostrarSubtotal = false,
+  mostrarRentabilidad = false,
   mostrarUm = false,
   mostrarRuta = false,
   filas,
@@ -97,10 +105,15 @@ export function PendientesSelector({
   onVerTodos,
   onConfirmar,
 }: PendientesSelectorProps) {
-  // Columnas de la tabla: la de tipo (venta presupuestada), las de importes (venta pend de facturar)
-  // y la de unidad de medida (remito ANTERIOR).
+  // Columnas de la tabla: tipo, importes (pend de facturar), U.M./ruta (remito), y Subtotal /
+  // Rentabilidad (venta presupuestada).
   const columnas =
-    (mostrarTipo ? 9 : 8) + (mostrarPrecios ? 2 : 0) + (mostrarUm ? 1 : 0) + (mostrarRuta ? 1 : 0)
+    (mostrarTipo ? 9 : 8) +
+    (mostrarPrecios ? 2 : 0) +
+    (mostrarUm ? 1 : 0) +
+    (mostrarRuta ? 1 : 0) +
+    (mostrarSubtotal ? 1 : 0) +
+    (mostrarRentabilidad ? 1 : 0)
   // uid → cantidad elegida. Sólo entran las filas seleccionables (no agregadas, con pendiente).
   const [seleccion, setSeleccion] = useState<ReadonlyMap<string, number>>(new Map())
   const [busqueda, setBusqueda] = useState('')
@@ -284,6 +297,24 @@ export function PendientesSelector({
         <td className="ta-c" style={{ color: fila.estadoColor, fontWeight: 700 }}>
           {fila.pend}
         </td>
+        {/* Subtotal del producto en el presupuesto (en pesos; dolarizados ya convertidos). */}
+        {mostrarSubtotal && (
+          <td className="ta-r" style={{ fontWeight: 600 }}>
+            {money(fila.subtotal ?? 0)}
+          </td>
+        )}
+        {/* Rentabilidad del producto: verde si suma, roja si es negativa. */}
+        {mostrarRentabilidad && (
+          <td
+            className="ta-c"
+            style={{
+              fontWeight: 700,
+              color: (fila.rentabilidad ?? 0) < 0 ? 'var(--red)' : 'var(--green-dark)',
+            }}
+          >
+            {pctDec(fila.rentabilidad ?? 0)}
+          </td>
+        )}
         {/* La mercadería consignada (CO) se distingue en dorado, como en el stock. */}
         {mostrarTipo && (
           <td
@@ -376,6 +407,8 @@ export function PendientesSelector({
               <th className="ta-c">{colReferencia}</th>
               <th className="ta-c">{colResuelta}</th>
               <th className="ta-c">{colPend}</th>
+              {mostrarSubtotal && <th className="ta-r">Subtotal</th>}
+              {mostrarRentabilidad && <th className="ta-c">Rentab.</th>}
               {mostrarTipo && <th className="ta-c">Tipo</th>}
               <th>Estado</th>
             </tr>

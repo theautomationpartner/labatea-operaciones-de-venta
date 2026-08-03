@@ -43,12 +43,15 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
   // Total de la línea, ya bonificado: (precio − bonif) × cantidad, en la moneda del producto.
   const total = round2(p.precio * (1 - linea.descuento / 100) * linea.cantidad)
   const usd = esDolar(p.moneda)
+  // ¿Se aplicó algún descuento (importe bonificado)? De ello depende qué se escribe en "Importe Bonif".
+  const tieneDescuento = importeBonif > 0
   const columnas: Record<string, unknown> = {
     [COL.presupuestoSub.cantidad]: String(linea.cantidad),
     [COL.presupuestoSub.rentabilidad]: String(Math.round(p.rentabilidad)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
-    // Importe Bonif. es común a las dos monedas (su valor va en la moneda del producto).
-    [COL.presupuestoSub.importeBonif]: String(importeBonif),
+    /* "Importe Bonif." (numeric_mm5rddvm): CON descuento, el monto bonificado; SIN descuento, el
+       precio unitario ORIGINAL (sin bonificar), por regla de negocio del board. */
+    [COL.presupuestoSub.importeBonif]: String(tieneDescuento ? importeBonif : precio),
     // Precio Bonif: precio unitario ya bonificado, en la moneda del producto.
     [COL.presupuestoSub.precioBonif]: String(precioBonif),
     // Precio y total se registran en la columna de la moneda del producto ($ pesos / $u dólares).
@@ -57,6 +60,9 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
     // Producto recién presupuestado: todavía no se vendió nada, "0% Vendido" (por índice).
     [COL.presupuestoSub.estadoUso]: { index: PRESUP_SUB_ESTADO_USO_INDEX.sinVender },
   }
+  /* Sin descuento: el "Precio Unit $" (numeric_mkw85hdw) también lleva el precio unitario original,
+     además de la columna de la moneda del producto. */
+  if (!tieneDescuento) columnas[COL.presupuestoSub.precioUnit] = String(precio)
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
   // Se arrastra el ítem de stock del maestro para que viaje del presupuesto a la venta.
   if (p.stockId) columnas[COL.presupuestoSub.stock] = { item_ids: [Number(p.stockId)] }
