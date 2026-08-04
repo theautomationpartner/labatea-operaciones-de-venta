@@ -140,7 +140,7 @@ const columnasLinea = (
   descFormaPago: number,
 ): Record<string, unknown> => {
   /* Descuento total de la línea (manual + forma de pago, topeado en 100%) y valores derivados:
-     Imp. Bonificado, IVA en $ y TOTAL con IVA de la línea. */
+     Imp. Bonificado, IVA en $ y Subtotal (total ya bonificado, SIN IVA) de la línea. */
   const descTotal = Math.min(l.descuento + descFormaPago, 100)
   const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
   const impBonifLinea = round2(bonifUnit * l.cantidad)
@@ -159,8 +159,8 @@ const columnasLinea = (
     [COL.ventaSub.precioBonif]: String(round2(l.precioUnitario - bonifUnit)),
     // IVA en $ de la línea, sobre el total ya bonificado.
     [COL.ventaSub.iva]: String(ivaLinea),
-    // TOTAL de la línea con IVA = total bonificado + IVA.
-    [COL.ventaSub.totalConIva]: String(round2(totalLinea + ivaLinea)),
+    // Subtotal de la línea = el "Importe Total" de la tabla de productos (ya bonificado, SIN IVA).
+    [COL.ventaSub.subtotal]: String(totalLinea),
     [COL.ventaSub.rentabilidad]: String(Math.round(l.rentabilidad)),
   }
   if (entregaSimultanea) {

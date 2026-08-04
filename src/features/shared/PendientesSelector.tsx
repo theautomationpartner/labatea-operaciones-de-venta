@@ -289,14 +289,6 @@ export function PendientesSelector({
             <span className="muted">—</span>
           )}
         </td>
-        <td>
-          <span className="pend-origen">{fila.origenLabel ?? fila.origen}</span>
-        </td>
-        <td className="ta-c">{fila.referencia}</td>
-        <td className="ta-c">{fila.resuelta}</td>
-        <td className="ta-c" style={{ color: fila.estadoColor, fontWeight: 700 }}>
-          {fila.pend}
-        </td>
         {/* Subtotal del producto en el presupuesto (en pesos; dolarizados ya convertidos). */}
         {mostrarSubtotal && (
           <td className="ta-r" style={{ fontWeight: 600 }}>
@@ -315,6 +307,14 @@ export function PendientesSelector({
             {pctDec(fila.rentabilidad ?? 0)}
           </td>
         )}
+        <td>
+          <span className="pend-origen">{fila.origenLabel ?? fila.origen}</span>
+        </td>
+        <td className="ta-c">{fila.referencia}</td>
+        <td className="ta-c">{fila.resuelta}</td>
+        <td className="ta-c" style={{ color: fila.estadoColor, fontWeight: 700 }}>
+          {fila.pend}
+        </td>
         {/* La mercadería consignada (CO) se distingue en dorado, como en el stock. */}
         {mostrarTipo && (
           <td
@@ -403,12 +403,14 @@ export function PendientesSelector({
               <th className="ta-c" style={{ width: 120 }}>
                 {colAccion}
               </th>
+              {/* Subtotal y Rentabilidad van a la derecha de la cantidad, antes del desglose de
+                  cantidades (presupuestada / vendida / disponible) y el estado. */}
+              {mostrarSubtotal && <th className="ta-r">Subtotal</th>}
+              {mostrarRentabilidad && <th className="ta-c">Rentab.</th>}
               <th>Origen</th>
               <th className="ta-c">{colReferencia}</th>
               <th className="ta-c">{colResuelta}</th>
               <th className="ta-c">{colPend}</th>
-              {mostrarSubtotal && <th className="ta-r">Subtotal</th>}
-              {mostrarRentabilidad && <th className="ta-c">Rentab.</th>}
               {mostrarTipo && <th className="ta-c">Tipo</th>}
               <th>Estado</th>
             </tr>

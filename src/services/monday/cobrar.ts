@@ -107,7 +107,7 @@ export async function registrarCobroSimultaneo(
       const a = alias[i]
       variables[`n${desde + i}`] = b.movimiento.formaPago
       variables[`c${desde + i}`] = JSON.stringify(columnasMovimiento(b))
-      return `${a}: create_subitem(parent_item_id: $parentId, item_name: $n${desde + i}, column_values: $c${desde + i}) { id }`
+      return `${a}: create_subitem(parent_item_id: $parentId, item_name: $n${desde + i}, column_values: $c${desde + i}, create_labels_if_missing: true) { id }`
     })
     const declaraciones = tanda
       .map((_, i) => `$n${desde + i}: String!, $c${desde + i}: JSON!`)

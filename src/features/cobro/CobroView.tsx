@@ -28,6 +28,8 @@ const SIN_DESCUENTO: DescuentosPago = {
   Efectivo: 0,
   Cheque: 0,
   Transferencia: 0,
+  'Retencion IIBB': 0,
+  'Retencion GAN': 0,
   'Tarjeta de débito': 0,
   'Tarjeta de crédito': 0,
 }

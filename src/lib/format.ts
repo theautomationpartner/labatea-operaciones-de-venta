@@ -18,10 +18,10 @@ const ARS = new Intl.NumberFormat('es-AR', {
 export const money = (n: number): string => `$ ${ARS.format(round2(n))}`
 
 /**
- * "$u 10.465,78" — importe en DÓLARES del presupuesto bimonetario. Mismo formato de miles y
- * decimales que `money`, con el prefijo `$u` que lo distingue de los importes en pesos.
+ * "$U64,50" — importe en DÓLARES del presupuesto bimonetario. Mismo formato de miles y decimales
+ * que `money`, con el prefijo `$U` (U mayúscula, sin espacio) que lo distingue de los pesos.
  */
-export const moneyU = (n: number): string => `$u ${ARS.format(round2(n))}`
+export const moneyU = (n: number): string => `$U${ARS.format(round2(n))}`
 
 export const pct = (n: number): string => `${Math.round(n)}%`
 

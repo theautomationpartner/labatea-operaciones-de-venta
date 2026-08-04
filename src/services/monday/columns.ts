@@ -5,15 +5,17 @@
 import type { CondicionIVA, ListaPrecio } from '@/types'
 
 /**
- * Valor de una columna Person para la API v2: asigna un único usuario por su id
- * (`{ personsAndTeams: { persons: [{ id }] } }`). Devuelve `null` si el id no es válido, para poder
- * omitir la columna sin romper la mutación.
+ * Valor de una columna Person para la API de Monday: asigna un único usuario por su id
+ * (`{ personsAndTeams: [{ id, kind: 'person' }] }`, el mismo formato con el que Monday devuelve la
+ * columna). Devuelve `null` si el id no es válido, para poder omitir la columna sin romper la
+ * mutación. El `kind` es obligatorio: sin él (o con el shape `{ persons: [...] }`) la API rechaza el
+ * valor con `ColumnValueException` y falla el `create_item`.
  */
 export const personCol = (
   id: string | number | null | undefined,
-): { personsAndTeams: { persons: { id: number }[] } } | null => {
+): { personsAndTeams: { id: number; kind: 'person' }[] } | null => {
   const n = Number(id)
-  return Number.isFinite(n) && n > 0 ? { personsAndTeams: { persons: [{ id: n }] } } : null
+  return Number.isFinite(n) && n > 0 ? { personsAndTeams: [{ id: n, kind: 'person' }] } : null
 }
 
 export const BOARDS = {
@@ -565,8 +567,8 @@ export const COL = {
     precioBonif: 'numeric_mm5wm552',
     /** "🤖IVA $": IVA en pesos de la línea, sobre el total ya bonificado. */
     iva: 'numeric_mm5sbr3m',
-    /** "🤖TOTAL $": total de la línea CON IVA = total bonificado + IVA. */
-    totalConIva: 'numeric_mm5sqgp',
+    /** "🤖Subtotal $": el "Importe Total" de la línea, ya bonificado y SIN IVA (no se le suma IVA). */
+    subtotal: 'numeric_mm5sqgp',
     rentabilidad: 'numeric_mm4cmpa6',
     /** "🤖Cant Entregada Simult": sólo se llena si la entrega es simultánea a la venta. */
     cantEntregadaSimult: 'numeric_mm54fxxh',
@@ -891,6 +893,8 @@ export const FORMA_PAGO_LABEL: Record<string, string> = {
   Efectivo: 'Efectivo',
   Cheque: 'Cheque',
   Transferencia: 'Transferencia',
+  'Retencion IIBB': 'Retencion IIBB',
+  'Retencion GAN': 'Retencion GAN',
   'Tarjeta de débito': 'Tarjeta de Débito',
   'Tarjeta de crédito': 'Tarjeta de Crédito',
 }

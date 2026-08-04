@@ -70,6 +70,8 @@ export const FORMAS_PAGO: readonly FormaPago[] = [
   'Efectivo',
   'Cheque',
   'Transferencia',
+  'Retencion IIBB',
+  'Retencion GAN',
   'Tarjeta de débito',
   'Tarjeta de crédito',
 ]
@@ -85,6 +87,9 @@ export const DESCUENTO_PAGO_DEFAULT: DescuentosPago = {
   Efectivo: 6,
   Transferencia: 6,
   Cheque: 6,
+  // Las retenciones no llevan descuento por pronto pago: son un pago por retención impositiva.
+  'Retencion IIBB': 0,
+  'Retencion GAN': 0,
   'Tarjeta de débito': 5,
   'Tarjeta de crédito': 3,
 }
@@ -94,6 +99,8 @@ export const COLOR_PAGO: Record<FormaPago, string> = {
   Efectivo: 'var(--red)',
   Cheque: 'var(--green)',
   Transferencia: 'var(--primary-blue)',
+  'Retencion IIBB': '#e2a500',
+  'Retencion GAN': '#d97706',
   'Tarjeta de débito': '#4eccc6',
   'Tarjeta de crédito': '#a25ddc',
 }

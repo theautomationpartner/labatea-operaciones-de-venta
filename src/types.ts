@@ -342,6 +342,8 @@ export type FormaPago =
   | 'Efectivo'
   | 'Cheque'
   | 'Transferencia'
+  | 'Retencion IIBB'
+  | 'Retencion GAN'
   | 'Tarjeta de débito'
   | 'Tarjeta de crédito'
 

@@ -139,7 +139,11 @@ export function VentaView() {
     () =>
       ventaItems.map((it) => {
         const precio = it.precio
-        const bonifPresupuesto = it.impBonificado ?? round2(precio * ((it.desc ?? 0) / 100))
+        /* Bonificación del presupuesto: se RECALCULA con el % de descuento de la línea (`it.desc`),
+           no se lee `it.impBonificado`. La columna Importe Bonif. del presupuesto guarda el precio
+           unitario cuando NO hubo descuento (regla del board), así que no es confiable como monto
+           bonificado; con `precio × desc%` da 0 sin descuento y el monto correcto si lo hubo. */
+        const bonifPresupuesto = round2(precio * ((it.desc ?? 0) / 100))
         const bonifFormaPago = round2(precio * (descFormaPago / 100))
         const impBonif = round2(bonifPresupuesto + bonifFormaPago)
         // Importe Total de la línea, ya bonificado (con la forma de pago aplicada).
