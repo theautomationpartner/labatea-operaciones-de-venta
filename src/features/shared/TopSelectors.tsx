@@ -39,7 +39,7 @@ function TasaCambio() {
         <i className="fas fa-dollar-sign" />
       </span>
       <div className="tasa-card-body">
-        <span className="tasa-card-lbl">Tasa de Cambio ({hoy()})</span>
+        <span className="tasa-card-lbl">Tipo de Cambio ({hoy()})</span>
         <span className="tasa-card-val">
           {tasaCambio != null ? `$ ${TASA_FMT.format(tasaCambio)}` : '—'}
         </span>
