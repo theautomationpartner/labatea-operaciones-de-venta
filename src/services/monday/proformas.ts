@@ -9,6 +9,7 @@
 import { PRESUPUESTOS } from '@/data/mock'
 import { num, numCol, valor, byId, type CV, type MondayItem } from './parse'
 import { round2 } from '@/lib/format'
+import { memoPorCliente } from './cache'
 import type { MedioEnvio, PresupuestoProducto, TipoEntrega, TipoVenta } from '@/types'
 import { BOARDS, COL, MEDIO_ENVIO_LABELS, personCol } from './columns'
 import type { LineaVenta } from './venta'
@@ -107,7 +108,7 @@ async function idsProformasCliente(clienteItemId: string): Promise<string[]> {
  * board filtrando por cliente en memoria —el filtro por `board_relation` no se delega a
  * `query_params`—, y después sólo esos ítems con sus subelementos.
  */
-export async function getProformasCliente(clienteItemId: string): Promise<ProformaVigente[]> {
+async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaVigente[]> {
   // Sin token el prototipo sigue corriendo: se reusan los presupuestos mock del cliente como proformas.
   if (!mondayHabilitado()) {
     return PRESUPUESTOS.filter((p) => p.clienteId === clienteItemId).map((p) => ({
@@ -171,6 +172,12 @@ export async function getProformasCliente(clienteItemId: string): Promise<Profor
     }
   })
 }
+
+/**
+ * Proformas del cliente, cacheadas por id: se consultan UNA sola vez por cliente y reentrar al
+ * paso con el stepper reutiliza el resultado sin volver a pegarle a la API.
+ */
+export const getProformasCliente = memoPorCliente(getProformasClienteImpl, (id) => id)
 
 /* ===== Emisión de una proforma (crea el ítem, sus subelementos y dispara el PDF) ===== */
 

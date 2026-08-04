@@ -807,6 +807,11 @@
 .productos-v2 .qbox .qbtns button:first-child {
   border-bottom: 1px solid var(--p-border);
 }
+/* Alto reservado para el input de cantidad en este contexto (qbox más alto que la base): iguala el
+   alto de la fila con y sin selección, evitando el layout shift al marcar el producto. */
+.productos-v2 .pend-qty-slot {
+  min-height: 34px;
+}
 
 /* ===== Totales ===== */
 .productos-v2 .totals-grid {

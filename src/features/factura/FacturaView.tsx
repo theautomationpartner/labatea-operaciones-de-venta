@@ -310,6 +310,9 @@ export function FacturaView() {
       if (!vId) {
         const creada = await crearVenta({
           clienteId: cliente.id,
+          // Vendedor de la operación → columna Person del board de Ventas. Sin esto la venta nace
+          // sin vendedor asignado (los efectos secundarios sí lo mandaban; la venta no).
+          vendedorId: state.vendedor?.id ?? null,
           nombre: cliente.name,
           tipoVenta: tipoVenta ?? 'DIRECTA',
           tipoEntrega: tipoEntrega ?? 'SIMULTANEA',

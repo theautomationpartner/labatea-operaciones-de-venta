@@ -5,6 +5,7 @@
  * cachea a nivel de módulo: entrar y salir de la etapa NO vuelve a pegarle a la API, se reutiliza
  * la misma promesa. Si la consulta falla, la caché se limpia para poder reintentar.
  */
+import { memoGlobal } from './cache'
 import { BOARDS } from './columns'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -22,24 +23,17 @@ const RUTAS_MOCK: RutaEntrega[] = [
   { id: 'ruta-4', name: 'Ayacucho' },
 ]
 
-/** Promesa cacheada de la lista de rutas. Se comparte entre montajes de la etapa. */
-let rutasCache: Promise<RutaEntrega[]> | null = null
+async function getRutasEntregaImpl(): Promise<RutaEntrega[]> {
+  if (!mondayHabilitado()) return RUTAS_MOCK
+  const d = await mondayApi<{ boards: { items_page: { items: { id: string; name: string }[] } }[] }>(
+    `query { boards(ids: [${BOARDS.rutasEntrega}]) { items_page(limit: 200) { items { id name } } } }`,
+  )
+  return (d.boards[0]?.items_page?.items ?? []).map((i) => ({ id: i.id, name: i.name }))
+}
 
 /**
- * Lista las rutas de entrega del board. Cachea la promesa: llamadas repetidas (por reentrar a la
- * etapa) reutilizan el mismo fetch en vez de saturar la API. Un fallo limpia la caché para reintentar.
+ * Lista las rutas de entrega del board. Cachea la promesa (catálogo global): llamadas repetidas
+ * —por reentrar a la etapa— reutilizan el mismo fetch en vez de saturar la API. Un fallo limpia la
+ * caché para poder reintentar.
  */
-export function getRutasEntrega(): Promise<RutaEntrega[]> {
-  if (!mondayHabilitado()) return Promise.resolve(RUTAS_MOCK)
-  if (!rutasCache) {
-    rutasCache = mondayApi<{ boards: { items_page: { items: { id: string; name: string }[] } }[] }>(
-      `query { boards(ids: [${BOARDS.rutasEntrega}]) { items_page(limit: 200) { items { id name } } } }`,
-    )
-      .then((d) => (d.boards[0]?.items_page?.items ?? []).map((i) => ({ id: i.id, name: i.name })))
-      .catch((e) => {
-        rutasCache = null
-        throw e
-      })
-  }
-  return rutasCache
-}
+export const getRutasEntrega = memoGlobal(getRutasEntregaImpl)

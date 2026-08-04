@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
@@ -50,6 +50,12 @@ export function ClienteView() {
   const [avisoConfig, setAvisoConfig] = useState(false)
   // Aviso emergente al intentar avanzar sin un cliente cargado.
   const [avisoSinCliente, setAvisoSinCliente] = useState(false)
+  // Ventana emergente cuando la búsqueda no encuentra al cliente (además del aviso en línea).
+  const [avisoNoEncontrado, setAvisoNoEncontrado] = useState(false)
+  // Cada vez que la búsqueda termina en "no encontrado", se abre la ventana emergente.
+  useEffect(() => {
+    if (estadoBusqueda === 'no-encontrado') setAvisoNoEncontrado(true)
+  }, [estadoBusqueda])
   const esPresupuesto = operacion === 'PRESUPUESTAR'
   const esVenta = operacion === 'VENTA'
   const esRemito = operacion === 'REMITO'
@@ -201,6 +207,13 @@ export function ClienteView() {
         <AvisoModal titulo="Falta cargar un cliente" onClose={() => setAvisoSinCliente(false)}>
           Para continuar tenés que buscar y cargar un cliente. Usá el buscador de arriba para
           seleccionarlo y volvé a intentar.
+        </AvisoModal>
+      )}
+
+      {/* Cliente no encontrado: el mismo mensaje que el aviso en línea, en una ventana emergente. */}
+      {avisoNoEncontrado && (
+        <AvisoModal titulo="Cliente no encontrado" onClose={() => setAvisoNoEncontrado(false)}>
+          El cliente que buscó no existe o está inactivo en el sistema.
         </AvisoModal>
       )}
 

@@ -256,38 +256,42 @@ export function PendientesSelector({
             {money(fila.subtotal ?? 0)}
           </td>
         )}
+        {/* La celda reserva SIEMPRE el alto del input (`.pend-qty-slot`): seleccionar la fila no
+            cambia la altura de la lista (sin layout shift), sólo se rellena el espacio ya reservado. */}
         <td className="ta-c" onClick={(e) => e.stopPropagation()}>
-          {marcada ? (
-            <span className="qbox">
-              <input
-                type="text"
-                inputMode="numeric"
-                aria-label={`${colAccion} de ${fila.nombre}`}
-                value={cantidad}
-                onChange={(e) => setCantidad(fila, Number(e.target.value.replace(/\D/g, '')) || 0)}
-              />
-              <span className="qbtns">
-                <button
-                  type="button"
-                  aria-label={`Sumar una unidad de ${fila.nombre}`}
-                  disabled={cantidad >= fila.pend}
-                  onClick={() => setCantidad(fila, cantidad + 1)}
-                >
-                  <i className="fas fa-angle-up" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Restar una unidad de ${fila.nombre}`}
-                  disabled={cantidad <= 1}
-                  onClick={() => setCantidad(fila, cantidad - 1)}
-                >
-                  <i className="fas fa-angle-down" />
-                </button>
+          <span className="pend-qty-slot">
+            {marcada ? (
+              <span className="qbox">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  aria-label={`${colAccion} de ${fila.nombre}`}
+                  value={cantidad}
+                  onChange={(e) => setCantidad(fila, Number(e.target.value.replace(/\D/g, '')) || 0)}
+                />
+                <span className="qbtns">
+                  <button
+                    type="button"
+                    aria-label={`Sumar una unidad de ${fila.nombre}`}
+                    disabled={cantidad >= fila.pend}
+                    onClick={() => setCantidad(fila, cantidad + 1)}
+                  >
+                    <i className="fas fa-angle-up" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Restar una unidad de ${fila.nombre}`}
+                    disabled={cantidad <= 1}
+                    onClick={() => setCantidad(fila, cantidad - 1)}
+                  >
+                    <i className="fas fa-angle-down" />
+                  </button>
+                </span>
               </span>
-            </span>
-          ) : (
-            <span className="muted">—</span>
-          )}
+            ) : (
+              <span className="muted">—</span>
+            )}
+          </span>
         </td>
         {/* Subtotal del producto en el presupuesto (en pesos; dolarizados ya convertidos). */}
         {mostrarSubtotal && (
@@ -325,7 +329,9 @@ export function PendientesSelector({
           </td>
         )}
         <td>
-          <span className="estado-cell">
+          {/* El estado se colorea con el mismo color que su punto y que la columna de pendiente
+              (rojo / naranja / verde), para que el color-coding cubra toda la columna. */}
+          <span className="estado-cell" style={{ color: fila.estadoColor, fontWeight: 600 }}>
             <span className="dot dot--sm" style={{ background: fila.estadoColor }} />
             {fila.estadoLabel}
           </span>

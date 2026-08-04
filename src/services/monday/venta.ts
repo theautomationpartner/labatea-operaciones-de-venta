@@ -10,6 +10,7 @@
  */
 import { VENTAS_ENTREGA } from '@/data/mock'
 import { round2 } from '@/lib/format'
+import { memoPorCliente } from './cache'
 import type {
   Moneda,
   ResponsableEntrega,
@@ -245,8 +246,10 @@ async function crearPendientesEntrega(
       cv[COL.pendienteEntregaItem.ventaSubelemento] = { item_ids: [Number(l.ventaSubitemId)] }
     }
     if (estadoIdx != null) cv[COL.pendienteEntregaItem.estado] = { index: estadoIdx }
-    // Ítem raíz del tablero de pendientes: nombre general; su ID lo asigna la customKey del board.
-    variables[`pn${i}`] = 'Entregas Pendientes'
+    /* Nombre del ítem pendiente: el MISMO texto del subelemento de la venta que se enlaza en
+       board_relation_mm5pcdfj (l.ventaSubitemId), que se creó con l.nombre. Así el pendiente no
+       queda con un nombre genérico y coincide con la línea vendida que representa. */
+    variables[`pn${i}`] = l.nombre
     variables[`pcv${i}`] = JSON.stringify(cv)
     return `p${i}: create_item(board_id: ${BOARDS.pendientesEntrega}, item_name: $pn${i}, column_values: $pcv${i}) { id }`
   })
@@ -559,7 +562,7 @@ function mapPendienteEntrega(item: MondayItem): VentaEntregaProducto {
  * fuente del remito de emisión ANTERIOR: se lee de "Pends de Entrega" (18421035527) filtrando por
  * el cliente (board_relation_mm5p8hpc). Ya NO se consulta el board de Ventas (18421035510).
  */
-export async function getVentasEntregaPendiente(clienteId: string): Promise<VentaEntregaPendiente[]> {
+async function getVentasEntregaPendienteImpl(clienteId: string): Promise<VentaEntregaPendiente[]> {
   if (!mondayHabilitado()) {
     return VENTAS_ENTREGA.filter(
       (v) => v.clienteId === clienteId && v.estado !== 'Entregada',
@@ -620,6 +623,12 @@ export async function getVentasEntregaPendiente(clienteId: string): Promise<Vent
   }
   return [...porVenta.values()]
 }
+
+/**
+ * Ventas con entrega pendiente del cliente, cacheadas por id: se consultan UNA sola vez por
+ * cliente y reentrar al paso con el stepper reutiliza el resultado sin volver a pegarle a la API.
+ */
+export const getVentasEntregaPendiente = memoPorCliente(getVentasEntregaPendienteImpl, (id) => id)
 
 /** Unidades que todavía faltan entregar de la venta. Es lo que resume la card. */
 export const pendienteDeVentaEntrega = (v: VentaEntregaPendiente): number =>

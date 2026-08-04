@@ -1013,6 +1013,16 @@ td {
   cursor: not-allowed;
 }
 /* Venta: se pasó de lo presupuestado. Los botones frenan antes; esto avisa si se escribió. */
+/* Ranura de la columna "A remitar/vender/facturar": reserva SIEMPRE el alto del `.qbox`, esté la
+   fila seleccionada (muestra el input) o no (muestra "—"). Así seleccionar no altera el alto de la
+   lista (sin layout shift). El alto exacto se afina por contexto (ver `.productos-v2`). */
+.pend-qty-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+}
+
 .qbox--error {
   border-color: var(--red);
   background: #fff5f6;

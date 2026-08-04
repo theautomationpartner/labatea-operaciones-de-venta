@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ContactosPicker } from '@/features/shared/ContactosPicker'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { faltaParaMedio } from '@/lib/validaciones'
@@ -65,11 +66,32 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
-  const { enviar, medioEnvio, contactos, cliente, presupuestoId, ventaId, proformaId, remito, documentoEnviado } =
-    useApp()
+  const {
+    medioEnvio,
+    contactos,
+    cliente,
+    presupuestoId,
+    ventaId,
+    proformaId,
+    remito,
+    documentoEnviado,
+    documentoEmitido,
+    factura,
+  } = useApp()
   const dispatch = useDispatch()
   const esFactura = documento === 'factura'
   const articulo = documento === 'factura' || documento === 'proforma' ? 'la' : 'el'
+  /* ¿El comprobante ya fue emitido? De ello depende poder enviarlo (MÓDULO 1). La bandera cambia
+     según el documento: factura → hay comprobantes escritos; proforma → hay id de proforma; el resto
+     (presupuesto y remito) → la bandera global de emisión. */
+  const emitido =
+    documento === 'factura'
+      ? factura.comprobantes.length > 0
+      : documento === 'proforma'
+        ? Boolean(proformaId)
+        : documentoEmitido
+  // Aviso al intentar enviar sin haber emitido el comprobante todavía.
+  const [avisoNoEmitido, setAvisoNoEmitido] = useState(false)
   /* El envío no consume línea nueva: el bloqueo sólo mira el estado del cliente, no un importe
      (por eso va con cero). Y el PRESUPUESTO no frena por crédito: se envía siempre. */
   const bloqueo = useBloqueoCredito(0, { bloqueante: documento !== 'presupuesto' })
@@ -154,6 +176,12 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     // Anti-duplicado: si el envío ya se ejecutó con éxito (incluso tras navegar con el stepper), la
     // acción se anula internamente y NO se vuelve a disparar la mutación de envío.
     if (enviando || enviadoOk) return
+    /* MÓDULO 1 · sin el comprobante emitido NO se envía: early return sin tocar la API de Monday, y
+       se avisa por modal que primero hay que emitirlo. */
+    if (!emitido) {
+      setAvisoNoEmitido(true)
+      return
+    }
     // El envío es una salida del sistema: no sale nada de un cliente bloqueado o excedido.
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
@@ -237,32 +265,13 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
 
   return (
     <div className="card card--neutral card--flush">
-      {/* La pregunta hace de título: no hace falta un rótulo que repita lo mismo. */}
-      <div className="drow send-row">
-        <span className="send-pregunta">
-          ¿Desea enviar {articulo} {documento}?
-        </span>
-        <div className="toggle">
-          {([true, false] as const).map((valor) => (
-            <div
-              key={String(valor)}
-              className={`tbtn ${enviar === valor ? 'active' : ''}`}
-              role="button"
-              onClick={() => dispatch({ type: 'setEnviar', value: valor })}
-            >
-              {valor ? 'SI' : 'NO'}
-            </div>
-          ))}
+      {/* MÓDULO 2 · el envío es obligatorio post-emisión: la card queda SIEMPRE abierta y fija (sin
+          pregunta "¿Desea enviar?" ni toggle SI/NO). Se muestra directo el bloque de envío. */}
+      {cargando ? (
+        <div className="contactos-cargando">
+          <i className="fas fa-spinner fa-spin" /> Cargando contactos del cliente…
         </div>
-      </div>
-
-      {/* Los elementos de envío aparecen sólo si se eligió SI. */}
-      {enviar &&
-        (cargando ? (
-          <div className="contactos-cargando">
-            <i className="fas fa-spinner fa-spin" /> Cargando contactos del cliente…
-          </div>
-        ) : sinContactos ? (
+      ) : sinContactos ? (
           /* Sin contactos en el tablero no hay a quién enviarle: se explica y no se ofrece envío. */
           <div className="envio-sin-contactos" role="alert">
             <i className="fas fa-triangle-exclamation" />
@@ -386,9 +395,16 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
               )}
             </div>
           </>
-        ))}
+        )}
 
       {bloqueo.modal}
+
+      {/* MÓDULO 1 · aviso al intentar enviar sin haber emitido el comprobante. */}
+      {avisoNoEmitido && (
+        <AvisoModal titulo="Falta emitir el comprobante" onClose={() => setAvisoNoEmitido(false)}>
+          No es posible realizar el envío. Primero debe emitir el comprobante para poder enviarlo.
+        </AvisoModal>
+      )}
     </div>
   )
 }

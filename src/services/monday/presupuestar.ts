@@ -14,6 +14,7 @@ import {
   SUBRUBROS,
 } from '@/data/mock'
 import { hoyIso } from '@/lib/dates'
+import { memoPorCliente } from './cache'
 import type {
   ActividadCliente,
   CampoFiltro,
@@ -1310,7 +1311,7 @@ async function idsPresupuestosVigentes(clienteItemId: string): Promise<string[]>
  * con sus subelementos. El importe total se suma de los subelementos: las columnas mirror de
  * total del board ("🤖TOTAL $") vienen vacías por la API.
  */
-export async function getPresupuestosVigentes(clienteItemId: string): Promise<PresupuestoVigente[]> {
+async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<PresupuestoVigente[]> {
   if (!mondayHabilitado()) {
     return PRESUPUESTOS.filter((p) => p.clienteId === clienteItemId && p.estado === 'En uso').map(
       (p) => ({
@@ -1378,6 +1379,12 @@ export interface PresupuestoPdf {
   url: string
   nombre: string
 }
+
+/**
+ * Presupuestos vigentes del cliente, cacheados por id: se consultan UNA sola vez por cliente y
+ * volver a este paso con el stepper reutiliza el resultado sin volver a pegarle a la API.
+ */
+export const getPresupuestosVigentes = memoPorCliente(getPresupuestosVigentesImpl, (id) => id)
 
 const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 

@@ -16,14 +16,23 @@ import { TablaRemito } from './TablaRemito'
 const MOTIVO_NO_SELECCIONABLE = 'El producto ya está 100% entregado en la venta.'
 
 /**
- * Color del estado de entrega del producto, tomado del board. Si la venta no lo trae cargado
- * se cae al avance de la línea (entregado vs. pendiente).
+ * Color del estado de entrega del producto, por la etiqueta EXACTA del board:
+ *  - "Pend de Entregar 100%"   → ROJO   (nada entregado; ojo: también termina en "100%").
+ *  - "Entregado Parcialmente"  → NARANJA
+ *  - "Completado 100%"         → VERDE
+ * Cualquier otra etiqueta (o sin dato) cae al avance calculado de la línea (entregado vs. pendiente).
  */
 function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanceLinea>): string {
-  if (!estado) return AVANCE_COLOR[avance]
-  if (/100%/.test(estado)) return AVANCE_COLOR.completo
-  if (/parcial/i.test(estado)) return AVANCE_COLOR.parcial
-  return AVANCE_COLOR.pendiente
+  switch (estado?.trim()) {
+    case 'Pend de Entregar 100%':
+      return AVANCE_COLOR.pendiente
+    case 'Entregado Parcialmente':
+      return AVANCE_COLOR.parcial
+    case 'Completado 100%':
+      return AVANCE_COLOR.completo
+    default:
+      return AVANCE_COLOR[avance]
+  }
 }
 
 /**

@@ -7,6 +7,7 @@
  */
 import { CHOFERES, COMISIONISTAS, DESTINOS, REMITOS, VEHICULOS } from '@/data/mock'
 import { round2 } from '@/lib/format'
+import { memoGlobal, memoPorCliente } from './cache'
 import type {
   Chofer,
   Cliente,
@@ -59,7 +60,7 @@ export interface RemitoPendiente {
  * conectado a varios clientes, así que se valida que el cliente esté ENTRE los conectados.
  * El id del cliente viaja como número, como en el resto de los filtros por board_relation.
  */
-export async function getDestinosCliente(clienteId: string): Promise<Destino[]> {
+async function getDestinosClienteImpl(clienteId: string): Promise<Destino[]> {
   if (!mondayHabilitado()) return DESTINOS.filter((d) => d.clienteId === clienteId)
   const idNumerico = Number(clienteId)
   if (!Number.isFinite(idNumerico)) return []
@@ -97,11 +98,17 @@ export async function getDestinosCliente(clienteId: string): Promise<Destino[]> 
 }
 
 /**
+ * Destinos del cliente, cacheados por id: se consultan UNA sola vez por cliente y reentrar a la
+ * etapa de envío con el stepper reutiliza el resultado sin volver a pegarle a la API.
+ */
+export const getDestinosCliente = memoPorCliente(getDestinosClienteImpl, (id) => id)
+
+/**
  * Transportistas: personas cuya "✋Categoria" (dropdown_mm54e5ag, multi-valor) contiene
  * "Transportista". El filtro va por índice en la consulta y, por las dudas de que la etiqueta
  * conviva con otras, se revalida contra el texto. Devuelve nombre y CUIT (puede venir vacío).
  */
-export async function getTransportistas(): Promise<Chofer[]> {
+async function getTransportistasImpl(): Promise<Chofer[]> {
   if (!mondayHabilitado()) return CHOFERES
   const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
     `query {
@@ -127,12 +134,15 @@ export async function getTransportistas(): Promise<Chofer[]> {
     }))
 }
 
+/** Transportistas (catálogo global), cacheados: se consultan una sola vez y se reutilizan. */
+export const getTransportistas = memoGlobal(getTransportistasImpl)
+
 /**
  * Comisionistas: personas cuya "✋Categoria" (dropdown_mm54e5ag, multi-valor) contiene
  * "Comisionista". Mismo patrón que los transportistas: filtro por índice en la consulta y
  * revalidación contra el texto. Devuelve nombre y CUIT (el board no tiene zona).
  */
-export async function getComisionistas(): Promise<Comisionista[]> {
+async function getComisionistasImpl(): Promise<Comisionista[]> {
   if (!mondayHabilitado()) return COMISIONISTAS
   const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
     `query {
@@ -158,11 +168,14 @@ export async function getComisionistas(): Promise<Comisionista[]> {
     }))
 }
 
+/** Comisionistas (catálogo global), cacheados: se consultan una sola vez y se reutilizan. */
+export const getComisionistas = memoGlobal(getComisionistasImpl)
+
 /**
  * Vehículos de la flota, leídos del board "🚛Vehículos" (18421035528). Se muestra el nombre
  * del ítem; la patente ("✋Patente/Chasis") puede venir vacía.
  */
-export async function getVehiculos(): Promise<Vehiculo[]> {
+async function getVehiculosImpl(): Promise<Vehiculo[]> {
   if (!mondayHabilitado()) return VEHICULOS
   const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
     `query {
@@ -179,6 +192,9 @@ export async function getVehiculos(): Promise<Vehiculo[]> {
     patente: byId(it)[COL.vehiculo.patente]?.text?.trim() ?? '',
   }))
 }
+
+/** Vehículos de la flota (catálogo global), cacheados: se consultan una sola vez y se reutilizan. */
+export const getVehiculos = memoGlobal(getVehiculosImpl)
 
 /* ===== Creación del remito en "🧾🚚 Remitos Ventas" (18421035529) ===== */
 
@@ -560,7 +576,7 @@ function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProduct
  * cliente (board_relation_mm5pd79g) y por estado distinto de "100% Facturada" (color_mm5ndgd5, por
  * índice dinámico), sin filtrar del lado del cliente. Cada subelemento se mapea a `RemitoProducto`.
  */
-export async function getVentasPendientesFacturar(cliente: Cliente): Promise<RemitoPendiente[]> {
+async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<RemitoPendiente[]> {
   if (!mondayHabilitado()) {
     // Modo local: se aproxima con el mock de remitos para que el prototipo siga corriendo.
     return REMITOS.filter((r) => r.estado !== 'Facturado').map((r) => ({
@@ -627,6 +643,15 @@ export async function getVentasPendientesFacturar(cliente: Cliente): Promise<Rem
     }
   })
 }
+
+/**
+ * Ventas pendientes de facturar del cliente, cacheadas por id: se consultan UNA sola vez por
+ * cliente y reentrar al paso con el stepper reutiliza el resultado sin volver a pegarle a la API.
+ */
+export const getVentasPendientesFacturar = memoPorCliente(
+  getVentasPendientesFacturarImpl,
+  (cliente) => cliente.id,
+)
 
 /** Una línea facturada en esta operatoria, con su linaje en "Vtas Pends de Facturar". */
 export interface LineaFacturacionVtaPend {
