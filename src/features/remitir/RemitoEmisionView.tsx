@@ -15,7 +15,6 @@ import {
   getHojaTalonario,
   marcarHojaUsada,
   mondayHabilitado,
-  sumarRemitoPendienteFacturar,
   type HojaTalonario,
   type LineaRemito,
 } from '@/services/monday'
@@ -36,7 +35,6 @@ export function RemitoEmisionView() {
     tipoEntrega,
     remito,
     documentoEmitido,
-    documentoEnviado,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
@@ -168,25 +166,18 @@ export function RemitoEmisionView() {
         dispatch({ type: 'setRemitoCreado', value: id })
 
         /* POSTERIOR: la mercadería entregada queda pendiente de facturar. Con el remito ya creado
-           (Σ cantidad × precio unitario = importe pendiente), se: (1) acumula ese importe en el
-           "🤖Remito Pends de Facturar" de la cuenta corriente, y (2) abre el registro en "Vtas Pends
-           de Facturar" (ítem + subítems) enlazado al remito y a la cuenta. Ambos best-effort. */
+           (Σ cantidad × precio unitario = importe pendiente), se abre el registro en "Vtas Pends de
+           Facturar" (ítem + subítems) enlazado al remito y a la cuenta. Best-effort.
+           La app ya NO acumula ese importe en la cuenta corriente del cliente: ese requerimiento
+           se descartó y el tablero de Cta Cte no se escribe desde acá. */
         if ((remito.tipoEmision ?? 'POSTERIOR') === 'POSTERIOR') {
           const importePendFacturar = round2(
             remito.items.reduce((acc, it) => acc + round2(it.cantidad * (it.precioUnitario ?? 0)), 0),
           )
-          if (cliente.ctaCteId) {
-            try {
-              await sumarRemitoPendienteFacturar(cliente.ctaCteId, importePendFacturar)
-            } catch {
-              /* La cuenta corriente se actualiza de forma best-effort. */
-            }
-          }
           try {
             await crearVtaPendienteFacturar({
               nombre: cliente.name,
               clienteId: cliente.id,
-              ctaCteId: cliente.ctaCteId,
               remitoId: id,
               importeTotal: importePendFacturar,
               lineas: remito.items.map((it) => ({
@@ -197,6 +188,9 @@ export function RemitoEmisionView() {
                 tipoMercaderia: it.tipo,
                 // Rentabilidad según la lista del cliente: se guarda para reusarla al facturar.
                 rentabilidad: it.rentabilidad,
+                /* MISMA unidad de venta que se asienta en el subelemento del remito: es la que
+                   después toma la línea de la factura (venta DIRECTA con entrega ANTERIOR). */
+                um: it.um,
               })),
             })
           } catch {
@@ -297,11 +291,13 @@ export function RemitoEmisionView() {
         >
           <i className="fas fa-arrow-left" /> Volver a paso anterior
         </button>
-        {/* Cierra el remito y reinicia la app. Sólo con el remito emitido y ya enviado. */}
+        {/* Cierra el remito y reinicia la app. Alcanza con el remito EMITIDO: el envío al cliente
+            es una gestión aparte y puede quedar pendiente. */}
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!(emitido && documentoEnviado)}
+          disabled={!emitido}
+          title={emitido ? undefined : 'Emití el remito para poder finalizar la operación.'}
           onClick={() => dispatch({ type: 'reset' })}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación

@@ -11,7 +11,8 @@
  * padre, que recién se conoce cuando la primera vuelve.
  */
 import { addDays } from '@/lib/dates'
-import { alicuotaDe, precioFacturado, type ComprobanteAGenerar } from '@/lib/facturacion'
+import { alicuotaDe, bonifLinea, type ComprobanteAGenerar } from '@/lib/facturacion'
+import { round2 } from '@/lib/format'
 import type {
   Cliente,
   ComprobanteEmitido,
@@ -52,6 +53,12 @@ export interface DatosFacturacion {
   ivaReceptor: CondicionIVA
   /** Fecha de emisión en dd/MM/yyyy (formato del ERP). */
   fechaEmision: string
+  /**
+   * Descuento por forma de pago de la operación, en %. NO cambia el precio que declara el
+   * comprobante: sólo entra en el "Importe Bonif $" de cada línea, que documenta el descuento
+   * total con el que se vendió (el mismo de la selección de productos).
+   */
+  descFormaPago?: number
   observaciones: string
   /** Ítem de la venta en "📈Ventas", para dejar el comprobante conectado a ella. */
   ventaId?: string | null
@@ -121,8 +128,18 @@ function columnasComprobante(
 }
 
 /**
- * Columnas de una línea del comprobante. El precio va ya bonificado: el subelemento no tiene
- * columna de descuento y su subtotal es `cantidad × precio unitario`.
+ * Columnas de una línea del comprobante: son las mismas que muestra la card "Comprobante a
+ * generar", que a su vez son las de la selección de productos.
+ *
+ *   Cant.     → numeric_mm1srkr2
+ *   U.Medida  → dropdown_mm5zj2t0  (con `create_labels_if_missing`)
+ *   Unitario  → numeric_mm1swnhz   (precio de LISTA, sin descuentos)
+ *   Imp.Bonif → numeric_mm5x7747
+ *   Alícuota  → dropdown_mm2g198w  (con `create_labels_if_missing`)
+ *
+ * El precio va SIN bonificar a propósito: la bonificación viaja aparte y la fórmula del board
+ * las resta —`Subtotal $ = (Cantidad × Precio Unitario $) − Importe Bonif $`—, así que el
+ * subtotal del subelemento sale igual al de la card sin duplicar el descuento.
  *
  * En dólares las fórmulas del board leen "Precio Unitario u$" y no "Precio Unitario $", así
  * que el precio se escribe en la columna que corresponde a la moneda del comprobante.
@@ -130,8 +147,10 @@ function columnasComprobante(
 function columnasLinea(
   linea: ComprobanteAGenerar['lineas'][number],
   moneda: MonedaFactura,
+  descFormaPago: number,
 ): Record<string, unknown> {
-  const precio = String(precioFacturado(linea))
+  // "Unitario" de la card: el precio de lista del producto, sin ningún descuento aplicado.
+  const precio = String(round2(linea.precioUnitario))
   const cv: Record<string, unknown> = {
     [COL.facturacionSub.unidadMedida]: { labels: [FACT_SUB_UNIDAD_MEDIDA] },
     [COL.facturacionSub.cantidad]: String(linea.cantidad),
@@ -139,7 +158,16 @@ function columnasLinea(
     [COL.facturacionSub.prodServ]: { labels: [FACT_SUB_PROD_SERV] },
     // La alícuota es la del producto, resuelta contra las que acepta el board.
     [COL.facturacionSub.alicuotaIva]: { labels: [String(alicuotaDe(linea))] },
+    /* "Imp.Bonif" de la card: la bonificación de la línea ENTERA —el "Descuento Total" por unidad
+       de la selección de productos, que compone el de la forma de pago con el manual, multiplicado
+       por la cantidad—. La VENTA sobre PROFORMA trae su propio descuento por forma de pago; el
+       resto usa el de la operación. */
+    [COL.facturacionSub.importeBonif]: String(bonifLinea(linea, descFormaPago)),
   }
+  /* "Unidad de Venta": la U.M. del producto, que cada flujo resuelve en su origen (Maestro en la
+     venta DIRECTA, subelemento del presupuesto en la CON PRESUPUESTO PREVIO, subelemento del
+     pendiente de facturar en la entrega ANTERIOR). Sin dato, la columna se omite. */
+  if (linea.um?.trim()) cv[COL.facturacionSub.unidadVenta] = { labels: [linea.um.trim()] }
   if (moneda === 'Dólares (USD)') cv[COL.facturacionSub.precioUnitUsd] = precio
   return cv
 }
@@ -199,7 +227,12 @@ export async function crearComprobantes(
       clave: comprobante.clave,
       titulo: comprobante.titulo,
       id: itemId,
-      lineasCreadas: await crearLineas(itemId, comprobante, datos.moneda),
+      lineasCreadas: await crearLineas(
+        itemId,
+        comprobante,
+        datos.moneda,
+        datos.descFormaPago ?? 0,
+      ),
       lineasEsperadas: comprobante.lineas.length,
     })
   }
@@ -259,6 +292,7 @@ async function crearLineas(
   itemId: string,
   comprobante: ComprobanteAGenerar,
   moneda: MonedaFactura,
+  descFormaPago: number,
 ): Promise<number> {
   let creadas = 0
   for (let desde = 0; desde < comprobante.lineas.length; desde += LINEAS_POR_TANDA) {
@@ -267,8 +301,10 @@ async function crearLineas(
     const campos = tanda.map((linea, i) => {
       const n = desde + i
       variables[`n${n}`] = linea.nombre
-      variables[`cv${n}`] = JSON.stringify(columnasLinea(linea, moneda))
-      return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}) { id }`
+      variables[`cv${n}`] = JSON.stringify(columnasLinea(linea, moneda, descFormaPago))
+      /* `create_labels_if_missing`: la "Unidad de Venta" del subelemento nace SIN etiquetas, así
+         que mandar una U.M. que el board no tenga rechazaría la mutación entera. */
+      return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}, create_labels_if_missing: true) { id }`
     })
     const declaraciones = tanda
       .map((_, i) => `$n${desde + i}: String!, $cv${desde + i}: JSON!`)

@@ -1,17 +1,22 @@
 import { useState } from 'react'
-import { money, moneyU, pctDec, round2 } from '@/lib/format'
+import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
+import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
+import { puedeEditarPrecio, topesDescuentoDe } from '@/lib/permisos'
+import { productoConPrecio } from '@/lib/precios'
 import { rentabilidadEfectiva } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
-import { StockPanel } from './StockPanel'
+import { DetalleDescuentos } from './DetalleDescuentos'
+import { ProveedorLinea, StockPanel } from './StockPanel'
 
 interface CargaLineaProps {
   producto: Producto | null
   /** Aviso de la búsqueda (sin resultados / error): ocupa el lugar del producto elegido. */
   aviso?: string
-  onAdd: (cantidad: number, descuento: number) => void
+  /** `precio` sólo viaja cuando un administrador pisó el precio de lista del producto. */
+  onAdd: (cantidad: number, descuento: number, precio?: number) => void
   /** Sólo en la venta con crédito excedido: deshabilita "Agregar" hasta bajar el importe. */
   bloqueado?: boolean
   /**
@@ -21,11 +26,26 @@ interface CargaLineaProps {
   showFinancialData?: boolean
   /** Se está trayendo la cotización del dólar para convertir el precio: input en carga y "Agregar" off. */
   convirtiendo?: boolean
+  /**
+   * Descuento por forma de pago (pronto pago), en puntos porcentuales. Se aplica ANTES del
+   * descuento manual: define el "Precio Actual" sobre el que muerde el % que teclea el vendedor,
+   * igual que en la tabla. 0 = sin forma de pago que descuente.
+   */
+  descFormaPago?: number
 }
 
 /**
- * Producto elegido: cantidad, precio y descuento, con el detalle de stock debajo. Vive dentro
- * de la card de búsqueda y sólo aparece cuando hay un producto seleccionado.
+ * Producto elegido, en dos filas de dos columnas:
+ *
+ *   · ARRIBA — a la izquierda, la ficha del producto (precio de lista, rentabilidad y el "Precio
+ *     Actual" con el descuento por forma de pago ya aplicado); a la derecha, los campos de la
+ *     operación, planteados como una cuenta (precio actual − descuento, tecleado indistintamente
+ *     en % o en $, = precio unitario final) y, debajo, el resumen de lo que se va a cargar con
+ *     el botón "Agregar".
+ *   · ABAJO  — el desglose del descuento (mismo componente "Detalle" que la tabla) y, a la
+ *     derecha, el stock del proveedor con su barra de cobertura.
+ *
+ * Vive dentro de la card de búsqueda y sólo se completa cuando hay un producto seleccionado.
  * El padre la remonta al cambiar de producto (`key`), así los campos arrancan limpios.
  */
 export function CargaLinea({
@@ -35,12 +55,22 @@ export function CargaLinea({
   bloqueado = false,
   showFinancialData = true,
   convirtiendo = false,
+  descFormaPago = 0,
 }: CargaLineaProps) {
-  const { topesDescuento } = useApp()
+  const { topesDescuento: topesTablero, usuarioActual, paso, operacion } = useApp()
   const [cantidad, setCantidad] = useState(1)
   const [descuento, setDescuento] = useState('')
   // Aviso de la tecla rechazada por pasarse del máximo; se limpia al corregir.
   const [rechazado, setRechazado] = useState('')
+  /* Precio unitario pisado a mano por un administrador (null = el de la lista). Lo que se teclea
+     se guarda aparte para poder escribir con comas y miles sin saltos. */
+  const [precioOverride, setPrecioOverride] = useState<number | null>(null)
+  const [precioTexto, setPrecioTexto] = useState('')
+
+  /* RBAC: el administrador puede pisar el precio de lista y pasarse del tope de descuento; el
+     vendedor ve el precio como dato y tiene el máximo del tablero. */
+  const precioEditable = showFinancialData && puedeEditarPrecio(usuarioActual, paso, operacion)
+  const topesDescuento = topesDescuentoDe(topesTablero, usuarioActual, paso, operacion)
 
   const cambiarCantidad = (delta: number) => setCantidad((c) => Math.max(1, c + delta))
 
@@ -55,28 +85,98 @@ export function CargaLinea({
     setDescuento(tecleo.texto)
   }
 
+  /**
+   * Al salir del campo NUNCA queda vacío: sin número (o con algo que no llega a serlo, como un
+   * "." suelto) se asienta un 0 explícito, el mismo criterio que el "Dto. por Precio" del
+   * detalle. Así el descuento con el que se carga la línea siempre es un número.
+   */
+  const salirDescuento = () => {
+    const n = Number(descuento.trim().replace(',', '.'))
+    if (descuento.trim() !== '' && Number.isFinite(n)) return
+    setDescuento('0')
+    setRechazado('')
+  }
+
   const validacion = validarDescuento(descuento, topesDescuento)
   const descuentoOk = { ...validacion, mensaje: rechazado || validacion.mensaje }
+  const pctManual = Number(descuento) || 0
 
-  /* Rentabilidad que quedaría si se cargara la línea así: el margen de lista, ya bajado por el
-     descuento tecleado. Se usa el mismo `Number(descuento) || 0` que al agregar, así el valor
-     previsto coincide con el que termina en la lista. Se recalcula en cada tecleo/cambio. */
-  const rentabilidadPrevista = producto
-    ? rentabilidadEfectiva(producto.rentabilidad, Number(descuento) || 0)
+  /* Producto con el que se hacen las cuentas: el del catálogo o, si un administrador pisó el
+     precio, el mismo con el precio nuevo y la rentabilidad recalculada a costo constante. */
+  const prod = producto && precioOverride ? productoConPrecio(producto, precioOverride) : producto
+
+  /** Tecleo del precio: se aplica sólo con un importe válido; vacío o en cero se marca en rojo. */
+  const cambiarPrecio = (valor: string) => {
+    const { texto, valor: n } = formatearImporteAR(valor)
+    setPrecioTexto(texto)
+    if (n > 0) setPrecioOverride(n)
+  }
+  const precioOk = !precioEditable || precioTexto === '' || formatearImporteAR(precioTexto).valor > 0
+
+  /* Precio de lista, descuento por forma de pago y descuento manual, con las mismas fórmulas en
+     cascada que la tabla: el % manual muerde el PRECIO ACTUAL (el de lista ya rebajado por la
+     forma de pago), no el de lista. */
+  const precio = prod?.precio ?? 0
+  const soloFormaPago = descuentoUnitario(precio, 0, descFormaPago)
+  /** Precio Actual: precio de lista − descuento por forma de pago. Es la base del descuento manual. */
+  const precioActual = soloFormaPago.precioFinal
+  const dto = descuentoUnitario(precio, pctManual, descFormaPago)
+
+  /* El descuento en pesos NO se teclea: es el mismo descuento del %, mostrado en su importe. */
+  const montoMostrado = descuento ? importeATexto(dto.manual) : ''
+
+  /* Rentabilidad de CATÁLOGO del producto, sin descuentos: el margen al precio de lista (o al que
+     pisó el administrador, recalculado a costo constante). Es el dato de la ficha de arriba. */
+  const rentabilidadLista = prod?.rentabilidad ?? 0
+  /* Rentabilidad que quedaría si se cargara la línea así: la de catálogo bajada por el descuento
+     TOTAL (forma de pago + manual, compuesto). Es la métrica "Rentabilidad Final" del resumen, y
+     la ÚNICA de las dos que se mueve al bonificar. */
+  const rentabilidadPrevista = prod
+    ? rentabilidadEfectiva(rentabilidadLista, descuentoCompuesto(pctManual, descFormaPago))
     : 0
 
-  /* Importe total de esta configuración, recalculado en vivo con cada cambio de cantidad o
-     descuento (ambos son estado → re-render):
-       Paso 1: precio unitario con su descuento = precio − (precio × desc%/100)
-       Paso 2: × cantidad */
-  const importeTotal = producto
-    ? round2(producto.precio * (1 - (Number(descuento) || 0) / 100) * cantidad)
-    : 0
+  /** Subtotal de la configuración, SIN IVA: precio final por unidad × cantidad. */
+  const subtotal = round2(dto.precioFinal * cantidad)
 
   /* Producto en dólares (presupuesto bimonetario): el precio y el importe se muestran en su moneda
      original, con prefijo `$u` y en verde. En la venta el producto ya llega convertido a pesos. */
   const dolar = esDolar(producto?.moneda)
   const fmtMonto = dolar ? moneyU : money
+  const unidades = `${cantidad} ${cantidad === 1 ? 'unidad' : 'unidades'}`
+  // El precio todavía se está convirtiendo a pesos: no hay importe que mostrar.
+  const enEspera = !producto || convirtiendo
+
+  const puedeAgregar =
+    Boolean(producto) && descuentoOk.ok && precioOk && !bloqueado && !convirtiendo
+
+  const botonAgregar = (
+    <button
+      type="button"
+      className="btn-primary"
+      disabled={!puedeAgregar}
+      aria-busy={convirtiendo}
+      title={
+        convirtiendo
+          ? 'Convirtiendo el precio a pesos con la cotización del dólar…'
+          : bloqueado
+            ? 'Se alcanzó el límite de crédito: quitá productos para poder cargar más.'
+            : descuentoOk.ok
+              ? ''
+              : descuentoOk.mensaje
+      }
+      onClick={() => puedeAgregar && onAdd(cantidad, pctManual, precioOverride ?? undefined)}
+    >
+      {convirtiendo ? (
+        <>
+          <i className="fas fa-circle-notch spin" /> Convirtiendo…
+        </>
+      ) : (
+        <>
+          <i className="fas fa-plus" /> Agregar
+        </>
+      )}
+    </button>
+  )
 
   return (
     <div
@@ -84,8 +184,9 @@ export function CargaLinea({
         !producto && aviso ? 'selected-product-box--aviso' : ''
       }`}
     >
-      <div className="product-actions-row">
-        <div className="product-info">
+      {/* ===== FILA 1: ficha del producto | campos de la operación y resumen ===== */}
+      <div className="cl-top">
+        <div className="cl-info">
           {/* Sin producto, este lugar informa: o invita a buscar, o explica por qué no hubo match. */}
           <span className="product-name">
             {producto ? (
@@ -100,75 +201,93 @@ export function CargaLinea({
           </span>
           <span className="product-meta">
             {producto ? (
-              <>
-                Código {producto.codigo}
-                {/* El proveedor no siempre viene cargado en el maestro. */}
-                {producto.provCod && <> &nbsp;•&nbsp; Proveedor {producto.provCod}</>}
-              </>
+              `Código ${producto.codigo}`
             ) : aviso ? (
               'Probá con otro nombre o código, o revisá los filtros aplicados.'
             ) : (
               'Buscá por nombre o código y elegí un producto para cargarlo.'
             )}
           </span>
+
+          {showFinancialData && producto && (
+            <>
+              {/* Los dos datos de catálogo del producto, sin descuentos de por medio. */}
+              <div className="cl-kpis">
+                <div className="cl-kpi">
+                  <label className="cl-kpi-l" htmlFor={precioEditable ? 'pprecio' : undefined}>
+                    Precio Unitario
+                  </label>
+                  {/* RBAC: el administrador lo pisa a mano (override del precio de lista) y todo
+                      lo que deriva —rentabilidad, descuentos, subtotal— se recalcula solo. */}
+                  {precioEditable ? (
+                    <span className={`pbox ${precioOk ? '' : 'pbox--error'}`}>
+                      <span className="pbox-pre">{dolar ? '$U' : '$'}</span>
+                      <input
+                        id="pprecio"
+                        type="text"
+                        inputMode="decimal"
+                        aria-label={`Precio unitario de ${producto.nombre}`}
+                        aria-invalid={!precioOk}
+                        title={precioOk ? '' : 'El precio tiene que ser mayor a cero'}
+                        value={precioTexto || importeATexto(precio)}
+                        disabled={convirtiendo}
+                        onChange={(e) => cambiarPrecio(e.target.value)}
+                      />
+                    </span>
+                  ) : (
+                    <span
+                      className="cl-kpi-v"
+                      style={dolar ? { color: 'var(--green-dark)' } : undefined}
+                    >
+                      {convirtiendo ? 'Convirtiendo…' : fmtMonto(precio)}
+                    </span>
+                  )}
+                </div>
+                <div className="cl-kpi">
+                  <span className="cl-kpi-l">Rentabilidad</span>
+                  {/* Dato de CATÁLOGO: el margen del producto al precio que se está por cobrar,
+                      SIN descuentos. No se mueve al bonificar; la que baja con el descuento es
+                      "Rentabilidad Final", en el resumen. Mostraba la bonificada, y por eso las
+                      dos métricas decían siempre lo mismo. */}
+                  <span
+                    className="cl-kpi-v"
+                    style={{
+                      color: rentabilidadLista < 0 ? 'var(--red)' : 'var(--green-dark)',
+                    }}
+                  >
+                    {pctDec(rentabilidadLista)}
+                  </span>
+                </div>
+              </div>
+
+            </>
+          )}
         </div>
 
-        <div className="controls-group">
-          <div className="control-item">
-            <label htmlFor="pqty">Cantidad</label>
-            <div className="qty-input-group">
-              <button
-                type="button"
-                className="qty-btn"
-                onClick={() => cambiarCantidad(-1)}
-                disabled={!producto}
-                aria-label="Restar"
-              >
-                -
-              </button>
-              <input
-                id="pqty"
-                type="number"
-                className="qty-val"
-                min={1}
-                value={cantidad}
-                disabled={!producto}
-                onChange={(e) => setCantidad(Math.max(1, Number(e.target.value) || 1))}
-              />
-              <button
-                type="button"
-                className="qty-btn"
-                onClick={() => cambiarCantidad(1)}
-                disabled={!producto}
-                aria-label="Sumar"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
+        {/* Columna derecha: los campos de la operación y, debajo, el resumen de lo que se carga. */}
+        <div className="cl-oper">
           {/* Datos financieros: sólo en presupuesto/venta. El remito (documento logístico) los
-              oculta con `showFinancialData={false}` y deja únicamente la cantidad. */}
+              oculta con `showFinancialData={false}` y deja únicamente la cantidad.
+
+              La fila se lee como la cuenta que hace el vendedor: al precio de partida se le
+              restan los descuentos —el mismo, en % o en $— y da el precio final por unidad. */}
           {showFinancialData && (
-            <>
-              <div className="control-item">
-                <label htmlFor="pprice">Precio</label>
-                {/* El precio sale de la lista del cliente en Monday: se muestra, no se edita. Si el
-                    producto está en dólares, mientras llega la cotización se muestra "Convirtiendo…";
-                    al resolverse, el input ya trae el precio convertido a pesos. */}
-                <input
-                  id="pprice"
-                  type="text"
-                  className="std-input"
-                  placeholder="$ 0"
-                  value={convirtiendo ? 'Convirtiendo…' : producto ? fmtMonto(producto.precio) : ''}
-                  readOnly
-                  style={dolar ? { color: 'var(--green-dark)', fontWeight: 700 } : undefined}
-                />
+            <div className="cl-mid">
+              {/* Precio de partida real de la operación: el de lista menos el pronto pago. NO se
+                  edita, para ningún rol: el override del precio de lista vive en la tabla de
+                  productos y es exclusivo de los administradores. */}
+              <div className="cl-subcard">
+                <div className="cl-subcard-txt">
+                  <span className="cl-subcard-l">Precio Actual</span>
+                  <span className="cl-subcard-note">[Con Desc x Forma de Pago incluido]</span>
+                </div>
+                <span className="cl-subcard-v">
+                  {convirtiendo ? 'Convirtiendo…' : enEspera ? '—' : fmtMonto(precioActual)}
+                </span>
               </div>
 
               <div className="control-item">
-                <label htmlFor="pdesc">Descuento</label>
+                <label htmlFor="pdesc">Descuento (%)</label>
                 <div className={`desc-wrapper ${descuentoOk.ok ? '' : 'desc-wrapper--tope'}`}>
                   <input
                     id="pdesc"
@@ -182,6 +301,7 @@ export function CargaLinea({
                     value={descuento}
                     disabled={!producto}
                     onChange={(e) => cambiarDescuento(e.target.value)}
+                    onBlur={salirDescuento}
                     aria-describedby="pdesc-aviso"
                   />
                   <span className="desc-suffix">%</span>
@@ -191,90 +311,136 @@ export function CargaLinea({
                 </div>
               </div>
 
+              {/* El mismo descuento, en pesos. NO se teclea: se deriva del %, que es el único
+                  campo editable, así los dos no pueden decir cosas distintas. */}
               <div className="control-item">
-                <label htmlFor="prent">Rentabilidad</label>
-                {/* No editable: es el margen que queda tras el descuento, recalculado en vivo. Verde
-                    si suma; rojo si el descuento se comió el margen (negativa). */}
-                <input
-                  id="prent"
-                  type="text"
-                  className="std-input"
-                  readOnly
-                  placeholder="—"
-                  value={producto ? pctDec(rentabilidadPrevista) : ''}
-                  style={{
-                    color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)',
-                    fontWeight: 700,
-                  }}
-                  aria-label="Rentabilidad prevista del producto con el descuento aplicado"
-                />
+                <label htmlFor="pdescm">Descuento ($)</label>
+                <div className="desc-wrapper">
+                  <input
+                    id="pdescm"
+                    type="text"
+                    className="std-input"
+                    placeholder="0"
+                    aria-label="Descuento en pesos sobre el precio actual, calculado a partir del porcentaje"
+                    value={montoMostrado}
+                    readOnly
+                    disabled
+                    title="Se calcula con el porcentaje de descuento"
+                  />
+                </div>
               </div>
 
-              {/* Importe total de la configuración: reacciona en vivo a la cantidad y el descuento. */}
-              <div className="control-item control-item--total">
-                <label htmlFor="ptotal">Importe Total</label>
-                <input
-                  id="ptotal"
-                  type="text"
-                  className="std-input"
-                  readOnly
-                  placeholder="$ 0"
-                  value={producto ? fmtMonto(importeTotal) : ''}
-                  style={{ color: dolar ? 'var(--green-dark)' : 'var(--primary-blue)', fontWeight: 800 }}
-                  aria-label="Importe total del producto con el descuento y la cantidad aplicados"
-                />
+              <span className="cl-igual" aria-hidden="true">
+                =
+              </span>
+
+              {/* Resultado de la cuenta: lo que se cobra por unidad. */}
+              <div className="cl-cardfin">
+                <span className="cl-cardfin-l">Precio Unitario Final</span>
+                <span className="cl-cardfin-v">{enEspera ? '—' : fmtMonto(dto.precioFinal)}</span>
               </div>
-            </>
+            </div>
           )}
 
-          <div className="control-item">
-            {/* No se carga con un descuento fuera de rango, ni en la venta si se excedió el
-                crédito: primero hay que bajar el importe quitando productos. */}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={!producto || !descuentoOk.ok || bloqueado || convirtiendo}
-              aria-busy={convirtiendo}
-              title={
-                convirtiendo
-                  ? 'Convirtiendo el precio a pesos con la cotización del dólar…'
-                  : bloqueado
-                    ? 'Se alcanzó el límite de crédito: quitá productos para poder cargar más.'
-                    : descuentoOk.ok
-                      ? ''
-                      : descuentoOk.mensaje
-              }
-              onClick={() =>
-                producto &&
-                descuentoOk.ok &&
-                !bloqueado &&
-                !convirtiendo &&
-                onAdd(cantidad, Number(descuento) || 0)
-              }
-            >
-              {convirtiendo ? (
-                <>
-                  <i className="fas fa-circle-notch spin" /> Convirtiendo…
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-plus" /> Agregar
-                </>
-              )}
-            </button>
+          <div className="cl-resumen">
+            <div className="control-item">
+              <label htmlFor="pqty">Cantidad</label>
+              <div className="qty-input-group">
+                <button
+                  type="button"
+                  className="qty-btn"
+                  onClick={() => cambiarCantidad(-1)}
+                  disabled={!producto}
+                  aria-label="Restar"
+                >
+                  -
+                </button>
+                <input
+                  id="pqty"
+                  type="number"
+                  className="qty-val"
+                  min={1}
+                  value={cantidad}
+                  disabled={!producto}
+                  onChange={(e) => setCantidad(Math.max(1, Number(e.target.value) || 1))}
+                />
+                <button
+                  type="button"
+                  className="qty-btn"
+                  onClick={() => cambiarCantidad(1)}
+                  disabled={!producto}
+                  aria-label="Sumar"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {showFinancialData && (
+              <>
+                <div className="cl-metric">
+                  <span className="cl-metric-l">Descuento Total</span>
+                  <span className="cl-metric-v">{enEspera ? '—' : fmtMonto(dto.total)}</span>
+                </div>
+                {/* Rentabilidad ya con el descuento total aplicado: es la que queda si se carga
+                    la línea así, no la de lista. */}
+                <div className="cl-metric">
+                  <span className="cl-metric-l">Rentabilidad Final</span>
+                  <span
+                    className="cl-metric-v"
+                    style={{ color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)' }}
+                  >
+                    {enEspera ? '—' : pctDec(rentabilidadPrevista)}
+                  </span>
+                </div>
+                <div className="cl-metric cl-metric--sep">
+                  <span className="cl-metric-l">Subtotal</span>
+                  <span className="cl-metric-v cl-metric-v--azul cl-metric-v--sub">
+                    {enEspera ? '—' : fmtMonto(subtotal)}
+                  </span>
+                  <span className="cl-metric-note">Equivale a {unidades}</span>
+                </div>
+              </>
+            )}
+            {botonAgregar}
           </div>
         </div>
       </div>
 
-      {/* El stock y la cobertura quedan en el mismo box: sin producto, sólo se anuncian. */}
-      {producto ? (
-        <StockPanel producto={producto} cantidad={cantidad} />
-      ) : (
-        <div className="stock-placeholder">
-          <i className="fas fa-boxes-stacked" />
-          El stock del proveedor y la barra de cobertura se muestran acá al elegir un producto.
+      {/* ===== FILA 2: desglose del descuento | stock del producto ===== */}
+      <div className={`cl-bottom ${showFinancialData ? '' : 'cl-bottom--solo-stock'}`}>
+        {showFinancialData && (
+          <DetalleDescuentos
+            descFormaPago={descFormaPago}
+            dtoPago={dto.formaPago}
+            descuentoManual={pctManual}
+            dtoPrecio={dto.manual}
+            dtoTotal={dto.total}
+            fmt={fmtMonto}
+          />
+        )}
+
+        <div className="cl-stock">
+          {producto ? (
+            <>
+              {/* El proveedor y el tipo de mercadería acompañan al título, contra el margen
+                  derecho: misma disposición que el detalle de la tabla. */}
+              <div className="lindet-hrow">
+                <h4 className="lindet-h">
+                  <i className="fas fa-cube lindet-h-ic" /> Stock
+                </h4>
+                <ProveedorLinea producto={producto} />
+              </div>
+              <StockPanel producto={producto} cantidad={cantidad} conProveedor={false} />
+            </>
+          ) : (
+            <div className="stock-placeholder">
+              <i className="fas fa-boxes-stacked" />
+              El stock del proveedor y la barra de cobertura se muestran acá al elegir un producto.
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -34,7 +34,6 @@ export function EmisionView() {
     moneda,
     tasaCambio,
     documentoEmitido,
-    documentoEnviado,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
@@ -193,11 +192,13 @@ export function EmisionView() {
         >
           <i className="fas fa-arrow-left" /> Volver a paso anterior
         </button>
-        {/* Cierra el presupuesto y reinicia la app. Sólo con el PDF generado y ya enviado. */}
+        {/* Cierra el presupuesto y reinicia la app. Alcanza con el PDF EMITIDO: el envío al cliente
+            es una gestión aparte y puede quedar pendiente. */}
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!(emitido && documentoEnviado)}
+          disabled={!emitido}
+          title={emitido ? undefined : 'Emití el presupuesto para poder finalizar la operación.'}
           onClick={() => dispatch({ type: 'reset' })}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación

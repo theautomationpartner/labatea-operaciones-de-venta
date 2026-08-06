@@ -4,7 +4,7 @@ import { Dropdown } from '@/components/ui/Dropdown'
 import { Modal } from '@/components/ui/Modal'
 import { hoy } from '@/lib/dates'
 import { OPERACIONES } from '@/lib/pasos'
-import { puedeElegirVendedor } from '@/services/monday'
+import { puedeElegirVendedor } from '@/lib/permisos'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Operacion, Vendedor } from '@/types'
 
@@ -120,29 +120,49 @@ function OperacionSelector() {
 }
 
 function VendedorSelector() {
-  const { vendedor, vendedores, vendedoresCargando, usuarioActual } = useApp()
+  const { vendedor, vendedores, vendedoresCargando, usuarioActual, paso, operacion } = useApp()
   const dispatch = useDispatch()
-  // Mientras se traen los vendedores del board, el selector queda deshabilitado con el placeholder.
-  const etiqueta = vendedoresCargando
-    ? 'Cargando vendedores...'
-    : (vendedor?.name ?? 'Seleccionar...')
-  /* RBAC: sólo los admins (o ids privilegiados) pueden emitir a nombre de OTRO vendedor. El resto
-     ve el selector bloqueado, fijo en el vendedor por defecto (su propio usuario). */
-  const bloqueado = vendedoresCargando || !puedeElegirVendedor(usuarioActual)
+  /* RBAC: sólo el equipo "Administradores" puede emitir a nombre de OTRO vendedor. El resto ve el
+     selector bloqueado, fijo en el vendedor por defecto (su propio usuario). */
+  const habilitado = puedeElegirVendedor(usuarioActual, paso, operacion)
+  const bloqueado = vendedoresCargando || !habilitado
+  /* El vendedor elegido se muestra con el MISMO ícono con el que figura en la lista: sin él, el
+     selector cerrado era el único lugar donde el usuario aparecía sin su avatar.
+     Mientras se traen los vendedores del board queda el placeholder de carga. */
+  const etiqueta = vendedoresCargando ? (
+    <span className="selbox-ph">Cargando vendedores...</span>
+  ) : vendedor ? (
+    /* Ícono y nombre van dentro de UN solo elemento: el botón reparte el espacio sobrante entre
+       sus hijos, así que sueltos se separaban uno del otro en lugar de quedar juntos. */
+    <span className="selbox-val">
+      <Avatar ini={vendedor.ini} color={vendedor.color} size="sm" />
+      <span className="selbox-val-txt">{vendedor.name}</span>
+    </span>
+  ) : (
+    <span className="selbox-ph">Seleccionar...</span>
+  )
   return (
-    <Dropdown<Vendedor>
-      label={<span className={vendedor ? '' : 'selbox-ph'}>{etiqueta}</span>}
-      items={vendedores}
-      itemKey={(v) => v.id}
-      disabled={bloqueado}
-      renderItem={(v) => (
-        <>
-          <Avatar ini={v.ini} color={v.color} />
-          {v.name}
-        </>
-      )}
-      onSelect={(v) => dispatch({ type: 'setVendedor', vendedor: v })}
-    />
+    <span
+      title={
+        habilitado || vendedoresCargando
+          ? undefined
+          : 'Sólo un administrador puede cambiar el vendedor de la operación.'
+      }
+    >
+      <Dropdown<Vendedor>
+        label={etiqueta}
+        items={vendedores}
+        itemKey={(v) => v.id}
+        disabled={bloqueado}
+        renderItem={(v) => (
+          <>
+            <Avatar ini={v.ini} color={v.color} />
+            {v.name}
+          </>
+        )}
+        onSelect={(v) => dispatch({ type: 'setVendedor', vendedor: v })}
+      />
+    </span>
   )
 }
 

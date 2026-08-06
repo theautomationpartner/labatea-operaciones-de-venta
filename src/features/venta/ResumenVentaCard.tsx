@@ -1,4 +1,4 @@
-import { money, pct } from '@/lib/format'
+import { money, pct, pctDec } from '@/lib/format'
 import type { ResumenVenta } from '@/lib/selectors'
 
 /** Umbrales del semáforo de rentabilidad general de la venta. */
@@ -66,13 +66,12 @@ export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverri
             <span>TOTAL</span>
             <span>{money(totalOverride ?? resumen.total + resumen.iva)}</span>
           </div>
-          {/* Comisión total (dinámica), si hay productos comisionables. DEBAJO del total. */}
-          {resumen.comision > 0 && (
-            <div className="sub-row">
-              <span>Comisión ($)</span>
-              <span>{money(resumen.comision)}</span>
-            </div>
-          )}
+          {/* Comisión total (dinámica). DEBAJO del total, SIEMPRE visible (aunque sea 0) para
+              mantener la métrica estandarizada. */}
+          <div className="sub-row">
+            <span>Comisión ($)</span>
+            <span>{money(resumen.comision)}</span>
+          </div>
         </div>
       </div>
 
@@ -84,7 +83,7 @@ export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverri
             <div
               className="donut-chart"
               role="meter"
-              aria-valuenow={Math.round(resumen.rentabilidad)}
+              aria-valuenow={resumen.rentabilidad}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-label="Rentabilidad general de la venta"
@@ -93,8 +92,9 @@ export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverri
               }}
             >
               <div className="donut-inner">
+                {/* Con decimales cuando los tiene: la rentabilidad general no es un entero. */}
                 <span className="donut-val" style={{ color: colorRent }}>
-                  {pct(resumen.rentabilidad)}
+                  {pctDec(resumen.rentabilidad)}
                 </span>
                 <span className="donut-lbl">General</span>
               </div>

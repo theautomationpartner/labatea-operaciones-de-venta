@@ -40,3 +40,23 @@ export function precioListaSinRedondear(
 ): number {
   return !llevaIva || !ivaPct ? precioLista : precioLista * (1 + ivaPct / 100)
 }
+
+/**
+ * Producto con el precio unitario PISADO a mano (override del administrador, ver `lib/permisos`).
+ *
+ * El COSTO del producto no cambia porque se venda más barato: se conserva —costo = precio ×
+ * (1 − rent/100)— y la rentabilidad se recalcula contra el precio nuevo, así el margen que se
+ * muestra sigue siendo el real. Al conservarse el costo, pisar el precio dos veces da exactamente
+ * lo mismo que pisarlo una sola vez con el valor final.
+ *
+ * Un precio de 0 o negativo no es un precio: se devuelve el producto sin tocar.
+ */
+export function productoConPrecio<T extends { precio: number; rentabilidad: number }>(
+  producto: T,
+  precio: number,
+): T {
+  const nuevo = round2(precio)
+  if (!(nuevo > 0)) return producto
+  const costo = producto.precio * (1 - producto.rentabilidad / 100)
+  return { ...producto, precio: nuevo, rentabilidad: (1 - costo / nuevo) * 100 }
+}

@@ -20,7 +20,7 @@ import { ResumenVentaCard } from './ResumenVentaCard'
  */
 export function VentaProformaView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems, comisiones } = state
   const dispatch = useDispatch()
   /* GUARDRAIL post-emisión: emitido un documento oficial, no se puede cambiar la proforma de origen
      (la tabla ya es de sólo lectura). La emisión hacia Monday es irreversible. */
@@ -70,15 +70,29 @@ export function VentaProformaView() {
       ? p.productos.map((prod, i) => ({ uid: ventaItemUid(p.id, i), prod, cantidad: prod.total }))
       : []
     dispatch({ type: 'setVentaSeleccion', seleccion })
-    // Se guarda el id de la proforma elegida: al facturar se la marca "Usada" (evita doble facturación).
-    dispatch({ type: 'setProformaId', value: p?.id ?? null })
+    // Se guarda el id de la proforma elegida (al facturar se la marca "Usada"), su IMPORTE TOTAL
+    // (numeric_mm5sw8n2, se mapea al "Importe Total $" de la venta) y su TIPO DE VENTA (color_mm5142e4,
+    // define la tasa de comisión Activa/Pasiva al registrar la venta en FacturaView).
+    dispatch({
+      type: 'setProformaId',
+      value: p?.id ?? null,
+      importe: p?.importe ?? null,
+      tipoVenta: p?.tipoVenta ?? null,
+    })
   }, [seleccionada, proformas, dispatch])
 
-  // La proforma no lleva comisión editable: el resumen usa la base de una venta con presupuesto.
-  const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
-  const resumen = useMemo(() => resumenVenta(ventaItems, cliente, tipo), [ventaItems, cliente, tipo])
+  // La proforma elegida (para su importe y su tipo de venta).
+  const proformaSel = proformas.find((p) => p.id === seleccionada)
+  /* Comisión: se calcula con los productos comisionables leídos de la proforma (mirror "🤖Comision",
+     lookup_mm5zgkdr) y su descuento por forma de pago por línea. La tasa la define el TIPO DE VENTA
+     de la proforma (Activa = C/Presup Previo, Pasiva = Directa) — la misma que usa la registración. */
+  const tipo = proformaSel?.tipoVenta ?? tipoVenta ?? 'DIRECTA'
+  const resumen = useMemo(
+    () => resumenVenta(ventaItems, cliente, tipo, 0, comisiones),
+    [ventaItems, cliente, tipo, comisiones],
+  )
   // El IMPORTE TOTAL se toma de la proforma elegida (su columna Total), no del recálculo.
-  const importeProforma = proformas.find((p) => p.id === seleccionada)?.importe ?? 0
+  const importeProforma = proformaSel?.importe ?? 0
   // Venta: bloqueante. No se avanza al cobro si el cliente está bloqueado o se pasa de su línea.
   const bloqueo = useBloqueoCredito(resumen.total, { bloqueante: true })
 
@@ -97,8 +111,11 @@ export function VentaProformaView() {
         rentabilidad: it.rent,
         producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
         impBonif: it.impBonificado,
-        ivaMonto: it.ivaMonto,
         totalLinea: it.totalLinea,
+        // Desglose del descuento leído de la proforma: el "Detalle" lo muestra tal cual, sin recalcular.
+        descFormaPago: it.descFormaPago,
+        descProdMonto: it.descProdMonto,
+        descFpMonto: it.descFpMonto,
       })),
     [ventaItems],
   )
@@ -125,12 +142,7 @@ export function VentaProformaView() {
           // Post-emisión no se cambia la proforma de origen: la selección queda fija.
           onSelect={bloqueadoPorEmision ? () => {} : (id) => setSeleccionada(id)}
         />
-        <TablaProductos
-          titulo="Productos de la proforma"
-          filas={filas}
-          soloLectura
-          mostrarIva
-        />
+        <TablaProductos titulo="Productos de la proforma" filas={filas} soloLectura />
       </div>
 
       <ResumenVentaCard resumen={resumen} ocultarSubtotal totalOverride={importeProforma} />

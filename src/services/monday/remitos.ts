@@ -45,6 +45,10 @@ export interface RemitoPendiente {
   fecha: string
   /** "🤖Estado del Facturacion" del remito, tal cual está en el board. */
   estadoFacturacion: string
+  /** "🤖Importe a Facturar $" (numeric_mm5np70x): total del remito a facturar (nivel ítem). */
+  importeAFacturar: number
+  /** "🤖Importe Facturado $" (numeric_mm5n938k): lo ya facturado (nivel ítem). */
+  importeFacturado: number
   productos: RemitoProducto[]
 }
 
@@ -415,6 +419,9 @@ export interface LineaVtaPendiente {
   /** Rentabilidad del producto según la lista del cliente, en %. Se persiste en "🤖Rentab %"
    *  (numeric_mm5p80xs) para reusarla al facturar la venta DIRECTA con entrega ANTERIOR. */
   rentabilidad?: number
+  /** Unidad de venta del producto: la MISMA que se asienta en el subelemento del remito. Se
+   *  persiste para que la línea de la factura la tenga al facturar la entrega ANTERIOR. */
+  um?: string
 }
 
 /** Datos para crear el ítem de "Vtas Pends de Facturar" y sus subelementos. */
@@ -423,8 +430,6 @@ export interface DatosVtaPendienteFacturar {
   nombre: string
   /** Ítem del cliente en Personas (board_relation_mm5pd79g). Es por donde se filtra al facturar. */
   clienteId?: string
-  /** Ítem de la cuenta corriente del cliente (board_relation_mkwbz75m). */
-  ctaCteId?: string
   /** Remito POSTERIOR recién creado (board_relation_mkwbvma5). */
   remitoId: string
   /** Importe total del remito ("🤖Importe a Facturar $"). */
@@ -441,7 +446,7 @@ export interface DatosVtaPendienteFacturar {
 export async function crearVtaPendienteFacturar(
   datos: DatosVtaPendienteFacturar,
 ): Promise<{ id: string; subitemsCreados: number }> {
-  const { nombre, clienteId, ctaCteId, remitoId, importeTotal, lineas } = datos
+  const { nombre, clienteId, remitoId, importeTotal, lineas } = datos
   if (!mondayHabilitado()) {
     return { id: `mock-vtapend-${Date.now()}`, subitemsCreados: lineas.length }
   }
@@ -476,7 +481,6 @@ export async function crearVtaPendienteFacturar(
     [COL.vtaPendFacturar.importeAFacturar]: String(round2(importeTotal)),
     [COL.vtaPendFacturar.importeFacturado]: '0',
   }
-  if (ctaCteId) cabecera[COL.vtaPendFacturar.ctaCte] = { item_ids: [Number(ctaCteId)] }
   // Cliente obligatorio: es la columna por la que se filtran las ventas pendientes al facturar.
   if (clienteId) cabecera[COL.vtaPendFacturar.cliente] = { item_ids: [Number(clienteId)] }
   if (itemSinFactIdx != null) cabecera[COL.vtaPendFacturar.estadoFacturacion] = { index: itemSinFactIdx }
@@ -507,6 +511,9 @@ export async function crearVtaPendienteFacturar(
     if (l.rentabilidad != null) {
       cv[COL.vtaPendFacturarSub.rentabilidad] = String(round2(l.rentabilidad))
     }
+    /* Unidad de venta: el MISMO valor que se asienta en el subelemento del remito
+       (dropdown_mm5g9mp). De acá la toma la línea de la factura al facturar la entrega ANTERIOR. */
+    if (l.um?.trim()) cv[COL.vtaPendFacturarSub.unidadVenta] = { labels: [l.um.trim()] }
     return cv
   }
 
@@ -518,7 +525,9 @@ export async function crearVtaPendienteFacturar(
       const n = desde + i
       variables[`n${n}`] = nombre
       variables[`cv${n}`] = JSON.stringify(columnasSub(l))
-      return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}) { id }`
+      /* `create_labels_if_missing`: la "🤖Unidad de Venta" del destino nace SIN etiquetas, así que
+         mandar una U.M. que el board no tenga rechazaría la mutación entera. */
+      return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}, create_labels_if_missing: true) { id }`
     })
     const declaraciones = tanda
       .map((_, i) => `$n${desde + i}: String!, $cv${desde + i}: JSON!`)
@@ -535,9 +544,13 @@ export async function crearVtaPendienteFacturar(
 
 /* ===== Ventas pendientes de facturar (fuente de la venta DIRECTA con entrega ANTERIOR) ===== */
 
-/** Importe pendiente de facturar de una venta pendiente: Σ (pendiente × precio) de sus productos. */
+/**
+ * Importe pendiente de facturar de una venta pendiente. Replica la fórmula del board "🤖Pend de
+ * Facturar $" (formula_mm5ndcyh) en el frontend: "Importe a Facturar $" − "Importe Facturado $"
+ * (numeric_mm5np70x − numeric_mm5n938k), en vez de leer la fórmula directo.
+ */
 export const montoPendienteFacturar = (r: RemitoPendiente): number =>
-  round2(r.productos.reduce((acc, p) => acc + p.pendiente * p.precio, 0))
+  round2(r.importeAFacturar - r.importeFacturado)
 
 /** Un subelemento de "Vtas Pends de Facturar" mapeado a la forma `RemitoProducto` que consume la UI. */
 function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProducto {
@@ -558,8 +571,15 @@ function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProduct
     precio: numCol(c[COL.vtaPendFacturarSub.precioUnit]),
     // Rentabilidad guardada al remitir ("🤖Rentab %"): alimenta la rentabilidad general al facturar.
     rent: numCol(c[COL.vtaPendFacturarSub.rentabilidad]),
-    // Subtotal de la línea (fórmula del board, por display_value).
+    // Subtotal de la línea (fórmula del board formula_mm5nc530, por display_value).
     subtotal: numCol(c[COL.vtaPendFacturarSub.subtotal]),
+    // "Comision" espejada del Maestro (lookup_mm5z5hsc): "SI" habilita la comisión al facturar.
+    comisionable: valor(c[COL.vtaPendFacturarSub.comisionable]).trim().toUpperCase() === 'SI',
+    /* U.M. guardada al remitir: es la que viaja a la línea de la factura en la entrega ANTERIOR.
+       Sin ella, se cae a la del propio producto del Maestro. */
+    um: valor(c[COL.vtaPendFacturarSub.unidadVenta]) || valor(prodCols[COL.producto.unidadMedida]),
+    // Alícuota de IVA del producto (Maestro): para totalizar el IVA de la factura.
+    iva: numCol(prodCols[COL.producto.iva]),
     estadoFacturacion: estado?.text ?? '',
     // Sólo se puede facturar lo que todavía tiene unidades pendientes.
     seleccionable: pendiente > 0,
@@ -573,8 +593,8 @@ function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProduct
 /**
  * Ventas del cliente pendientes de facturar, leídas de "Vtas Pends de Facturar" (18421033947).
  * REEMPLAZA a la fuente anterior (remitos del board 18421035529). Se filtra en la consulta por el
- * cliente (board_relation_mm5pd79g) y por estado distinto de "100% Facturada" (color_mm5ndgd5, por
- * índice dinámico), sin filtrar del lado del cliente. Cada subelemento se mapea a `RemitoProducto`.
+ * cliente (board_relation_mm5pd79g) y por estado "0% Facturada" a nivel ítem (color_mm5ndgd5, por
+ * índice dinámico): sólo esas son ventas pendientes de facturar. Cada subelemento → `RemitoProducto`.
  */
 async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<RemitoPendiente[]> {
   if (!mondayHabilitado()) {
@@ -585,20 +605,24 @@ async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<Remito
       nroRemito: r.id,
       fecha: r.fecha,
       estadoFacturacion: r.estado,
+      // Mock: el importe a facturar/facturado se aproxima con los productos pendientes.
+      importeAFacturar: round2(r.productos.reduce((acc, p) => acc + p.pendiente * p.precio, 0)),
+      importeFacturado: 0,
       productos: r.productos.map((p) => ({ ...p, seleccionable: p.pendiente > 0 })),
     }))
   }
   const idNum = Number(cliente.id)
   if (!Number.isFinite(idNum)) return []
 
-  // Índice de "100% Facturada" en color_mm5ndgd5, para excluirla por query_params (no hardcodeado).
+  // Índice de "0% Facturada" en color_mm5ndgd5: una venta está pendiente de facturar SÓLO si su
+  // estado a nivel ítem es ese label (no basta con "distinta de 100%"). Índice dinámico, no fijo.
   const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
     `query { boards(ids: [${BOARDS.vtasPendFacturar}]) { columns(ids: ["${COL.vtaPendFacturar.estadoFacturacion}"]) { settings_str } } }`,
   )
-  const completaIdx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, ['100% Facturada', '100% Facturado'])
+  const sinFacturarIdx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, ['0% Facturado', '0% Facturada'])
   const reglaEstado =
-    completaIdx != null
-      ? `, {column_id: "${COL.vtaPendFacturar.estadoFacturacion}", compare_value: [${completaIdx}], operator: not_any_of}`
+    sinFacturarIdx != null
+      ? `, {column_id: "${COL.vtaPendFacturar.estadoFacturacion}", compare_value: [${sinFacturarIdx}], operator: any_of}`
       : ''
 
   const data = await mondayApi<{
@@ -614,14 +638,15 @@ async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<Remito
         ) {
           items {
             id name
-            column_values(ids: ["${COL.vtaPendFacturar.estadoFacturacion}"]) { id text }
+            column_values(ids: ["${COL.vtaPendFacturar.estadoFacturacion}","${COL.vtaPendFacturar.importeAFacturar}","${COL.vtaPendFacturar.importeFacturado}"]) { id text }
             subitems {
               id name
-              column_values(ids: ["${COL.vtaPendFacturarSub.producto}","${COL.vtaPendFacturarSub.precioUnit}","${COL.vtaPendFacturarSub.subtotal}","${COL.vtaPendFacturarSub.cantEntregada}","${COL.vtaPendFacturarSub.cantFacturada}","${COL.vtaPendFacturarSub.rentabilidad}","${COL.vtaPendFacturarSub.estadoFacturacion}"]) {
+              column_values(ids: ["${COL.vtaPendFacturarSub.producto}","${COL.vtaPendFacturarSub.precioUnit}","${COL.vtaPendFacturarSub.subtotal}","${COL.vtaPendFacturarSub.cantEntregada}","${COL.vtaPendFacturarSub.cantFacturada}","${COL.vtaPendFacturarSub.rentabilidad}","${COL.vtaPendFacturarSub.comisionable}","${COL.vtaPendFacturarSub.unidadVenta}","${COL.vtaPendFacturarSub.estadoFacturacion}"]) {
                 id text
                 ... on StatusValue { index }
                 ... on FormulaValue { display_value }
-                ... on BoardRelationValue { linked_items { id name column_values(ids: ["${COL.producto.codigo}"]) { id text } } }
+                ... on MirrorValue { display_value }
+                ... on BoardRelationValue { linked_items { id name column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.unidadMedida}"]) { id text } } }
               }
             }
           }
@@ -639,6 +664,8 @@ async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<Remito
       nroRemito: '',
       fecha: '',
       estadoFacturacion: c[COL.vtaPendFacturar.estadoFacturacion]?.text ?? '',
+      importeAFacturar: numCol(c[COL.vtaPendFacturar.importeAFacturar]),
+      importeFacturado: numCol(c[COL.vtaPendFacturar.importeFacturado]),
       productos: (it.subitems ?? []).map((sub) => mapVtaPendProducto(sub, it.id)),
     }
   })

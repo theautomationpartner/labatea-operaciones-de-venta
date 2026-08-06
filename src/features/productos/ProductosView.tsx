@@ -3,10 +3,11 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { pasosDe } from '@/lib/pasos'
-import { clienteLlevaIva } from '@/lib/precios'
+import { puedeEditarPrecio } from '@/lib/permisos'
+import { clienteLlevaIva, productoConPrecio } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import {
-  comisionVentaDirecta,
+  comisionLineas,
   impactoCredito,
   resumenPresupuesto,
   resumenPresupuestoBimoneda,
@@ -27,12 +28,25 @@ import { useCotizacionProducto } from './useCotizacionProducto'
  */
 export function ProductosView() {
   const state = useApp()
-  const { cliente, lineas, operacion, tipoVenta, tipoEntrega, formaPago, descuentosPago, tasaCambio } =
-    state
+  const {
+    cliente,
+    lineas,
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+    formaPago,
+    descuentosPago,
+    comisiones,
+    tasaCambio,
+  } = state
   const dispatch = useDispatch()
   /* GUARDRAIL post-emisión: si ya se emitió un documento oficial en el tablero, esta etapa queda en
      SOLO LECTURA (no se agregan/editan/quitan productos): la emisión es irreversible. */
   const bloqueadoPorEmision = hayDocumentoEmitido(state)
+  /* RBAC: el override del precio de lista es exclusivo del equipo "Administradores" y de esta
+     etapa. El guardrail post-emisión manda por encima: emitido, no se toca nada. */
+  const precioEditable =
+    !bloqueadoPorEmision && puedeEditarPrecio(state.usuarioActual, state.paso, operacion)
   // Selección de producto con conversión bimonetaria (dólares → pesos con la cotización).
   const { seleccionado, setSeleccionado, elegir, convirtiendo } = useCotizacionProducto()
   // Aviso de la búsqueda, que se muestra en el lugar del producto elegido.
@@ -63,11 +77,11 @@ export function ProductosView() {
      con presupuesto previo. En el presupuesto se usa el neto proyectado a pesos (ARS + USD×tasa),
      que ya incluye los dólares convertidos; en la venta, el neto directo. */
   const importeCredito = esVenta ? resumen.neto : bimoneda.netoProyectado
-  /* Comisión de la venta DIRECTA: se paga por los productos comisionables, con su % de venta
-     pasiva sobre el neto de la línea. El presupuesto no liquida comisión. */
+  /* Comisión de la venta DIRECTA: la tasa "Pasiva" del tablero de configuración aplicada al neto
+     —sin IVA y con el descuento total— de cada producto comisionable. El presupuesto no liquida. */
   const comision = useMemo(
-    () => (esVenta ? comisionVentaDirecta(lineas, descFormaPago) : 0),
-    [esVenta, lineas, descFormaPago],
+    () => (esVenta ? comisionLineas(lineas, comisiones, tipoVenta ?? 'DIRECTA', descFormaPago) : 0),
+    [esVenta, lineas, comisiones, tipoVenta, descFormaPago],
   )
   const credito = useMemo(
     () => impactoCredito(cliente, importeCredito),
@@ -103,14 +117,17 @@ export function ProductosView() {
   // Sólo en la venta: con el crédito excedido no se pueden cargar más productos.
   const cargaBloqueada = esVenta && bloqueo.excedido
 
-  const agregar = (cantidad: number, descuento: number) => {
+  const agregar = (cantidad: number, descuento: number, precio?: number) => {
     if (!seleccionado) return
     // En la venta con el crédito excedido no se cargan más ítems: hay que bajar el importe.
     if (cargaBloqueada) {
       bloqueo.frenar()
       return
     }
-    dispatch({ type: 'addLinea', producto: seleccionado, cantidad, descuento })
+    /* Precio pisado por un administrador en la carga: la línea nace con ese precio y con la
+       rentabilidad recalculada a costo constante, igual que al pisarlo desde la tabla. */
+    const producto = precio ? productoConPrecio(seleccionado, precio) : seleccionado
+    dispatch({ type: 'addLinea', producto, cantidad, descuento })
     setSeleccionado(null)
     setAvisoBusqueda('')
   }
@@ -168,6 +185,9 @@ export function ProductosView() {
             onAdd={agregar}
             bloqueado={cargaBloqueada}
             convirtiendo={convirtiendo}
+            /* El pronto pago define el "Precio Actual" sobre el que muerde el descuento manual:
+               la carga muestra los mismos importes que va a tener la línea en la tabla. */
+            descFormaPago={descFormaPago}
           />
         </div>
       )}
@@ -187,10 +207,14 @@ export function ProductosView() {
             ? undefined
             : (id, descuento) => dispatch({ type: 'setDescuentoLinea', id, descuento })
         }
+        /* RBAC: el precio de lista sólo lo pisa un administrador, y sólo acá (selección de
+           productos de una VENTA o un PRESUPUESTO). Para el resto la celda es de lectura. */
+        onPrecio={
+          precioEditable ? (id, precio) => dispatch({ type: 'setPrecioLinea', id, precio }) : undefined
+        }
         soloLectura={bloqueadoPorEmision}
         cantidadMin={1}
         descFormaPago={descFormaPago}
-        mostrarIva={esVenta}
         /* Columna "Moneda" + importes en dólares con `$u` en verde: sólo en el presupuesto. */
         mostrarMoneda={!esVenta}
       />

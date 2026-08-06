@@ -51,6 +51,10 @@ export function lineasDeVenta({
       // El remito ya salió: lo que se factura no lleva descuento por línea.
       descuento: 0,
       rentabilidad: it.rent,
+      /* Entrega ANTERIOR: la condición de comisión sale del subelemento de "Vtas Pends de Facturar"
+         (espejo "Comision" del Maestro), resuelta al seleccionar el producto. Así la comisión que se
+         registra coincide con la que vio el vendedor en el resumen. */
+      comisionable: it.comisionable ?? false,
       codigo: it.codigo,
       um: it.um,
       tipoMercaderia: it.tipo,
@@ -68,7 +72,14 @@ export function lineasDeVenta({
       cantidad: it.aVender,
       precioUnitario: it.precio,
       descuento: it.desc ?? 0,
+      // VENTA sobre PROFORMA: el descuento por forma de pago se toma del subelemento de la proforma
+      // (no se recalcula). En CON PRESUPUESTO PREVIO viene indefinido (el presupuesto no lo tiene).
+      descFormaPago: it.descFormaPago,
       rentabilidad: rentabilidadEfectiva(it.rent, it.desc ?? 0),
+      // Comisión: mirror "🤖Comision" del subelemento del presupuesto (SI/NO).
+      comisionable: it.comisionable === true,
+      // U.M.: mirror "🤖Unidad de Venta" del subelemento del presupuesto.
+      um: it.um,
       codigo: it.codigo,
       tipoMercaderia: it.tipo,
       proveedorId: it.proveedorId,
@@ -88,6 +99,8 @@ export function lineasDeVenta({
     precioUsd: l.producto.precioUsd,
     descuento: l.descuento,
     rentabilidad: rentabilidadEfectiva(l.producto.rentabilidad, l.descuento),
+    // Comisión: "✋️Comision" del Maestro (SI/NO), que la línea trae del catálogo.
+    comisionable: l.producto.comisionable === true,
     codigo: l.producto.codigo,
     um: l.producto.um,
     tipoMercaderia: l.producto.tipo,

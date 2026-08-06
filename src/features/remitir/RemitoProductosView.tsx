@@ -194,6 +194,11 @@ export function RemitoProductosView() {
         onRemove={(uid) => dispatch({ type: 'removeRemitoItem', uid })}
         // POSTERIOR: la venta se factura después, así que se muestran precios e importe pendiente.
         mostrarImporte={!esAnterior}
+        // ANTERIOR: cómo queda el pendiente de cada línea de la venta después de esta entrega.
+        mostrarResultante={esAnterior}
+        /* ANTERIOR: una vez confirmado el producto, su cantidad no baja de 1 (entregar cero
+           unidades no es una entrega). Para sacarlo del remito está la papelera. */
+        cantidadMin={esAnterior ? 1 : 0}
         // Post-emisión: cantidades no editables y sin quitar líneas.
         soloLectura={bloqueadoPorEmision}
       />
@@ -219,7 +224,7 @@ export function RemitoProductosView() {
             dispatch({ type: 'goto', paso: 'remito-envio' })
           }}
         >
-          Continuar a especificación del envío <i className="fas fa-chevron-right" />
+          Continuar a entrega de mercadería <i className="fas fa-chevron-right" />
         </button>
       </footer>
 

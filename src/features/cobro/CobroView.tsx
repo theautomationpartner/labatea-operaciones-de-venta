@@ -3,36 +3,26 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { Modal } from '@/components/ui/Modal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
+  SIN_DESCUENTOS_PAGO,
   balancePagos,
+  chequeBloqueado,
   cobroSimultaneoOperacion,
   descuentoDeFormaPago,
+  diferenciaCobro,
   esPagoConTarjeta,
   resumenCobro,
   tipoTarjetaDe,
-  type DescuentosPago,
 } from '@/lib/cobros'
-import { round2 } from '@/lib/format'
-import { esFlujoRemito, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
-import { IVA_RATE, resumenFactura, resumenPresupuesto, resumenVenta } from '@/lib/selectors'
+import { pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
+import { totalVentaOperacion } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { CabeceraCobro } from './CabeceraCobro'
 import { CobroProforma } from './CobroProforma'
-import { CobroTarjeta } from './CobroTarjeta'
+import { CobroTarjetas } from './CobroTarjetas'
 import { ImpactoCtaCte } from './ImpactoCtaCte'
 import { FormularioCobro } from './FormularioCobro'
 import { TablaMovimientos } from './TablaMovimientos'
-
-/** El cobro de contado no aplica descuentos por medio de pago: se cobra el importe cargado. */
-const SIN_DESCUENTO: DescuentosPago = {
-  Efectivo: 0,
-  Cheque: 0,
-  Transferencia: 0,
-  'Retencion IIBB': 0,
-  'Retencion GAN': 0,
-  'Tarjeta de débito': 0,
-  'Tarjeta de crédito': 0,
-}
 
 /**
  * Compara dos importes SIN considerar los centavos: se toman como iguales cuando difieren en
@@ -47,8 +37,7 @@ const mismoImporte = (a: number, b: number): boolean => Math.abs(a - b) < 1
  */
 export function CobroView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, fechaEmision, cobro, formaPago, proformaId } =
-    state
+  const { cliente, operacion, tipoVenta, tipoEntrega, cobro, formaPago, proformaId } = state
   const dispatch = useDispatch()
   /* Débito y crédito son dos formas de pago, pero un mismo ramal de cobro: el formulario de
      tarjeta. Qué tipo es sale de la forma elegida, ya no de un selector aparte. */
@@ -60,34 +49,39 @@ export function CobroView() {
   /* Descuento por forma de pago (pronto pago): el cobro NO lo aplica por movimiento, así que tiene
      que estar YA descontado en el importe a cobrar —igual que en el resumen del paso anterior—. */
   const descFormaPago = descuentoDeFormaPago(formaPago, state.descuentosPago)
-  /* Neto (base del crédito) y TOTAL con IVA de la venta, calculados con las MISMAS fórmulas que el
-     resumen del paso anterior (incluido el descuento por forma de pago). El total resultante es el
-     valor de la métrica "TOTAL" de esa card: es el que se cobra, se adeuda o va a la proforma. */
-  const { netoVenta, totalVenta } = useMemo(() => {
-    // La entrega ANTERIOR manda sobre el tipo de venta: se factura lo remitido (sin forma de pago).
-    if (esFlujoRemito(tipoEntrega)) {
-      const neto = resumenFactura(state.facturaItems, cliente, 0).neto
-      return { netoVenta: neto, totalVenta: round2(neto * (1 + IVA_RATE)) }
-    }
-    // CON PRESUPUESTO PREVIO y la VENTA PROFORMA arman la venta en `ventaItems`.
-    if (tipoVenta === 'CON PRESUPUESTO PREVIO' || operacion === 'VENTA PROFORMA') {
-      const r = resumenVenta(
-        state.ventaItems,
+  /* Neto (base del crédito) y TOTAL con IVA de la venta. Sale de `totalVentaOperacion`, el MISMO
+     selector que usa el cierre para el importe que se adeuda y el que viaja al recibo: así la
+     métrica "TOTAL VENTA" de esta card y lo que se escribe en el board no pueden divergir. */
+  const { neto: netoVenta, total: totalVenta } = useMemo(
+    () =>
+      totalVentaOperacion({
         cliente,
-        tipoVenta ?? 'CON PRESUPUESTO PREVIO',
+        operacion,
+        tipoVenta,
+        tipoEntrega,
+        lineas: state.lineas,
+        ventaItems: state.ventaItems,
+        facturaItems: state.facturaItems,
+        proformaImporte: state.proformaImporte,
         descFormaPago,
-      )
-      return { netoVenta: r.total, totalVenta: round2(r.total + r.iva) }
-    }
-    // Venta DIRECTA armada desde el catálogo: mismo cálculo que el ResumenBox de la venta.
-    const r = resumenPresupuesto(state.lineas, true, descFormaPago)
-    return { netoVenta: r.neto, totalVenta: r.total }
-  }, [state, cliente, tipoVenta, tipoEntrega, descFormaPago])
+      }),
+    [
+      cliente,
+      operacion,
+      tipoVenta,
+      tipoEntrega,
+      state.lineas,
+      state.ventaItems,
+      state.facturaItems,
+      state.proformaImporte,
+      descFormaPago,
+    ],
+  )
 
   /* El cobro de contado NO aplica descuentos por medio de pago: lo cobrado es el importe cargado,
      y "Total Cobrado" debe dar exactamente el total de la venta (Diferencia 0) para avanzar. */
   const balances = useMemo(
-    () => balancePagos(cobro.movimientos, SIN_DESCUENTO),
+    () => balancePagos(cobro.movimientos, SIN_DESCUENTOS_PAGO),
     [cobro.movimientos],
   )
   const resumen = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
@@ -99,12 +93,12 @@ export function CobroView() {
     if (
       cliente &&
       cobro.confirmado &&
-      cobroSimultaneoOperacion(cliente, cobro) &&
+      cobroSimultaneoOperacion(formaPago) &&
       !mismoImporte(resumen.cancelado, resumen.totalACobrar)
     ) {
       dispatch({ type: 'desconfirmarCobro' })
     }
-  }, [cliente, cobro, resumen.cancelado, resumen.totalACobrar, dispatch])
+  }, [cliente, cobro.confirmado, formaPago, resumen.cancelado, resumen.totalACobrar, dispatch])
   /* Bloqueo por crédito. Lo que consume la línea es el NETO de la venta —la misma base que la
      selección de productos—, no el total con IVA: medir el bloqueo sobre el bruto frenaba
      ventas que en el resumen todavía mostraban crédito disponible. Y si la venta se cobra
@@ -119,8 +113,6 @@ export function CobroView() {
   const bloqueo = useBloqueoCredito(aCredito)
   /* Forma de pago CONTADO: el vendedor elige entre emitir una proforma o registrar el cobro. */
   const [contadoTab, setContadoTab] = useState<'proforma' | 'cobro'>('cobro')
-  /* Pago con tarjeta: el cobro se da por hecho al confirmar los datos de la tarjeta. */
-  const [tarjetaConfirmada, setTarjetaConfirmada] = useState(false)
   /* Modal de cierre de la venta con proforma (Guardar Venta): al aceptar limpia todo el estado. */
   const [guardando, setGuardando] = useState(false)
   /* Aviso al intentar continuar con la diferencia sin cancelar: falta cobrar (>0) o se cobró de más (<0). */
@@ -134,7 +126,10 @@ export function CobroView() {
     cobro.movimientos.length > 0 && mismoImporte(resumen.cancelado, resumen.totalACobrar)
   /* Diferencia entre lo que hay que cobrar y lo cargado, SIN recortar: >0 falta cobrar, <0 se cobró
      de más. Es la métrica DIFERENCIA de la cabecera. */
-  const restante = round2(resumen.totalACobrar - resumen.cancelado)
+  const restante = diferenciaCobro(resumen)
+  /* TARJETA: la única condición para avanzar es que la DIFERENCIA sea exactamente 0. No se tolera
+     ni de menos ni de más, y tampoco el redondeo de un peso que sí acepta el contado. */
+  const tarjetaCobrada = restante === 0 && cobro.movimientos.length > 0
   /* Motivo por el que el cobro todavía no cierra (hint en vivo dentro de la card). */
   const bloqueoMsg =
     cobro.movimientos.length > 0 && !cobroCompleto
@@ -173,8 +168,16 @@ export function CobroView() {
       continuarAFactura()
       return
     }
-    // Tarjeta: el botón ya está deshabilitado hasta confirmar los datos.
+    /* TARJETA: sólo se avanza con la diferencia en CERO exacto. El botón ya está deshabilitado,
+       pero la guarda queda igual para que ningún dato incompleto pase a la etapa siguiente.
+       El tipo de cobro NO se toca acá: la tarjeta es POSTERIOR por su forma de pago (se acredita
+       después), y eso lo decide `tipoPagoOperacion`, no esta vista. */
     if (conTarjeta) {
+      if (!tarjetaCobrada) {
+        setAvisoDif(restante < 0 ? 'exceso' : 'falta')
+        return
+      }
+      dispatch({ type: 'confirmarCobro' })
       continuarAFactura()
       return
     }
@@ -189,8 +192,9 @@ export function CobroView() {
   }
 
   /* El botón "Continuar" queda clickeable en CONTADO·cobro (valida al hacer click) y en cuenta
-     corriente; con tarjeta, sólo tras confirmar sus datos; en EMITIR PROFORMA, inhabilitado. */
-  const continuarDeshabilitado = enProforma || (conTarjeta && !tarjetaConfirmada)
+     corriente; con TARJETA queda estrictamente bloqueado hasta que la diferencia sea 0; en EMITIR
+     PROFORMA, inhabilitado. */
+  const continuarDeshabilitado = enProforma || (conTarjeta && !tarjetaCobrada)
 
   return (
     <section className="view cobro-v2 paso-layout">
@@ -258,12 +262,15 @@ export function CobroView() {
             corriente": cómo queda el saldo del cliente al registrarse la nueva deuda. */}
         {formaPago === 'CUENTA CORRIENTE' && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
 
-        {/* Tarjeta: formulario de cobro (débito: Banco + Tipo; crédito: + Cuotas). */}
+        {/* TARJETA: cabecera de métricas + carga de tarjetas + tabla de movimientos. Sin botón de
+            confirmar: cierra cuando la DIFERENCIA llega a 0. */}
         {conTarjeta && (
-          <CobroTarjeta
+          <CobroTarjetas
+            cliente={cliente}
             tipo={tipoTarjetaDe(formaPago)}
-            confirmada={tarjetaConfirmada}
-            onConfirmar={() => setTarjetaConfirmada(true)}
+            resumen={resumen}
+            balances={balances}
+            diferencia={restante}
           />
         )}
 
@@ -279,7 +286,11 @@ export function CobroView() {
               <h3 className="cobro-card-title">Registrar cobro</h3>
               <p className="cobro-card-desc">Especificar cómo pagó el cliente</p>
 
-              <FormularioCobro fechaFactura={fechaEmision} bloqueado={bloqueado} />
+              {/* El CRM del cliente puede vedar el cheque en las ventas de CONTADO. */}
+              <FormularioCobro
+                chequeBloqueado={chequeBloqueado(cliente, formaPago)}
+                bloqueado={bloqueado}
+              />
 
               <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
               <TablaMovimientos balances={balances} bloqueado={bloqueado} />
@@ -325,14 +336,15 @@ export function CobroView() {
             <button
               type="button"
               className="cobro-btn cobro-btn--primary"
-              /* EMITIR PROFORMA no avanza; tarjeta exige confirmar sus datos. CONTADO·cobro queda
-                 clickeable: la diferencia se valida al hacer click (modal si no está en 0). */
+              /* EMITIR PROFORMA no avanza; con tarjeta el avance queda bloqueado hasta que la
+                 diferencia sea 0. CONTADO·cobro queda clickeable: la diferencia se valida al hacer
+                 click (modal si no está en 0). */
               disabled={continuarDeshabilitado}
               title={
                 enProforma
                   ? 'La venta con proforma se cierra con "Guardar Venta", no continúa a otra etapa.'
-                  : conTarjeta && !tarjetaConfirmada
-                    ? 'Confirmá los datos de la tarjeta para continuar.'
+                  : conTarjeta && !tarjetaCobrada
+                    ? 'La DIFERENCIA tiene que quedar en $ 0 para continuar: cargá o ajustá las tarjetas.'
                     : undefined
               }
               onClick={continuar}

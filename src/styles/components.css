@@ -74,7 +74,8 @@
   color: var(--text-dark);
 }
 .selbox--fix {
-  width: 220px;
+  /* 240px: entra el nombre de vendedor más largo sin partirse en dos renglones. */
+  width: 240px;
   height: 38px;
   box-sizing: border-box;
   justify-content: space-between;
@@ -86,6 +87,22 @@
 .selbox-ph {
   color: var(--text-gray);
   font-weight: 500;
+}
+/* Valor elegido del selector (ícono + nombre). Es UN solo hijo del botón: el `space-between` de
+   `.selbox--fix` sólo debe separar el valor del chevron, nunca el ícono de su nombre. */
+.selbox-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* Sin esto el texto no puede encogerse y desborda el ancho fijo del selector. */
+  min-width: 0;
+  overflow: hidden;
+}
+/* El nombre se recorta con puntos suspensivos antes que pasar a un segundo renglón. */
+.selbox-val-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== Stepper ===== */

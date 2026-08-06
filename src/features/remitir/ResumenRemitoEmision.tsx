@@ -123,10 +123,8 @@ export function ResumenRemitoEmision({
             </Fila>
           </>
         ) : envio.responsable === 'CLIENTE' ? (
-          <>
-            <Fila label="Entrega">Cliente responsable</Fila>
-            <Fila label="Responsable">{envio.responsableNombre || '—'}</Fila>
-          </>
+          /* El cliente retira: no hay datos de transporte que informar. */
+          <Fila label="Entrega">Cliente responsable (retira el cliente)</Fila>
         ) : (
           <Fila label="Entrega">—</Fila>
         )}

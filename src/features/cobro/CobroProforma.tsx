@@ -80,7 +80,8 @@ export function CobroProforma() {
   // Rentabilidad general: promedio ponderado por el total de cada línea (ya bonificado).
   const rentabilidadGeneral = useMemo(() => {
     if (neto <= 0) return 0
-    return Math.round(filas.reduce((acc, f) => acc + f.rentabilidad * f.totalLinea, 0) / neto)
+    // Con decimales: redondear a entero asignaba una rentabilidad general incorrecta en la proforma.
+    return round2(filas.reduce((acc, f) => acc + f.rentabilidad * f.totalLinea, 0) / neto)
   }, [filas, neto])
 
   const [emitiendo, setEmitiendo] = useState(false)

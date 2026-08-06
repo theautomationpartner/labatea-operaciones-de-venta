@@ -1,143 +1,268 @@
 /**
- * Capa de servicio del cierre de venta. El flujo se bifurca por el tipo de cobro y cada
- * camino escribe en tableros distintos:
+ * Capa de servicio del cierre de venta. SIEMPRE se crea un recibo en "➡️Recibos y Cobros"
+ * (18421035524), sea el cobro simultáneo o posterior; lo que cambia es el payload y los
+ * subelementos:
  *
- *   SIMULTÁNEO → un recibo en "➡️Recibos y Cobros" (18421035524) con un subelemento por
- *                movimiento de pago. Exige que lo cobrado sea el 100% del total.
- *   POSTERIOR  → ningún recibo. Se crea la deuda en "💰Fact Vtas Pends de Cobro"
- *                (18421035508) y su movimiento en la Cta Cte del cliente (18421858762).
+ *   SIMULTÁNEO → recibo con los totales de la venta, el vínculo a la venta creada y un
+ *                subelemento por movimiento de pago (cada medio completa sus columnas).
+ *   POSTERIOR  → recibo apuntando a la deuda de "💰Fact Vtas Pends de Cobro" (18421035508),
+ *                SIN subelementos.
+ *
+ * El recibo es un efecto SECUNDARIO de la venta: se dispara una vez que la venta existe y sin
+ * bloquear al usuario. En el POSTERIOR hay una dependencia real —el id de la deuda—, así que esa
+ * sí se espera antes de disparar el recibo.
  *
  * Igual que el resto de la capa, sin token (`mondayHabilitado`) no se escribe nada y se
  * devuelven ids simulados para que el prototipo siga corriendo en local.
  */
-import type { BalancePago } from '@/lib/cobros'
+import { cuitCompleto, esRetencion, valorPorCuota, type BalancePago } from '@/lib/cobros'
+import { aIso } from '@/lib/dates'
 import { round2 } from '@/lib/format'
+import type { MovimientoPago, TipoPago } from '@/types'
 import {
   BOARDS,
   COL,
   personCol,
+  CHEQUE_ORIGEN_LABEL,
   FACT_PENDIENTE_ESTADO_INDEX,
   FORMA_PAGO_LABEL,
+  TIPO_COBRO_LABEL,
 } from './columns'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { mondayApi, mondayHabilitado, mondaySubirArchivo } from './sdk'
 
-/* ===== 1) Cobro SIMULTÁNEO: recibo + movimientos ===== */
+/* ===== 1) El recibo del cobro (board 18421035524) ===== */
 
 /** Movimientos por solicitud, igual que en los subitems del presupuesto. */
 const MOVIMIENTOS_POR_TANDA = 25
 
-export interface DatosCobroSimultaneo {
-  /** Total a cobrar de la venta. En simultáneo tiene que coincidir con lo cancelado. */
-  totalACobrar: number
-  /**
-   * Deuda saldada por el cobro: lo que entra a caja más los descuentos por forma de pago.
-   * Es el número que tiene que dar el 100%, no la caja sola. Lo que efectivamente entra
-   * viaja en el `montoCobrado` de cada movimiento.
-   */
-  cancelado: number
-  balances: BalancePago[]
-  /** Ítem de Cta Cte del cliente, para dejar el recibo conectado a su cuenta. */
-  ctaCteId?: string
-  /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
-  vendedorId?: string | null
-  /** Nombre del cliente: es el nombre provisorio del ítem hasta que se lo renombra. */
-  nombreCliente: string
+/** Relación a un ítem de otro board, o `null` si el id no sirve (para poder omitir la columna). */
+const relacion = (id: string | null | undefined): { item_ids: number[] } | null => {
+  const n = Number(id)
+  return Number.isFinite(n) && n > 0 ? { item_ids: [n] } : null
 }
 
-/** Un movimiento de pago tal como se escribe en el subelemento del recibo. */
-const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
-  const cv: Record<string, unknown> = {
-    [COL.cobroSub.formaPago]: { label: FORMA_PAGO_LABEL[b.movimiento.formaPago] },
-    [COL.cobroSub.importe]: String(round2(b.movimiento.importe)),
-    [COL.cobroSub.descuento]: String(b.descuentoPct),
-    [COL.cobroSub.montoCobrado]: String(round2(b.montoCobrado)),
+/** Fecha dd/MM/yyyy → el `{ date: 'yyyy-MM-dd' }` que piden las columnas date, o null si no hay. */
+const fechaCol = (valor: string | undefined): { date: string } | null => {
+  const iso = aIso(valor ?? '')
+  return iso ? { date: iso } : null
+}
+
+/** Dropdown por etiqueta. Las que no están en el board se crean (`create_labels_if_missing`). */
+const dropdown = (label: string | null | undefined): { labels: string[] } | null =>
+  label?.trim() ? { labels: [label.trim()] } : null
+
+/**
+ * Columna `file` donde va el comprobante de un movimiento, o null si ese medio no adjunta nada
+ * (el efectivo). Las columnas de archivo NO se completan acá: se llenan después, subiendo el
+ * binario (ver `subirComprobantes`).
+ */
+const columnaComprobante = (m: MovimientoPago): string | null => {
+  if (m.formaPago === 'Transferencia') return COL.cobroSub.compTransferencia
+  if (m.formaPago === 'Tarjeta de débito' || m.formaPago === 'Tarjeta de crédito') {
+    return COL.cobroSub.cupon
   }
-  if (b.movimiento.referencia) cv[COL.cobroSub.referencia] = b.movimiento.referencia
-  // El vencimiento sólo existe en el cheque, y la columna date lo quiere en yyyy-MM-dd.
-  const [d, m, y] = b.movimiento.chequeVencimiento.split('/')
-  if (d && m && y) {
-    cv[COL.cobroSub.vencimiento] = { date: `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` }
-  }
-  return cv
+  // Todas las retenciones (IVA, IIBB, GAN y las que se sumen) comparten la misma columna.
+  if (esRetencion(m.formaPago)) return COL.cobroSub.compRetencion
+  return null
 }
 
 /**
- * Crea el recibo del cobro simultáneo: la cabecera con el importe que cancela y un
- * subelemento por movimiento de pago, todos en la misma solicitud (alias `m0`, `m1`…).
- *
- * La validación del 100% NO vive acá: es una regla de negocio (`cobroCompleto` en
- * `lib/cobros`) y la vista bloquea el registro antes de llamar a esta función. Igual se
- * revalida para no escribir un recibo incompleto si alguien la llama de otro lado.
+ * Columnas del subelemento de un movimiento de pago. Las dos primeras (medio e importe) las lleva
+ * todo movimiento; el resto depende del medio de cobro.
  */
-export async function registrarCobroSimultaneo(
-  datos: DatosCobroSimultaneo,
-): Promise<{ id: string }> {
-  const { totalACobrar, cancelado, balances, ctaCteId, vendedorId } = datos
-  if (round2(cancelado) !== round2(totalACobrar)) {
-    throw new Error('El cobro simultáneo exige cancelar el 100% del total de la venta.')
+const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
+  const m: MovimientoPago = b.movimiento
+  const cv: Record<string, unknown> = {
+    [COL.cobroSub.formaPago]: { label: FORMA_PAGO_LABEL[m.formaPago] ?? m.formaPago },
+    [COL.cobroSub.importe]: String(round2(m.importe)),
   }
+
+  if (m.formaPago === 'Transferencia') {
+    const banco = relacion(m.cuentaPropiaId)
+    if (banco) cv[COL.cobroSub.bancoAcreditacion] = banco
+    return cv
+  }
+
+  if (m.formaPago === 'Cheque') {
+    // El número de cheque va a una columna numérica: sólo los dígitos.
+    const nro = (m.numeroCheque ?? '').replace(/\D/g, '')
+    if (nro) cv[COL.cobroSub.nroCheque] = nro
+    /* El CUIT va a una columna de TEXTO, así que se escribe tal como se cargó, con los guiones del
+       formato ("20-45037195-6"). Sólo se manda completo: un CUIT a medio cargar no es un dato. */
+    if (cuitCompleto(m.cuitEmisor)) cv[COL.cobroSub.cuit] = m.cuitEmisor
+    const emision = fechaCol(m.fechaEmisionCheque)
+    if (emision) cv[COL.cobroSub.fechaEmisionCheque] = emision
+    const vencimiento = fechaCol(m.chequeVencimiento)
+    if (vencimiento) cv[COL.cobroSub.vencimientoCheque] = vencimiento
+    const origen = dropdown(m.formatoCheque ? CHEQUE_ORIGEN_LABEL[m.formatoCheque] : null)
+    if (origen) cv[COL.cobroSub.origenCheque] = origen
+    const banco = dropdown(m.bancoEmisor)
+    if (banco) cv[COL.cobroSub.bancoEmisorCheque] = banco
+    return cv
+  }
+
+  if (m.formaPago === 'Tarjeta de débito' || m.formaPago === 'Tarjeta de crédito') {
+    // Banco EMISOR de la tarjeta (dropdown de texto libre), distinto del banco de acreditación.
+    const bancoEmisor = dropdown(m.bancoTarjeta)
+    if (bancoEmisor) cv[COL.cobroSub.bancoEmisorCheque] = bancoEmisor
+    if (m.numeroTarjeta) cv[COL.cobroSub.nroTarjeta] = m.numeroTarjeta
+    if (m.titularTarjeta) cv[COL.cobroSub.titularTarjeta] = m.titularTarjeta
+    const tipo = dropdown(m.tipoTarjeta)
+    if (tipo) cv[COL.cobroSub.tipoTarjeta] = tipo
+    const vencimiento = fechaCol(m.vencimientoTarjeta)
+    if (vencimiento) cv[COL.cobroSub.vencimientoTarjeta] = vencimiento
+    // Banco de ACREDITACIÓN (cuenta propia de La Batea donde impacta el cobro).
+    const banco = relacion(m.cuentaPropiaId)
+    if (banco) cv[COL.cobroSub.bancoAcreditacion] = banco
+    // El crédito suma el plan de cuotas: cantidad y cuánto sale cada una.
+    if (m.formaPago === 'Tarjeta de crédito' && m.cuotas && m.cuotas > 0) {
+      cv[COL.cobroSub.cuotas] = String(m.cuotas)
+      cv[COL.cobroSub.valorCuota] = String(valorPorCuota(m.importe, m.cuotas) ?? 0)
+    }
+    return cv
+  }
+
+  /* Efectivo y retenciones no agregan columnas de VALOR: les alcanza con el medio y el importe.
+     La retención sí adjunta su comprobante, pero eso es un archivo y va en la subida posterior. */
+  return cv
+}
+
+export interface DatosCobro {
+  /** SIMULTANEO escribe totales y subelementos; POSTERIOR, el vínculo a la deuda. */
+  tipoPago: TipoPago
+  /** Cliente de la venta: va a la relación "🤖Persona" del recibo. */
+  clienteId: string
+  /** Nombre del cliente: es el nombre provisorio del ítem hasta que lo renombra la customKey. */
+  nombreCliente: string
+  /** Vendedor de la operación (usuario de Monday), para la columna Person. */
+  vendedorId?: string | null
+  /** SIMULTÁNEO: la venta recién creada, que este recibo cobra. */
+  ventaId?: string | null
+  /** POSTERIOR: la deuda de "Fact Vtas Pends de Cobro" que respalda el cobro. */
+  vtaPendienteId?: string | null
+  /** SIMULTÁNEO: total de la venta y lo efectivamente cobrado (la diferencia se deriva). */
+  totalVenta?: number
+  totalCobrado?: number
+  /** SIMULTÁNEO: un subelemento por movimiento de pago. En POSTERIOR se ignora. */
+  balances?: BalancePago[]
+}
+
+/**
+ * Crea el recibo del cobro y, si es SIMULTÁNEO, sus movimientos. El ítem raíz nace con el nombre
+ * del cliente; su ID definitivo ("RECIBO-01") lo asigna la customKey del board.
+ */
+export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }> {
+  const {
+    tipoPago,
+    clienteId,
+    nombreCliente,
+    vendedorId,
+    ventaId,
+    vtaPendienteId,
+    totalVenta = 0,
+    totalCobrado = 0,
+    balances = [],
+  } = datos
   if (!mondayHabilitado()) return { id: `mock-cobro-${Date.now()}` }
 
-  /* La cabecera lleva el importe que el recibo cancela (el total de la venta), igual que
-     antes: lo que entra a caja se lee sumando el "monto cobrado" de los movimientos. */
+  const esSimultaneo = tipoPago === 'SIMULTANEO'
   const cabecera: Record<string, unknown> = {
-    [COL.cobro.totalCobrado]: String(round2(cancelado)),
+    [COL.cobro.tipoCobro]: { label: TIPO_COBRO_LABEL[tipoPago] },
   }
-  if (ctaCteId) cabecera[COL.cobro.ctaCte] = { item_ids: [Number(ctaCteId)] }
-  // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
+  const persona = relacion(clienteId)
+  if (persona) cabecera[COL.cobro.cliente] = persona
   const personaVendedor = personCol(vendedorId)
   if (personaVendedor) cabecera[COL.cobro.vendedor] = personaVendedor
 
-  // El ítem raíz nace con el nombre general del tablero; su ID lo asigna la customKey del board.
+  if (esSimultaneo) {
+    /* La venta ya existe cuando se crea el recibo, así que el vínculo va de entrada: no hace falta
+       un segundo update para cerrarlo. */
+    const venta = relacion(ventaId)
+    if (venta) cabecera[COL.cobro.venta] = venta
+    cabecera[COL.cobro.totalVenta] = String(round2(totalVenta))
+    cabecera[COL.cobro.totalCobrado] = String(round2(totalCobrado))
+    cabecera[COL.cobro.diferencia] = String(round2(totalVenta - totalCobrado))
+  } else {
+    // POSTERIOR: el recibo cuelga de la deuda que quedó pendiente de cobro.
+    const pendiente = relacion(vtaPendienteId)
+    if (pendiente) cabecera[COL.cobro.vtaPendiente] = pendiente
+  }
+
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
-      create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
+      create_item(board_id: $boardId, item_name: $name, column_values: $cv, create_labels_if_missing: true) { id }
     }`,
-    { boardId: BOARDS.cobros, name: 'Recibo', cv: JSON.stringify(cabecera) },
+    { boardId: BOARDS.cobros, name: nombreCliente, cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
 
-  // Los movimientos van en tandas, en una sola solicitud cada una. Cada subelemento se nombra con
-  // su forma de pago.
-  for (let desde = 0; desde < balances.length; desde += MOVIMIENTOS_POR_TANDA) {
-    const tanda = balances.slice(desde, desde + MOVIMIENTOS_POR_TANDA)
-    const alias = tanda.map((_, i) => `m${desde + i}`)
-    const variables: Record<string, unknown> = { parentId: itemId }
-    const partes = tanda.map((b, i) => {
-      const a = alias[i]
-      variables[`n${desde + i}`] = b.movimiento.formaPago
-      variables[`c${desde + i}`] = JSON.stringify(columnasMovimiento(b))
-      return `${a}: create_subitem(parent_item_id: $parentId, item_name: $n${desde + i}, column_values: $c${desde + i}, create_labels_if_missing: true) { id }`
-    })
-    const declaraciones = tanda
-      .map((_, i) => `$n${desde + i}: String!, $c${desde + i}: JSON!`)
-      .join(', ')
-    await mondayApi(
-      `mutation ($parentId: ID!, ${declaraciones}) { ${partes.join('\n')} }`,
-      variables,
-    )
+  /* Se detalla UN subelemento por cada movimiento cargado, sin importar el tipo de cobro: en la
+     venta con TARJETA (que es POSTERIOR) cada CUPÓN es un subelemento; en la cuenta corriente sin
+     cobro en el acto no hay movimientos y no se crea ninguno. Los comprobantes (cupones/archivos)
+     van en un segundo paso, porque necesitan el id del subelemento ya creado. */
+  if (balances.length > 0) {
+    const subitemIds = await crearMovimientos(itemId, balances)
+    await subirComprobantes(subitemIds, balances)
   }
 
   return { id: itemId }
 }
 
 /**
- * Deja el recibo apuntando a la venta que cobra ("📈Ventas" en el board de Cobros). Se hace
- * al final del cierre porque la venta nace después que el recibo: cuando se registra el cobro
- * todavía no existe el ítem al que linkear.
+ * Un subelemento por movimiento de pago, en tandas de una sola solicitud cada una (alias `m0`,
+ * `m1`…). Cada subelemento se nombra con su medio de cobro. Devuelve el id de cada subelemento
+ * en el MISMO orden que los balances, para poder colgarles después su comprobante.
  */
-export async function vincularVentaAlCobro(cobroId: string, ventaId: string): Promise<void> {
-  if (!mondayHabilitado() || !cobroId || !ventaId) return
-  await mondayApi(
-    `mutation ($itemId: ID!, $boardId: ID!, $cv: JSON!) {
-      change_multiple_column_values(item_id: $itemId, board_id: $boardId, column_values: $cv) { id }
-    }`,
-    {
-      itemId: cobroId,
-      boardId: BOARDS.cobros,
-      cv: JSON.stringify({ [COL.cobro.venta]: { item_ids: [Number(ventaId)] } }),
-    },
-  )
+async function crearMovimientos(itemId: string, balances: BalancePago[]): Promise<string[]> {
+  const ids: string[] = []
+  for (let desde = 0; desde < balances.length; desde += MOVIMIENTOS_POR_TANDA) {
+    const tanda = balances.slice(desde, desde + MOVIMIENTOS_POR_TANDA)
+    const variables: Record<string, unknown> = { parentId: itemId }
+    const partes = tanda.map((b, i) => {
+      const n = desde + i
+      variables[`n${n}`] = b.movimiento.formaPago
+      variables[`c${n}`] = JSON.stringify(columnasMovimiento(b))
+      return `m${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $c${n}, create_labels_if_missing: true) { id }`
+    })
+    const declaraciones = tanda
+      .map((_, i) => `$n${desde + i}: String!, $c${desde + i}: JSON!`)
+      .join(', ')
+    const data = await mondayApi<Record<string, { id: string } | null>>(
+      `mutation ($parentId: ID!, ${declaraciones}) { ${partes.join('\n')} }`,
+      variables,
+    )
+    // Los alias se leen por posición: `m0`, `m1`… mantienen el orden de los balances.
+    tanda.forEach((_, i) => ids.push(data[`m${desde + i}`]?.id ?? ''))
+  }
+  return ids
+}
+
+/**
+ * Sube el comprobante de cada movimiento a la columna `file` que le corresponde (comprobante de
+ * transferencia o cupón de tarjeta). Es el único camino: `column_values` sólo transporta JSON.
+ *
+ * Cada subida es INDEPENDIENTE y best-effort: que falle el comprobante de un movimiento no puede
+ * tumbar los demás ni al recibo, que ya quedó creado con todos sus datos.
+ */
+async function subirComprobantes(subitemIds: string[], balances: BalancePago[]): Promise<void> {
+  const subidas = balances.flatMap((b, i) => {
+    const archivo = b.movimiento.comprobanteArchivo
+    const columna = columnaComprobante(b.movimiento)
+    /* El id va INLINE en la mutación: en un multipart la única variable es el archivo. Por eso se
+       exige que sea numérico, y no un texto cualquiera metido en la query. */
+    const subitemId = Number(subitemIds[i])
+    if (!archivo || !columna || !Number.isFinite(subitemId) || subitemId <= 0) return []
+    return [
+      mondaySubirArchivo(
+        `mutation ($file: File!) {
+          add_file_to_column(item_id: ${subitemId}, column_id: "${columna}", file: $file) { id }
+        }`,
+        archivo,
+      ),
+    ]
+  })
+  // `allSettled`: se intentan todas y ninguna cancela a las otras.
+  await Promise.allSettled(subidas)
 }
 
 /* ===== 2) Caja (pendiente): conciliación del cobro ===== */
@@ -165,95 +290,35 @@ export async function vincularVentaAlCobro(cobroId: string, ventaId: string): Pr
  * }
  */
 
-/* ===== 3) Cobro POSTERIOR: deuda + movimiento de cuenta corriente ===== */
-
-/**
- * Saldo final del último movimiento de la Cta Cte del cliente. Si la cuenta no tiene
- * movimientos, el saldo anterior del primero es 0. "Último" es el de creación más reciente,
- * no el que esté último en el board.
- */
-export async function getSaldoAnteriorCtaCte(ctaCteId: string): Promise<number> {
-  if (!mondayHabilitado()) return 0
-  const data = await mondayApi<{
-    items: {
-      subitems: { id: string; created_at: string; column_values: { text: string | null }[] }[]
-    }[]
-  }>(
-    `query ($ids: [ID!]) {
-      items(ids: $ids) {
-        subitems {
-          id created_at
-          column_values(ids: ["${COL.ctaCteSub.saldoFinal}"]) { text }
-        }
-      }
-    }`,
-    { ids: [ctaCteId] },
-  )
-  const subitems = data.items[0]?.subitems ?? []
-  // Sin movimientos previos, el primero arranca de cero.
-  if (subitems.length === 0) return 0
-  /* Del más nuevo al más viejo, el primero que tenga saldo final cargado. Un movimiento
-     recién creado y todavía sin calcular no debe arrastrar el saldo del cliente a cero. */
-  const porFecha = [...subitems].sort((a, b) => b.created_at.localeCompare(a.created_at))
-  for (const sub of porFecha) {
-    const texto = String(sub.column_values[0]?.text ?? '').trim()
-    if (!texto) continue
-    const saldo = Number(texto.replace(/[^\d.-]/g, ''))
-    if (Number.isFinite(saldo)) return saldo
-  }
-  return 0
-}
+/* ===== 3) Cobro POSTERIOR: la deuda pendiente de cobro ===== */
 
 export interface DatosDeudaPosterior {
-  /** Ítem de Cta Cte del cliente: es la cuenta que se endeuda. */
-  ctaCteId: string
+  /** Ítem de la venta (board 18421035510) que deja esta deuda. Es lo que la identifica. */
+  ventaId: string
   /** Importe total a cobrar de la venta: la deuda que se genera. */
   total: number
-  /** Nombre del movimiento en la cuenta corriente (p. ej. el cliente y la fecha). */
+  /** Nombre del ítem de deuda (p. ej. el cliente y la fecha). */
   concepto: string
 }
 
 /**
- * Camino POSTERIOR: no se crea ningún recibo. Se endeuda la cuenta corriente del cliente y
- * se deja la factura pendiente de cobro que la respalda, en ese orden:
+ * Camino POSTERIOR: la factura queda pendiente de cobro en "💰Fact Vtas Pends de Cobro",
+ * conectada a la VENTA que la originó y con el estado en "Pend de Cobrar 100%".
  *
- *   1. Subelemento en la Cta Cte con el saldo anterior arrastrado, la venta en "Ventas" y el
- *      saldo final ya calculado (saldo inicial + ventas − cobros).
- *   2. Ítem en "💰Fact Vtas Pends de Cobro" conectado a la Cta Cte, con el total de la venta
- *      y el estado en "Pend de Cobrar 100%".
+ * La deuda NO se conecta a la cuenta corriente del cliente ("💵Cta Cte Cliente",
+ * board_relation_mkwbweqx): ese vínculo —y el asiento en la cuenta— los resuelve el propio
+ * tablero a partir de la venta, así que la app no los escribe.
+ *
+ * Por eso hace falta el id de la venta, y por eso este paso corre DESPUÉS de que la creación de
+ * la venta terminó. Su propio id es la única dependencia real del recibo POSTERIOR (va en
+ * "💰Vtas Pends de Cobro" del board de Cobros), y por eso también se espera antes del recibo.
  */
 export async function registrarDeudaPosterior(
   datos: DatosDeudaPosterior,
-): Promise<{ deudaId: string; movimientoId: string; saldoAnterior: number }> {
-  const { ctaCteId, total, concepto } = datos
-  if (!mondayHabilitado()) {
-    return { deudaId: `mock-deuda-${Date.now()}`, movimientoId: `mock-mov-${Date.now()}`, saldoAnterior: 0 }
-  }
+): Promise<{ deudaId: string }> {
+  const { ventaId, total, concepto } = datos
+  if (!mondayHabilitado()) return { deudaId: `mock-deuda-${Date.now()}` }
 
-  /* 1) El movimiento de la cuenta corriente arrastra el saldo del movimiento anterior y deja
-        calculado el suyo: saldo inicial + ventas − cobros. Esta deuda no ingresa dinero, así
-        que los cobros van en cero. El saldo final se escribe junto con el resto de las
-        columnas: si quedara vacío, el movimiento siguiente arrancaría de la nada. */
-  const saldoAnterior = await getSaldoAnteriorCtaCte(ctaCteId)
-  const cobros = 0
-  const saldoFinal = saldoAnterior + total - cobros
-  const movimiento = await mondayApi<{ create_subitem: { id: string } }>(
-    `mutation ($parentId: ID!, $name: String!, $cv: JSON!) {
-      create_subitem(parent_item_id: $parentId, item_name: $name, column_values: $cv) { id }
-    }`,
-    {
-      parentId: ctaCteId,
-      name: concepto,
-      cv: JSON.stringify({
-        [COL.ctaCteSub.saldoAnterior]: String(round2(saldoAnterior)),
-        [COL.ctaCteSub.ventas]: String(round2(total)),
-        [COL.ctaCteSub.cobros]: String(round2(cobros)),
-        [COL.ctaCteSub.saldoFinal]: String(round2(saldoFinal)),
-      }),
-    },
-  )
-
-  // 2) La factura pendiente de cobro, conectada a la cuenta corriente del cliente.
   const deuda = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
       create_item(board_id: $boardId, item_name: $name, column_values: $cv) { id }
@@ -262,7 +327,7 @@ export async function registrarDeudaPosterior(
       boardId: BOARDS.factPendientes,
       name: concepto,
       cv: JSON.stringify({
-        [COL.factPendiente.ctaCte]: { item_ids: [Number(ctaCteId)] },
+        [COL.factPendiente.venta]: { item_ids: [Number(ventaId)] },
         [COL.factPendiente.total]: String(round2(total)),
         // Nace sin un peso cobrado: el estado lo irán moviendo los cobros posteriores.
         [COL.factPendiente.estado]: { index: FACT_PENDIENTE_ESTADO_INDEX.pendienteDeCobro },
@@ -270,9 +335,5 @@ export async function registrarDeudaPosterior(
     },
   )
 
-  return {
-    deudaId: deuda.create_item.id,
-    movimientoId: movimiento.create_subitem.id,
-    saldoAnterior,
-  }
+  return { deudaId: deuda.create_item.id }
 }

@@ -6,6 +6,7 @@
 import {
   CATEGORIAS,
   CLIENTES,
+  COMISIONES_MOCK,
   CONTACTOS_INICIALES,
   DIAS_VIGENCIA_INICIAL,
   PRESUPUESTOS,
@@ -19,6 +20,7 @@ import type {
   ActividadCliente,
   CampoFiltro,
   Cliente,
+  ComisionesVenta,
   CondicionPago,
   Contacto,
   CuentaBancaria,
@@ -39,6 +41,8 @@ import {
   COL,
   personCol,
   CONFIG_DESCUENTO_ITEM,
+  CONFIG_GESTION_INDEX,
+  CONFIG_TIPO_COMISION_INDEX,
   CTA_BANCARIA_ACTIVA_INDEX,
   CONFIG_DIAS_VIGENCIA_ITEM,
   CONFIG_TIPO_MEDIOS_PAGO_INDEX,
@@ -178,6 +182,49 @@ export async function getDescuentosPago(): Promise<DescuentosPago> {
 }
 
 /**
+ * Tasas de comisión del vendedor, del tablero de configuración: los ítems cuyo "Tipo de Config" es
+ * "Comision por Venta". Cada uno trae su "Valor %" y su "Tipo de Gestion", que es el que decide a
+ * qué tipo de venta aplica: "Activa" → CON PRESUPUESTO PREVIO, "Pasiva" → DIRECTA.
+ *
+ * Es UNA tasa por tipo de venta para toda la operación: el producto sólo define si comisiona.
+ * Lo que el tablero no traiga queda en 0 (no se inventa una comisión que nadie configuró).
+ */
+export async function getComisionesVenta(): Promise<ComisionesVenta> {
+  const vacio: ComisionesVenta = { activa: 0, pasiva: 0 }
+  if (!mondayHabilitado()) return { ...COMISIONES_MOCK }
+  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
+    `query {
+      boards(ids: [${BOARDS.config}]) {
+        items_page(
+          limit: 50,
+          query_params: {rules: [{column_id: "${COL.config.tipo}", compare_value: [${CONFIG_TIPO_COMISION_INDEX}], operator: any_of}]}
+        ) {
+          items {
+            id name
+            column_values(ids: ["${COL.config.valorPct}","${COL.config.tipoGestion}"]) {
+              id text
+              ... on StatusValue { index }
+            }
+          }
+        }
+      }
+    }`,
+  )
+  const comisiones = { ...vacio }
+  for (const item of data.boards[0].items_page.items) {
+    const c = byId(item)
+    const texto = c[COL.config.valorPct]?.text
+    // Sin valor cargado el ítem no aporta tasa; un 0 explícito sí es una comisión válida (0%).
+    if (texto == null || texto.trim() === '') continue
+    /* El tipo de gestión se lee por ÍNDICE, no por texto: aguanta que reescriban la etiqueta. */
+    const gestion = c[COL.config.tipoGestion]?.index
+    if (gestion === CONFIG_GESTION_INDEX.activa) comisiones.activa = num(texto)
+    else if (gestion === CONFIG_GESTION_INDEX.pasiva) comisiones.pasiva = num(texto)
+  }
+  return comisiones
+}
+
+/**
  * Cuentas bancarias ACTIVAS del cliente. Los dos filtros van en la consulta: el estado por
  * índice ("Activa" es el 1 de `color_mm57wxbx`) y la relación con Personas, que acota al
  * cliente. Las cuentas inactivas no llegan ni a la app.
@@ -304,9 +351,10 @@ function mapCliente(item: MondayItem): Cliente {
     agenteRetencion: agente.trim().length > 0,
     // Sin condición de pago en el board llega null: no se asume ninguna, y el paso lo frena.
     condicionPago: (c[COL.cliente.condPago]?.text?.trim() || null) as CondicionPago | null,
+    /* "Recibimos CHEQUE": sólo un "NO" explícito bloquea el cobro con cheque. Sin la columna
+       cargada NO se asume lo restrictivo: se deja operar igual que siempre. */
+    aceptaCheques: (c[COL.cliente.aceptaCheques]?.text ?? '').trim().toUpperCase() !== 'NO',
     limit: limite,
-    // Ítem de Cta Cte: es el que se linkea en la deuda y donde van sus movimientos.
-    ctaCteId: cta?.id,
     // Deuda real de la cuenta corriente: lo facturado menos lo cobrado.
     saldoCtaCte,
     // Lo que el cliente ya tiene tomado de su línea (saldo + remitos por facturar).
@@ -408,6 +456,10 @@ const columnaPrecio = (lista: ListaPrecio): string => COL.precioLista[lista]
 function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Producto {
   const c = byId(item)
   const margenCol = COL.margen[lista]
+  /* Ítem de "🧮Stock y Movimientos" conectado al producto: de ahí salen las tres cantidades de
+     stock. Viene anidado en la relación, así que no hace falta una segunda consulta. */
+  const itemStock = c[COL.producto.stock]?.linked_items?.[0]
+  const stock = itemStock?.column_values ? byId(itemStock) : {}
   return {
     // ID del ítem en Monday: lo necesita el subitem del presupuesto para linkear el producto.
     id: item.id,
@@ -437,21 +489,22 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     moneda: valor(c[COL.producto.moneda]),
     // La alícuota viaja con el producto: es la que se declara en la línea del comprobante.
     iva: numCol(c[COL.producto.iva]),
-    // Comisión del producto (para la venta DIRECTA se usa el % de venta pasiva).
+    /* El producto SÓLO dice si comisiona ("SI"); la tasa es única por tipo de venta y vive en el
+       tablero de configuración. Es la fuente de la venta DIRECTA (armada desde el catálogo). */
     comisionable: valor(c[COL.producto.comisionable]).trim().toUpperCase() === 'SI',
-    porcComActiva: numCol(c[COL.producto.porcComActiva]),
-    porcComPasiva: numCol(c[COL.producto.porcComPasiva]),
     rubro: valor(c[COL.producto.rubro]),
     subrubro: valor(c[COL.producto.subrubro]),
     categoria: valor(c[COL.producto.categoria]),
     // U.M. y peso los usa el remito (documenta cantidades y peso, no importes).
     um: valor(c[COL.producto.unidadMedida]),
     peso: numCol(c[COL.producto.peso]),
-    fisico: numCol(c[COL.producto.stockFisico]),
-    comercial: numCol(c[COL.producto.stockComercial]),
-    disponible: numCol(c[COL.producto.stockDisponible]),
-    // Ítem de stock del producto (para afectar el stock al cerrar la venta DIRECTA).
-    stockId: c[COL.producto.stock]?.linked_items?.[0]?.id,
+    /* Las tres cantidades de stock son fórmulas del ítem conectado en "🧮Stock y Movimientos"
+       (board 18421752251): el maestro NO las tiene. Sin ítem de stock conectado quedan en 0. */
+    fisico: numCol(stock[COL.stockItem.fisico]),
+    comercial: numCol(stock[COL.stockItem.comercial]),
+    disponible: numCol(stock[COL.stockItem.disponible]),
+    // El mismo ítem de stock, para afectarlo al cerrar la venta DIRECTA.
+    stockId: itemStock?.id,
   }
 }
 
@@ -474,26 +527,35 @@ const columnasProducto = (lista: ListaPrecio): string =>
     COL.producto.categoria,
     COL.producto.unidadMedida,
     COL.producto.peso,
-    COL.producto.stockFisico,
-    COL.producto.stockComercial,
-    COL.producto.stockDisponible,
     COL.producto.proveedor,
     COL.producto.proveedorCodigo,
     COL.producto.tipoMercaderia,
     COL.producto.moneda,
     COL.producto.iva,
     COL.producto.comisionable,
-    COL.producto.porcComActiva,
-    COL.producto.porcComPasiva,
     COL.producto.stock,
     columnaPrecio(lista),
     ...(COL.margen[lista] ? [COL.margen[lista] as string] : []),
   ])
 
 /**
+ * Columnas del ítem de stock del producto ("🧮Stock y Movimientos"). Se piden ANIDADAS en la
+ * relación del maestro: una sola consulta trae el producto y su stock.
+ */
+const COLUMNAS_STOCK = JSON.stringify([
+  COL.stockItem.fisico,
+  COL.stockItem.comercial,
+  COL.stockItem.disponible,
+])
+
+/**
  * Selección GraphQL de un producto: es la misma en la primera página y en las siguientes.
  * `display_value` trae el valor calculado de fórmulas (precio, márgenes, stock) y de las
  * mirror (el código del proveedor).
+ *
+ * Los ítems conectados traen además las columnas de stock. Las pide para TODAS las relaciones
+ * del producto (proveedor incluido), pero eso no molesta: la API devuelve sólo las columnas que
+ * existen en el tablero del ítem, así que en el proveedor la lista vuelve vacía.
  */
 const seleccionProducto = (lista: ListaPrecio): string => `
   id name
@@ -501,7 +563,16 @@ const seleccionProducto = (lista: ListaPrecio): string => `
     id text
     ... on FormulaValue { display_value }
     ... on MirrorValue { display_value }
-    ... on BoardRelationValue { linked_items { id name } }
+    ... on BoardRelationValue {
+      linked_items {
+        id
+        name
+        column_values(ids: ${COLUMNAS_STOCK}) {
+          id text
+          ... on FormulaValue { display_value }
+        }
+      }
+    }
   }
 `
 
@@ -832,13 +903,9 @@ function mapContacto(item: MondayItem, documento: string): Contacto {
   }
 }
 
-/**
- * Trae todos los contactos del cliente (columna conectada `account_contact`) y los clasifica
- * según si aceptan el documento a emitir. `documento` es "Presupuesto" / "Factura" / "Remito".
- */
-export async function getContactosCliente(
+async function getContactosClienteImpl(
   clienteId: string,
-  documento = 'Presupuesto',
+  documento: string,
 ): Promise<Contacto[]> {
   if (!mondayHabilitado()) return CONTACTOS_INICIALES
   const data = await mondayApi<{ items: MondayItem[] }>(
@@ -859,6 +926,25 @@ export async function getContactosCliente(
   const linked = data.items[0]?.column_values[0]?.linked_items ?? []
   return linked.map((it) => mapContacto(it, documento))
 }
+
+/** Misma memoización por cliente, con el documento en la clave: cambia la clasificación de cada contacto. */
+const getContactosClienteMemo = memoPorCliente(
+  (a: { clienteId: string; documento: string }) => getContactosClienteImpl(a.clienteId, a.documento),
+  (a) => `${a.clienteId}·${a.documento}`,
+)
+
+/**
+ * Trae todos los contactos del cliente (columna conectada `account_contact`) y los clasifica
+ * según si aceptan el documento a emitir. `documento` es "Presupuesto" / "Factura" / "Remito".
+ *
+ * CACHEADO por cliente y documento: se consulta UNA sola vez y volver a la etapa de envío con el
+ * stepper reutiliza el resultado, sin volver a pegarle a Monday ni parpadear el "Cargando
+ * contactos…" (que además tapaba el estado de "Enviado exitosamente").
+ */
+export const getContactosCliente = (
+  clienteId: string,
+  documento = 'Presupuesto',
+): Promise<Contacto[]> => getContactosClienteMemo({ clienteId, documento })
 
 /* ===== 5) Presupuestos: leer estados y crear item ===== */
 
@@ -970,7 +1056,8 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   const cabecera: Record<string, unknown> = {
     [COL.presupuesto.cliente]: { item_ids: [Number(cliente.id)] },
     [COL.presupuesto.diasVigencia]: String(diasVigencia),
-    [COL.presupuesto.rentabilidad]: String(Math.round(rentabilidad)),
+    // Rentabilidad general CON DECIMALES (no se redondea a entero).
+    [COL.presupuesto.rentabilidad]: String(round2(rentabilidad)),
     [COL.presupuesto.vigencia]: { label: PRESUP_VIGENCIA_LABEL },
     // Un presupuesto recién creado no vendió nada: "0% Vendido" (por índice, no por label).
     [COL.presupuesto.estadoVenta]: { index: PRESUP_ESTADO_VENTA_INDEX.sinVender },
@@ -1243,10 +1330,12 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     /* El tipo de mercadería sale de la mirror del subelemento; si no vino, del propio producto
        conectado. De él dependen los comprobantes: la consignada se factura aparte. */
     tipo: valor(c[COL.presupuestoSub.tipoMercaderia]) || valor(prodCols[COL.producto.tipoMercaderia]),
-    // Comisionable: mirror "✋Comision" del subelemento (SI/NO). El % sale del Maestro.
+    /* Comisionable: mirror "🤖Comision" del subelemento del presupuesto (SI/NO). Es la fuente de
+       la venta CON PRESUPUESTO PREVIO; la tasa es única y sale de la configuración. */
     comisionable: valor(c[COL.presupuestoSub.comisionable]).trim().toUpperCase() === 'SI',
-    porcComActiva: numCol(prodCols[COL.producto.porcComActiva]),
-    porcComPasiva: numCol(prodCols[COL.producto.porcComPasiva]),
+    /* U.M. de la venta CON PRESUPUESTO PREVIO: mirror "🤖Unidad de Venta" del subelemento. Si el
+       presupuesto no la trae, se cae a la del propio producto conectado. */
+    um: valor(c[COL.presupuestoSub.unidadVenta]) || valor(prodCols[COL.producto.unidadMedida]),
     iva,
     proveedorId: proveedor?.id,
     proveedorNombre: proveedor?.name ?? '',
@@ -1336,13 +1425,13 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {
               linked_items {
                 id name
-                column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.tipoMercaderia}","${COL.producto.proveedor}","${COL.producto.porcComActiva}","${COL.producto.porcComPasiva}"]) {
+                column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.tipoMercaderia}","${COL.producto.proveedor}","${COL.producto.unidadMedida}"]) {
                   id text
                   ... on FormulaValue { display_value }
                   ... on BoardRelationValue { linked_items { id name } }

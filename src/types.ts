@@ -30,8 +30,10 @@ export interface UsuarioActual {
   /** ID numérico del usuario de Monday (query `me`). */
   id: string
   name: string
-  /** Admin de Monday: puede emitir a nombre de cualquier vendedor. */
+  /** Admin de la CUENTA de Monday (`is_admin`), distinto del equipo "Administradores". */
   isAdmin: boolean
+  /** Nombres de los equipos a los que pertenece. De acá sale el rol: ver `lib/permisos`. */
+  equipos: string[]
 }
 
 export type ActividadCliente = 'Activo' | 'Inactivo'
@@ -81,6 +83,18 @@ export type FormaPagoVenta =
 /** Qué tipo de tarjeta es una forma de pago con tarjeta. Lo usa el formulario del cobro. */
 export type TipoTarjetaCobro = 'DEBITO' | 'CREDITO'
 
+/**
+ * Tasas de comisión del vendedor, en puntos porcentuales. Salen del tablero de configuración
+ * (ítems "Comision por Venta") y son ÚNICAS para toda la operación: el producto sólo decide si
+ * comisiona o no, ya no con cuánto.
+ */
+export interface ComisionesVenta {
+  /** "Activa": la tasa de la venta CON PRESUPUESTO PREVIO. */
+  activa: number
+  /** "Pasiva": la tasa de la venta DIRECTA. */
+  pasiva: number
+}
+
 /** Cuenta bancaria propia de La Batea (ítems "Ctas Bancarias Propias" del board de config). */
 export interface CuentaPropia {
   id: string
@@ -105,11 +119,15 @@ export interface Cliente {
   /** Condición de pago pactada; encabeza el bloque financiero de la ficha. null = el cliente no
    *  la tiene asignada en el board, y sin ella no se puede armar la operación. */
   condicionPago: CondicionPago | null
+  /**
+   * "Recibimos CHEQUE" del CRM (color_mm5yb27h). En `false` el cliente NO acepta cheques y el
+   * medio queda inhabilitado en el cobro. Sin la columna cargada se asume `true`: la restricción
+   * la marca un "NO" explícito, no la ausencia del dato.
+   */
+  aceptaCheques: boolean
   limit: number
   /** Código del cliente en el sistema (columna text_mm542r9d). Es el que se muestra. */
   codigo: string
-  /** ID del ítem de Cuenta Corriente conectado. Es donde se registran los movimientos. */
-  ctaCteId?: string
   /** "🤖Saldo Cta Cte": la deuda real del cliente (ventas − cobros), sin esta operación. */
   saldoCtaCte: number
   /** "Linea Utilizada" de la Cta Cte: saldo + remitos pendientes de facturar. */
@@ -156,12 +174,9 @@ export interface Producto {
    * viaja con la línea: es la que se declara en cada línea del comprobante.
    */
   iva?: number
-  /** Si el producto admite comisión ("✋Comision" del maestro = "SI"). */
+  /** Si el producto admite comisión ("✋️Comision" del maestro = "SI"). El PORCENTAJE no vive acá:
+   *  es una tasa única por tipo de venta, configurada en el tablero del sistema. */
   comisionable?: boolean
-  /** % de comisión de la venta CON PRESUPUESTO PREVIO ("Porc Com Activa"). */
-  porcComActiva?: number
-  /** % de comisión de la venta DIRECTA ("Porc Com Pasiva"). */
-  porcComPasiva?: number
   /** Taxonomía del Maestro de Productos (columnas dropdown). Texto tal cual viene de Monday
    *  (puede traer varias etiquetas separadas por coma). Se usa para filtrar la búsqueda. */
   rubro?: string
@@ -215,16 +230,20 @@ export interface PresupuestoProducto {
   rent: number
   /** Descuento con el que se presupuestó la línea (%). */
   descuento?: number
+  /** Descuento por forma de pago con el que se armó la línea (%). Sólo lo trae la venta CON
+   *  PROFORMA, leído del subelemento de la proforma (numeric_mm5svkh2). */
+  descFormaPago?: number
+  /** Monto $ por unidad del descuento por producto, guardado en la proforma (numeric_mm5xxrkw). */
+  descProdMonto?: number
+  /** Monto $ por unidad del descuento por forma de pago, guardado en la proforma (numeric_mm5x79vt). */
+  descFpMonto?: number
   /** Moneda del producto presupuestado ("Pesos" / "Dolares"). Un producto en dólares se convierte
    *  a pesos al llevarlo a la venta CON PRESUPUESTO PREVIO (a la tasa del día). */
   moneda?: string
   /** Tipo de mercadería espejado del maestro: 'CO' (consignada) o 'COM'. */
   tipo?: string
-  /** Si el producto admite comisión (mirror "✋Comision" del subelemento del presupuesto). */
+  /** Si el producto admite comisión (mirror "🤖Comision" del subelemento del presupuesto = "SI"). */
   comisionable?: boolean
-  /** % de comisión del producto (del Maestro): Activa = CON PRESUPUESTO PREVIO, Pasiva = DIRECTA. */
-  porcComActiva?: number
-  porcComPasiva?: number
   /** Alícuota de IVA del producto, en %. Se declara en la línea del comprobante. */
   iva?: number
   /** Unidad de medida del producto. La venta CON PROFORMA la mapea del subelemento (lookup). */
@@ -296,6 +315,9 @@ export interface RemitoProducto {
   um?: string
   /** Tipo de mercadería del producto remitido: 'CO' (consignada) o 'COM'. */
   tipo?: string
+  /** El producto comisiona ("Comision" = SI en el Maestro, espejada en el subelemento). Habilita la
+   *  comisión al facturar la venta DIRECTA con entrega ANTERIOR. */
+  comisionable?: boolean
   /** Alícuota de IVA del producto, en %. Se declara en la línea del comprobante. */
   iva?: number
   /** Proveedor del producto: la mercadería consignada se factura por proveedor. */
@@ -338,10 +360,16 @@ export interface FacturaItem extends RemitoProducto {
 
 /* ===== Cobro de la factura ===== */
 
+/**
+ * Medios de cobro. Los que arrancan con "Retencion" comparten un mismo ramal de carga (importe +
+ * comprobante obligatorio): se detectan por el prefijo del nombre, no enumerándolos uno por uno,
+ * así sumar una retención nueva al catálogo no obliga a tocar la lógica (ver `esRetencion`).
+ */
 export type FormaPago =
   | 'Efectivo'
   | 'Cheque'
   | 'Transferencia'
+  | 'Retencion IVA'
   | 'Retencion IIBB'
   | 'Retencion GAN'
   | 'Tarjeta de débito'
@@ -353,21 +381,47 @@ export interface MovimientoPago {
   formaPago: FormaPago
   importe: number
   referencia: string
-  /** Sólo cheque: debe vencer después de la emisión de la factura. */
+  /** Sólo cheque: no puede vencer después del día de hoy (ver `chequeInvalido`). */
   chequeVencimiento: string
   /** Cheque: número, fecha de emisión (dd/mm/aaaa) y banco emisor. */
   numeroCheque?: string
   fechaEmisionCheque?: string
   bancoEmisor?: string
+  /**
+   * Cheque: CUIT del emisor, guardado como los tres tramos separados por guiones ("XX-XXXXXXXX-X").
+   * Mientras se carga puede estar incompleto ("20-1234-"): los guiones son fijos, así que el valor
+   * siempre se parte en exactamente tres tramos (ver `partesCuit`).
+   */
+  cuitEmisor?: string
   /** Cheque: formato del documento, físico o electrónico (eCheq). */
   formatoCheque?: FormatoCheque
-  /** Transferencia: nombre de la cuenta propia elegida y del archivo de comprobante cargado. */
+  /**
+   * Cuenta bancaria PROPIA sobre la que impacta el pago, elegida del tablero de cuentas: en la
+   * transferencia es la cuenta de destino; en la tarjeta, el "Banco de Acreditación".
+   */
   cuentaPropia?: string | null
+  /**
+   * ID del ítem de esa cuenta propia en el tablero de configuración. Es lo que necesitan las
+   * columnas de relación del recibo ("Banco de Acreditación"); el nombre sólo sirve para mostrar.
+   */
+  cuentaPropiaId?: string | null
+  /** Nombre del archivo de comprobante adjunto. Obligatorio en transferencia, retenciones y tarjeta. */
   comprobanteNombre?: string
-  /** Tarjeta (débito/crédito): banco y marca; las cuotas sólo aplican al crédito. */
+  /**
+   * El archivo en sí. Se conserva porque las columnas `file` de Monday sólo se completan subiendo
+   * el binario (`add_file_to_column`), no por `column_values`. Vive únicamente en memoria: no se
+   * persiste ni viaja en ningún payload JSON.
+   */
+  comprobanteArchivo?: File | null
+  /** Tarjeta (débito/crédito): banco emisor y tipo de tarjeta; las cuotas sólo aplican al crédito. */
   bancoTarjeta?: string
   tipoTarjeta?: TarjetaTipo | null
   cuotas?: number
+  /** Tarjeta: los 16 dígitos del número, SIN los espacios del agrupado visual. */
+  numeroTarjeta?: string
+  /** Tarjeta: nombre del titular y vencimiento del plástico (dd/mm/aaaa). */
+  titularTarjeta?: string
+  vencimientoTarjeta?: string
 }
 
 /**

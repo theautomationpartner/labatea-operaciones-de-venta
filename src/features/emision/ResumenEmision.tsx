@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { NRO_PRESUPUESTO } from '@/data/mock'
-import { money, pct } from '@/lib/format'
+import { money, pctDec } from '@/lib/format'
 import type { ResumenPresupuesto } from '@/lib/selectors'
 import { useApp } from '@/state/hooks'
 
@@ -80,8 +80,9 @@ export function ResumenEmision({
         <Fila label="Importe total" tono="total">
           {money(resumen.total)}
         </Fila>
+        {/* Con decimales cuando los tiene: la rentabilidad general no es un entero. */}
         <Fila label="Rentabilidad general" tono="verde">
-          {pct(resumen.rentabilidad)}
+          {pctDec(resumen.rentabilidad)}
         </Fila>
         {/* Descuento general: por ahora fijo en 0%. */}
         <Fila label="Descuento general" tono="verde">

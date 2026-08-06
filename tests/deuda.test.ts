@@ -1,45 +1,27 @@
 /**
- * Test aislado del cierre de venta: qué tipo de pago se registra y cuándo se pide la deuda.
+ * Test aislado del cierre de venta: qué tipo de cobro se registra y cuándo se pide la deuda.
  * No depende de React ni de la red: ejercita las funciones puras de `@/lib/cobros`.
  * Se corre con esbuild + node (`npm run test:deuda`); vive fuera de `src/`.
  *
- * Dos reglas, una sola fuente de verdad (`tipoPagoOperacion`):
- *   · CUENTA CORRIENTE + cierre "SI" → payload `{ tipoPago: 'SIMULTANEO' }`, sin deuda diferida.
- *   · CUENTA CORRIENTE + cierre "NO" → POSTERIOR, y el modal de deuda al finalizar.
+ * UNA sola fuente de verdad (`tipoPagoOperacion`) y UN solo dato de entrada: la FORMA DE PAGO
+ * elegida en la selección de productos.
+ *   · CONTADO                                           → SIMULTANEO
+ *   · CUENTA CORRIENTE / TARJETA DE DEBITO / DE CREDITO → POSTERIOR (y su deuda al finalizar)
+ *
+ * La condición de pago del CLIENTE no participa: sólo decide qué formas se le ofrecen.
  */
 import assert from 'node:assert/strict'
-import type { Cliente, CobroState, CondicionPago } from '@/types'
+import type { CobroState, FormaPagoVenta } from '@/types'
 import {
+  FORMAS_PAGO_POSTERIOR,
+  FORMAS_PAGO_VENTA,
   cobroSimultaneoOperacion,
   datosCobroVenta,
+  formasPagoDeCliente,
+  mostrarImpactoCtaCte,
   requiereRegistroDeuda,
-  tipoPagoEfectivo,
   tipoPagoOperacion,
 } from '@/lib/cobros'
-
-function clienteBase(condicionPago: CondicionPago | null): Cliente {
-  return {
-    id: '1',
-    name: 'Cliente Test',
-    cuit: '',
-    ptype: '',
-    status: '',
-    list: 'L1',
-    ret: '',
-    agenteRetencion: false,
-    condicionPago,
-    limit: 1000,
-    codigo: 'C-1',
-    ctaCteId: '99',
-    saldoCtaCte: 0,
-    lineaUtilizada: 0,
-    remitosPendFacturar: 0,
-    disponible: 1000,
-    addr: '',
-    activity: 'Activo',
-    situation: 'Liberado con crédito',
-  } as Cliente
-}
 
 function cobroBase(over: Partial<CobroState> = {}): CobroState {
   return {
@@ -61,55 +43,80 @@ function ok(nombre: string, cond: boolean) {
   console.log('  ✓', nombre)
 }
 
-/** Cierre con "NO": la cuenta corriente difiere la deuda (comportamiento por defecto). */
 const cobro = cobroBase()
-/** Cierre con "SI": el vendedor cobra en el acto. */
-const cobroSi = cobroBase({ registrar: true })
 
-console.log('Caso 1 · Cumple las dos condiciones → el modal se monta:')
-const ctaCte = clienteBase('CUENTA CORRIENTE')
-ok("condicionPago === 'CUENTA CORRIENTE'", ctaCte.condicionPago === 'CUENTA CORRIENTE')
-ok("tipoPago === POSTERIOR (el 'NO' del pago inmediato)", tipoPagoEfectivo(ctaCte) === 'POSTERIOR')
-ok('requiereRegistroDeuda = true', requiereRegistroDeuda(ctaCte, cobro) === true)
-
-console.log('Caso 2 · Contado (pago SIMULTANEO) → cierra directo, sin modal:')
-const contado = clienteBase('CONTADO')
-ok('tipoPago === SIMULTANEO', tipoPagoEfectivo(contado) === 'SIMULTANEO')
-ok('requiereRegistroDeuda = false', requiereRegistroDeuda(contado, cobro) === false)
-
-console.log('Caso 3 · Posterior pero NO es cuenta corriente → sin modal (falla la condición 1):')
-for (const cond of ['PROVEED 45 DIAS', 'PROVEED 90 DIAS'] as CondicionPago[]) {
-  const c = clienteBase(cond)
-  ok(`${cond}: el tipo de pago es POSTERIOR`, tipoPagoEfectivo(c) === 'POSTERIOR')
-  ok(`${cond}: requiereRegistroDeuda = false`, requiereRegistroDeuda(c, cobro) === false)
+console.log('Caso 1 · SIMULTANEO es CONTADO, y sólo CONTADO:')
+ok("CONTADO → 'SIMULTANEO'", tipoPagoOperacion('CONTADO') === 'SIMULTANEO')
+ok('el flujo que corre es el del cobro inmediato', cobroSimultaneoOperacion('CONTADO'))
+assert.deepEqual(datosCobroVenta('CONTADO'), { tipoPago: 'SIMULTANEO' })
+ok("el payload de la venta contiene { tipoPago: 'SIMULTANEO' }", true)
+// Ninguna otra forma de pago clasifica como simultánea.
+for (const forma of FORMAS_PAGO_VENTA.filter((f) => f !== 'CONTADO')) {
+  ok(`${forma} NO es simultáneo`, !cobroSimultaneoOperacion(forma))
 }
-ok('sin condición de pago cargada → false', requiereRegistroDeuda(clienteBase(null), cobro) === false)
 
-console.log('Caso 4 · La deuda ya registrada no se vuelve a pedir:')
-ok(
-  'con deudaId escrito → false',
-  requiereRegistroDeuda(ctaCte, cobroBase({ deudaId: '123', confirmado: true })) === false,
+console.log('Caso 2 · POSTERIOR son las otras tres formas de pago:')
+assert.deepEqual(
+  [...FORMAS_PAGO_POSTERIOR].sort(),
+  ['CUENTA CORRIENTE', 'TARJETA DE CREDITO', 'TARJETA DE DEBITO'],
+  'el catálogo de formas posteriores es exactamente el pedido',
+)
+for (const forma of FORMAS_PAGO_POSTERIOR) {
+  ok(`${forma} → 'POSTERIOR'`, tipoPagoOperacion(forma) === 'POSTERIOR')
+  assert.deepEqual(datosCobroVenta(forma), { tipoPago: 'POSTERIOR' })
+  ok(`${forma}: el payload viaja como POSTERIOR`, true)
+  ok(`${forma}: se pide el registro de la deuda`, requiereRegistroDeuda(forma, cobro) === true)
+}
+// Las tres posteriores más CONTADO son TODAS las formas de pago: no queda ninguna sin clasificar.
+assert.equal(
+  FORMAS_PAGO_POSTERIOR.length + 1,
+  FORMAS_PAGO_VENTA.length,
+  'toda forma de pago cae en SIMULTANEO o POSTERIOR',
 )
 
-console.log('Caso 5 · CUENTA CORRIENTE + cierre "SI" → cobro SIMULTANEO:')
-ok("condicionPago === 'CUENTA CORRIENTE'", ctaCte.condicionPago === 'CUENTA CORRIENTE')
-ok('la selección del cierre es "SI"', cobroSi.registrar === true)
-ok("tipoPagoOperacion = 'SIMULTANEO'", tipoPagoOperacion(ctaCte, cobroSi) === 'SIMULTANEO')
-ok('el flujo que corre es el del cobro inmediato', cobroSimultaneoOperacion(ctaCte, cobroSi))
-assert.deepEqual(datosCobroVenta(ctaCte, cobroSi), { tipoPago: 'SIMULTANEO' })
-ok("el payload de la venta contiene { tipoPago: 'SIMULTANEO' }", true)
-
-console.log('Caso 6 · Fail-safe: con SIMULTANEO no se pide ningún paso de cobro diferido:')
-ok('requiereRegistroDeuda = false', requiereRegistroDeuda(ctaCte, cobroSi) === false)
-
-console.log('Caso 7 · El camino POSTERIOR ("NO") queda intacto:')
-assert.deepEqual(datosCobroVenta(ctaCte, cobro), { tipoPago: 'POSTERIOR' })
-ok("con «NO» el payload sigue siendo { tipoPago: 'POSTERIOR' }", true)
-ok('y el modal de deuda se sigue pidiendo', requiereRegistroDeuda(ctaCte, cobro) === true)
-ok('contado siempre es SIMULTANEO', tipoPagoOperacion(contado, cobro) === 'SIMULTANEO')
+console.log('Caso 3 · La deuda: sólo en POSTERIOR y sólo una vez:')
+ok('CONTADO no genera deuda', requiereRegistroDeuda('CONTADO', cobro) === false)
 ok(
-  'los plazos de proveedor NO ofrecen cobro en el acto: siguen POSTERIOR',
-  tipoPagoOperacion(clienteBase('PROVEED 45 DIAS'), cobroSi) === 'POSTERIOR',
+  'con deudaId ya escrito no se vuelve a pedir',
+  requiereRegistroDeuda('CUENTA CORRIENTE', cobroBase({ deudaId: '123', confirmado: true })) ===
+    false,
+)
+
+console.log('Caso 4 · El "SI/NO" del cierre ya NO cambia la clasificación (era el bug):')
+const cobroSi = cobroBase({ registrar: true })
+ok(
+  'CUENTA CORRIENTE sigue siendo POSTERIOR aunque se registre un cobro en el acto',
+  tipoPagoOperacion('CUENTA CORRIENTE') === 'POSTERIOR',
+)
+ok(
+  'y su deuda se sigue pidiendo igual',
+  requiereRegistroDeuda('CUENTA CORRIENTE', cobroSi) === true,
+)
+
+console.log('Caso 5 · Sin forma de pago elegida no se puede afirmar que se cobró:')
+ok('null → POSTERIOR', tipoPagoOperacion(null) === 'POSTERIOR')
+ok('null no es simultáneo', !cobroSimultaneoOperacion(null))
+
+console.log('Caso 6 · El impacto en cuenta corriente es de la cuenta corriente:')
+ok('CUENTA CORRIENTE lo muestra', mostrarImpactoCtaCte('CUENTA CORRIENTE') === true)
+for (const forma of ['CONTADO', 'TARJETA DE DEBITO', 'TARJETA DE CREDITO'] as FormaPagoVenta[]) {
+  ok(`${forma} no lo muestra`, mostrarImpactoCtaCte(forma) === false)
+}
+
+console.log('Caso 7 · El CRM sólo filtra QUÉ formas se ofrecen, no cómo se clasifican:')
+assert.deepEqual(
+  formasPagoDeCliente('CUENTA CORRIENTE'),
+  FORMAS_PAGO_VENTA,
+  'al cliente de cuenta corriente se le ofrecen las cuatro',
+)
+for (const cond of ['CONTADO', 'PROVEED 45 DIAS', 'PROVEED 90 DIAS', null] as const) {
+  assert.deepEqual(formasPagoDeCliente(cond), ['CONTADO'], `${cond}: sólo se le ofrece CONTADO`)
+}
+/* Consecuencia directa: un cliente de plazos de proveedor sólo puede elegir CONTADO, así que su
+   venta queda SIMULTANEA. Antes se clasificaba POSTERIOR mirando su condición de pago. */
+ok(
+  'plazos de proveedor: su única forma posible (CONTADO) es SIMULTANEA',
+  tipoPagoOperacion(formasPagoDeCliente('PROVEED 45 DIAS')[0]) === 'SIMULTANEO',
 )
 
 console.log(`\nOK · ${asserts} asserts pasaron.`)

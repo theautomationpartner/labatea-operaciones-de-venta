@@ -1,4 +1,4 @@
-import { money, moneyU, pct } from '@/lib/format'
+import { money, moneyU, pct, pctDec } from '@/lib/format'
 import type { ImpactoCredito, ResumenPresupuesto } from '@/lib/selectors'
 
 /**
@@ -141,9 +141,9 @@ export function ResumenBox({
               <span>{totalLabel}</span>
               <span>{money(resumen.total)}</span>
             </div>
-            {/* Comisión (sólo Ventas, si hay productos comisionables): DEBAJO del total, misma
-                jerarquía que Subtotal/Descuento. */}
-            {!soloTotal && comision != null && comision > 0 && (
+            {/* Comisión (sólo Ventas): DEBAJO del total, misma jerarquía que Subtotal/Descuento.
+                Se muestra SIEMPRE (aunque sea 0) para mantener la métrica estandarizada. */}
+            {!soloTotal && comision != null && (
               <div className="sub-row">
                 <span>Comisión ($)</span>
                 <span>{money(comision)}</span>
@@ -161,7 +161,7 @@ export function ResumenBox({
             <div
               className="donut-chart"
               role="meter"
-              aria-valuenow={Math.round(resumen.rentabilidad)}
+              aria-valuenow={resumen.rentabilidad}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-label="Rentabilidad general de la operación"
@@ -170,8 +170,9 @@ export function ResumenBox({
               }}
             >
               <div className="donut-inner">
+                {/* Con decimales cuando los tiene: la rentabilidad general no es un entero. */}
                 <span className="donut-val" style={{ color: colorRent }}>
-                  {pct(resumen.rentabilidad)}
+                  {pctDec(resumen.rentabilidad)}
                 </span>
                 <span className="donut-lbl">General</span>
               </div>

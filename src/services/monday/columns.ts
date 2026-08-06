@@ -28,10 +28,10 @@ export const BOARDS = {
   /** "Proformas": origen de la venta CON PROFORMA. Un ítem por proforma, con un subítem por producto. */
   proformas: 18424580497,
   config: 18421035530,
-  ctaCte: 18421858736,
-  /** Movimientos de la cuenta corriente (subelementos de la Cta Cte del cliente). */
-  ctaCteSub: 18421858762,
-  /** "➡️Recibos y Cobros": cabecera del cobro. Sólo se usa en el pago SIMULTÁNEO. */
+  /* La Cuenta Corriente del cliente (18421858736) y sus movimientos (18421858762) NO se escriben
+     desde la app: ese requerimiento se descartó. Sus columnas se siguen LEYENDO —para el crédito
+     disponible— a través de la relación del cliente, que no necesita el id del tablero. */
+  /** "➡️Recibos y Cobros": cabecera del cobro. Se crea SIEMPRE, sea simultáneo o posterior. */
   cobros: 18421035524,
   /** Subelementos del recibo: un movimiento de pago cada uno. */
   cobrosSub: 18421035599,
@@ -92,6 +92,32 @@ export const CONFIG_DESCUENTO_ITEM = 12592496747
  * índice y no por label: es lo que aguanta que a la etiqueta le cambien el texto.
  */
 export const CONFIG_TIPO_MEDIOS_PAGO_INDEX = 1
+
+/**
+ * Índice de "Comision por Venta" en la misma "Tipo de Config". Son los ítems que definen la tasa
+ * de comisión del vendedor. OJO con el label: en el board va en SINGULAR ("Comision por Venta").
+ */
+export const CONFIG_TIPO_COMISION_INDEX = 0
+
+/**
+ * "Tipo de Gestion" (color_mm4ewj21) del ítem de comisión → tipo de venta al que aplica su tasa.
+ * Se filtra por índice, que aguanta que le reescriban el texto a la etiqueta.
+ */
+export const CONFIG_GESTION_INDEX = {
+  /** "Pasiva": la tasa de la venta DIRECTA. */
+  pasiva: 0,
+  /** "Activa": la tasa de la venta CON PRESUPUESTO PREVIO. */
+  activa: 1,
+} as const
+
+/**
+ * Estado con el que nace la comisión en "🤖Estado de Comision" (color_mm5by36r). El texto es
+ * EXACTAMENTE el del board: "Pend de Liquidar". Antes se mandaba "Pend de Cobro", que no existe
+ * como etiqueta, y eso hacía que Monday rechazara el `create_item` entero: la comisión no se
+ * creaba nunca. Etiquetas válidas: "Parcialmente Liq", "100% Liquidada", "No Existe Com Disp" y
+ * "Pend de Liquidar".
+ */
+export const COMISION_ESTADO_PENDIENTE_LABEL = 'Pend de Liquidar'
 
 /** Índice de "Activa" en "✋Estado" (color_mm57wxbx) del board de cuentas bancarias. */
 export const CTA_BANCARIA_ACTIVA_INDEX = 1
@@ -226,6 +252,8 @@ export const COL = {
     situacion: 'color_mm58nd7b',
     estado: 'color_mm588vd6',
     condPago: 'dropdown_mm54yq06',
+    /** "Recibimos CHEQUE" (status): "SI" o "NO". Un "NO" impide cobrarle con cheque. */
+    aceptaCheques: 'color_mm5yb27h',
     limite: 'numeric_mm57tw48',
     ctaCte: 'board_relation_mm5ep5qd',
     contactos: 'account_contact',
@@ -251,13 +279,13 @@ export const COL = {
     rubro: 'dropdown_mm509v8g',
     subrubro: 'dropdown_mm51jz35',
     categoria: 'dropdown_mm50pcb8',
-    /** "✋Unidad Medida" del maestro: la etiqueta que documenta el remito. */
-    unidadMedida: 'dropdown_mm5fh71h',
+    /** "✋Unidad de Venta" del maestro: la etiqueta de U.M. que documenta el remito. El id anterior
+     *  (dropdown_mm5fh71h) no existe en el board, por eso la U.M. venía vacía. */
+    unidadMedida: 'dropdown_mm4vhc0h',
     /** "✋Peso (kg)": peso unitario del producto. Alimenta el peso del remito. */
     peso: 'numeric_mm4d54r6',
-    stockFisico: 'numeric_mm483de6',
-    stockComercial: 'formula_mm4c5p89',
-    stockDisponible: 'formula_mm4c96zp',
+    /* El STOCK no vive en el maestro: son tres fórmulas del ítem conectado en "🧮Stock y
+       Movimientos" (ver `COL.stockItem`), al que se llega por la relación `stock` de abajo. */
     proveedor: 'board_relation_mm4812az',
     /** "🤖Código Sistema Prov": espeja el código del proveedor conectado. */
     proveedorCodigo: 'lookup_mm5fh97p',
@@ -265,12 +293,13 @@ export const COL = {
     /** "Moneda" del producto (status): "Dolares" / "Pesos". En dólares el precio se convierte a
      *  pesos con la cotización antes de cargarlo. */
     moneda: 'color_mm4kwdj6',
-    /** "✋️Comision": indica si el producto es comisionable ("SI" / "NO"). */
+    /**
+     * "✋️Comision" (status "SI"/"NO"): indica si el producto es comisionable. Es la fuente de la
+     * venta DIRECTA, que arma la mercadería desde el catálogo.
+     * El PORCENTAJE ya no vive en el producto: es una tasa única por tipo de venta, en el tablero
+     * de configuración (ver `getComisionesVenta`).
+     */
     comisionable: 'color_mm51p0wn',
-    /** "✋️Porc Com Activa": % de comisión de la venta CON PRESUPUESTO PREVIO. */
-    porcComActiva: 'numeric_mm5b72kv',
-    /** "✋️Porc Com Pasiva": % de comisión de la venta DIRECTA. */
-    porcComPasiva: 'numeric_mm5bkt7d',
     /** "✋IVA": alícuota del producto, en %. Se suma al precio de lista si el cliente la paga. */
     iva: 'numeric_mm5gyrnb',
     /** "🧮Stock y Movimientos": ítem de stock del producto (board 18421752251). Venta DIRECTA. */
@@ -339,6 +368,11 @@ export const COL = {
   // Columnas del subelemento (un producto de la lista):
   presupuestoSub: {
     producto: 'board_relation_mm57gxye',
+    /**
+     * "🤖Unidad de Venta": mirror de "✋Unidad de Venta" del Maestro. Es la fuente de la U.M. en la
+     * venta CON PRESUPUESTO PREVIO, que arma la mercadería desde estos subelementos.
+     */
+    unidadVenta: 'lookup_mm5z6x43',
     cantidad: 'numeric_mksesd2',
     rentabilidad: 'numeric_mm4cmpa6',
     /** "🤖Precio Unit $": precio unitario en pesos (productos en pesos). */
@@ -359,14 +393,20 @@ export const COL = {
      *  presupuesto no la liquida. */
     iva: 'numeric_mm5wt7hg',
     descuento: 'numeric_mm472cqy',
+    /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %desc/100), en la
+     *  moneda del producto. A diferencia de "Importe Bonif.", sin descuento vale 0 (no el precio). */
+    descProdMonto: 'numeric_mm5x3wee',
     /** "🤖 Cant Vendida": unidades del producto ya llevadas a una venta. */
     cantVendida: 'numeric_mm54546t',
     /** "🤖Estado de Uso": 0% / Parcialmente / 100% Vendido. */
     estadoUso: 'color_mm54j58z',
     /** "Reflejo" del Tipo de Mercadería del producto conectado: CO / COM. */
     tipoMercaderia: 'lookup_mm5gym7g',
-    /** Mirror de "✋Comision" del producto: indica si es comisionable ("SI" / "NO"). */
-    comisionable: 'lookup_mm5rqwf8',
+    /**
+     * "🤖Comision": mirror de "✋️Comision" del producto ("SI" / "NO"). Es la fuente de la venta
+     * CON PRESUPUESTO PREVIO, que arma la mercadería desde los subelementos del presupuesto.
+     */
+    comisionable: 'lookup_mm5yvmdh',
     /** "🧮Stock y Movimientos": ítem de stock del producto. Se hereda del Maestro al presupuestar
      *  y viaja a la venta (CON PRESUPUESTO PREVIO). */
     stock: 'board_relation_mm5pzc9y',
@@ -413,6 +453,8 @@ export const COL = {
   proformaSub: {
     /** Producto conectado en el Maestro (id + nombre del ítem vinculado). */
     producto: 'board_relation_mkwctrv6',
+    /** "🤖Comision" (mirror del Maestro, "SI"/"NO"): define si el producto comisiona en la venta. */
+    comisionable: 'lookup_mm5zgkdr',
     /** "U.M." (lookup): unidad de medida del producto. */
     unidadMedida: 'lookup_mm5hr4p9',
     /** Cantidad vendida (numérico). */
@@ -425,6 +467,16 @@ export const COL = {
     descuento: 'numeric_mm472cqy',
     /** "🤖Desc % x Forma de Pago": descuento por pronto pago (CONTADO), en %. */
     descFormaPago: 'numeric_mm5svkh2',
+    /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto sobre el precio de LISTA por
+       separado (no en cascada), con su "precio con dto" = precio − ese monto. Informativas. */
+    /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %prod/100). */
+    descProdMonto: 'numeric_mm5xxrkw',
+    /** "🤖Precio Unit C/Desc x Prod": precio unitario con el descuento por producto (precio − Desc $ x Prod). */
+    precioConDescProd: 'numeric_mm5xgg0j',
+    /** "🤖Desc $ x Forma de Pago": monto del descuento por forma de pago por unidad (precio × %fp/100). */
+    descFpMonto: 'numeric_mm5x79vt',
+    /** "🤖Precio Unit C/Desc x Forma de Pago": precio unitario con el descuento por forma de pago (precio − Desc $ x Forma de Pago). */
+    precioConDescFp: 'numeric_mm5xxvcv',
     /** "🤖Imp. Bonificado": monto bonificado POR UNIDAD = precio × (desc prod + desc forma de pago)/100. */
     impBonificado: 'numeric_mm5sh5y',
     /** "🤖Precio Bonif $": precio unitario ya bonificado (precio − imp. bonificado), en pesos. */
@@ -440,49 +492,79 @@ export const COL = {
     /** "🧮Stock y Movimientos": ítem de stock del producto asociado. */
     stock: 'board_relation_mm5pz6kz',
   },
-  // Cabecera del recibo (board 18421035524). Sólo se crea en el cobro SIMULTÁNEO.
+  /* Cabecera del recibo (board 18421035524). Se crea SIEMPRE, sea el cobro simultáneo o posterior;
+     lo que cambia es qué columnas se completan y si lleva subelementos. */
   cobro: {
     /** "🤖Vendedor" (people): el vendedor de la operación. */
     vendedor: 'multiple_person_mm5s28s6',
-    /** "🤖Importe Total a Cobrar": lleva el total cobrado, que en simultáneo es el 100%. */
-    totalCobrado: 'numeric_mm5gch94',
-    ctaCte: 'board_relation_mkwb7fmp',
-    /** "📈Ventas": la venta que este recibo cobra. Se linkea recién al crearla. */
+    /** "🤖Persona": el cliente de la venta. La relación acepta Personas y Cta Cte; va el cliente. */
+    cliente: 'board_relation_mkwb7fmp',
+    /** "🤖Tipo de Cobro" (status): "Simultaneo" o "Posterior". */
+    tipoCobro: 'color_mm5yh0gs',
+    /** "📈Ventas": la venta que este recibo cobra. Sólo en el SIMULTÁNEO. */
     venta: 'board_relation_mm4kwppn',
+    /** "💰Fact Vtas Pends de Cobro": la deuda que respalda el cobro. Sólo en el POSTERIOR. */
+    vtaPendiente: 'board_relation_mm58ycfw',
+    /** "🤖 TOTAL $ Vta": el total de la venta que se está cobrando. */
+    totalVenta: 'numeric_mm5xbjkm',
+    /** "🤖TOTAL $ Cobrado": lo efectivamente cobrado. */
+    totalCobrado: 'numeric_mm5xbkj',
+    /** "🤖TOTAL $ Diferencia": total de la venta − total cobrado. */
+    diferencia: 'numeric_mm5xfznj',
     /** ID del recibo ("RECIBO-01"); el ítem se renombra con este valor. */
     pulseId: 'pulse_id_mkwb9111',
   },
-  // Un movimiento de pago del recibo (board 18421035599).
+  /* Un movimiento de pago del recibo (board 18421035599). Sólo el SIMULTÁNEO crea subelementos.
+     Cada medio de cobro completa su propio juego de columnas; las dos primeras son de todos. */
   cobroSub: {
-    /** "✋Caja": la forma de pago. Es una columna status, con sus propias etiquetas. */
+    /** "✋Caja": el medio de cobro. Es una columna status, con sus propias etiquetas. */
     formaPago: 'status',
     importe: 'numeric_mm4e61yk',
-    descuento: 'numeric_mm4eyzzc',
-    montoCobrado: 'numeric_mm5gkcqp',
-    referencia: 'text_mkwbmwz5',
-    vencimiento: 'date_mkwb4g2c',
+    /**
+     * "🤖Banco de Acreditacion": la cuenta propia donde impacta el pago (ítem del board de config).
+     * Es UNA sola columna para todos los medios: la usan tanto la transferencia (cuenta de destino)
+     * como las tarjetas (banco de acreditación).
+     */
+    bancoAcreditacion: 'board_relation_mm5y22zv',
+    // TRANSFERENCIA
+    /** "🤖Comp Transf" (file): el comprobante de la transferencia. */
+    compTransferencia: 'file_mm5rtssw',
+    /** "🤖Comp Retencion" (file): el comprobante de cualquier retención (IVA, IIBB, GAN…). */
+    compRetencion: 'file_mm5yzcnk',
+    // CHEQUE
+    nroCheque: 'numeric_mm5rrwjg',
+    /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */
+    cuit: 'text_mm5ydwp2',
+    fechaEmisionCheque: 'date_mm5rxdpk',
+    vencimientoCheque: 'date_mm5r3m2h',
+    /** "🤖Origen" del cheque (dropdown): "Papel" o "eCheq". */
+    origenCheque: 'dropdown_mm5yveka',
+    /** "🤖Banco Emisor" del cheque (dropdown de texto libre). */
+    bancoEmisorCheque: 'dropdown_mm5yfd8n',
+    // TARJETA (débito y crédito)
+    nroTarjeta: 'text_mm5ybw7q',
+    titularTarjeta: 'text_mm5yr164',
+    /** "🤖Tipo Tarjeta" (dropdown): VISA o MASTERCARD. */
+    tipoTarjeta: 'dropdown_mm5rx800',
+    vencimientoTarjeta: 'date_mm5y4zxa',
+    /** "🤖Cupon" (file): el comprobante del cobro con tarjeta. */
+    cupon: 'file_mm5yy4je',
+    // Sólo TARJETA DE CRÉDITO
+    cuotas: 'numeric_mm5ydy8',
+    valorCuota: 'numeric_mm5yx0ec',
     pulseId: 'pulse_id_mkwbrvf5',
   },
   // Factura de venta pendiente de cobro (board 18421035508): la deuda del pago POSTERIOR.
   factPendiente: {
-    ctaCte: 'board_relation_mkwbweqx',
+    /**
+     * "📈Ventas": la venta que dejó esta deuda. Es lo único que la app conecta; el vínculo con
+     * "💵Cta Cte Cliente" (board_relation_mkwbweqx) lo resuelve el tablero desde acá.
+     */
+    venta: 'board_relation_mm4d3nn0',
     /** "🤖Vta $": el importe total a cobrar que queda pendiente. */
     total: 'numeric_mkwbck5d',
     /** "🤖Estado": cuánto de esta factura ya se cobró. Nace pendiente al 100%. */
     estado: 'color_mkwb727e',
-  },
-  // Movimiento de la cuenta corriente (board 18421858762).
-  ctaCteSub: {
-    /** "Saldo Inicial": el saldo final del movimiento anterior, o 0 si es el primero. */
-    saldoAnterior: 'numeric_mm58aacc',
-    ventas: 'numeric_mm5gdhkt',
-    cobros: 'numeric_mm5gtxav',
-    /**
-     * "Saldo Final" = saldo inicial + ventas − cobros. Es una columna numérica común, no una
-     * fórmula: la calcula y la escribe la app. De acá sale el saldo inicial del movimiento
-     * siguiente, así que si queda vacía se corta el arrastre de toda la cuenta.
-     */
-    saldoFinal: 'numeric_mm5gb7jq',
   },
   // Cuenta bancaria del cliente (board 18421723667).
   ctaBancaria: {
@@ -561,6 +643,17 @@ export const COL = {
     descuento: 'numeric_mm472cqy',
     /** "🤖Desc % x Forma de Pago": descuento por forma de pago (pronto pago), en %. */
     descFormaPago: 'numeric_mm5sm8na',
+    /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto se calcula sobre el precio de
+       LISTA por separado (no en cascada), y su "precio con dto" es precio − ese monto. Son columnas
+       informativas, distintas del Imp. Bonificado / Precio Bonif (que sí van en cascada). */
+    /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %prod/100). */
+    descProdMonto: 'numeric_mm5x74b0',
+    /** "🤖Precio Unit C/Desc x Prod": precio unitario con el descuento por producto (precio − Desc $ x Prod). */
+    precioConDescProd: 'numeric_mm5xfseb',
+    /** "🤖Desc $ x Forma de Pago": monto del descuento por forma de pago por unidad (precio × %fp/100). */
+    descFpMonto: 'numeric_mm5xq5sg',
+    /** "🤖Precio Unit C/Desc x Forma de Pago": precio unitario con el descuento por forma de pago (precio − Desc $ x Forma de Pago). */
+    precioConDescFp: 'numeric_mm5xpwd9',
     /** "🤖Imp. Bonificado": monto bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100. */
     impBonificado: 'numeric_mm5swn31',
     /** "🤖Precio Bonif": precio unitario ya bonificado (precio − imp. bonificado por unidad), en pesos. */
@@ -644,8 +737,8 @@ export const COL = {
   },
   // Cabecera de "Vtas Pends de Facturar" (board 18421033947): un remito POSTERIOR pendiente de facturar.
   vtaPendFacturar: {
-    /** "💵Cta Cte Cliente- PENDIENTE": conecta con la cuenta corriente del cliente (18421858736). */
-    ctaCte: 'board_relation_mkwbz75m',
+    /* La conexión con la Cta Cte del cliente (💵Cta Cte Cliente- PENDIENTE, board 18421858736) se
+       descartó: la app no la registra. La cuenta se sigue LEYENDO por la relación del cliente. */
     /** "🤖Cliente": el cliente (Personas, 18420688238). Filtra las ventas pendientes por cliente. */
     cliente: 'board_relation_mm5pd79g',
     /** "🧾🚚 Remitos Ventas": el remito POSTERIOR que originó el pendiente. */
@@ -663,6 +756,11 @@ export const COL = {
   vtaPendFacturarSub: {
     /** "📦Productos": conecta con el Maestro de Productos (18421035535). */
     producto: 'board_relation_mm5nndxm',
+    /**
+     * "🤖Unidad de Venta": la misma U.M. que se asienta en el subelemento del remito
+     * (dropdown_mm5g9mp). De acá la toma la factura en la venta DIRECTA con entrega ANTERIOR.
+     */
+    unidadVenta: 'dropdown_mm5zrsbb',
     /** "🤖Precio Unit $": precio unitario del producto según la lista del cliente. */
     precioUnit: 'numeric_mm5ncc8m',
     /** "🤖Subtotal x Prod $": fórmula (precio × cantidad). Se lee por display_value. */
@@ -679,6 +777,8 @@ export const COL = {
     /** "🤖Rentab %": rentabilidad del producto según la lista del cliente, guardada al remitir para
      *  reutilizarla al facturar la venta DIRECTA con entrega ANTERIOR (rentabilidad general). */
     rentabilidad: 'numeric_mm5p80xs',
+    /** "🤖Comision" (mirror del Maestro): "SI" / "NO". Define si el producto comisiona al facturar. */
+    comisionable: 'lookup_mm5z5hsc',
   },
   // Cabecera del talonario de remitos (board 18423468398).
   talonario: {
@@ -725,10 +825,18 @@ export const COL = {
     /** "🤖Tipo RTO": nace "RTO Entrega A Cliente" (por índice dinámico). */
     tipoRto: 'color_mkwbzrx2',
   },
-  // Ítem de "Stock y Movimientos" (board 18421752251).
+  /* Ítem de "Stock y Movimientos" (board 18421752251): un ítem por producto, conectado al maestro.
+     Las tres cantidades de stock que muestra la app SALEN DE ACÁ (son fórmulas del board, no
+     columnas del producto), y se leen a través de la relación `COL.producto.stock`. */
   stockItem: {
     /** "🤖Pend de Entrega Vta": saldo pendiente de entregar; se decrementa al remitir. */
     pendEntregaVta: 'numeric_mm5nscx',
+    /** "🤖Stock Fisico": ingresos − egresos registrados. */
+    fisico: 'formula_mm57f9pn',
+    /** "🤖Stock Comercial": el físico menos lo pendiente de entregar por ventas. */
+    comercial: 'formula_mm57sk64',
+    /** "🤖Stock Disponible": el comercial más lo pendiente de recibir por compras. */
+    disponible: 'formula_mm5nntd2',
   },
   // Subelemento de "Stock y Movimientos" (board 18421752360): un movimiento de stock.
   stockMovSub: {
@@ -769,6 +877,10 @@ export const COL = {
   // Una línea del comprobante (subelemento de Facturación).
   facturacionSub: {
     unidadMedida: 'dropdown_mm2gk2mv',
+    /** "Unidad de Venta": la U.M. del producto, resuelta según el tipo de venta. */
+    unidadVenta: 'dropdown_mm5zj2t0',
+    /** "Importe Bonif $": el "Descuento Total" por unidad de la selección de productos. */
+    importeBonif: 'numeric_mm5x7747',
     cantidad: 'numeric_mm1srkr2',
     /** "Precio Unitario $": de él dependen Subtotal/IVA/Total en pesos. */
     precioUnit: 'numeric_mm1swnhz',
@@ -793,6 +905,11 @@ export const COL = {
     /** "🤖Pend de Cobro(TRAER)": monto pendiente de cobro (total de la venta si POSTERIOR; 0 si
      *  SIMULTANEO). Se envía como número. */
     pendienteCobro: 'numeric_mm5p3bqc',
+    /**
+     * "🤖$ Comision TOTAL": la comisión FINAL en pesos de la venta. Es una columna numérica común,
+     * no una fórmula: la calcula y la escribe la app, igual que la ve el vendedor en el resumen.
+     */
+    total: 'numeric_mm5r54y6',
     /** "🤖Estado de Comision": nace en "Pend de Cobro". */
     estado: 'color_mm5by36r',
   },
@@ -845,8 +962,11 @@ export const COL = {
     descuentoMin: 'numeric_mm5f6k1v',
     /** "Tipo de Config": clasifica cada ítem del tablero de configuración. */
     tipo: 'color_mm4emv5g',
-    /** "Valor %": el porcentaje del ítem. En los medios de pago, su descuento. */
+    /** "Valor %": el porcentaje del ítem. En los medios de pago, su descuento; en las comisiones,
+     *  la tasa que se le paga al vendedor. */
     valorPct: 'numeric_mm4e5cta',
+    /** "Tipo de Gestion": distingue la comisión "Activa" de la "Pasiva". */
+    tipoGestion: 'color_mm4ewj21',
   },
 } as const
 
@@ -886,17 +1006,31 @@ export const ENTREGA_RESPONSABLE_LABEL: Record<'LA_BATEA' | 'COMISIONISTA' | 'CL
 }
 
 /**
- * Forma de pago de la app → etiqueta de la columna "✋Caja" del subelemento del recibo.
- * En el board las tarjetas van con mayúscula inicial en las dos palabras.
+ * Forma de pago de la app → etiqueta de la columna "✋Caja" del subelemento del recibo. Los textos
+ * son EXACTAMENTE los del board: las tarjetas van con mayúscula inicial en las dos palabras y la
+ * retención de ganancias se llama "Retencion IG" allá, aunque la app la muestre como "Retencion GAN".
  */
 export const FORMA_PAGO_LABEL: Record<string, string> = {
   Efectivo: 'Efectivo',
   Cheque: 'Cheque',
   Transferencia: 'Transferencia',
+  'Retencion IVA': 'Retencion IVA',
   'Retencion IIBB': 'Retencion IIBB',
-  'Retencion GAN': 'Retencion GAN',
+  'Retencion GAN': 'Retencion IG',
   'Tarjeta de débito': 'Tarjeta de Débito',
   'Tarjeta de crédito': 'Tarjeta de Crédito',
+}
+
+/** Tipo de cobro de la app → etiqueta de "🤖Tipo de Cobro" (color_mm5yh0gs) del recibo. */
+export const TIPO_COBRO_LABEL: Record<'SIMULTANEO' | 'POSTERIOR', string> = {
+  SIMULTANEO: 'Simultaneo',
+  POSTERIOR: 'Posterior',
+}
+
+/** Formato del cheque en la app → etiqueta de "🤖Origen" (dropdown_mm5yveka) del subelemento. */
+export const CHEQUE_ORIGEN_LABEL: Record<'FISICO' | 'eCheq', string> = {
+  FISICO: 'Papel',
+  eCheq: 'eCheq',
 }
 
 /* ===== Labels del tablero de Facturación (18422405731) =====

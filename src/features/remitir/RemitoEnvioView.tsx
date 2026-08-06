@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AvisoModal } from '@/components/ui/AvisoModal'
 import { TRANSPORTISTA } from '@/data/mock'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
@@ -34,7 +35,8 @@ export function RemitoEnvioView() {
   const { envio } = remito
   const esLaBatea = envio.responsable === 'LA_BATEA'
   const esComisionista = envio.responsable === 'COMISIONISTA'
-  const [abierto, setAbierto] = useState(true)
+  /* Aviso al intentar avanzar: sin responsable elegido, o con sus datos a medio cargar. */
+  const [aviso, setAviso] = useState<'sin-responsable' | 'incompleto' | null>(null)
 
   /* Destinos, transportistas y vehículos se traen de Monday sólo cuando entrega La Batea; los
      comisionistas, cuando la entrega es tercerizada. Es ahí donde aparecen sus inputs. Cada
@@ -119,41 +121,43 @@ export function RemitoEnvioView() {
     })
   }
 
-  // Qué hace falta cargar para poder confirmar, según el responsable elegido.
-  // La entrega compromete mercadería: no se confirma con el cliente bloqueado.
+  // La entrega compromete mercadería: no se avanza con el cliente bloqueado.
   const bloqueo = useBloqueoCredito(0)
-  const confirmable =
-    envio.responsable === 'LA_BATEA'
-      ? !!envio.destinoId && !!envio.choferId && !!envio.vehiculoId
-      : envio.responsable === 'COMISIONISTA'
-        ? !!envio.comisionistaId
-        : envio.responsable === 'CLIENTE'
-          ? envio.responsableNombre.trim().length > 0
-          : false
 
-  const colapsable = envio.confirmado
-  const cuerpoVisible = abierto || !colapsable
-  const puedeContinuar = envio.confirmado
+  /* Datos que faltan según el responsable elegido. "Cliente Responsable" no pide ninguno: lo
+     retira el propio cliente y con elegirlo alcanza. */
+  const faltantes: string[] = []
+  if (envio.responsable === 'LA_BATEA') {
+    if (!envio.destinoId) faltantes.push('Destino del cliente')
+    if (!envio.choferId) faltantes.push('Chofer asignado')
+    if (!envio.vehiculoId) faltantes.push('Vehículo')
+  } else if (envio.responsable === 'COMISIONISTA') {
+    if (!envio.comisionistaId) faltantes.push('Comisionista responsable')
+  }
 
-  // Resumen corto para la cabecera cuando el item queda plegado.
-  const resumenEntrega =
-    envio.responsable === 'LA_BATEA'
-      ? `La Batea · ${envio.destinoNombre || '—'}`
-      : envio.responsable === 'COMISIONISTA'
-        ? `Comisionista · ${envio.comisionistaNombre || '—'}`
-        : envio.responsable === 'CLIENTE'
-          ? `Cliente · ${envio.responsableNombre || '—'}`
-          : ''
-
-  // Elegir el mismo responsable lo deselecciona; cambiarlo limpia los datos anteriores.
-  const elegir = (id: ResponsableEntrega) =>
-    dispatch({ type: 'setEnvioResponsable', value: envio.responsable === id ? null : id })
+  /* El responsable se puede cambiar cuantas veces haga falta: vale la ÚLTIMA opción que quede
+     elegida, y cambiarla limpia los datos de la anterior. */
+  const elegir = (id: ResponsableEntrega) => {
+    if (envio.responsable === id) return
+    dispatch({ type: 'setEnvioResponsable', value: id })
+    setAviso(null)
+  }
 
   /**
    * Avanzar a la emisión del remito es una transición local y silenciosa: el remito NO se crea
-   * acá, nace al hacer click en "Emitir Remito". Sin queries a Monday ni modales.
+   * acá, nace al hacer click en "Emitir Remito". Antes se valida que la entrega esté definida:
+   * sin responsable, o con sus datos incompletos, no se pasa de etapa.
    */
-  const confirmarRemito = () => {
+  const continuar = () => {
+    if (!envio.responsable) {
+      setAviso('sin-responsable')
+      return
+    }
+    if (faltantes.length > 0) {
+      setAviso('incompleto')
+      return
+    }
+    if (bloqueo.frenar()) return
     dispatch({ type: 'goto', paso: 'remito-emision' })
   }
 
@@ -165,42 +169,21 @@ export function RemitoEnvioView() {
       />
       <PasoTitulo
         numero={3}
-        titulo="Especificación del envío"
+        titulo="Entrega de Mercadería"
         descripcion="Indicá quién entrega la mercadería y completá los datos del transporte para generar el remito."
       />
 
-      <div className="cobro-acc">
-        <div className="cobro-acc-head">
-          {colapsable && (
-            <button
-              type="button"
-              className="cobro-acc-chev"
-              aria-expanded={abierto}
-              aria-label={abierto ? 'Cerrar el detalle de la entrega' : 'Abrir el detalle de la entrega'}
-              onClick={() => setAbierto((v) => !v)}
-            >
-              <i className={`fas fa-chevron-down ${abierto ? 'open' : ''}`} />
-            </button>
-          )}
-
+      {/* Bloque estático sobre fondo blanco: sin acordeón ni confirmación. La entrega se define
+          eligiendo una opción, y se puede cambiar todas las veces que haga falta. */}
+      <div className="entrega-panel">
+        <div className="entrega-panel-head">
           <span className="font-b">
             <i className="fas fa-truck" /> ¿Quién entrega la mercadería?
           </span>
-
-          {colapsable && !abierto && <span className="entrega-resumen">{resumenEntrega}</span>}
-
-          <span
-            className={`cobro-ok ${envio.confirmado ? 'on' : ''}`}
-            title={envio.confirmado ? 'Entrega confirmada' : 'Entrega sin confirmar'}
-          >
-            <i className="fas fa-check" />
-          </span>
         </div>
 
-        {cuerpoVisible && (
-          <div className="cobro-acc-body">
-            {/* Al elegir una, las otras dos quedan anuladas (deshabilitadas). */}
-            <div className="entrega-opts">
+        <div className="entrega-panel-body">
+          <div className="entrega-opts" role="radiogroup" aria-label="¿Quién entrega la mercadería?">
               {OPCIONES.map((opt) => {
                 const activa = envio.responsable === opt.id
                 return (
@@ -208,8 +191,8 @@ export function RemitoEnvioView() {
                     type="button"
                     key={opt.id}
                     className={`entrega-opt ${activa ? 'active' : ''}`}
-                    disabled={envio.responsable !== null && !activa}
-                    aria-pressed={activa}
+                    role="radio"
+                    aria-checked={activa}
                     onClick={() => elegir(opt.id)}
                   >
                     <span className="entrega-opt-ic">
@@ -401,54 +384,9 @@ export function RemitoEnvioView() {
               </div>
             )}
 
-            {/* CLIENTE RESPONSABLE: nombre de quien retira. */}
-            {envio.responsable === 'CLIENTE' && (
-              <div className="card card--config card--flush entrega-form">
-                <h3 className="ctitle">
-                  <i className="fas fa-user-check" /> Cliente responsable
-                </h3>
-                <div className="igp">
-                  <label htmlFor="resp-nombre">Nombre del responsable</label>
-                  <input
-                    id="resp-nombre"
-                    className="full"
-                    placeholder="Ingresá el nombre del responsable"
-                    value={envio.responsableNombre}
-                    onChange={(e) =>
-                      dispatch({
-                        type: 'setRemitoEnvio',
-                        patch: { responsableNombre: e.target.value },
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            )}
-
-            {envio.responsable && (
-              <div className="entrega-confirmar">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!confirmable || envio.confirmado}
-                  onClick={() => {
-                    if (bloqueo.frenar()) return
-                    dispatch({ type: 'confirmarEntrega' })
-                    setAbierto(false)
-                  }}
-                >
-                  {envio.confirmado ? (
-                    <>
-                      <i className="fas fa-check" /> Entrega confirmada
-                    </>
-                  ) : (
-                    'Confirmar entrega'
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          {/* CLIENTE RESPONSABLE: no pide NADA. Lo retira el propio cliente, así que con elegir la
+              opción alcanza para poder avanzar. */}
+        </div>
       </div>
 
       <div className="footer-acts">
@@ -459,15 +397,27 @@ export function RemitoEnvioView() {
         >
           <i className="fas fa-arrow-left" /> Volver a paso anterior
         </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={!puedeContinuar}
-          onClick={confirmarRemito}
-        >
+        {/* Queda clickeable: si falta algo, la ventana explica QUÉ, en vez de un botón muerto. */}
+        <button type="button" className="btn btn-primary" onClick={continuar}>
           Continuar a emisión del remito <i className="fas fa-arrow-right" />
         </button>
       </div>
+
+      {aviso === 'sin-responsable' && (
+        <AvisoModal titulo="Falta definir la entrega" onClose={() => setAviso(null)}>
+          Para continuar se debe especificar quién entrega la mercadería
+        </AvisoModal>
+      )}
+
+      {aviso === 'incompleto' && (
+        <AvisoModal
+          titulo="Faltan datos de la entrega"
+          faltantes={faltantes}
+          onClose={() => setAviso(null)}
+        >
+          Completá los datos del responsable elegido para poder continuar.
+        </AvisoModal>
+      )}
 
       {bloqueo.modal}
     </section>

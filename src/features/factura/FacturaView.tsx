@@ -4,17 +4,22 @@ import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { addDays } from '@/lib/dates'
+import { netoLinea } from '@/lib/descuentos'
+import { round2 } from '@/lib/format'
 import { ivaPorDefecto, letraComprobante, PUNTO_VENTA_DEFAULT } from '@/lib/factura'
 import {
+  SIN_DESCUENTOS_PAGO,
   balancePagos,
   cobroSimultaneoOperacion,
   datosCobroVenta,
   descuentoDeFormaPago,
+  esPagoConTarjeta,
   requiereRegistroDeuda,
   resumenCobro,
 } from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
-import { comprobantesDeVenta, precioFacturado, totalesComprobantes } from '@/lib/facturacion'
+import { comprobantesDeVenta, precioNetoUnitario, totalesComprobantes } from '@/lib/facturacion'
+import { comisionLinea, tasaComision, totalVentaOperacion } from '@/lib/selectors'
 import { lineasDeVenta } from '@/lib/lineasVenta'
 import { pasosDe } from '@/lib/pasos'
 import {
@@ -25,10 +30,9 @@ import {
   crearVenta,
   FACT_VENCIMIENTO_DIAS,
   marcarProformaUsada,
-  registrarCobroSimultaneo,
+  registrarCobro,
   registrarDeudaPosterior,
   registrarFacturacionVtasPend,
-  vincularVentaAlCobro,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
@@ -74,7 +78,58 @@ export function FacturaView() {
       }),
     [operacion, tipoVenta, tipoEntrega, state.lineas, state.ventaItems, state.facturaItems],
   )
-  const comprobantes = useMemo(() => comprobantesDeVenta(productos), [productos])
+  /* Descuento por forma de pago (pronto pago) de la operación, en %. Es el que compone —en
+     cascada con el descuento manual de cada línea— la bonificación que muestra la card y la que
+     se declara en el comprobante. Las líneas de la VENTA sobre PROFORMA traen el suyo propio y
+     pisan a este. */
+  const descFormaPago = useMemo(
+    () => descuentoDeFormaPago(formaPago, state.descuentosPago),
+    [formaPago, state.descuentosPago],
+  )
+
+  /* Los comprobantes llevan los MISMOS importes que la selección de productos: bruto, descuento
+     total y gravado salen de las mismas fórmulas; lo único propio de la factura es que el IVA se
+     liquida con la alícuota declarada de cada producto. */
+  const comprobantes = useMemo(
+    () => comprobantesDeVenta(productos, descFormaPago),
+    [productos, descFormaPago],
+  )
+
+  /* Líneas con su NETO (sin IVA y ya bonificado): es la base de la comisión. Se calcula UNA vez y
+     la comparten la métrica del resumen y lo que se manda al registro de comisiones, así el número
+     que ve el vendedor y el que se escribe en el board no pueden divergir.
+     La VENTA sobre PROFORMA trae su propio descuento por forma de pago; el resto usa el de la
+     operación. */
+  const lineasComision = useMemo(
+    () =>
+      productos.map((p) => ({
+        ...p,
+        /* Base de comisión = importe GRAVADO de la línea: Subtotal − Descuento Total, SIN IVA. El
+           Descuento Total compone (en cascada) el descuento de línea y el de forma de pago. La VENTA
+           sobre PROFORMA trae su propio descuento por forma de pago; el resto usa el de la operación. */
+        neto: netoLinea(
+          p.precioUnitario,
+          p.cantidad,
+          p.descuento ?? 0,
+          p.descFormaPago ?? descFormaPago,
+        ),
+      })),
+    [productos, descFormaPago],
+  )
+
+  /* Comisión del vendedor por esta venta: la tasa que rige su tipo de venta sobre el neto de cada
+     producto comisionable. Es el importe que se muestra antes de emitir y el que se registra. */
+  const comisionVenta = useMemo(() => {
+    /* VENTA PROFORMA: la tasa la define el tipo de venta de la proforma elegida (Activa/Pasiva); el
+       resto usa el tipo de la operación. Así la comisión registrada coincide con la mostrada. */
+    const tasa = tasaComision(state.comisiones, state.proformaTipoVenta ?? tipoVenta ?? 'DIRECTA')
+    return round2(
+      lineasComision.reduce(
+        (acc, l) => acc + comisionLinea(l.neto, l.comisionable === true, tasa),
+        0,
+      ),
+    )
+  }, [lineasComision, state.comisiones, tipoVenta, state.proformaTipoVenta])
 
   // Comprobantes ya escritos en el board, indexados por la clave del grupo que los originó.
   const emitidos = useMemo(
@@ -82,8 +137,40 @@ export function FacturaView() {
     [factura.comprobantes],
   )
 
-  /* Total facturado (con IVA): es el importe de la venta y lo que hay que cobrar. */
-  const totalVenta = useMemo(() => totalesComprobantes(comprobantes).total, [comprobantes])
+  /* Total FACTURADO (con IVA): la suma de los comprobantes a emitir. Sus líneas ya llevan el
+     descuento por forma de pago, así que coincide con el total de la venta salvo por el IVA, que
+     el comprobante liquida con la alícuota declarada de cada producto y no con una tasa única. */
+  const totalFacturado = useMemo(() => totalesComprobantes(comprobantes).total, [comprobantes])
+  /* Total REAL de la venta: el importe FINAL que se le cobra al cliente, con el descuento por forma
+     de pago ya aplicado. Sale del MISMO selector que alimenta la métrica "TOTAL VENTA" del cobro, y
+     es el que tiene que viajar al recibo, a la deuda y al importe total de la venta: usar el
+     facturado dejaba la diferencia del recibo abierta por el monto del descuento. */
+  const totalVenta = useMemo(
+    () =>
+      totalVentaOperacion({
+        cliente,
+        operacion,
+        tipoVenta,
+        tipoEntrega,
+        lineas: state.lineas,
+        ventaItems: state.ventaItems,
+        facturaItems: state.facturaItems,
+        proformaImporte: state.proformaImporte,
+        descFormaPago: descuentoDeFormaPago(formaPago, state.descuentosPago),
+      }).total,
+    [
+      cliente,
+      operacion,
+      tipoVenta,
+      tipoEntrega,
+      state.lineas,
+      state.ventaItems,
+      state.facturaItems,
+      state.proformaImporte,
+      formaPago,
+      state.descuentosPago,
+    ],
+  )
   /* Rentabilidad general de la venta (ponderada por el importe bonificado de cada línea): es lo
      que va a la cabecera del ítem en "📈Ventas". */
   const rentabilidadVenta = useMemo(() => {
@@ -97,12 +184,20 @@ export function FacturaView() {
         acc + p.rentabilidad * ((p.precioUnitario * p.cantidad * (1 - p.descuento / 100)) / base),
       0,
     )
-    return Math.round(ponderada)
+    // Con decimales: redondear a entero asignaba una rentabilidad general incorrecta en el ítem.
+    return round2(ponderada)
   }, [productos])
-  // Balance de los movimientos de pago y su resumen contra el total: alimentan el recibo simultáneo.
+  /* Balance de los movimientos de pago y su resumen contra el total: alimentan el recibo simultáneo.
+     Con TARJETA los movimientos van SIN descuento por medio de pago: el de la forma de pago ya está
+     aplicado en el total de la venta, así que volver a descontarlo por movimiento lo contaría dos
+     veces y el recibo no cerraría contra el total que se cobró. */
   const balances = useMemo(
-    () => balancePagos(cobro.movimientos, state.descuentosPago),
-    [cobro.movimientos, state.descuentosPago],
+    () =>
+      balancePagos(
+        cobro.movimientos,
+        esPagoConTarjeta(formaPago) ? SIN_DESCUENTOS_PAGO : state.descuentosPago,
+      ),
+    [cobro.movimientos, state.descuentosPago, formaPago],
   )
   const resumenC = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
@@ -140,6 +235,8 @@ export function FacturaView() {
           fechaEmision,
           observaciones: factura.observaciones,
           ventaId,
+          // Entra sólo en el "Importe Bonif $" de cada línea, no en el precio del comprobante.
+          descFormaPago,
         },
       )
       const incompletos = creados.filter((c) => !c.id || c.lineasCreadas < c.lineasEsperadas)
@@ -158,9 +255,9 @@ export function FacturaView() {
 
   /**
    * Registro de comisiones de la venta (best-effort, fire-and-forget), al finalizar la operación.
-   * Universal: corre para cualquier tipo de venta/entrega. El servicio evalúa por producto si es
-   * comisionable ("SI") y aborta solo si ninguno lo es (sin tocar el board). En el cobro POSTERIOR
-   * enlaza la deuda recién creada; en el SIMULTANEO omite esa relación. No frena el cierre.
+   * Universal: corre para cualquier tipo de venta/entrega. El servicio aborta sin tocar el board si
+   * ningún producto de la venta comisiona. En el cobro POSTERIOR enlaza la deuda recién creada; en
+   * el SIMULTANEO omite esa relación. No frena el cierre.
    */
   const dispararComisiones = (vId: string, pendienteCobroId?: string) => {
     if (!vId) return
@@ -169,16 +266,22 @@ export function FacturaView() {
       clienteId: cliente.id,
       vendedorId: state.vendedor?.id ?? null,
       tipoVenta: tipoVenta ?? 'DIRECTA',
-      // Tipo de cobro de la operación e importe total (con IVA): definen el monto pendiente de cobro.
-      tipoPago: datosCobroVenta(cliente, cobro).tipoPago,
-      importeTotalVenta: totalesComprobantes(comprobantes).total,
+      /* Tipo de cobro de la operación e importe total (con IVA): definen el monto pendiente de
+         cobro. Va el total REAL de la venta, que es lo que efectivamente se le cobra al cliente. */
+      tipoPago: datosCobroVenta(formaPago).tipoPago,
+      importeTotalVenta: totalVenta,
       fecha: aIso(fechaEmision),
       pendienteCobroId,
-      lineas: productos.map((p) => ({
-        productoId: p.productoId,
-        nombre: p.nombre,
-        cantidad: p.cantidad,
-        precioUnitario: p.precioUnitario,
+      // Tasas del tablero: una sola por tipo de venta, la misma que se muestra en el resumen.
+      comisiones: state.comisiones,
+      // Las MISMAS líneas (con su neto) que alimentan la métrica "Comision x Venta" del resumen.
+      lineas: lineasComision.map((l) => ({
+        productoId: l.productoId,
+        nombre: l.nombre,
+        cantidad: l.cantidad,
+        precioUnitario: l.precioUnitario,
+        neto: l.neto,
+        comisionable: l.comisionable === true,
       })),
     }).catch(() => {
       /* El registro de comisiones es best-effort: un fallo no revierte la venta ni frena el cierre. */
@@ -204,8 +307,9 @@ export function FacturaView() {
             productoId: l.productoId,
             nombre: l.nombre,
             cantidad: l.cantidad,
-            // Precio al que se facturó (ya bonificado): el mismo que va al comprobante.
-            precioUnitario: precioFacturado(l),
+            /* Precio unitario NETO (ya bonificado). No es el que va al comprobante —ahí va el de
+               lista, con la bonificación en su propia columna—: acá hace falta lo que se cobró. */
+            precioUnitario: precioNetoUnitario(l, descFormaPago),
             comprobanteId: emitido.id,
           }))
       })
@@ -224,36 +328,61 @@ export function FacturaView() {
    *   · Consignación CYO. (Los pendientes de entrega ya los dispara `crearVenta` internamente.)
    */
   const dispararEfectosSecundarios = (vId: string) => {
-    if (cobroSimultaneoOperacion(cliente, cobro)) {
-      // Recibo del cobro simultáneo + su vínculo a la venta, encadenados pero sin bloquear la UI.
-      void (async () => {
-        const { id } = await registrarCobroSimultaneo({
-          totalACobrar: totalVenta,
-          cancelado: resumenC.cancelado,
-          balances,
-          ctaCteId: cliente.ctaCteId,
-          vendedorId: state.vendedor?.id ?? null,
-          nombreCliente: cliente.name,
-        })
-        await vincularVentaAlCobro(id, vId)
-      })().catch(() => {
+    /* El recibo se crea SIEMPRE, sea el cobro simultáneo o posterior. Es un efecto secundario de la
+       venta: se dispara con la venta ya creada y NUNCA se espera, para no congelar el cierre. */
+    if (cobroSimultaneoOperacion(formaPago)) {
+      // SIMULTÁNEO: el recibo ya nace apuntando a la venta y con sus movimientos de pago.
+      void registrarCobro({
+        tipoPago: 'SIMULTANEO',
+        clienteId: cliente.id,
+        nombreCliente: cliente.name,
+        vendedorId: state.vendedor?.id ?? null,
+        ventaId: vId,
+        totalVenta,
+        totalCobrado: resumenC.cancelado,
+        balances,
+      }).catch(() => {
         /* El recibo del cobro es best-effort: un fallo no revierte la venta ya creada. */
       })
       dispararComisiones(vId)
-    } else if (requiereRegistroDeuda(cliente, cobro) && cliente.ctaCteId) {
-      // Deuda del pago posterior en la cuenta corriente; la comisión enlaza la deuda recién creada.
-      void (async () => {
-        const { deudaId } = await registrarDeudaPosterior({
-          ctaCteId: cliente.ctaCteId as string,
-          total: totalVenta,
-          concepto: `${cliente.name} · ${cobro.fecha}`,
-        })
-        dispararComisiones(vId, deudaId)
-      })().catch(() => {
-        /* El registro de la deuda es best-effort: un fallo no revierte la venta ya creada. */
-      })
     } else {
-      dispararComisiones(vId)
+      /* POSTERIOR: el recibo cuelga de la deuda, así que su id es una dependencia REAL. Es lo único
+         que se espera; con el id en mano se dispara el recibo sin bloquear.
+         La comisión NO depende de la deuda: si la deuda falla, igual se registra (sin el vínculo).
+         Encadenarla acá adentro hacía que un fallo de la deuda se llevara puesta la comisión. */
+      void (async () => {
+        let deudaId: string | null = null
+        try {
+          /* Ya no se exige que el cliente tenga cuenta corriente: la deuda cuelga de la VENTA
+             (board_relation_mm4d3nn0) y el tablero resuelve desde ahí la imputación a la cuenta. */
+          if (requiereRegistroDeuda(formaPago, cobro)) {
+            deudaId = (
+              await registrarDeudaPosterior({
+                ventaId: vId,
+                total: totalVenta,
+                concepto: `${cliente.name} · ${cobro.fecha}`,
+              })
+            ).deudaId
+          }
+        } catch {
+          /* El registro de la deuda es best-effort: se sigue sin su id. */
+        }
+        dispararComisiones(vId, deudaId ?? undefined)
+        void registrarCobro({
+          tipoPago: 'POSTERIOR',
+          clienteId: cliente.id,
+          nombreCliente: cliente.name,
+          vendedorId: state.vendedor?.id ?? null,
+          vtaPendienteId: deudaId,
+          /* Los movimientos cargados se detallan como subelementos del recibo: en el cobro con
+             TARJETA (POSTERIOR) cada cupón cargado es un subelemento con sus datos de la tarjeta. */
+          balances,
+        }).catch(() => {
+          /* El recibo del cobro posterior es best-effort. */
+        })
+      })().catch(() => {
+        /* Ningún efecto secundario revierte la venta ya creada. */
+      })
     }
 
     // CON PRESUPUESTO PREVIO: cantidad vendida acumulada en los subelementos del presupuesto.
@@ -316,10 +445,13 @@ export function FacturaView() {
           nombre: cliente.name,
           tipoVenta: tipoVenta ?? 'DIRECTA',
           tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
-          ...datosCobroVenta(cliente, cobro),
+          // El tipo de cobro sale de la forma de pago elegida, no de la condición del cliente.
+          ...datosCobroVenta(formaPago),
           rentabilidad: rentabilidadVenta,
-          descFormaPago: descuentoDeFormaPago(formaPago, state.descuentosPago),
+          descFormaPago,
           tasaCambio: state.tasaCambio,
+          /* "Importe Total $" (numeric_mm5qbwer): el total REAL de la venta. En VENTA PROFORMA es
+             TAL CUAL el TOTAL de la proforma (numeric_mm5sw8n2), que el selector ya devuelve. */
           importeTotalPesos: totalVenta,
           responsableEntrega: esEntregaPosterior
             ? state.entregaVenta.responsable ?? undefined
@@ -369,7 +501,8 @@ export function FacturaView() {
           cliente={cliente}
           cantidadProductos={productos.length}
           cantidadFacturas={comprobantes.length}
-          totalAFacturar={totalVenta}
+          totalAFacturar={totalFacturado}
+          comision={comisionVenta}
           emitidos={factura.comprobantes.length}
           emitiendo={emitiendo}
           onEmitir={emitir}
@@ -379,6 +512,7 @@ export function FacturaView() {
         <div className="factura-col-der">
           <ComprobantesAGenerar
             comprobantes={comprobantes}
+            descFormaPago={descFormaPago}
             letra={letra}
             puntoVenta={PUNTO_VENTA_DEFAULT}
             fechaEmision={fechaEmision}

@@ -17,11 +17,14 @@ const ARS = new Intl.NumberFormat('es-AR', {
 /** "$ 10.465,78" — formato usado en toda la app, siempre con sus dos decimales. */
 export const money = (n: number): string => `$ ${ARS.format(round2(n))}`
 
+/** Símbolo del dólar en todo el sistema: "U$" (U delante del signo), sin espacio. */
+export const SIMBOLO_DOLAR = 'U$'
+
 /**
- * "$U64,50" — importe en DÓLARES del presupuesto bimonetario. Mismo formato de miles y decimales
- * que `money`, con el prefijo `$U` (U mayúscula, sin espacio) que lo distingue de los pesos.
+ * "U$64,50" — importe en DÓLARES del presupuesto bimonetario. Mismo formato de miles y decimales
+ * que `money`, con el prefijo `U$` que lo distingue de los pesos.
  */
-export const moneyU = (n: number): string => `$U${ARS.format(round2(n))}`
+export const moneyU = (n: number): string => `${SIMBOLO_DOLAR}${ARS.format(round2(n))}`
 
 export const pct = (n: number): string => `${Math.round(n)}%`
 

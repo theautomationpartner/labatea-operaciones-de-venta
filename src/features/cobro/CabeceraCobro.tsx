@@ -6,6 +6,11 @@ import { MetricaCobro } from './MetricaCobro'
 interface CabeceraCobroProps {
   cliente: Cliente
   resumen: ResumenCobro
+  /**
+   * Mostrar la condición de pago del cliente. En el cobro con tarjeta NO se muestra: la forma de
+   * pago de la operación ya la eligió el vendedor y la condición pactada no gobierna nada acá.
+   */
+  mostrarCondicion?: boolean
 }
 
 /**
@@ -14,7 +19,11 @@ interface CabeceraCobroProps {
  * cada pago se vea cuánto falta. Las tres métricas van juntas: TOTAL VENTA, TOTAL COBRADO y
  * DIFERENCIA.
  */
-export function CabeceraCobro({ cliente, resumen }: CabeceraCobroProps) {
+export function CabeceraCobro({
+  cliente,
+  resumen,
+  mostrarCondicion = true,
+}: CabeceraCobroProps) {
   /* Sin recortar en cero: si lo cargado se pasa del total, el número tiene que decirlo.
      `resumen.pendiente` sí está recortado, porque es lo que le queda a deber el cliente. */
   const restante = resumen.totalACobrar - resumen.cancelado
@@ -29,11 +38,13 @@ export function CabeceraCobro({ cliente, resumen }: CabeceraCobroProps) {
           <span className="cobro-cab-lbl">Cliente</span>
           <span className="cobro-cab-val">{cliente.name}</span>
         </div>
-        <div className="cobro-cab-campo">
-          <span className="cobro-cab-lbl">Condición de pago</span>
-          {/* Mismo tratamiento que en la ficha del cliente: es el dato que manda acá. */}
-          <span className="cobro-cab-cond">{cliente.condicionPago}</span>
-        </div>
+        {mostrarCondicion && (
+          <div className="cobro-cab-campo">
+            <span className="cobro-cab-lbl">Condición de pago</span>
+            {/* Mismo tratamiento que en la ficha del cliente: es el dato que manda acá. */}
+            <span className="cobro-cab-cond">{cliente.condicionPago}</span>
+          </div>
+        )}
       </div>
 
       <span className="cobro-cab-sep" />

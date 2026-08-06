@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { descuentoDeFormaPago, formasPagoDeCliente } from '@/lib/cobros'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { FormaPagoVenta } from '@/types'
@@ -17,6 +18,14 @@ export function FormaPagoSelect({ bloqueado = false }: { bloqueado?: boolean }) 
   // Las opciones dependen de la condición de pago del cliente: sólo la cuenta corriente las habilita
   // todas; el resto opera únicamente de contado.
   const opciones = formasPagoDeCliente(cliente?.condicionPago)
+  /* Cliente de CONTADO: la única forma de pago posible es CONTADO, así que se preasigna al llegar al
+     paso (un selector con una sola opción no debería obligar a elegirla). Ahorra un paso de UX. No
+     pisa una elección previa (sólo actúa si todavía no hay forma de pago) ni la cuenta corriente. */
+  useEffect(() => {
+    if (!formaPago && opciones.length === 1) {
+      dispatch({ type: 'setFormaPago', value: opciones[0] })
+    }
+  }, [formaPago, opciones, dispatch])
   /* Descuento por forma de pago (pronto pago): CONTADO/débito/crédito muestran su %; la cuenta
      corriente (y sin selección) no aplica descuento, así que el valor queda vacío ("—"). */
   const hayDescuento = !!formaPago && formaPago !== 'CUENTA CORRIENTE'

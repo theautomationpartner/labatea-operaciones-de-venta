@@ -148,8 +148,8 @@ export function validarDescuento(valor: string, topes: TopesDescuento): Descuent
 /* ===== Datos de contacto exigidos por el medio de envío ===== */
 
 /**
- * Datos que el medio elegido necesita para poder llegar: WhatsApp exige teléfono, Email
- * exige correo y "Ambos" exige los dos. Un dato en blanco cuenta como ausente.
+ * Datos que el medio elegido usaría y el contacto no tiene. Es INFORMATIVO: sirve para mostrar
+ * "SIN TELEFONO" / "SIN EMAIL" en la ficha del contacto, no para frenar el envío.
  */
 export function faltaParaMedio(
   contacto: { phone: string; email: string },
@@ -159,6 +159,21 @@ export function faltaParaMedio(
     telefono: (medio === 'WhatsApp' || medio === 'Ambos') && !contacto.phone.trim(),
     email: (medio === 'Email' || medio === 'Ambos') && !contacto.email.trim(),
   }
+}
+
+/**
+ * El contacto NO tiene por dónde recibir el documento con el medio elegido.
+ *
+ * Con "Ambos" alcanza con UNO de los dos datos: se envía por el canal que tenga y se omite el
+ * otro. Antes se lo trataba como incompleto si le faltaba cualquiera de los dos, y eso marcaba
+ * como problemáticos a contactos perfectamente alcanzables.
+ */
+export function sinViaDeEnvio(
+  contacto: { phone: string; email: string },
+  medio: MedioEnvio,
+): boolean {
+  const falta = faltaParaMedio(contacto, medio)
+  return medio === 'Ambos' ? falta.telefono && falta.email : falta.telefono || falta.email
 }
 
 export interface DatosAValidar {

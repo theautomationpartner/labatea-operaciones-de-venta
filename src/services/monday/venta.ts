@@ -9,6 +9,7 @@
  * cabecera sin sus líneas no es una venta, y el paso siguiente no debe abrirse.
  */
 import { VENTAS_ENTREGA } from '@/data/mock'
+import { descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { memoPorCliente } from './cache'
 import type {
@@ -58,8 +59,17 @@ export interface LineaVenta {
   precioUsd?: number
   /** Descuento aplicado a la línea, en %. */
   descuento: number
+  /** Descuento por forma de pago de la línea, en %. Sólo lo trae la VENTA sobre una PROFORMA: se
+   *  lee del subelemento de la proforma (no se recalcula con la forma de pago de la operación). Si
+   *  no viene, la línea usa el descuento por forma de pago de la operación. */
+  descFormaPago?: number
   /** Rentabilidad de la línea, en %. */
   rentabilidad: number
+  /**
+   * El producto comisiona ("Comision" = SI). Se resuelve al seleccionar los productos: del Maestro
+   * en la venta DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO.
+   */
+  comisionable?: boolean
   codigo?: string
   /** Unidad de medida del producto. Se muestra en la factura proforma. */
   um?: string
@@ -140,29 +150,44 @@ const columnasLinea = (
   anteriorEstadoSubIdx: number | null,
   descFormaPago: number,
 ): Record<string, unknown> => {
-  /* Descuento total de la línea (manual + forma de pago, topeado en 100%) y valores derivados:
-     Imp. Bonificado, IVA en $ y Subtotal (total ya bonificado, SIN IVA) de la línea. */
-  const descTotal = Math.min(l.descuento + descFormaPago, 100)
-  const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
+  /* Descuento por forma de pago EFECTIVO de la línea: la VENTA sobre una PROFORMA lo toma tal cual
+     lo guardó la proforma (l.descFormaPago), sin recalcularlo con la forma de pago de la operación;
+     el resto de las ventas usan el de la operación. El `0` de la proforma se respeta (?? no lo pisa). */
+  const descFp = l.descFormaPago ?? descFormaPago
+  /* Descuento de la línea (forma de pago y manual, EN CASCADA) y valores derivados: Imp.
+     Bonificado, IVA en $ y Subtotal (total ya bonificado, SIN IVA). Mismas fórmulas que la
+     tabla de productos: lo que ve el vendedor es lo que se asienta en el board. */
+  const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFp).total
   const impBonifLinea = round2(bonifUnit * l.cantidad)
   const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-  const ivaLinea = round2((totalLinea * (l.iva ?? IVA_DEFECTO_VENTA)) / 100)
+  const ivaMonto = ivaLinea(totalLinea, l.iva ?? IVA_DEFECTO_VENTA)
+  /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto se calcula sobre el precio de
+     LISTA por separado (NO en cascada), y su "precio con dto" = precio − ese monto. Son columnas
+     informativas del board, distintas del Imp. Bonificado / Precio Bonif (que van en cascada). */
+  const descProdUnit = round2((l.precioUnitario * l.descuento) / 100)
+  const descFpUnit = round2((l.precioUnitario * descFp) / 100)
 
   const cv: Record<string, unknown> = {
     [COL.ventaSub.cantidad]: String(l.cantidad),
     [COL.ventaSub.precioUnit]: String(round2(l.precioUnitario)),
     [COL.ventaSub.descuento]: String(l.descuento),
-    // Descuento por forma de pago (pronto pago) elegido en la selección de productos.
-    [COL.ventaSub.descFormaPago]: String(descFormaPago),
-    // Imp. Bonificado de la línea = precio × cantidad × (desc prod + desc forma de pago)/100.
+    // Descuento por forma de pago: de la proforma (venta sobre proforma) o de la operación.
+    [COL.ventaSub.descFormaPago]: String(descFp),
+    // Desglose independiente de cada descuento por unidad (montos y precio ya descontado).
+    [COL.ventaSub.descProdMonto]: String(descProdUnit),
+    [COL.ventaSub.precioConDescProd]: String(round2(l.precioUnitario - descProdUnit)),
+    [COL.ventaSub.descFpMonto]: String(descFpUnit),
+    [COL.ventaSub.precioConDescFp]: String(round2(l.precioUnitario - descFpUnit)),
+    // Imp. Bonificado de la línea = descuento por unidad (en cascada) × cantidad.
     [COL.ventaSub.impBonificado]: String(impBonifLinea),
     // Precio Bonif = precio unitario (en pesos, ya convertido) menos la bonificación por unidad.
     [COL.ventaSub.precioBonif]: String(round2(l.precioUnitario - bonifUnit)),
     // IVA en $ de la línea, sobre el total ya bonificado.
-    [COL.ventaSub.iva]: String(ivaLinea),
+    [COL.ventaSub.iva]: String(ivaMonto),
     // Subtotal de la línea = el "Importe Total" de la tabla de productos (ya bonificado, SIN IVA).
     [COL.ventaSub.subtotal]: String(totalLinea),
-    [COL.ventaSub.rentabilidad]: String(Math.round(l.rentabilidad)),
+    // Rentabilidad de la línea CON DECIMALES: redondear a entero asignaba un margen incorrecto.
+    [COL.ventaSub.rentabilidad]: String(round2(l.rentabilidad)),
   }
   if (entregaSimultanea) {
     cv[COL.ventaSub.cantEntregadaSimult] = String(l.cantidad)
@@ -257,16 +282,57 @@ async function crearPendientesEntrega(
   await mondayApi(`mutation (${decl}) { ${campos.join('\n')} }`, variables)
 }
 
+const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/* El "🤖ID VTA" lo completa el propio tablero al crear el ítem, así que puede tardar un instante
+   en estar disponible: se reintenta un par de veces antes de resignarlo. */
+const ID_VTA_INTENTOS = 3
+const ID_VTA_ESPERA_MS = 400
+
+/**
+ * Número de venta ("VTA-070") del ítem YA CREADO, leído de `pulse_id_mkw8wzn1`. Sólo se puede
+ * consultar DESPUÉS de crear la venta: antes no existe el ítem del que sale.
+ *
+ * Devuelve '' si el tablero no llegó a completarlo; el llamador decide qué hacer con eso.
+ */
+async function leerIdVenta(itemId: string): Promise<string> {
+  for (let intento = 1; intento <= ID_VTA_INTENTOS; intento++) {
+    const data = await mondayApi<{
+      items: { column_values: { id: string; text: string | null }[] }[]
+    }>(
+      `query ($ids: [ID!]) {
+        items(ids: $ids) { column_values(ids: ["${COL.venta.idVta}"]) { id text } }
+      }`,
+      { ids: [itemId] },
+    )
+    const idVta = (data.items?.[0]?.column_values?.[0]?.text ?? '').trim()
+    if (idVta) return idVta
+    if (intento < ID_VTA_INTENTOS) await esperar(ID_VTA_ESPERA_MS)
+  }
+  return ''
+}
+
 /**
  * Crea (bulk) el movimiento de salida en el Stock del producto (subelemento en 18421752360) de una
  * venta SIMULTÁNEA: uno por producto, apuntando al ítem de stock vinculado en el subítem de la venta
  * (board_relation_mm5pz6kz → `l.stockId`), con el estado "Venta Simultanea" (índice dinámico), la
  * fecha del sistema y el egreso = cantidad vendida. La query bulk se arma dinámicamente a partir de
  * las líneas. No crea pendientes de entrega.
+ *
+ * El NOMBRE de cada movimiento es «ID VTA - Producto» (ej. "VTA-070 - CLORO GRANULADO x 1 KG."),
+ * así el movimiento dice de qué venta salió sin abrirlo. Ese ID sale del ítem de la venta, por eso
+ * el orden es ESTRICTO y secuencial: primero se crea la venta, después se consulta su
+ * `pulse_id_mkw8wzn1` y recién entonces se crean los subelementos. Nunca en paralelo: sin el ID
+ * leído no hay nombre que ponerles.
  */
-async function crearMovimientosStockSimultanea(lineas: LineaVentaCreada[]): Promise<void> {
+async function crearMovimientosStockSimultanea(
+  lineas: LineaVentaCreada[],
+  ventaItemId: string,
+): Promise<void> {
   const conStock = lineas.filter((l) => l.stockId && l.cantidad > 0)
   if (conStock.length === 0) return
+  // Paso previo obligatorio: el nombre de los subelementos depende de este valor.
+  const idVta = await leerIdVenta(ventaItemId)
   const fecha = new Date().toISOString().slice(0, 10)
   const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
     `query { boards(ids: [${BOARDS.stockMovimientosSub}]) { columns(ids: ["${COL.stockMovSub.estado}"]) { settings_str } } }`,
@@ -280,7 +346,9 @@ async function crearMovimientosStockSimultanea(lineas: LineaVentaCreada[]): Prom
     }
     if (idx != null) cv[COL.stockMovSub.estado] = { index: idx }
     variables[`s${i}`] = l.stockId
-    variables[`sn${i}`] = l.nombre
+    /* «ID VTA - Producto». Si el tablero todavía no asignó el ID, el movimiento se crea igual con
+       el nombre del producto solo: perder la trazabilidad del nombre es mejor que no descontar. */
+    variables[`sn${i}`] = idVta ? `${idVta} - ${l.nombre}` : l.nombre
     variables[`scv${i}`] = JSON.stringify(cv)
     return `s${i}: create_subitem(parent_item_id: $s${i}, item_name: $sn${i}, column_values: $scv${i}) { id }`
   })
@@ -312,13 +380,12 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
      TOTAL (neto bonificado + IVA), con las mismas fórmulas que cada subelemento. */
   const totales = lineas.reduce(
     (acc, l) => {
-      const descTotal = Math.min(l.descuento + descFormaPago, 100)
-      const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
+      // Mismo descuento por forma de pago que el subelemento: de la proforma si la venta sale de una.
+      const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, l.descFormaPago ?? descFormaPago).total
       const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-      const ivaLinea = round2((totalLinea * (l.iva ?? IVA_DEFECTO_VENTA)) / 100)
       acc.desc += round2(bonifUnit * l.cantidad)
       acc.neto += totalLinea
-      acc.iva += ivaLinea
+      acc.iva += ivaLinea(totalLinea, l.iva ?? IVA_DEFECTO_VENTA)
       return acc
     },
     { desc: 0, neto: 0, iva: 0 },
@@ -366,7 +433,8 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
       index:
         tipoPago === 'SIMULTANEO' ? VENTA_COBRO_INDEX.simultaneo : VENTA_COBRO_INDEX.posterior,
     },
-    [COL.venta.rentabilidad]: String(Math.round(rentabilidad)),
+    // Rentabilidad general CON DECIMALES (no se redondea a entero).
+    [COL.venta.rentabilidad]: String(round2(rentabilidad)),
   }
   // Auditoría: tasa de cambio del dólar usada en la venta (registro inmutable).
   if (tasaCambio != null && tasaCambio > 0) {
@@ -455,18 +523,21 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     ventaSubitemId: ventaSubitemIds[i],
   }))
 
-  /* Con la venta y sus subelementos YA confirmados (IDs obtenidos), se dispara la logística en
-     segundo plano —fire-and-forget: sin `await` bloqueante—. El registro de la venta retorna éxito
-     y cierra la pantalla sin esperar su resolución.
+  /* Con la venta y sus subelementos YA confirmados (IDs obtenidos), se dispara la logística:
        · POSTERIOR: crea los "Pends de Entrega", enlazados a su subelemento de venta. No toca stock.
-       · SIMULTÁNEA: crea el movimiento de salida en el Stock del producto. No crea pendientes. */
+         Va en segundo plano —fire-and-forget—: no depende de ningún dato de la venta ya creada, así
+         que la pantalla cierra sin esperarlo.
+       · SIMULTÁNEA: crea el movimiento de salida en el Stock del producto. Va con AWAIT ESTRICTO,
+         porque su nombre necesita el "🤖ID VTA" que hay que ir a leer del ítem recién creado: no
+         puede largarse en paralelo. El error se traga igual (best-effort): la venta ya está creada
+         y no se invalida porque falle el movimiento de stock. */
   if (tipoEntrega === 'POSTERIOR') {
     void crearPendientesEntrega(clienteId, itemId, lineasConSub, rutaId).catch(() => {
       /* La creación de pendientes de entrega es best-effort y desacoplada. */
     })
   } else if (tipoEntrega === 'SIMULTANEA') {
-    void crearMovimientosStockSimultanea(lineasConSub).catch(() => {
-      /* La creación del movimiento de stock es best-effort y desacoplada. */
+    await crearMovimientosStockSimultanea(lineasConSub, itemId).catch(() => {
+      /* El movimiento de stock es best-effort: no puede tumbar una venta ya registrada. */
     })
   }
 

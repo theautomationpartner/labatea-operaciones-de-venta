@@ -6,6 +6,7 @@ import { PRODUCTOS } from '@/data/mock'
 import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
+import { descuentoDeFormaPago } from '@/lib/cobros'
 import { PASOS_REMITO } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
@@ -13,6 +14,7 @@ import {
   avanceLinea,
   facturaItemUid,
   resumenFactura,
+  tasaComision,
 } from '@/lib/selectors'
 import { getVentasPendientesFacturar, type RemitoPendiente } from '@/services/monday'
 import { type SeleccionFactura } from '@/state/appState'
@@ -43,7 +45,7 @@ function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanc
  * queda pendiente. De ahí se llevan a la factura con la cantidad elegida.
  */
 export function RemitoView() {
-  const { cliente, facturaItems } = useApp()
+  const { cliente, facturaItems, tipoVenta, comisiones, formaPago, descuentosPago } = useApp()
   const dispatch = useDispatch()
   // Remito elegido como filtro de la lista de productos (toggle desde las cards).
   const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null)
@@ -80,8 +82,28 @@ export function RemitoView() {
     }
   }, [cliente])
 
-  // El descuento por remito ya no aplica: la lista aplana varios remitos en una sola factura.
-  const resumen = useMemo(() => resumenFactura(facturaItems, cliente, 0), [facturaItems, cliente])
+  /* Descuento por pronto pago de la forma de pago elegida arriba. La mercadería ya salió por
+     remito —así que la línea no lleva descuento propio—, pero este sí corre: rebaja el precio
+     unitario de cada producto a facturar, y con él el subtotal, el IVA y la comisión. */
+  const descFormaPago = useMemo(
+    () => descuentoDeFormaPago(formaPago, descuentosPago),
+    [formaPago, descuentosPago],
+  )
+
+  // El descuento por remito ya no aplica: la lista aplana varios remitos en una sola factura. La
+  // comisión usa la tasa del tipo de venta (pasiva en la DIRECTA), sólo los productos comisionables,
+  // y su base es el importe GRAVADO (con el descuento por forma de pago aplicado, sin IVA).
+  const resumen = useMemo(
+    () =>
+      resumenFactura(
+        facturaItems,
+        cliente,
+        0,
+        tasaComision(comisiones, tipoVenta ?? 'DIRECTA'),
+        descFormaPago,
+      ),
+    [facturaItems, cliente, comisiones, tipoVenta, descFormaPago],
+  )
   // La factura consume línea: no se avanza si el cliente no la tiene disponible.
   const bloqueo = useBloqueoCredito(resumen.neto)
   const yaEnLaFactura = useMemo(() => new Set(facturaItems.map((it) => it.uid)), [facturaItems])
@@ -184,9 +206,7 @@ export function RemitoView() {
           colResuelta="Cant. facturada"
           colPend="Pend. de facturar"
           colAccion="A facturar"
-          mostrarPrecios
-          mostrarTipo
-          dividirTipo
+          mostrarSubtotal
           filas={pendientes}
           filtroOrigen={filtroOrigen}
           onVerTodos={() => setFiltroOrigen(null)}
@@ -198,6 +218,7 @@ export function RemitoView() {
         titulo="Productos a facturar"
         filas={filas}
         onRemove={(uid) => dispatch({ type: 'removeFacturaItem', uid })}
+        descFormaPago={descFormaPago}
       />
 
       <ResumenFacturaBand resumen={resumen} />

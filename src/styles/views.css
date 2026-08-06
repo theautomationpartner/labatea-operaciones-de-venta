@@ -683,12 +683,6 @@
 .stock-prov {
   min-width: 180px;
 }
-.stock-lbl {
-  font-size: 12px;
-  color: var(--text-gray);
-  font-weight: 600;
-  margin-bottom: 4px;
-}
 .stock-prov-cod {
   font-size: 18px;
   font-weight: 700;
@@ -1374,8 +1368,16 @@
   font-size: 14px;
   color: var(--text-gray);
 }
+/* El dato falta y el envío NO puede llegarle: es un error. */
 .citem-sub--falta {
   color: var(--red);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+/* El dato falta pero el contacto SIGUE siendo alcanzable por el otro canal (medio "Ambos"): se
+   avisa en gris oscuro, no en rojo. Es información, no un problema que frene el envío. */
+.citem-sub--aviso {
+  color: var(--text-dark, #344054);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -2320,7 +2322,35 @@
   color: var(--green-dark);
 }
 
-/* ¿Quién entrega?: tres opciones; al elegir una, las otras quedan anuladas. */
+/* ===== Entrega de Mercadería (remito): panel blanco, sin acordeón ni confirmación ===== */
+/* El fondo blanco vale para el contenedor Y para todo lo que se despliega adentro según la
+   opción elegida, así el bloque se lee como una sola superficie. */
+.entrega-panel {
+  background: #fff;
+  border: 1px solid var(--c-border, #e4e7ee);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.entrega-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--c-border, #e4e7ee);
+  background: #fff;
+}
+.entrega-panel-body {
+  padding: 20px;
+  background: #fff;
+}
+/* Las tarjetas de datos que aparecen según el responsable: mismo fondo blanco, sin relieve propio. */
+.entrega-panel-body .entrega-form,
+.entrega-panel-body .envio-dest-card {
+  background: #fff;
+}
+
+/* ¿Quién entrega?: tres opciones, siempre elegibles. Cambiar de opción limpia los datos de la
+   anterior y vale la última que quede seleccionada. */
 .entrega-opts {
   display: flex;
   gap: 12px;
@@ -2385,12 +2415,8 @@
 .entrega-form {
   margin-top: 16px;
 }
-/* Responsable logístico del Cierre de Venta: respiro amplio respecto del bloque de cobro / impacto
-   en cuenta corriente. Se sube la especificidad (`.cobro-v2 .cobro-acc.entrega-cierre`) porque
-   `.cobro-v2 .cobro-acc { margin: 0 }` pisaba un `.entrega-cierre` suelto. */
-.cobro-v2 .cobro-acc.entrega-cierre {
-  margin-top: 40px;
-}
+/* El responsable logístico de la VENTA usa el MISMO `.entrega-panel` que el del Remito: es una
+   etapa propia, así que ya no necesita el respiro extra que llevaba cuando colgaba del cobro. */
 /* Refuerzo de especificidad: garantiza el padding interno de las 3 tarjetas en el cierre de venta. */
 .cobro-v2 .entrega-opts .entrega-opt {
   padding: 24px;

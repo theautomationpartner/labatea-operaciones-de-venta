@@ -21,9 +21,14 @@ export function ImpactoCtaCte({ cliente, resumen }: ImpactoCtaCteProps) {
   const excedido = cta.resultante > cta.limite
 
   return (
-    <div className="cobro-imp">
-      <h3 className="cobro-imp-title">Impacto en cuenta corriente</h3>
+    /* MISMA caja que "¿Quién entrega la mercadería?": panel blanco con su cabecera separada por un
+       filete. Lo que va adentro —las cuatro métricas— no cambia. */
+    <div className="entrega-panel">
+      <div className="entrega-panel-head">
+        <h3 className="font-b cobro-imp-title">Impacto en cuenta corriente</h3>
+      </div>
 
+      <div className="entrega-panel-body">
       <div className="cobro-imp-row">
         <div className="cobro-imp-met">
           <span className="cobro-cab-ic cobro-cab-ic--gris">
@@ -75,6 +80,7 @@ export function ImpactoCtaCte({ cliente, resumen }: ImpactoCtaCteProps) {
             </span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

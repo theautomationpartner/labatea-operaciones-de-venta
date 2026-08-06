@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Avatar } from '@/components/ui/Avatar'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { clienteBloqueado, MENSAJE_CLIENTE_BLOQUEADO } from '@/lib/credito'
@@ -11,14 +10,6 @@ import { ClienteFicha } from './ClienteFicha'
 import { DatosPresupuesto } from './DatosPresupuesto'
 import { RemitoConfig } from './RemitoConfig'
 import { VentaConfig } from './VentaConfig'
-
-/** A quién queda asignado el vendedor, según la operación. */
-const TITULO_VENDEDOR: Record<string, string> = {
-  PRESUPUESTAR: 'Vendedor asignado al presupuesto',
-  'VENTA': 'Vendedor asignado a la venta',
-  'VENTA PROFORMA': 'Vendedor asignado a la venta',
-  REMITO: 'Vendedor asignado al remito',
-}
 
 /** Qué viene después de confirmar el cliente, para anticiparlo en el footer. */
 const SIGUIENTE_PASO: Record<string, string> = {
@@ -136,15 +127,9 @@ export function ClienteView() {
 
       {/* Vendedor y buscador de cliente en un mismo box, separados por un filete. */}
       <div className="toolbar-wrapper">
-        <div
-          className="card unified-toolbar"
-          title={TITULO_VENDEDOR[operacion ?? 'PRESUPUESTAR']}
-        >
-          <div className="seller-select">
-            <Avatar ini={vendedor.ini} color={vendedor.color} />
-            <span className="vname">{vendedor.name}</span>
-          </div>
-
+        {/* Sólo el buscador: el vendedor de la operación ya se ve —y se cambia— en el selector
+            del encabezado, así que repetirlo acá no aportaba nada. */}
+        <div className="card unified-toolbar">
           <BuscarCliente estado={estadoBusqueda} onEstado={setEstadoBusqueda} />
         </div>
       </div>

@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
-import { pagoSimultaneo } from '@/lib/cobros'
 import {
+  getComisionesVenta,
   getDescuentosPago,
   getDiasVigencia,
   getTasaCambioHoy,
   getTopesDescuento,
   getUsuarioActual,
   getVendedores,
+  limpiarCachesConsultas,
 } from '@/services/monday'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
@@ -41,18 +42,26 @@ const VISTAS: Record<Paso, () => JSX.Element | null> = {
 }
 
 export function App() {
-  const { paso, cliente } = useApp()
+  const { paso, cliente, operacion } = useApp()
   const dispatch = useDispatch()
   const scrollRef = useRef<HTMLDivElement>(null)
   const Vista = VISTAS[paso]
+
+  /* Al cambiar de operación (y al resetear) se vacían las cachés de consultas: cada operación
+     re-consulta datos frescos (documentos del cliente y catálogos), en vez de arrastrar un
+     resultado viejo. Dentro de una misma operación la caché se mantiene, así navegar con el stepper
+     no vuelve a pegarle a la API. La operación cambia en el inicio, cuando ninguna vista de datos
+     está montada, así que no hay carrera con sus consultas. */
+  useEffect(() => {
+    limpiarCachesConsultas()
+  }, [operacion])
   /* El cobro simultáneo es el único camino que aplica descuentos por forma de pago. Puede
      llegar por dos lados: el cliente de contado, o el de cuenta corriente que en el cierre
      elige cobrar en el acto ("SI"). Esa elección se toma en el paso 3, así que los descuentos
      se traen para los dos casos: si no, el cobro en el acto se cargaría sin ellos. */
   const clienteId = cliente?.id ?? null
-  const clientePuedeCobrarEnElActo = cliente
-    ? pagoSimultaneo(cliente) || cliente.condicionPago === 'CUENTA CORRIENTE'
-    : false
+  const clientePuedeCobrarEnElActo =
+    cliente?.condicionPago === 'CONTADO' || cliente?.condicionPago === 'CUENTA CORRIENTE'
 
   // Cada paso arranca desde arriba, como en una navegación real.
   useEffect(() => {
@@ -67,6 +76,12 @@ export function App() {
       .catch(() => {})
     getTopesDescuento()
       .then((topes) => vivo && dispatch({ type: 'setTopesDescuento', value: topes }))
+      .catch(() => {})
+    /* Tasas de comisión del vendedor ("Comision por Venta"): una para la venta con presupuesto
+       previo (Activa) y otra para la directa (Pasiva). Ante un error quedan en 0: la comisión no
+       se muestra, pero la operación sigue. */
+    getComisionesVenta()
+      .then((c) => vivo && dispatch({ type: 'setComisiones', value: c }))
       .catch(() => {})
     /* Vendedores del equipo "Vendedores" (Monday): pueblan el selector de vendedor. Se piden una
        sola vez, al montar la app. Ante un error se deja la lista vacía (y el selector deja de

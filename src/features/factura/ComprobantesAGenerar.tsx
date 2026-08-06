@@ -1,18 +1,14 @@
 import { useState } from 'react'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { addDays } from '@/lib/dates'
-import { precioFacturado, type ComprobanteAGenerar } from '@/lib/facturacion'
-import { money, round2 } from '@/lib/format'
-import type { LineaVenta } from '@/services/monday/venta'
+import { bonifLinea, netoLinea, type ComprobanteAGenerar } from '@/lib/facturacion'
+import { money } from '@/lib/format'
 import type { ComprobanteEmitido, LetraComprobante } from '@/types'
-
-/** Bruto de la línea (sin bonificar): precio unitario × cantidad. */
-const brutoLinea = (l: LineaVenta): number => round2(l.precioUnitario * l.cantidad)
-/** Importe bonificado de la línea: el descuento aplicado (bruto − neto facturado). */
-const bonifLinea = (l: LineaVenta): number => round2((l.precioUnitario - precioFacturado(l)) * l.cantidad)
 
 interface ComprobantesAGenerarProps {
   comprobantes: ComprobanteAGenerar[]
+  /** Descuento por forma de pago de la operación, en %: compone el importe bonificado de cada línea. */
+  descFormaPago: number
   /** Letra del comprobante, derivada de la condición fiscal del cliente. */
   letra: LetraComprobante
   /** Punto de venta con el que se emiten. */
@@ -48,6 +44,7 @@ function Dato({ rotulo, children, fuerte }: { rotulo: string; children: React.Re
  */
 function CardComprobante({
   comprobante,
+  descFormaPago,
   letra,
   puntoVenta,
   fechaEmision,
@@ -57,6 +54,7 @@ function CardComprobante({
   emitiendo,
 }: {
   comprobante: ComprobanteAGenerar
+  descFormaPago: number
   letra: LetraComprobante
   puntoVenta: string
   fechaEmision: string
@@ -67,8 +65,6 @@ function CardComprobante({
 }) {
   const [abierta, setAbierta] = useState(true)
   const consignada = comprobante.tipo === 'CONSIGNADA'
-  // Bruto del comprobante: suma de los subtotales de línea (precio × cantidad), sin bonificar.
-  const brutoComprobante = round2(comprobante.lineas.reduce((acc, l) => acc + brutoLinea(l), 0))
   // Sin cabecera creada o con líneas faltantes, el comprobante no se da por emitido.
   const completo = Boolean(emitido?.id) && emitido!.lineasCreadas >= emitido!.lineasEsperadas
   const incompleto = Boolean(emitido) && !completo
@@ -125,7 +121,9 @@ function CardComprobante({
               <tr>
                 <th>Producto</th>
                 <th className="ta-c">Cant.</th>
-                <th className="ta-r">Importe Bonif.</th>
+                <th className="ta-c">U.Medida</th>
+                <th className="ta-r">Unitario</th>
+                <th className="ta-r">Imp.Bonif</th>
                 <th className="ta-r">Subtotal</th>
               </tr>
             </thead>
@@ -137,10 +135,15 @@ function CardComprobante({
                     <span className="comp-nom">{l.nombre}</span>
                   </td>
                   <td className="ta-c">{l.cantidad}</td>
-                  {/* Importe bonificado (descuento) de la línea. */}
-                  <td className="ta-r">{money(bonifLinea(l))}</td>
-                  {/* Subtotal bruto de la línea: precio × cantidad, antes de la bonificación. */}
-                  <td className="ta-r comp-total-prod">{money(brutoLinea(l))}</td>
+                  {/* Unidad de venta del producto, resuelta en el origen de la línea. */}
+                  <td className="ta-c">{l.um?.trim() || '—'}</td>
+                  {/* Precio unitario de LISTA: sin ningún descuento aplicado. */}
+                  <td className="ta-r">{money(l.precioUnitario)}</td>
+                  {/* Importe bonificado de la línea: descuento total por unidad × cantidad. */}
+                  <td className="ta-r">{money(bonifLinea(l, descFormaPago))}</td>
+                  {/* Subtotal: el mismo de la selección de productos —precio con descuento ×
+                      cantidad, sin IVA—. Es lo que la fórmula del board deja en "Subtotal $". */}
+                  <td className="ta-r comp-total-prod">{money(netoLinea(l, descFormaPago))}</td>
                 </tr>
               ))}
             </tbody>
@@ -167,12 +170,13 @@ function CardComprobante({
               )}
             </div>
 
-            {/* Totales estándar (mismas clases/posición que proforma y presupuesto). El "Gravado" es
-                el neto ya bonificado (comprobante.subtotal); el "Subtotal" es el bruto y el
-                "Descuento" la diferencia entre ambos. */}
+            {/* Totales estándar (mismas clases/posición que proforma y presupuesto), con los
+                mismos números que el resumen de la selección de productos: el "Subtotal" es el
+                bruto sin bonificar, el "Descuento" la suma de la columna Imp.Bonif y el "Gravado"
+                la resta de los dos. */}
             <TotalesDoc
-              subtotal={brutoComprobante}
-              descuento={round2(brutoComprobante - comprobante.subtotal)}
+              subtotal={comprobante.bruto}
+              descuento={comprobante.descuento}
               gravado={comprobante.subtotal}
               iva={comprobante.iva}
               total={comprobante.total}
@@ -200,6 +204,7 @@ function CardComprobante({
  */
 export function ComprobantesAGenerar({
   comprobantes,
+  descFormaPago,
   letra,
   puntoVenta,
   fechaEmision,
@@ -226,6 +231,7 @@ export function ComprobantesAGenerar({
         <CardComprobante
           key={c.clave}
           comprobante={c}
+          descFormaPago={descFormaPago}
           letra={letra}
           puntoVenta={puntoVenta}
           fechaEmision={fechaEmision}

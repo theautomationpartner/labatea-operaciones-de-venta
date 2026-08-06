@@ -12,6 +12,8 @@ interface ResumenVentaProps {
   cantidadFacturas: number
   /** Total (en pesos) que se va a facturar: la suma de los comprobantes de la operación. */
   totalAFacturar: number
+  /** Comisión del vendedor por esta venta, en pesos. Es la misma que se registra en el board. */
+  comision: number
   /** Comprobantes ya escritos en el board: con alguno, no se vuelve a emitir. */
   emitidos: number
   emitiendo: boolean
@@ -54,6 +56,7 @@ export function ResumenVenta({
   cantidadProductos,
   cantidadFacturas,
   totalAFacturar,
+  comision,
   emitidos,
   emitiendo,
   onEmitir,
@@ -97,6 +100,14 @@ export function ResumenVenta({
         {/* Total (en pesos) que se va a facturar en esta operación: destacado. */}
         <Fila label="Total a Facturar" requerido={false} tono="total">
           {money(totalAFacturar)}
+        </Fila>
+      </div>
+
+      {/* Comisión del vendedor por esta venta: cierra los números de la operación, antes de las
+          observaciones. Es el mismo importe que se registra en "💲Registro de Comisiones". */}
+      <div className="rgroup resumen-comision">
+        <Fila label="Comision x Venta" requerido={false} tono="verde">
+          {money(comision)}
         </Fila>
       </div>
 

@@ -4,11 +4,13 @@ import { hoy } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { pasoDeProductos, pasosKeysDe } from '@/lib/pasos'
+import { productoConPrecio } from '@/lib/precios'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
   Cliente,
   CobroState,
+  ComisionesVenta,
   ComprobanteEmitido,
   Contacto,
   EntregaVentaState,
@@ -73,6 +75,8 @@ export interface AppState {
   topesDescuento: TopesDescuento
   /** Descuento por forma de pago ("Medios de Pago" del tablero de configuración). */
   descuentosPago: DescuentosPago
+  /** Tasas de comisión del vendedor ("Comision por Venta" del tablero de configuración). */
+  comisiones: ComisionesVenta
   /** Filtros de taxonomía aplicados a la búsqueda de productos (Rubro/Subrubro/Categoría). */
   filtros: Filtro[]
   lineas: LineaPresupuesto[]
@@ -82,6 +86,12 @@ export interface AppState {
   ventaId: string | null
   /** ID del ítem de proforma creado en el board de Proformas (18424580497). null = todavía no. */
   proformaId: string | null
+  /** IMPORTE TOTAL de la proforma elegida en la VENTA PROFORMA (su "🤖TOTAL", numeric_mm5sw8n2). Se
+   *  mapea tal cual al "Importe Total $" de la venta al registrarla. null fuera de la VENTA PROFORMA. */
+  proformaImporte: number | null
+  /** Tipo de venta de la proforma elegida (VENTA PROFORMA): define la tasa de comisión (Activa/
+   *  Pasiva). null fuera de la VENTA PROFORMA. */
+  proformaTipoVenta: TipoVenta | null
   /**
    * Éxito PERSISTENTE de la etapa de emisión: el documento (presupuesto/remito) ya se emitió con
    * éxito en esta operación. Evita re-disparar la mutación irreversible al volver con el stepper.
@@ -179,11 +189,15 @@ export const initialState: AppState = {
   moneda: 'Pesos',
   topesDescuento: TOPES_DESCUENTO_DEFAULT,
   descuentosPago: DESCUENTO_PAGO_DEFAULT,
+  // Sin la configuración leída, la comisión es 0: no se asume ninguna tasa.
+  comisiones: { activa: 0, pasiva: 0 },
   filtros: [],
   lineas: [],
   presupuestoId: null,
   ventaId: null,
   proformaId: null,
+  proformaImporte: null,
+  proformaTipoVenta: null,
   documentoEmitido: false,
   documentoEnviado: false,
   nroPresupuesto: null,
@@ -255,9 +269,10 @@ export type Action =
   | { type: 'setMoneda'; value: Moneda }
   | { type: 'setTopesDescuento'; value: TopesDescuento }
   | { type: 'setDescuentosPago'; value: DescuentosPago }
+  | { type: 'setComisiones'; value: ComisionesVenta }
   | { type: 'setPresupuestoId'; value: string | null }
   | { type: 'setVentaId'; value: string | null }
-  | { type: 'setProformaId'; value: string | null }
+  | { type: 'setProformaId'; value: string | null; importe?: number | null; tipoVenta?: TipoVenta | null }
   | { type: 'setDocumentoEmitido'; value: boolean }
   | { type: 'setDocumentoEnviado'; value: boolean }
   | { type: 'setNroPresupuesto'; value: string | null }
@@ -267,6 +282,7 @@ export type Action =
   | { type: 'addLinea'; producto: Producto; cantidad: number; descuento: number }
   | { type: 'setCantidadLinea'; id: string; cantidad: number }
   | { type: 'setDescuentoLinea'; id: string; descuento: number }
+  | { type: 'setPrecioLinea'; id: string; precio: number }
   | { type: 'removeLinea'; id: string }
   | { type: 'setEnviar'; value: boolean }
   | { type: 'setMedioEnvio'; value: MedioEnvio }
@@ -410,6 +426,7 @@ export function reducer(state: AppState, action: Action): AppState {
         fechaEmision: state.fechaEmision,
         topesDescuento: state.topesDescuento,
         descuentosPago: state.descuentosPago,
+        comisiones: state.comisiones,
         vendedor: state.vendedor,
         // Los vendedores y la tasa de cambio se leen una sola vez al iniciar: no se vuelven a pedir.
         vendedores: state.vendedores,
@@ -462,6 +479,8 @@ export function reducer(state: AppState, action: Action): AppState {
         ventaId: null,
         // La proforma emitida también es del cliente anterior.
         proformaId: null,
+        proformaImporte: null,
+        proformaTipoVenta: null,
         log: null,
         ventaItems: [],
         facturaItems: [],
@@ -519,7 +538,13 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'setFormaPago':
-      return { ...state, formaPago: action.value }
+      /* Cambiar la forma de pago invalida cualquier cobro ya cargado: sus movimientos pertenecen al
+         medio anterior (p. ej. Tarjeta de Débito → Crédito). Si el usuario retrocede al paso de
+         productos y cambia el medio, el cobro se reinicia POR COMPLETO para que la etapa de cobro
+         arranque en blanco y lo obligue a cargar los datos del nuevo medio desde cero. Si el valor
+         no cambia (misma forma de pago), no se toca nada: no se pisan movimientos válidos. */
+      if (action.value === state.formaPago) return state
+      return { ...state, formaPago: action.value, cobro: cobroInicial }
 
     case 'setDiasVigencia':
       return { ...state, diasVigencia: action.value }
@@ -533,6 +558,9 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setDescuentosPago':
       return { ...state, descuentosPago: action.value }
 
+    case 'setComisiones':
+      return { ...state, comisiones: action.value }
+
     case 'setPresupuestoId':
       return { ...state, presupuestoId: action.value }
 
@@ -540,7 +568,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, ventaId: action.value }
 
     case 'setProformaId':
-      return { ...state, proformaId: action.value }
+      // La VENTA PROFORMA manda el importe total y el tipo de venta de la proforma elegida (para el
+      // "Importe Total $" y la tasa de comisión); el resto de los flujos no los pasan y quedan null.
+      return {
+        ...state,
+        proformaId: action.value,
+        proformaImporte: action.importe ?? null,
+        proformaTipoVenta: action.tipoVenta ?? null,
+      }
 
     case 'setDocumentoEmitido':
       return { ...state, documentoEmitido: action.value }
@@ -617,6 +652,28 @@ export function reducer(state: AppState, action: Action): AppState {
           l.id === action.id ? { ...l, descuento: action.descuento } : l,
         ),
       }
+
+    /* Override del PRECIO UNITARIO de una línea (sólo lo despacha un administrador, ver
+       `lib/permisos`). El precio se guarda en la copia del producto de la línea, así todo lo que
+       deriva de él —descuentos, subtotal, IVA, resumen y lo que se escribe en Monday— se recalcula
+       solo, sin tocar el catálogo ni el resto de las líneas.
+
+       La RENTABILIDAD se reajusta en el mismo paso: el COSTO del producto no cambia porque se
+       venda más barato, así que se conserva (costo = precio × (1 − rent/100)) y el margen se mide
+       contra el precio nuevo. Al conservarse el costo, pisar el precio dos veces seguidas da el
+       mismo resultado que pisarlo una sola vez con el valor final. */
+    case 'setPrecioLinea': {
+      const precio = round2(action.precio)
+      // Un precio de 0 o negativo no es un precio: se ignora y la celda queda marcada en rojo.
+      if (!(precio > 0)) return state
+      return {
+        ...state,
+        presupuestoId: null,
+        lineas: state.lineas.map((l) =>
+          l.id === action.id ? { ...l, producto: productoConPrecio(l.producto, precio) } : l,
+        ),
+      }
+    }
 
     case 'removeLinea':
       return {
@@ -827,18 +884,24 @@ export function reducer(state: AppState, action: Action): AppState {
         },
       }
 
-    // Sin tope duro: pasarse de lo pendiente se puede, y la tabla lo marca en rojo.
-    case 'setRemitoItemCantidad':
+    /* Sin tope duro por arriba: pasarse de lo pendiente se puede, y la tabla lo marca en rojo.
+       Por abajo sí hay piso, y depende del tipo de emisión:
+         · ANTERIOR: la línea se confirmó contra lo pendiente de una venta, así que no puede
+           quedar en 0 —una entrega de cero unidades no existe—. Para sacarla está la papelera.
+         · POSTERIOR: la mercadería sale del catálogo y la línea sí puede ir a 0. */
+    case 'setRemitoItemCantidad': {
+      const minimo = state.remito.tipoEmision === 'ANTERIOR' ? 1 : 0
       return {
         ...state,
         remito: {
           ...state.remito,
           remitoId: null,
           items: state.remito.items.map((it) =>
-            it.uid === action.uid ? { ...it, cantidad: Math.max(0, action.cantidad) } : it,
+            it.uid === action.uid ? { ...it, cantidad: Math.max(minimo, action.cantidad) } : it,
           ),
         },
       }
+    }
 
     case 'removeRemitoItem':
       return {

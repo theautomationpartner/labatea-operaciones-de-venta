@@ -47,8 +47,13 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
   const tieneDescuento = importeBonif > 0
   const columnas: Record<string, unknown> = {
     [COL.presupuestoSub.cantidad]: String(linea.cantidad),
-    [COL.presupuestoSub.rentabilidad]: String(Math.round(p.rentabilidad)),
+    // Rentabilidad del producto CON DECIMALES (no se redondea a entero).
+    [COL.presupuestoSub.rentabilidad]: String(round2(p.rentabilidad)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
+    /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento por producto por unidad, en la moneda
+       del producto. Es el importe bonificado "puro": SIN descuento vale 0 (a diferencia de "Importe
+       Bonif.", que sin descuento guarda el precio). El presupuesto no tiene descuento por forma de pago. */
+    [COL.presupuestoSub.descProdMonto]: String(importeBonif),
     /* "Importe Bonif." (numeric_mm5rddvm): CON descuento, el monto bonificado; SIN descuento, el
        precio unitario ORIGINAL (sin bonificar), por regla de negocio del board. */
     [COL.presupuestoSub.importeBonif]: String(tieneDescuento ? importeBonif : precio),

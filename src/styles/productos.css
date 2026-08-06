@@ -251,19 +251,233 @@
   font-size: 16px;
   opacity: 0.7;
 }
-.productos-v2 .product-actions-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+/* --- Producto elegido: dos filas de dos columnas --- */
+/* FILA 1: la ficha del producto a la izquierda; los campos y el resumen, a la derecha. */
+.productos-v2 .cl-top {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 2fr);
   gap: 24px;
-  flex-wrap: wrap;
+  align-items: start;
 }
-.productos-v2 .product-info {
+/* Columna de operación: la cuenta arriba y el resumen debajo, los dos contra el margen DERECHO
+   de la card y arrancando desde el borde superior (el grid ya los alinea al top). */
+.productos-v2 .cl-oper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 16px;
+  min-width: 0;
+}
+.productos-v2 .cl-oper > * {
+  max-width: 100%;
+}
+.productos-v2 .cl-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
+.productos-v2 .cl-stock {
+  border-left: 1px solid var(--p-border);
+  padding-left: 24px;
+  min-width: 0;
+}
+/* Precio de lista y rentabilidad: los dos datos de catálogo, en cuerpo grande (mín. 15px). */
+.productos-v2 .cl-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin-top: 12px;
+}
+.productos-v2 .cl-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.productos-v2 .cl-kpi-l {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.productos-v2 .cl-kpi-v {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+/* Sub-card del precio de partida real (lista − pronto pago): abre la cuenta de la fila de
+   operación, en lugar de un input, porque es un dato que no se edita en ningún caso. */
+.productos-v2 .cl-subcard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 240px;
+  padding: 12px 16px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-md);
+  background: #f7f9fc;
+}
+.productos-v2 .cl-subcard-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.productos-v2 .cl-subcard-l {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+.productos-v2 .cl-subcard-note {
+  font-size: 11px;
+  color: var(--p-text-secondary);
+}
+/* Mismo cuerpo que el "Precio Unitario" de arriba (`.cl-kpi-v`): son los dos precios de la
+   ficha y tienen que leerse con el mismo peso. */
+.productos-v2 .cl-subcard-v {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--p-primary);
+  white-space: nowrap;
+}
+
+/* La cuenta de la operación, en una sola línea horizontal y alineada por su base:
+   precio actual − descuento (% o $) = precio unitario final. */
+.productos-v2 .cl-mid {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+/* El igual que separa los operandos del resultado. */
+.productos-v2 .cl-igual {
+  padding-bottom: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+}
+/* Resultado de la cuenta: misma caja que el precio de partida, en verde por ser el precio de
+   venta, y con su contenido centrado. */
+.productos-v2 .cl-cardfin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+  min-width: 170px;
+  padding: 12px 16px;
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius-md);
+  background: #f6fbf8;
+}
+.productos-v2 .cl-cardfin-l {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.productos-v2 .cl-cardfin-v {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+/* FILA 2: el desglose del descuento y, a la derecha, el stock del producto. */
+.productos-v2 .cl-bottom {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+  padding-top: 20px;
+  border-top: 1px dashed var(--p-border);
+}
+/* Remito (sin datos financieros): no hay desglose, el stock toma el ancho completo. */
+.productos-v2 .cl-bottom--solo-stock {
+  grid-template-columns: minmax(0, 1fr);
+}
+.productos-v2 .cl-bottom--solo-stock .cl-stock {
+  border-left: none;
+  padding-left: 0;
+}
+.productos-v2 .cl-resumen {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 16px 20px;
+  border-radius: var(--p-radius-md);
+  background: #f7f9fc;
+}
+/* Sin datos financieros sólo queda el botón: sin fondo ni caja, contra el margen derecho. */
+.productos-v2 .cl-resumen:not(:has(.cl-metric)) {
+  background: none;
+  justify-content: flex-end;
+  padding: 0;
+}
+.productos-v2 .cl-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+/* El subtotal cierra el resumen: va detrás de un filete, como el total de un comprobante. */
+.productos-v2 .cl-metric--sep {
+  border-left: 1px solid var(--p-border);
+  padding-left: 28px;
+}
+.productos-v2 .cl-metric-l {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.productos-v2 .cl-metric-v {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--p-text-main);
+  white-space: nowrap;
+}
+.productos-v2 .cl-metric-v--verde {
+  color: var(--green-dark);
+}
+.productos-v2 .cl-metric-v--azul {
+  color: var(--p-primary);
+}
+/* El subtotal cierra la operación: 1px más que el resto de los importes del resumen. */
+.productos-v2 .cl-metric-v--sub {
+  font-size: 19px;
+}
+.productos-v2 .cl-metric-note {
+  font-size: 11px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .cl-resumen .btn-primary {
+  padding: 12px 22px;
+  white-space: nowrap;
+}
+/* Sin ancho para las dos columnas, las filas 1 y 3 se apilan y el filete pasa a horizontal. */
+@container (max-width: 900px) {
+  .productos-v2 .cl-top,
+  .productos-v2 .cl-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .productos-v2 .cl-stock {
+    border-left: none;
+    border-top: 1px solid var(--p-border);
+    padding-left: 0;
+    padding-top: 20px;
+  }
+}
+
 .productos-v2 .product-name {
   font-size: 15px;
   font-weight: 700;
@@ -272,15 +486,6 @@
 .productos-v2 .product-meta {
   font-size: 12px;
   color: var(--p-text-secondary);
-}
-.productos-v2 .controls-group {
-  display: flex;
-  align-items: flex-end;
-  /* `flex-wrap: wrap` evita que el botón "Agregar" (último ítem) se desborde de la card cuando el
-     ancho no alcanza: los controles envuelven a una línea nueva en vez de salirse. El `row-gap`
-     (12px) los separa al colapsar. */
-  flex-wrap: wrap;
-  gap: 12px 16px;
 }
 .productos-v2 .control-item {
   display: flex;
@@ -454,40 +659,38 @@
   align-items: flex-start;
   font-size: 13px;
 }
-/* Sólo en el preview del producto elegido: filete punteado contra los controles. */
-.productos-v2 .selected-product-box .stock {
-  padding-top: 16px;
-  border-top: 1px dashed var(--p-border);
+/* Dentro del panel (preview del producto elegido) la ficha ocupa su propia línea, arriba de
+   las cajas de stock. En el detalle de la línea va suelta, en la cabecera del bloque. */
+.productos-v2 .stock .stock-prov {
+  flex: 1 1 100%;
 }
+/* Ficha del proveedor en UNA línea: código, razón social y tipo de mercadería. */
 .productos-v2 .stock-prov {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 180px;
-}
-.productos-v2 .stock-lbl {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--p-text-secondary);
-  margin-bottom: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
 }
 .productos-v2 .stock-prov-cod {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--p-primary);
   font-weight: 700;
   margin-bottom: 0;
 }
 .productos-v2 .stock-prov-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--p-text-main);
   margin-bottom: 0;
 }
-/* El tipo de mercadería se lee más que el resto del bloque: 5px más grande. */
+/* El tipo de mercadería se separa de la razón social con un filete, no con más tamaño. */
 .productos-v2 .stock-tipo {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--p-text-secondary);
-  margin-top: 6px;
+  margin-top: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--p-border);
 }
 .productos-v2 .stock-tipo b {
   color: var(--p-text-main);
@@ -564,10 +767,19 @@
   min-width: 0;
 }
 .productos-v2 .cov-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--p-text-main);
   margin-bottom: 12px;
+}
+/* Ayuda de la barra: explica qué mide sin ocupar una línea de texto. */
+.productos-v2 .cov-info {
+  color: var(--p-text-secondary);
+  font-size: 12px;
+  cursor: help;
 }
 /* Pista de la barra de temperatura: la escala completa, apagada, siempre visible.
    En bloque, no en flex: como item flexible el relleno se encogía a cero. */
@@ -713,10 +925,170 @@
 .productos-v2 .tablec .rexp {
   background: #f9fafb;
 }
+/* Único encabezado que envuelve en dos líneas: en una sola se comía el ancho de la tabla. */
+.productos-v2 .tablec th.col-pcd {
+  white-space: normal;
+  min-width: 118px;
+  max-width: 136px;
+}
+
+/* ===== Detalle de la línea (fila desplegada) ===== */
 .productos-v2 .expd {
+  background: #fff;
   border-radius: var(--p-radius-md);
   border-color: var(--p-border);
   margin: 10px 12px 16px 44px;
+  padding: 20px 24px;
+}
+/* Dos bloques: cómo se compone el descuento (izq.) y el stock del producto (der.), separados
+   por un filete vertical. Al angostarse se apilan y el filete pasa a horizontal. */
+.productos-v2 .lindet {
+  display: grid;
+  /* Con el stock en vertical las dos columnas se equilibran: el desglose no queda apretado y a
+     las tres cajas les sobra ancho para ir en una sola línea. */
+  grid-template-columns: minmax(260px, 1fr) minmax(0, 1.6fr);
+  gap: 24px;
+  align-items: start;
+}
+/* Línea sin ficha de catálogo (no hay stock que mostrar): una sola columna, acotada. */
+.productos-v2 .lindet--solo {
+  grid-template-columns: minmax(0, 420px);
+}
+.productos-v2 .lindet-stock {
+  border-left: 1px solid var(--p-border);
+  padding-left: 24px;
+  min-width: 0;
+}
+/* En la columna de stock —la del detalle de la fila y la de la carga de producto— el bloque se
+   lee en VERTICAL: las cajas y la cobertura, una debajo de la otra. */
+.productos-v2 .lindet-stock .stock,
+.productos-v2 .lindet-stock .stock-main,
+.productos-v2 .cl-stock .stock,
+.productos-v2 .cl-stock .stock-main {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 16px;
+  width: 100%;
+}
+.productos-v2 .lindet-stock .stock-main,
+.productos-v2 .cl-stock .stock-main {
+  flex: 0 0 auto;
+}
+/* Las tres cajas, en cambio, se mantienen SIEMPRE en una misma línea y se reparten el ancho
+   por igual; al angostarse se encogen (`min-width: 0`) en vez de bajar una debajo de otra. */
+.productos-v2 .lindet-stock .stock-boxes,
+.productos-v2 .cl-stock .stock-boxes {
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  width: 100%;
+}
+.productos-v2 .lindet-stock .stock-box,
+.productos-v2 .cl-stock .stock-box {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.productos-v2 .lindet-stock .cov-wrap,
+.productos-v2 .cl-stock .cov-wrap {
+  flex: 0 0 auto;
+  width: 100%;
+}
+.productos-v2 .lindet-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+/* Título del bloque a la izquierda y ficha del proveedor pegada al margen derecho. Al faltar
+   ancho la ficha baja a la línea de abajo, siempre alineada a la derecha. */
+.productos-v2 .lindet-hrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  margin-bottom: 16px;
+}
+.productos-v2 .lindet-hrow .lindet-h {
+  margin-bottom: 0;
+}
+.productos-v2 .lindet-hrow .stock-prov {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  text-align: right;
+}
+.productos-v2 .lindet-h-ic {
+  color: var(--p-primary);
+  font-size: 15px;
+}
+/* Rótulo · % · importe. El grid vive en el contenedor y cada fila aporta sus tres celdas
+   (`display: contents`): así los % y los importes quedan alineados en columna aunque una
+   fila traiga un input y la otra un chip de texto. */
+.productos-v2 .lindet-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(90px, auto);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 12px;
+}
+.productos-v2 .lindet-row {
+  display: contents;
+}
+.productos-v2 .lindet-lbl {
+  font-size: 13px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .lindet-mid {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+}
+.productos-v2 .lindet-val {
+  justify-self: end;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  white-space: nowrap;
+}
+/* Chip del %: mismo alto que el input editable de la fila de al lado, para que las dos
+   se lean parejas aunque una sea editable y la otra no. */
+.productos-v2 .lindet-pct {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: #eef2f7;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .lindet-sep {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--p-border);
+  margin: 2px 0;
+}
+/* Cierre del bloque: el descuento total resume las dos líneas de arriba. */
+.productos-v2 .lindet-row--fuerte .lindet-lbl,
+.productos-v2 .lindet-row--fuerte .lindet-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--p-text-main);
+}
+@container (max-width: 900px) {
+  .productos-v2 .lindet {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .productos-v2 .lindet-stock {
+    border-left: none;
+    border-top: 1px solid var(--p-border);
+    padding-left: 0;
+    padding-top: 20px;
+  }
 }
 
 /* Descuento editable en la fila, con el mismo lenguaje que la cantidad. */
@@ -774,6 +1146,49 @@
   font-weight: 700;
   color: var(--p-danger);
   white-space: nowrap;
+}
+
+/* Precio unitario editable (override del administrador): mismo lenguaje que el descuento, con el
+   símbolo de la moneda como prefijo fijo. Se distingue del resto de los importes por ser el único
+   que se puede pisar, así que el campo va con su borde a la vista. */
+.productos-v2 .pbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--p-border);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.productos-v2 .pbox:focus-within {
+  border-color: var(--p-primary);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.1);
+}
+.productos-v2 .pbox-pre {
+  padding: 0 2px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .pbox input {
+  width: 92px;
+  border: none;
+  outline: none;
+  padding: 7px 8px 7px 2px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--p-text-main);
+  background: none;
+}
+/* Precio vacío o en cero: no se aplica hasta corregirlo. */
+.productos-v2 .pbox--error {
+  border-color: var(--p-danger);
+  background: #fff5f6;
+}
+.productos-v2 .pbox--error input,
+.productos-v2 .pbox--error .pbox-pre {
+  color: var(--p-danger);
 }
 
 /* Cantidad editable en la fila: mismo lenguaje que el control de la carga de producto. */
@@ -908,11 +1323,14 @@
   align-items: center;
   justify-content: center;
 }
+/* 16px y en una sola línea: la rentabilidad general puede traer decimales ("36,17%") y a 18px no
+   entraba en los 64px del anillo. Un valor entero se sigue leyendo igual de destacado. */
 .productos-v2 .donut-val {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--p-text-main);
   line-height: 1;
+  white-space: nowrap;
 }
 .productos-v2 .donut-lbl {
   font-size: 10px;

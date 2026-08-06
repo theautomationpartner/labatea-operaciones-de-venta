@@ -1,8 +1,5 @@
-import { money, pct, pctDec, round2 } from '@/lib/format'
+import { money, pct, pctDec } from '@/lib/format'
 import type { ResumenFactura } from '@/lib/selectors'
-
-/** Comisión pasiva de la venta con entrega ANTERIOR: 1,5% de la base imponible (neto a facturar). */
-const COMISION_PASIVA_PCT = 1.5
 
 /** Umbrales del semáforo de rentabilidad general, iguales a los del resto de la app. */
 const RENT_BUENA = 20
@@ -21,15 +18,13 @@ export function ResumenFacturaBand({ resumen }: { resumen: ResumenFactura }) {
   const usado = Math.min(Math.max(resumen.usadoPct, 0), 100)
   // El anillo se llena hasta el 100%; el número del centro sí muestra el valor real.
   const rentGrafico = Math.min(Math.max(resumen.rentabilidad, 0), 100)
-  // Comisión pasiva: 1,5% de la base imponible (neto a facturar). Es una ganancia en $.
-  const comisionPasiva = round2((resumen.neto * COMISION_PASIVA_PCT) / 100)
 
   return (
     <div className="totals-grid totals-grid--2" aria-label="Resumen de la facturación">
       <div className="kpi-card">
         <div className="subtotal-lines">
           <div className="sub-row">
-            <span>Importe subtotal</span>
+            <span>Subtotal</span>
             <span>{money(resumen.subtotal)}</span>
           </div>
           <div className="sub-row">
@@ -38,16 +33,21 @@ export function ResumenFacturaBand({ resumen }: { resumen: ResumenFactura }) {
               {resumen.descuento > 0 ? `- ${money(resumen.descuento)}` : money(0)}
             </span>
           </div>
-          {/* Comisión pasiva (1,5% del neto): ganancia en $, con la misma jerarquía que el resto. */}
+          {/* IVA total: la suma del IVA de todos los productos a facturar. */}
           <div className="sub-row">
-            <span>Comisión pasiva ({pctDec(COMISION_PASIVA_PCT)})</span>
-            <span style={comisionPasiva > 0 ? { color: 'var(--p-success)' } : undefined}>
-              {money(comisionPasiva)}
-            </span>
+            <span>IVA</span>
+            <span>{money(resumen.iva)}</span>
           </div>
+          {/* TOTAL a facturar: el gravado MÁS el IVA, que es el importe final del comprobante. */}
           <div className="total-row">
-            <span>NETO A FACTURAR</span>
-            <span>{money(resumen.neto)}</span>
+            <span>TOTAL A FACTURAR</span>
+            <span>{money(resumen.total)}</span>
+          </div>
+          {/* Comisión DEBAJO del neto: la de los productos comisionables, con la tasa del tipo de
+              venta. Se muestra SIEMPRE (aunque sea 0) para mantener la métrica estandarizada. */}
+          <div className="sub-row">
+            <span>Comisión ($)</span>
+            <span>{money(resumen.comision)}</span>
           </div>
         </div>
       </div>
@@ -60,7 +60,7 @@ export function ResumenFacturaBand({ resumen }: { resumen: ResumenFactura }) {
             <div
               className="donut-chart"
               role="meter"
-              aria-valuenow={Math.round(resumen.rentabilidad)}
+              aria-valuenow={resumen.rentabilidad}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-label="Rentabilidad general de la venta"
@@ -69,8 +69,9 @@ export function ResumenFacturaBand({ resumen }: { resumen: ResumenFactura }) {
               }}
             >
               <div className="donut-inner">
+                {/* Con decimales cuando los tiene: la rentabilidad general no es un entero. */}
                 <span className="donut-val" style={{ color: colorRent }}>
-                  {pct(resumen.rentabilidad)}
+                  {pctDec(resumen.rentabilidad)}
                 </span>
                 <span className="donut-lbl">General</span>
               </div>

@@ -1,11 +1,18 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { money, moneyU, pctDec, round2 } from '@/lib/format'
+import { descuentoUnitario } from '@/lib/descuentos'
+import {
+  SIMBOLO_DOLAR,
+  formatearImporteAR,
+  importeATexto,
+  money,
+  moneyU,
+  pctDec,
+  round2,
+} from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { rentabilidadEfectiva } from '@/lib/selectors'
-import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
-import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
-import { StockPanel } from './StockPanel'
+import { LineaDetalle } from './LineaDetalle'
 
 /** Fila de la tabla, común al presupuesto y a la venta. */
 export interface FilaProducto {
@@ -21,10 +28,14 @@ export interface FilaProducto {
   /** Tope de unidades. Los botones no lo pasan; escrito a mano, marca la celda en rojo. */
   cantidadMax?: number
   /** Valores YA calculados (venta CON PROFORMA): se muestran tal cual, sin recalcular. Importe
-   *  bonificado por unidad, IVA en $ de la línea y total de la línea, leídos de la proforma. */
+   *  bonificado por unidad y total de la línea, leídos de la proforma. */
   impBonif?: number
-  ivaMonto?: number
   totalLinea?: number
+  /** Desglose del descuento leído de la proforma (venta CON PROFORMA): % de forma de pago y los
+   *  montos $ por unidad de cada origen. Con esto el "Detalle" muestra lo guardado, sin recalcular. */
+  descFormaPago?: number
+  descProdMonto?: number
+  descFpMonto?: number
 }
 
 interface TablaProductosProps {
@@ -37,6 +48,12 @@ interface TablaProductosProps {
   /** Habilita editar el descuento desde la tabla. Sólo se avisa con un valor válido. */
   onDescuento?: (id: string, descuento: number) => void
   /**
+   * Habilita pisar el PRECIO UNITARIO de la línea (override del precio de lista). Sólo lo pasa
+   * la selección de productos cuando el usuario es administrador (ver `lib/permisos`); sin el
+   * handler, la celda muestra el precio en lectura, como en el resto de los pasos.
+   */
+  onPrecio?: (id: string, precio: number) => void
+  /**
    * Sólo lectura estricta: sin edición de cantidad/descuento (no se pasan los handlers) y sin
    * columna de acciones (no se puede quitar una línea). La venta CON PROFORMA la usa: todo o nada.
    */
@@ -48,8 +65,6 @@ interface TablaProductosProps {
    * descuento manual de cada fila para la bonificación, el total y el IVA. 0 = sin forma de pago.
    */
   descFormaPago?: number
-  /** Muestra la columna "IVA ($)" antes del total. Sólo en la VENTA, que sí liquida IVA. */
-  mostrarIva?: boolean
   /**
    * Muestra la columna "Moneda" (antes de "Cant.") y, en las líneas en dólares, renderiza los
    * importes con el prefijo `$u` en verde. Sólo en el PRESUPUESTO, que es bimonetario.
@@ -59,92 +74,101 @@ interface TablaProductosProps {
   footer?: ReactNode
 }
 
-/** Alícuota de IVA por defecto cuando el producto no trae la suya. */
-const IVA_DEFECTO = 21
-
 /** Verde de los importes en dólares en la tabla del presupuesto bimonetario. */
 const VERDE_USD = 'var(--green-dark)'
 
-/** Descuento total de la fila: el manual más el de la forma de pago, topeado en 100%. */
-const descTotalDe = (f: FilaProducto, descFormaPago: number) =>
-  Math.min(f.descuento + descFormaPago, 100)
+/**
+ * Los tres valores de la fila, calculados en un solo lugar y con las fórmulas compartidas de
+ * `lib/descuentos`:
+ *
+ *   · descuento total POR UNIDAD (forma de pago + manual, en cascada): no escala con la cantidad;
+ *   · precio unitario final = precio de lista − descuento total;
+ *   · subtotal = precio final × cantidad (SIN IVA): lo único que sí escala con la cantidad.
+ *
+ * El IVA no se liquida por línea en la tabla: va en el resumen de la operación.
+ *
+ * La venta CON PROFORMA trae los importes ya calculados en la fila (`impBonif`, `totalLinea`): se
+ * respetan tal cual, y el desglose reparte ese descuento guardado entre sus dos orígenes con el
+ * mismo criterio (primero la forma de pago sobre el precio de lista).
+ */
+function calculosDe(f: FilaProducto, descFormaPago: number) {
+  const d = descuentoUnitario(f.precio, f.descuento, descFormaPago)
+  const total = f.impBonif ?? d.total
+  const formaPago = Math.min(d.formaPago, total)
+  const precioFinal = f.impBonif === undefined ? d.precioFinal : round2(f.precio - total)
+  const subtotal = f.totalLinea ?? round2(precioFinal * f.cantidad)
+  /* Desglose por origen: la venta CON PROFORMA lo trae GUARDADO de la proforma (independiente por
+     origen: Desc $ x Prod = numeric_mm5xxrkw, Desc $ x Forma de Pago = numeric_mm5x79vt) y se muestra
+     tal cual. El resto de las ventas reparte el total calculado (forma de pago primero, luego el resto). */
+  const guardado = f.descProdMonto !== undefined || f.descFpMonto !== undefined
+  return {
+    /** $ por unidad que aporta la forma de pago. */
+    dtoPago: guardado ? f.descFpMonto ?? 0 : formaPago,
+    /** $ por unidad que aporta el % manual, sobre el precio ya rebajado. */
+    dtoPrecio: guardado ? f.descProdMonto ?? 0 : round2(total - formaPago),
+    /** $ por unidad de descuento total. */
+    dtoTotal: total,
+    /** % compuesto: alimenta la rentabilidad efectiva de la línea. */
+    descPct: d.pct,
+    precioFinal,
+    subtotal,
+  }
+}
 
 /**
- * Importe bonificado de UNA unidad, en pesos: precio × (%desc manual + %desc forma de pago).
- * Es lo que se descuenta por unidad, no el precio resultante. Si la fila ya trae el valor calculado
- * (venta CON PROFORMA), se usa ése tal cual.
+ * Precio unitario editable: override del precio de lista, reservado a los administradores (ver
+ * `lib/permisos`). Igual que el descuento, guarda lo tecleado —con formato argentino, miles y
+ * coma decimal— y sólo avisa al padre con un importe válido; un precio vacío o en cero se marca
+ * en rojo y no se aplica.
  */
-const bonifUnitDe = (f: FilaProducto, descFormaPago: number) =>
-  f.impBonif ?? round2(f.precio * (descTotalDe(f, descFormaPago) / 100))
-
-/**
- * Precio unitario YA bonificado: precio − importe bonificado por unidad. Es el precio final por
- * unidad que se está cobrando, en tiempo real según el descuento y la forma de pago.
- */
-const precioBonifDe = (f: FilaProducto, descFormaPago: number) =>
-  round2(f.precio - bonifUnitDe(f, descFormaPago))
-
-/** Importe total de la línea: (precio unitario − bonificación por unidad) × cantidad (o el guardado). */
-const subtotalDe = (f: FilaProducto, descFormaPago: number) =>
-  f.totalLinea ?? round2((f.precio - bonifUnitDe(f, descFormaPago)) * f.cantidad)
-
-/** IVA en pesos de la línea, sobre el importe ya bonificado (o el guardado). */
-const ivaDe = (f: FilaProducto, descFormaPago: number) =>
-  f.ivaMonto ?? round2((subtotalDe(f, descFormaPago) * (f.producto?.iva ?? IVA_DEFECTO)) / 100)
-
-/**
- * Descuento editable en la fila. Guarda lo tipeado para poder escribir "1," o "1.5" sin
- * saltos, y sólo avisa al padre cuando el valor es válido; si no, se marca en rojo.
- */
-function CeldaDescuento({
+function CeldaPrecio({
   fila,
-  onDescuento,
+  prefijo,
+  onPrecio,
 }: {
   fila: FilaProducto
-  onDescuento: (id: string, descuento: number) => void
+  /** "$" en pesos, "U$" en el presupuesto bimonetario. */
+  prefijo: string
+  onPrecio: (id: string, precio: number) => void
 }) {
-  const { topesDescuento } = useApp()
-  const [texto, setTexto] = useState(String(fila.descuento))
-  // Aviso de la tecla rechazada por pasarse del máximo.
-  const [rechazado, setRechazado] = useState('')
-  // Si la fila cambia desde afuera (otra edición), el campo la sigue.
-  const [ultimo, setUltimo] = useState(fila.descuento)
-  if (ultimo !== fila.descuento) {
-    setUltimo(fila.descuento)
-    setTexto(String(fila.descuento))
+  const [texto, setTexto] = useState(importeATexto(fila.precio))
+  // Si el precio cambia desde afuera, el campo lo sigue.
+  const [ultimo, setUltimo] = useState(fila.precio)
+  if (ultimo !== fila.precio) {
+    setUltimo(fila.precio)
+    setTexto(importeATexto(fila.precio))
   }
 
-  const validacion = validarDescuento(texto, topesDescuento)
-  const mensaje = rechazado || validacion.mensaje
-  const ok = !rechazado && validacion.ok
-
   const cambiar = (valor: string) => {
-    /* La tecla se resuelve en `aplicarTecleoDescuento`: lo que se pasa del tope no entra, y
-       sólo se explica cuando el primer dígito ya se pasaba. */
-    const tecleo = aplicarTecleoDescuento(texto, valor, topesDescuento)
-    setRechazado(tecleo.mensaje)
-    if (tecleo.texto === texto) return
-
-    setTexto(tecleo.texto)
-    const v = validarDescuento(tecleo.texto, topesDescuento)
-    if (v.ok) {
-      const n = Number(tecleo.texto) || 0
+    const { texto: fmt, valor: n } = formatearImporteAR(valor)
+    setTexto(fmt)
+    if (n > 0) {
       setUltimo(n)
-      onDescuento(fila.id, n)
+      onPrecio(fila.id, n)
     }
   }
 
+  const ok = formatearImporteAR(texto).valor > 0
+  const mensaje = ok ? '' : 'El precio tiene que ser mayor a cero'
+
+  /* Al salir, el campo no queda vacío ni en cero: vuelve al precio vigente de la línea (lo que
+     se tecleó nunca se aplicó, así que mostrarlo sería mentir sobre lo que se está cobrando). */
+  const alSalir = () => {
+    if (!ok) setTexto(importeATexto(fila.precio))
+  }
+
   return (
-    <span className={`dbox ${ok ? '' : 'dbox--error'}`} title={mensaje}>
+    <span className={`pbox ${ok ? '' : 'pbox--error'}`} title={mensaje}>
+      <span className="pbox-pre">{prefijo}</span>
       <input
         type="text"
         inputMode="decimal"
-        aria-label={`Descuento de ${fila.nombre}: de 0 a ${topesDescuento.max}, o ${BONIFICACION_TOTAL} de bonificación total`}
+        aria-label={`Precio unitario de ${fila.nombre}`}
         aria-invalid={!ok}
         value={texto}
         onChange={(e) => cambiar(e.target.value)}
+        onBlur={alSalir}
       />
-      <span className="dbox-suf">%</span>
       {mensaje && <span className="dbox-aviso">{mensaje}</span>}
     </span>
   )
@@ -160,16 +184,18 @@ export function TablaProductos({
   onRemove,
   onCantidad,
   onDescuento,
+  onPrecio,
   soloLectura = false,
   cantidadMin = 0,
   descFormaPago = 0,
-  mostrarIva = false,
   mostrarMoneda = false,
   footer,
 }: TablaProductosProps) {
   const [expandidas, setExpandidas] = useState<ReadonlySet<string>>(new Set())
-  // Base 11 (incluye P. Bonif); +1 con IVA ($); +1 con Moneda; −1 sin acciones (sólo lectura).
-  const columnas = 11 + (mostrarIva ? 1 : 0) + (mostrarMoneda ? 1 : 0) - (soloLectura ? 1 : 0)
+  /* Base 10: desplegable, N°, producto, cantidad, P. Unit, rentabilidad, descuento total,
+     P. c/Dto. y subtotal (el IVA va dentro de esa misma celda), más acciones.
+     +1 con Moneda; −1 sin acciones (sólo lectura). */
+  const columnas = 10 + (mostrarMoneda ? 1 : 0) - (soloLectura ? 1 : 0)
 
   const toggle = (id: string) =>
     setExpandidas((prev) => {
@@ -190,15 +216,15 @@ export function TablaProductos({
             <th style={{ width: 40 }} />
             <th colSpan={2}>Producto</th>
             {mostrarMoneda && <th className="ta-c">Moneda</th>}
-            <th className="ta-c">Cant.</th>
-            <th className="ta-r">P. Unit</th>
-            <th className="ta-c">Desc.</th>
+            <th className="ta-c">Cantidad</th>
+            <th className="ta-r">P. Unit de Lista</th>
+            <th className="ta-r">Descuento Total</th>
+            {/* El único encabezado que envuelve en dos líneas: si no, roba todo el ancho. */}
+            <th className="ta-r col-pcd">P. c/Dto. Total Aplicado</th>
+            <th className="ta-r">Subtotal</th>
+            {/* La rentabilidad cierra la fila: es la lectura del resultado, después del subtotal. */}
             <th className="ta-c col-rent">Rentab.</th>
-            <th className="ta-r">Importe Bonif.</th>
-            <th className="ta-r">P. Bonif</th>
-            <th className="ta-r">Importe Total</th>
-            {mostrarIva && <th className="ta-r">IVA ($)</th>}
-            {!soloLectura && <th className="ta-c">Acc.</th>}
+            {!soloLectura && <th className="ta-c">Acciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -206,7 +232,9 @@ export function TablaProductos({
             const abierta = expandidas.has(fila.id)
             const tope = fila.cantidadMax
             const excede = tope !== undefined && fila.cantidad > tope
-            const rentFila = rentabilidadEfectiva(fila.rentabilidad, descTotalDe(fila, descFormaPago))
+            const calc = calculosDe(fila, descFormaPago)
+            // La rentabilidad se mide con el % compuesto, no con la suma de los dos descuentos.
+            const rentFila = rentabilidadEfectiva(fila.rentabilidad, calc.descPct)
             /* Línea en dólares (presupuesto bimonetario): sus importes van con prefijo `$u` y en
                verde. En la venta —mono-moneda— nunca se cumple, así que no altera esa tabla. */
             const dolar = esDolar(fila.producto?.moneda)
@@ -215,16 +243,23 @@ export function TablaProductos({
             return (
               <Fragment key={fila.id}>
                 <tr>
+                  {/* El desplegable ya no depende del stock: adentro va también el desglose del
+                      descuento, que toda línea tiene. */}
                   <td style={{ width: 40 }}>
-                    {fila.producto && (
-                      <i
-                        className={`fas fa-chevron-right chev ${abierta ? 'open' : ''}`}
-                        role="button"
-                        aria-label="Ver detalle de stock"
-                        aria-expanded={abierta}
-                        onClick={() => toggle(fila.id)}
-                      />
-                    )}
+                    <i
+                      className={`fas fa-chevron-right chev ${abierta ? 'open' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Ver detalle de ${fila.nombre}`}
+                      aria-expanded={abierta}
+                      onClick={() => toggle(fila.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggle(fila.id)
+                        }
+                      }}
+                    />
                   </td>
                   <td style={{ width: 20, color: 'var(--text-gray)', fontWeight: 600 }}>{i + 1}</td>
                   <td>
@@ -279,15 +314,33 @@ export function TablaProductos({
                     )}
                   </td>
 
+                  {/* P. Unit de Lista: editable sólo para el administrador (override del precio
+                      de catálogo); en lectura para todos los demás. */}
                   <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
-                    {fmt(fila.precio)}
-                  </td>
-                  <td className="ta-c" style={{ fontWeight: 600 }}>
-                    {onDescuento ? (
-                      <CeldaDescuento fila={fila} onDescuento={onDescuento} />
+                    {onPrecio ? (
+                      <CeldaPrecio
+                        fila={fila}
+                        prefijo={dolar ? SIMBOLO_DOLAR : '$'}
+                        onPrecio={onPrecio}
+                      />
                     ) : (
-                      pctDec(fila.descuento)
+                      fmt(fila.precio)
                     )}
+                  </td>
+                  {/* Descuento Total POR UNIDAD: no se mueve al cambiar la cantidad. Cómo se
+                      compone (los dos porcentajes y sus importes) está en el detalle. */}
+                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
+                    {fmt(calc.dtoTotal)}
+                  </td>
+                  {/* P. c/Dto. Total Aplicado: precio de lista − descuento total = lo que se cobra
+                      por unidad. En dólares se mantiene en su moneda, con prefijo `$u` y en verde. */}
+                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
+                    {fmt(calc.precioFinal)}
+                  </td>
+                  {/* Subtotal: precio final × cantidad, SIN IVA. Es el único valor de la fila que
+                      escala con la cantidad. El IVA se liquida en el detalle y en el resumen. */}
+                  <td className="ta-r" style={{ fontWeight: 700, color: colUsd }}>
+                    {fmt(calc.subtotal)}
                   </td>
                   {/* La rentabilidad es la que queda después de bonificar. Ancho fijo: al
                       editar el descuento cambia de "99%" a "99,39%" y corría la fila entera. */}
@@ -297,25 +350,6 @@ export function TablaProductos({
                   >
                     {pctDec(rentFila)}
                   </td>
-                  {/* Importe Bonif.: lo bonificado por unidad (desc manual + forma de pago). En
-                      dólares se mantiene en su moneda, con prefijo `$u` y en verde. */}
-                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
-                    {fmt(bonifUnitDe(fila, descFormaPago))}
-                  </td>
-                  {/* P. Bonif: precio unitario − importe bonificado = precio final por unidad. */}
-                  <td className="ta-r" style={{ fontWeight: 600, color: colUsd }}>
-                    {fmt(precioBonifDe(fila, descFormaPago))}
-                  </td>
-                  {/* Importe Total de la línea. */}
-                  <td className="ta-r" style={{ fontWeight: 700, color: colUsd }}>
-                    {fmt(subtotalDe(fila, descFormaPago))}
-                  </td>
-                  {/* IVA ($): última columna, sobre el importe ya bonificado de la línea. Sólo en la venta. */}
-                  {mostrarIva && (
-                    <td className="ta-r" style={{ fontWeight: 600 }}>
-                      {money(ivaDe(fila, descFormaPago))}
-                    </td>
-                  )}
                   {!soloLectura && (
                     <td className="ta-c">
                       <i
@@ -328,11 +362,21 @@ export function TablaProductos({
                   )}
                 </tr>
 
-                {abierta && fila.producto && (
+                {abierta && (
                   <tr className="rexp">
                     <td colSpan={columnas} style={{ padding: 0 }}>
                       <div className="expd">
-                        <StockPanel producto={fila.producto} cantidad={fila.cantidad} />
+                        <LineaDetalle
+                          fila={fila}
+                          // El % de forma de pago sale de la proforma cuando la línea la trae (venta
+                          // CON PROFORMA); si no, el de la operación.
+                          descFormaPago={fila.descFormaPago ?? descFormaPago}
+                          dtoPago={calc.dtoPago}
+                          dtoPrecio={calc.dtoPrecio}
+                          dtoTotal={calc.dtoTotal}
+                          fmt={fmt}
+                          onDescuento={onDescuento}
+                        />
                       </div>
                     </td>
                   </tr>

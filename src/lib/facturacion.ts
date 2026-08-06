@@ -12,6 +12,11 @@
  */
 /* Se importan los módulos concretos y no el barril de servicios: la capa de servicio de
    facturación depende de este archivo, y pasar por el barril armaría un ciclo. */
+import {
+  bonificacionLinea,
+  descuentoUnitario,
+  netoLinea as netoConDescuento,
+} from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { FACT_ALICUOTAS_IVA } from '@/services/monday/columns'
 import type { LineaVenta } from '@/services/monday/venta'
@@ -43,6 +48,11 @@ export interface ComprobanteAGenerar {
    */
   vencimiento?: string
   lineas: LineaVenta[]
+  /** Bruto: Σ (precio de lista × cantidad), sin bonificar. Es el "Subtotal" del pie. */
+  bruto: number
+  /** Lo bonificado sobre el bruto: Σ del importe bonificado de cada línea. */
+  descuento: number
+  /** Gravado: lo que queda después de bonificar, sin IVA. */
   subtotal: number
   iva: number
   total: number
@@ -70,18 +80,42 @@ export function alicuotaDe(linea: LineaVenta): number {
 }
 
 /**
- * Precio unitario que va al comprobante. El subelemento de Facturación no tiene columna de
- * descuento y su subtotal es `cantidad × precio unitario`, así que la bonificación de la línea
- * tiene que venir ya aplicada: si no, la factura no cerraría contra la venta.
+ * Descuento por forma de pago que rige la línea. La VENTA sobre una PROFORMA lo trae guardado en
+ * la propia línea (se leyó de la proforma y no se recalcula); el resto usa el de la operación.
  */
-export const precioFacturado = (l: LineaVenta): number =>
-  round2(l.precioUnitario * (1 - (l.descuento ?? 0) / 100))
+const descFpDe = (l: LineaVenta, descFormaPago: number): number => l.descFormaPago ?? descFormaPago
 
-/** Importe neto de la línea, ya bonificado. */
-export const netoLinea = (l: LineaVenta): number => round2(precioFacturado(l) * l.cantidad)
+/**
+ * Bruto de la línea: precio unitario de LISTA × cantidad, sin bonificar. Es la columna "Subtotal"
+ * que suma el resumen de la selección de productos.
+ */
+export const brutoLinea = (l: LineaVenta): number => round2(l.precioUnitario * l.cantidad)
 
-/** IVA de la línea, con la alícuota que se va a declarar. */
-export const ivaLinea = (l: LineaVenta): number => round2((netoLinea(l) * alicuotaDe(l)) / 100)
+/**
+ * Importe bonificado de la línea entera: el "Descuento Total" por unidad de la selección de
+ * productos —el de la forma de pago y el manual, compuestos en cascada— por la cantidad.
+ *
+ * Es lo que se declara en "Importe Bonif $" (numeric_mm5x7747), y de ahí la fórmula del board
+ * saca el subtotal: `(Cantidad × Precio Unitario $) − Importe Bonif $`.
+ */
+export const bonifLinea = (l: LineaVenta, descFormaPago = 0): number =>
+  bonificacionLinea(l.precioUnitario, l.cantidad, l.descuento ?? 0, descFpDe(l, descFormaPago))
+
+/**
+ * Precio unitario que efectivamente se cobra: precio de lista − descuento total por unidad. NO es
+ * el que va al comprobante —ahí va el de lista, con la bonificación aparte—: se usa donde hace
+ * falta el valor unitario neto, como la liquidación de mercadería consignada.
+ */
+export const precioNetoUnitario = (l: LineaVenta, descFormaPago = 0): number =>
+  descuentoUnitario(l.precioUnitario, l.descuento ?? 0, descFpDe(l, descFormaPago)).precioFinal
+
+/** Importe neto de la línea, ya bonificado y sin IVA: bruto − bonificación. */
+export const netoLinea = (l: LineaVenta, descFormaPago = 0): number =>
+  netoConDescuento(l.precioUnitario, l.cantidad, l.descuento ?? 0, descFpDe(l, descFormaPago))
+
+/** IVA de la línea, con la alícuota que se va a declarar, sobre el neto ya bonificado. */
+export const ivaLinea = (l: LineaVenta, descFormaPago = 0): number =>
+  round2((netoLinea(l, descFormaPago) * alicuotaDe(l)) / 100)
 
 /**
  * Cómo se identifica el proveedor de una línea consignada: el ítem del board si lo tiene y,
@@ -95,8 +129,16 @@ const claveProveedor = (l: LineaVenta): string =>
  * Parte las líneas de la venta en los comprobantes que hay que emitir. Devuelve primero el de
  * mercadería común y después los consignados, ordenados por proveedor; los grupos vacíos no
  * existen, así que una venta sin consignada da un solo comprobante.
+ *
+ * Los totales son EXACTAMENTE los de la selección de productos: el bruto suma la columna
+ * Subtotal sin bonificar, el descuento suma el "Descuento Total" de cada línea por su cantidad
+ * y el gravado es la resta de los dos. Lo único propio de la factura es el IVA, que se liquida
+ * con la alícuota declarada de cada producto y no con una tasa única.
  */
-export function comprobantesDeVenta(lineas: LineaVenta[]): ComprobanteAGenerar[] {
+export function comprobantesDeVenta(
+  lineas: LineaVenta[],
+  descFormaPago = 0,
+): ComprobanteAGenerar[] {
   const grupos = new Map<string, LineaVenta[]>()
 
   for (const l of lineas) {
@@ -113,8 +155,10 @@ export function comprobantesDeVenta(lineas: LineaVenta[]): ComprobanteAGenerar[]
     const proveedorNombre = consignada
       ? lineasGrupo[0].proveedorNombre?.trim() || SIN_PROVEEDOR
       : null
-    const subtotal = round2(lineasGrupo.reduce((acc, l) => acc + netoLinea(l), 0))
-    const iva = round2(lineasGrupo.reduce((acc, l) => acc + ivaLinea(l), 0))
+    const bruto = round2(lineasGrupo.reduce((acc, l) => acc + brutoLinea(l), 0))
+    const descuento = round2(lineasGrupo.reduce((acc, l) => acc + bonifLinea(l, descFormaPago), 0))
+    const subtotal = round2(lineasGrupo.reduce((acc, l) => acc + netoLinea(l, descFormaPago), 0))
+    const iva = round2(lineasGrupo.reduce((acc, l) => acc + ivaLinea(l, descFormaPago), 0))
     comprobantes.push({
       clave,
       tipo: consignada ? 'CONSIGNADA' : 'COMUN',
@@ -122,6 +166,8 @@ export function comprobantesDeVenta(lineas: LineaVenta[]): ComprobanteAGenerar[]
       proveedorNombre,
       titulo: consignada ? `Consignada · ${proveedorNombre}` : 'Mercadería común',
       lineas: lineasGrupo,
+      bruto,
+      descuento,
       subtotal,
       iva,
       total: round2(subtotal + iva),

@@ -2,29 +2,37 @@
  * Registro de comisiones en "💲Registro de Comisiones" (18421035548).
  *
  * Se dispara al FINALIZAR la operación de venta (universal: cualquier tipo de venta o entrega),
- * con la venta ya creada y —si el cobro es POSTERIOR— la deuda ya registrada. El flujo es un
- * pre-flight con salida temprana:
- *   1) se lee del Maestro, por producto, si es comisionable ("✋️Comision" = "SI") y su % de comisión;
- *   2) se filtran SÓLO los comisionables; si no queda ninguno, se aborta en silencio (sin mutación);
- *   3) se crea el ítem padre de la comisión y, recién con su id, el bulk de subítems comisionables.
+ * con la venta ya creada y —si el cobro es POSTERIOR— la deuda ya registrada:
+ *   1) se filtran SÓLO las líneas comisionables; si no queda ninguna, se aborta en silencio;
+ *   2) se crea el ítem padre de la comisión y, recién con su id, el bulk de subítems.
  *
- * El % de comisión sale del Maestro según el tipo de venta: "Porc Com Activa" (CON PRESUPUESTO
- * PREVIO) o "Porc Com Pasiva" (DIRECTA).
+ * Ya NO hay comisión por producto: la tasa es ÚNICA por tipo de venta y sale del tablero de
+ * configuración ("Comision por Venta": Activa = CON PRESUPUESTO PREVIO, Pasiva = DIRECTA). El
+ * producto sólo decide si comisiona, y eso ya viene resuelto en la línea —del Maestro en la venta
+ * DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO—, así que este servicio no
+ * vuelve a consultar el Maestro.
  */
 import { round2 } from '@/lib/format'
-import type { TipoPago, TipoVenta } from '@/types'
-import { BOARDS, COL, personCol } from './columns'
-import { byId, numCol, type MondayItem } from './parse'
+import { comisionLinea, tasaComision } from '@/lib/selectors'
+import type { ComisionesVenta, TipoPago, TipoVenta } from '@/types'
+import { BOARDS, COL, COMISION_ESTADO_PENDIENTE_LABEL, personCol } from './columns'
 import { mondayApi, mondayHabilitado } from './sdk'
 
 /** Una línea de la venta candidata a comisión: producto, cantidad y precio unitario vendido. */
 export interface LineaComision {
-  /** Ítem del Maestro de Productos. Sin él la línea no se puede evaluar ni linkear. */
+  /** Ítem del Maestro de Productos. Sin él la línea no se puede linkear. */
   productoId?: string
   /** Nombre del producto: es el nombre del subítem de comisión. */
   nombre: string
   cantidad: number
   precioUnitario: number
+  /**
+   * Importe NETO de la línea: precio SIN IVA y con el descuento total ya aplicado. Es la base
+   * sobre la que se calcula la comisión, la misma que muestra el resumen de la venta.
+   */
+  neto: number
+  /** El producto comisiona ("Comision" = SI), resuelto al seleccionar los productos de la venta. */
+  comisionable: boolean
 }
 
 export interface DatosComision {
@@ -35,6 +43,8 @@ export interface DatosComision {
   /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
   vendedorId?: string | null
   tipoVenta: TipoVenta
+  /** Tasas del tablero de configuración: de acá sale el % que se escribe en cada subítem. */
+  comisiones: ComisionesVenta
   /** Tipo de cobro de la operación: define el monto pendiente (POSTERIOR = total; SIMULTANEO = 0). */
   tipoPago: TipoPago
   /** Importe total de la venta (con IVA). Es el monto pendiente cuando el cobro es POSTERIOR. */
@@ -46,69 +56,52 @@ export interface DatosComision {
   lineas: LineaComision[]
 }
 
-/** El producto es comisionable sólo si "✋️Comision" es exactamente "SI" (sin dato → no comisiona). */
-const esComisionable = (texto: string | null | undefined): boolean =>
-  (texto ?? '').trim().toUpperCase() === 'SI'
-
 /**
- * Crea la comisión de la venta: ítem padre + un subítem por producto comisionable. Si ningún
- * producto del Maestro es comisionable ("SI"), no ejecuta ninguna mutación (salida temprana).
+ * Crea la comisión de la venta: ítem padre + un subítem por producto comisionable. Si NINGÚN
+ * producto de la venta comisiona no se escribe nada: una venta sin comisión no deja registro.
  * El bulk de subítems espera (`await`) el id del ítem padre antes de correr.
  */
 export async function crearComisiones(datos: DatosComision): Promise<void> {
-  const { ventaId, clienteId, vendedorId, tipoVenta, tipoPago, importeTotalVenta, fecha, pendienteCobroId, lineas } =
-    datos
-  if (!mondayHabilitado()) return
+  const {
+    ventaId,
+    clienteId,
+    vendedorId,
+    tipoVenta,
+    comisiones,
+    tipoPago,
+    importeTotalVenta,
+    fecha,
+    pendienteCobroId,
+    lineas,
+  } = datos
+  // Sin venta creada no hay a qué colgar la comisión.
+  if (!mondayHabilitado() || !ventaId) return
 
-  const conProd = lineas.filter((l) => l.productoId && l.cantidad > 0)
-  if (conProd.length === 0) return
-
-  // Pre-fetch del Maestro: condición de comisión y los dos porcentajes, por producto.
-  const productoIds = [...new Set(conProd.map((l) => l.productoId as string))]
-  const data = await mondayApi<{ items: MondayItem[] }>(
-    `query ($ids: [ID!]) {
-      items(ids: $ids) {
-        id
-        column_values(ids: ["${COL.producto.comisionable}","${COL.producto.porcComActiva}","${COL.producto.porcComPasiva}"]) { id text }
-      }
-    }`,
-    { ids: productoIds },
-  )
-
-  // productId → { comisionable, % activa (con presupuesto previo), % pasiva (directa) }.
-  const metaPorProducto = new Map<string, { comisionable: boolean; pctActiva: number; pctPasiva: number }>()
-  for (const it of data.items ?? []) {
-    const c = byId(it)
-    metaPorProducto.set(it.id, {
-      comisionable: esComisionable(c[COL.producto.comisionable]?.text),
-      pctActiva: numCol(c[COL.producto.porcComActiva]),
-      pctPasiva: numCol(c[COL.producto.porcComPasiva]),
-    })
-  }
-
-  // GUARDRAIL: sólo los productos comisionables ("SI"). Sin ninguno, se aborta sin mutar el board.
-  const comisionables = conProd.filter((l) => metaPorProducto.get(l.productoId as string)?.comisionable)
+  /* GUARDRAIL: sólo las líneas comisionables y con producto linkeable. La condición ya viene
+     resuelta de la selección de productos. Sin ninguna, se aborta sin tocar el board. */
+  const comisionables = lineas.filter((l) => l.productoId && l.cantidad > 0 && l.comisionable)
   if (comisionables.length === 0) return
 
-  // El % de comisión del producto sale del Maestro según el tipo de venta activo.
-  const conPresupuestoPrevio = tipoVenta === 'CON PRESUPUESTO PREVIO'
-  const pctComision = (productoId: string): number => {
-    const meta = metaPorProducto.get(productoId)
-    if (!meta) return 0
-    return conPresupuestoPrevio ? meta.pctActiva : meta.pctPasiva
-  }
+  // Una sola tasa para toda la venta, según su tipo. Es la que se asienta en cada subítem.
+  const pctComision = tasaComision(comisiones, tipoVenta)
+  /* Comisión FINAL de la venta: la tasa sobre el neto de cada línea comisionable. Es exactamente
+     el número que el vendedor vio en el resumen, calculado con el mismo helper. */
+  const comisionTotal = round2(
+    comisionables.reduce((acc, l) => acc + comisionLinea(l.neto, true, pctComision), 0),
+  )
 
   // MÓDULO 1: monto pendiente de cobro. POSTERIOR = total de la venta; SIMULTANEO = 0 explícito.
   const montoPendiente = tipoPago === 'POSTERIOR' ? round2(importeTotalVenta) : 0
 
-  // MÓDULO 3: ítem padre de la comisión. La relación con el cobro sólo va si es POSTERIOR. El monto
-  // pendiente va como NÚMERO (no string); el estado nace en "Pend de Cobro" (por label). La comisión
-  // total en $ NO se escribe acá: la consolida el board por mirror desde los subítems comisionables.
+  /* Ítem padre de la comisión. La relación con el cobro sólo va si es POSTERIOR. Los importes van
+     como NÚMERO (no string) y el estado nace en "Pend de Cobro" (por label). */
   const cabecera: Record<string, unknown> = {
     [COL.comision.fecha]: { date: fecha },
     [COL.comision.venta]: { item_ids: [Number(ventaId)] },
     [COL.comision.pendienteCobro]: montoPendiente,
-    [COL.comision.estado]: { label: 'Pend de Cobro' },
+    [COL.comision.total]: comisionTotal,
+    // Nace "Pend de Liquidar": el label que se mandaba antes ("Pend de Cobro") no existe en el board.
+    [COL.comision.estado]: { label: COMISION_ESTADO_PENDIENTE_LABEL },
   }
   // MÓDULO 1: se linkea el cliente de la venta en la cabecera de la comisión.
   if (clienteId && Number.isFinite(Number(clienteId))) {
@@ -130,15 +123,15 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
   )
   const parentId = creado.create_item.id
 
-  // Bulk de subítems, uno por producto comisionable, con alias en una sola solicitud. Cada subítem
-  // se nombra con su producto.
+  /* Bulk de subítems, uno por producto comisionable, con alias en una sola solicitud. Cada subítem
+     se nombra con su producto. */
   const variables: Record<string, unknown> = { parentId }
   const campos = comisionables.map((l, i) => {
     const cv: Record<string, unknown> = {
       [COL.comisionSub.producto]: { item_ids: [Number(l.productoId)] },
       [COL.comisionSub.cantidad]: String(round2(l.cantidad)),
       [COL.comisionSub.precioUnit]: String(round2(l.precioUnitario)),
-      [COL.comisionSub.comision]: String(round2(pctComision(l.productoId as string))),
+      [COL.comisionSub.comision]: String(round2(pctComision)),
     }
     variables[`sn${i}`] = l.nombre
     variables[`scv${i}`] = JSON.stringify(cv)

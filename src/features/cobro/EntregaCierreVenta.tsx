@@ -12,11 +12,12 @@ const OPCIONES: { id: ResponsableEntrega; label: string; icon: string; desc: str
 ]
 
 /**
- * Responsable logístico de la venta, en el Cierre de Venta (SÓLO entrega POSTERIOR). Es el mismo
- * componente desplegable del Remito ("Especificación del envío"): arranca ABIERTO al llegar a la
- * etapa y, una vez elegida una opción, se puede plegar y muestra su resumen en la cabecera. Con
- * La Batea pide únicamente una "Ruta de Entrega" que se confirma y bloquea; comisionista y cliente
- * conservan el comportamiento del Remito.
+ * Responsable logístico de la VENTA (sólo entrega POSTERIOR), en la etapa "Entrega de Mercadería".
+ *
+ * Comparte el bloque del Remito —panel blanco, cabecera y las tres tarjetas de opción—: mismas
+ * clases, mismos estilos, sin acordeón ni confirmación. Lo único propio de la venta es que con
+ * La Batea pide una "Ruta de Entrega" que se confirma y bloquea; comisionista y cliente no piden
+ * datos extra.
  */
 export function EntregaCierreVenta() {
   const { entregaVenta } = useApp()
@@ -24,9 +25,6 @@ export function EntregaCierreVenta() {
   const responsable = entregaVenta.responsable
   const esLaBatea = responsable === 'LA_BATEA'
   const esComisionista = responsable === 'COMISIONISTA'
-
-  // Arranca abierto: al entrar a la etapa el desplegable ya está desplegado.
-  const [abierto, setAbierto] = useState(true)
 
   const [comisionistas, setComisionistas] = useState<Comisionista[]>([])
   const [cargandoComisionistas, setCargandoComisionistas] = useState(false)
@@ -81,58 +79,17 @@ export function EntregaCierreVenta() {
   const elegir = (id: ResponsableEntrega) =>
     dispatch({ type: 'setEntregaVentaResponsable', value: id })
 
-  /* La opción elegida está "completa" cuando tiene sus datos: es lo que enciende el tilde. El
-     cliente responsable no pide datos extra, así que alcanza con elegirlo. */
-  const entregaCompleta = esLaBatea
-    ? entregaVenta.rutaConfirmada
-    : esComisionista
-      ? Boolean(entregaVenta.comisionistaId)
-      : responsable === 'CLIENTE'
-
-  /* Se puede plegar una vez elegida una opción; hasta entonces queda siempre abierto (como el
-     Remito). Al plegarlo se muestra un resumen corto en la cabecera. */
-  const colapsable = responsable !== null
-  const cuerpoVisible = abierto || !colapsable
-  const resumen = esLaBatea
-    ? `La Batea · ${entregaVenta.rutaNombre || '—'}`
-    : esComisionista
-      ? `Comisionista · ${entregaVenta.comisionistaNombre || '—'}`
-      : responsable === 'CLIENTE'
-        ? 'Cliente'
-        : ''
-
   return (
-    <div className="cobro-acc entrega-cierre">
-      <div className="cobro-acc-head">
-        {colapsable && (
-          <button
-            type="button"
-            className="cobro-acc-chev"
-            aria-expanded={abierto}
-            aria-label={abierto ? 'Cerrar el detalle de la entrega' : 'Abrir el detalle de la entrega'}
-            onClick={() => setAbierto((v) => !v)}
-          >
-            <i className={`fas fa-chevron-down ${abierto ? 'open' : ''}`} />
-          </button>
-        )}
-
-        {/* +5px sobre el tamaño base: es una de las preguntas principales de la etapa. */}
-        <span className="font-b" style={{ fontSize: 19 }}>
+    /* MISMO bloque que la "Entrega de Mercadería" del Remito: panel blanco con su cabecera, sin
+       acordeón ni tilde de confirmación. Comparte las clases, así los dos se ven idénticos. */
+    <div className="entrega-panel">
+      <div className="entrega-panel-head">
+        <span className="font-b">
           <i className="fas fa-truck" /> ¿Quién entrega la mercadería?
-        </span>
-
-        {colapsable && !abierto && <span className="entrega-resumen">{resumen}</span>}
-
-        <span
-          className={`cobro-ok ${entregaCompleta ? 'on' : ''}`}
-          title={entregaCompleta ? 'Entrega definida' : 'Entrega sin definir'}
-        >
-          <i className="fas fa-check" />
         </span>
       </div>
 
-      {cuerpoVisible && (
-        <div className="cobro-acc-body">
+      <div className="entrega-panel-body">
           {/* Radio group: una sola activa a la vez, pero todas siguen clickeables para poder
               cambiar libremente de opción. Cada card lleva su padding propio. */}
           <div className="entrega-opts" role="radiogroup" aria-label="¿Quién entrega la mercadería?">
@@ -262,8 +219,7 @@ export function EntregaCierreVenta() {
           )}
 
           {/* CLIENTE RESPONSABLE: es sólo una opción clickeable, sin datos extra que cargar. */}
-        </div>
-      )}
+      </div>
     </div>
   )
 }

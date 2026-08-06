@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ContactosPicker } from '@/features/shared/ContactosPicker'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { faltaParaMedio } from '@/lib/validaciones'
+import { faltaParaMedio, sinViaDeEnvio } from '@/lib/validaciones'
 import {
   asignarDestinatarios,
   asignarDestinatariosFactura,
@@ -122,6 +122,10 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
   const [cargando, setCargando] = useState(false)
   // Si el cliente no tiene ningún contacto en el tablero, el envío no es posible.
   const [sinContactos, setSinContactos] = useState(false)
+  /* La selección elegida vive en el estado global y sobrevive a la navegación. Se lee por ref para
+     no meterla en las deps del efecto (la pisaría en cada cambio). */
+  const contactosRef = useRef(contactos)
+  contactosRef.current = contactos
   useEffect(() => {
     if (!cliente) {
       setDisponibles([])
@@ -129,6 +133,8 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     }
     let vivo = true
     setCargando(true)
+    /* La consulta está CACHEADA por cliente y documento: al volver a esta etapa con el stepper
+       resuelve al instante y no se le pega de nuevo a Monday. */
     getContactosCliente(cliente.id, documento)
       .then((cs) => {
         if (!vivo) return
@@ -137,7 +143,11 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
            así que arranca mostrando sólo los que no aceptan, y un contacto quitado a mano
            vuelve a quedar disponible. */
         setDisponibles(cs)
-        dispatch({ type: 'setContactos', contactos: cs.filter((c) => c.ok) })
+        /* La selección se siembra UNA sola vez: si ya hay contactos elegidos —porque el usuario
+           los ajustó y navegó con el stepper— no se los pisa con la lista por defecto. */
+        if (contactosRef.current.length === 0) {
+          dispatch({ type: 'setContactos', contactos: cs.filter((c) => c.ok) })
+        }
       })
       .catch(() => {
         if (!vivo) return
@@ -267,11 +277,13 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     <div className="card card--neutral card--flush">
       {/* MÓDULO 2 · el envío es obligatorio post-emisión: la card queda SIEMPRE abierta y fija (sin
           pregunta "¿Desea enviar?" ni toggle SI/NO). Se muestra directo el bloque de envío. */}
-      {cargando ? (
+      {/* Con el envío YA hecho nunca se tapa el bloque: el "Enviado exitosamente" tiene que seguir
+          a la vista aunque se vuelva a entrar a la etapa. */}
+      {cargando && !enviadoOk ? (
         <div className="contactos-cargando">
           <i className="fas fa-spinner fa-spin" /> Cargando contactos del cliente…
         </div>
-      ) : sinContactos ? (
+      ) : sinContactos && !enviadoOk ? (
           /* Sin contactos en el tablero no hay a quién enviarle: se explica y no se ofrece envío. */
           <div className="envio-sin-contactos" role="alert">
             <i className="fas fa-triangle-exclamation" />
@@ -314,7 +326,12 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
             <div className="selc">
               {contactos.map((c) => {
                 const falta = faltaParaMedio(c, medioEnvio)
-                const incompleto = falta.telefono || falta.email
+                /* Sólo se marca al contacto que NO tiene por dónde recibirlo. Con "Ambos", que le
+                   falte uno de los dos datos no es un problema: se envía por el que tenga. */
+                const incompleto = sinViaDeEnvio(c, medioEnvio)
+                /* Rojo únicamente cuando el envío no puede llegarle. Si sigue siendo alcanzable por
+                   el otro canal, el dato ausente se informa en gris oscuro: no es un error. */
+                const claseFalta = incompleto ? 'citem-sub--falta' : 'citem-sub--aviso'
                 return (
                 <div className={`citem ${incompleto ? 'citem--sin-dato' : ''}`} key={c.id}>
                   <div className="cinfo">
@@ -323,11 +340,12 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                     </div>
                     <div>
                       <div className="citem-name">{c.name}</div>
-                      {/* Sin el dato del medio elegido no hay a dónde mandarlo: se avisa acá. */}
-                      <div className={`citem-sub ${falta.telefono ? 'citem-sub--falta' : ''}`}>
+                      {/* Falta el dato del medio elegido: se avisa acá, en rojo o en gris oscuro
+                          según si el contacto queda o no sin vía de envío. */}
+                      <div className={`citem-sub ${falta.telefono ? claseFalta : ''}`}>
                         {falta.telefono ? 'SIN TELEFONO' : c.phone}
                       </div>
-                      <div className={`citem-sub ${falta.email ? 'citem-sub--falta' : ''}`}>
+                      <div className={`citem-sub ${falta.email ? claseFalta : ''}`}>
                         {falta.email ? 'SIN EMAIL' : c.email}
                       </div>
                     </div>

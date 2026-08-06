@@ -25,14 +25,14 @@ export const PASOS_REMITO = [
 export const PASOS_REMITO_POSTERIOR = [
   'Seleccionar cliente',
   'Productos a remitar',
-  'Especificación del envío',
+  'Entrega de Mercadería',
   'Emitir remito',
 ] as const
 
 export const PASOS_REMITO_ANTERIOR = [
   'Seleccionar cliente',
   'Selección de productos',
-  'Especificación del envío',
+  'Entrega de Mercadería',
   'Emitir remito',
 ] as const
 

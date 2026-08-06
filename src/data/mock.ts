@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Datos de prototipo. Único punto a reemplazar cuando entre la capa de servicio:
  * cada constante pasa a ser el resultado de una query al board de monday.
  */
@@ -37,6 +37,7 @@ export const CLIENTES: Cliente[] = [
     // Sufre retenciones pero no es agente: puede facturar sin pasar por la otra app.
     agenteRetencion: false,
     condicionPago: 'CUENTA CORRIENTE',
+    aceptaCheques: true,
     limit: 4_500_000,
     saldoCtaCte: 4_200_000,
     lineaUtilizada: 4_200_000,
@@ -58,6 +59,8 @@ export const CLIENTES: Cliente[] = [
     agenteRetencion: true,
     // Liberado sin crédito: opera únicamente al contado.
     condicionPago: 'CONTADO',
+    // No recibimos cheques de este cliente: el medio queda inhabilitado en el cobro de contado.
+    aceptaCheques: false,
     limit: 2_000_000,
     saldoCtaCte: 1_500_000,
     lineaUtilizada: 1_500_000,
@@ -78,6 +81,7 @@ export const CLIENTES: Cliente[] = [
     ret: 'Ninguna',
     agenteRetencion: false,
     condicionPago: 'CONTADO',
+    aceptaCheques: true,
     limit: 500_000,
     saldoCtaCte: 50_000,
     lineaUtilizada: 50_000,
@@ -98,6 +102,7 @@ export const CLIENTES: Cliente[] = [
     ret: 'Ganancias e IVA',
     agenteRetencion: true,
     condicionPago: 'CUENTA CORRIENTE',
+    aceptaCheques: true,
     limit: 10_000_000,
     saldoCtaCte: 6_000_000,
     lineaUtilizada: 6_000_000,
@@ -120,6 +125,7 @@ export const CLIENTES: Cliente[] = [
     agenteRetencion: false,
     // Opera al contado: el cobro es obligatorio para poder cerrar la venta.
     condicionPago: 'CONTADO',
+    aceptaCheques: true,
     limit: 1_800_000,
     saldoCtaCte: 420_000,
     lineaUtilizada: 420_000,
@@ -140,6 +146,7 @@ export const CLIENTES: Cliente[] = [
     ret: 'IIBB',
     agenteRetencion: true,
     condicionPago: 'CUENTA CORRIENTE',
+    aceptaCheques: true,
     limit: 100_000,
     saldoCtaCte: 95_000,
     lineaUtilizada: 95_000,
@@ -556,6 +563,12 @@ export const CONTACTOS_DISPONIBLES: Contacto[] = [
 export const NRO_PRESUPUESTO = 'PR-000245'
 export const FECHA_EMISION_INICIAL = '08/07/2026'
 export const DIAS_VIGENCIA_INICIAL = 14
+
+/**
+ * Tasas de comisión de respaldo para el modo local (sin token). Las reales salen del tablero de
+ * configuración, de los ítems "Comision por Venta".
+ */
+export const COMISIONES_MOCK = { activa: 4, pasiva: 1.5 }
 
 /* ===== Operación REMITO ===== */
 

@@ -1,4 +1,10 @@
 import { money, round2 } from '@/lib/format'
+import {
+  AVANCE_COLOR,
+  ESTADO_RESULTANTE_COMPLETO,
+  estadoResultante,
+  pendienteResultante,
+} from '@/lib/selectors'
 import type { RemitoItem } from '@/types'
 
 interface TablaRemitoProps {
@@ -11,8 +17,20 @@ interface TablaRemitoProps {
    * documento de sólo cantidades y no expone importes.
    */
   mostrarImporte?: boolean
+  /**
+   * Remito ANTERIOR: agrega cómo queda la línea de la venta después de esta entrega —cuántas
+   * unidades le siguen quedando pendientes y en qué estado—. En POSTERIOR no aplica: la mercadería
+   * sale del catálogo y no hay un pendiente contra el cual medir.
+   */
+  mostrarResultante?: boolean
   /** Post-emisión: la tabla pasa a SOLO LECTURA (cantidades no editables, sin quitar líneas). */
   soloLectura?: boolean
+  /**
+   * Piso de la cantidad de una línea ya confirmada. 1 en el remito ANTERIOR (la línea sale de lo
+   * pendiente de una venta: entregar cero unidades no es una entrega, se quita con la papelera);
+   * 0 en el POSTERIOR, donde la mercadería viene del catálogo. El reducer aplica el mismo piso.
+   */
+  cantidadMin?: number
 }
 
 /** Total de la línea: cantidad a entregar × precio unitario. */
@@ -28,10 +46,14 @@ export function TablaRemito({
   onCantidad,
   onRemove,
   mostrarImporte = false,
+  mostrarResultante = false,
   soloLectura = false,
+  cantidadMin = 0,
 }: TablaRemitoProps) {
-  // Sin importes: 6 columnas. Con importes (POSTERIOR): 8. −1 sin la columna de acciones (sólo lectura).
-  const colSpanVacio = (mostrarImporte ? 8 : 6) - (soloLectura ? 1 : 0)
+  /* Base: 6 columnas. Los importes (POSTERIOR) suman 2 y el resultante (ANTERIOR) otras 2;
+     sin la columna de acciones (sólo lectura) se resta una. */
+  const colSpanVacio =
+    6 + (mostrarImporte ? 2 : 0) + (mostrarResultante ? 2 : 0) - (soloLectura ? 1 : 0)
   const importePendFacturar = round2(items.reduce((acc, it) => acc + totalLinea(it), 0))
 
   const tabla = (
@@ -44,6 +66,8 @@ export function TablaRemito({
             <th colSpan={2}>Producto</th>
             <th className="ta-c">Cantidad a entregar</th>
             <th className="ta-c">Unidad de medida</th>
+            {mostrarResultante && <th className="ta-c">Cant. Pend. de entregar Resultante</th>}
+            {mostrarResultante && <th className="ta-c">Estado Resultante</th>}
             {mostrarImporte && <th className="ta-c">Precio unitario</th>}
             {mostrarImporte && <th className="ta-c">Total por producto</th>}
             {!soloLectura && <th className="ta-c">Acc.</th>}
@@ -60,6 +84,10 @@ export function TablaRemito({
           {items.map((it, i) => {
             const tope = it.max
             const excede = tope !== undefined && it.cantidad > tope
+            /* Cómo queda la línea de la venta con esta entrega. Se deriva en el render, así que
+               sigue en vivo cada tecla del input de cantidad. */
+            const resultante = pendienteResultante(tope ?? 0, it.cantidad)
+            const estado = estadoResultante(resultante)
             return (
               <tr key={it.uid}>
                 <td style={{ width: 20, color: 'var(--text-gray)', fontWeight: 600 }}>{i + 1}</td>
@@ -96,7 +124,7 @@ export function TablaRemito({
                         <button
                           type="button"
                           aria-label={`Restar una unidad de ${it.nombre}`}
-                          disabled={it.cantidad === 0}
+                          disabled={it.cantidad <= cantidadMin}
                           onClick={() => onCantidad(it.uid, it.cantidad - 1)}
                         >
                           <i className="fas fa-angle-down" />
@@ -109,6 +137,30 @@ export function TablaRemito({
                 <td className="ta-c" style={{ fontWeight: 600 }}>
                   {it.um}
                 </td>
+
+                {mostrarResultante && (
+                  <td className="ta-c" style={{ fontWeight: 700 }}>
+                    {resultante}
+                  </td>
+                )}
+                {mostrarResultante && (
+                  <td className="ta-c" style={{ fontWeight: 600 }}>
+                    {estado ? (
+                      <span
+                        style={{
+                          color:
+                            estado === ESTADO_RESULTANTE_COMPLETO
+                              ? AVANCE_COLOR.completo
+                              : AVANCE_COLOR.parcial,
+                        }}
+                      >
+                        {estado}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                )}
 
                 {mostrarImporte && <td className="ta-c">{money(it.precioUnitario ?? 0)}</td>}
                 {mostrarImporte && (

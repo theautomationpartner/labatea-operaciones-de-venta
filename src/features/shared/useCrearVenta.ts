@@ -1,14 +1,10 @@
 import { useMemo, useState } from 'react'
 import { datosCobroVenta, descuentoDeFormaPago } from '@/lib/cobros'
+import { netoLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
 import { IVA_RATE } from '@/lib/selectors'
-import {
-  actualizarCantVendida,
-  crearVenta,
-  registrarFacturacionVtasPend,
-  vincularVentaAlCobro,
-} from '@/services/monday'
+import { actualizarCantVendida, crearVenta, registrarFacturacionVtasPend } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 
 /**
@@ -22,7 +18,7 @@ import { useApp, useDispatch } from '@/state/hooks'
 export function useCrearVenta() {
   const state = useApp()
   const dispatch = useDispatch()
-  const { cliente, operacion, tipoVenta, tipoEntrega, cobro } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega } = state
   const [creando, setCreando] = useState(false)
   const [errorVenta, setErrorVenta] = useState<string | null>(null)
 
@@ -46,7 +42,8 @@ export function useCrearVenta() {
         acc + p.rentabilidad * ((p.precioUnitario * p.cantidad * (1 - p.descuento / 100)) / base),
       0,
     )
-    return Math.round(ponderada)
+    // Con decimales: no se redondea a entero (rentabilidad general del ítem de venta).
+    return round2(ponderada)
   }, [state.lineas, state.ventaItems, state.facturaItems, operacion, tipoVenta, tipoEntrega])
 
   const crear = async (): Promise<string | null> => {
@@ -65,10 +62,10 @@ export function useCrearVenta() {
     /* Total en pesos (con IVA): neto bonificado × (1 + IVA). El neto incluye el descuento por forma
        de pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual. */
     const descFormaPago = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
-    const neto = productos.reduce((acc, p) => {
-      const descTotal = Math.min((p.descuento ?? 0) + descFormaPago, 100)
-      return acc + p.precioUnitario * p.cantidad * (1 - descTotal / 100)
-    }, 0)
+    const neto = productos.reduce(
+      (acc, p) => acc + netoLinea(p.precioUnitario, p.cantidad, p.descuento ?? 0, descFormaPago),
+      0,
+    )
     const importeTotalPesos = round2(neto * (1 + IVA_RATE))
 
     let ventaId = state.ventaId
@@ -79,7 +76,8 @@ export function useCrearVenta() {
         nombre: cliente.name,
         tipoVenta: tipoVenta ?? 'DIRECTA',
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
-        ...datosCobroVenta(cliente, cobro),
+        // El tipo de cobro sale de la forma de pago elegida, no de la condición del cliente.
+        ...datosCobroVenta(state.formaPago),
         rentabilidad: rentabilidadVenta,
         descFormaPago,
         tasaCambio: state.tasaCambio,
@@ -127,9 +125,8 @@ export function useCrearVenta() {
         /* La conciliación de "Vtas Pends de Facturar" es best-effort. */
       }
     }
-    // El recibo simultáneo nace antes que la venta: se cierra el vínculo si existe.
-    if (cobro.cobroId) await vincularVentaAlCobro(cobro.cobroId, ventaId)
-
+    /* El recibo ya no se vincula acá: nace DESPUÉS de la venta (es un efecto secundario suyo) y
+       arranca apuntándola, así que no hace falta cerrar el vínculo en un segundo paso. */
     return ventaId
   }
 

@@ -7,6 +7,7 @@ import { TablaProductos, type FilaProducto } from '@/features/productos/TablaPro
 import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { descuentoDeFormaPago } from '@/lib/cobros'
+import { descuentoUnitario } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { pasosDe } from '@/lib/pasos'
@@ -29,13 +30,19 @@ import { ResumenVentaCard } from './ResumenVentaCard'
  * todavía no vencieron y se listan todos sus productos en una sola lista, con lo presupuestado,
  * lo vendido y lo que queda disponible. De ahí se llevan a la venta con la cantidad elegida.
  */
-/** Alícuota de IVA por defecto cuando un producto no trae la suya. */
-const IVA_DEFECTO = 21
-
 export function VentaView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, ventaItems, formaPago, descuentosPago, tasaCambio } =
-    state
+  const {
+    cliente,
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+    ventaItems,
+    formaPago,
+    descuentosPago,
+    comisiones,
+    tasaCambio,
+  } = state
   const dispatch = useDispatch()
   /* GUARDRAIL post-emisión: con un documento oficial ya emitido, la carga de productos queda en
      SOLO LECTURA (la emisión hacia Monday es irreversible). */
@@ -83,8 +90,8 @@ export function VentaView() {
   // Sólo se llega acá con la venta configurada como CON PRESUPUESTO PREVIO.
   const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
   const resumen = useMemo(
-    () => resumenVenta(ventaItems, cliente, tipo, descFormaPago),
-    [ventaItems, cliente, tipo, descFormaPago],
+    () => resumenVenta(ventaItems, cliente, tipo, descFormaPago, comisiones),
+    [ventaItems, cliente, tipo, descFormaPago, comisiones],
   )
   // Venta: bloqueante. No se avanza al cierre si el cliente está bloqueado o la venta se pasa de
   // su línea; el aviso salta al hacer click en "Continuar a cobro".
@@ -131,21 +138,18 @@ export function VentaView() {
 
   /* El precio, la rentabilidad y el descuento son los del presupuesto; acá el descuento no se edita.
      Los importes ya vienen en pesos (los productos en dólares se convirtieron al entrar). Se
-     precalculan tres valores por línea, en este orden:
-       1. IVA ($) = Precio Unitario (ARS) × tasa de IVA de la línea.
-       2. Importe Bonif = bonificación del presupuesto + Precio Unitario × % de la forma de pago.
-       3. Total Final  = (Precio Unitario − Importe Bonif) × cantidad. */
+     precalculan tres valores por línea, con las fórmulas compartidas de `lib/descuentos`:
+       1. Importe Bonif = descuento por unidad, EN CASCADA (forma de pago y después el del
+          presupuesto sobre el precio ya rebajado).
+       2. Total Final = (Precio Unitario − Importe Bonif) × cantidad, SIN IVA. */
   const filas = useMemo<FilaProducto[]>(
     () =>
       ventaItems.map((it) => {
         const precio = it.precio
-        /* Bonificación del presupuesto: se RECALCULA con el % de descuento de la línea (`it.desc`),
-           no se lee `it.impBonificado`. La columna Importe Bonif. del presupuesto guarda el precio
-           unitario cuando NO hubo descuento (regla del board), así que no es confiable como monto
-           bonificado; con `precio × desc%` da 0 sin descuento y el monto correcto si lo hubo. */
-        const bonifPresupuesto = round2(precio * ((it.desc ?? 0) / 100))
-        const bonifFormaPago = round2(precio * (descFormaPago / 100))
-        const impBonif = round2(bonifPresupuesto + bonifFormaPago)
+        /* El descuento del presupuesto se RECALCULA con el % de la línea (`it.desc`), no se lee
+           `it.impBonificado`. La columna Importe Bonif. del presupuesto guarda el precio unitario
+           cuando NO hubo descuento (regla del board), así que no es confiable como monto. */
+        const impBonif = descuentoUnitario(precio, it.desc ?? 0, descFormaPago).total
         // Importe Total de la línea, ya bonificado (con la forma de pago aplicada).
         const totalLinea = round2((precio - impBonif) * it.aVender)
         return {
@@ -161,9 +165,6 @@ export function VentaView() {
           cantidadMax: maxAVender(it),
           impBonif,
           totalLinea,
-          // IVA ($) = alícuota aplicada sobre el importe YA bonificado de la línea (el importe real
-          // que se cobra), no sobre el precio de lista.
-          ivaMonto: round2((totalLinea * (it.iva ?? IVA_DEFECTO)) / 100),
         }
       }),
     [ventaItems, descFormaPago],
@@ -251,9 +252,8 @@ export function VentaView() {
             : (uid, cantidad) => dispatch({ type: 'setVentaCantidad', uid, cantidad })
         }
         soloLectura={bloqueadoPorEmision}
-        // La venta liquida IVA: se muestra la columna "IVA ($)". El descuento por forma de pago
-        // alimenta la rentabilidad efectiva (los importes ya vienen precalculados en las filas).
-        mostrarIva
+        // El descuento por forma de pago alimenta la rentabilidad efectiva (los importes ya
+        // vienen precalculados en las filas).
         descFormaPago={descFormaPago}
       />
 

@@ -210,6 +210,12 @@
   color: var(--f-text-label);
   margin-bottom: 6px;
 }
+/* "Comision x Venta": cierra los números de la venta, separado del grupo de totales de arriba. */
+.factura-v2 .resumen-comision {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--f-border, #e4e7ee);
+}
 /* Botón de emisión, al pie de la ficha. */
 .factura-v2 .btn-generar {
   width: 100%;
