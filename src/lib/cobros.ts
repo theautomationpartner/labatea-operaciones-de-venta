@@ -78,6 +78,14 @@ export const FORMAS_PAGO: readonly FormaPago[] = [
 ]
 
 /**
+ * Medios de cobro que son CONTADO. Los tres comparten SIEMPRE el mismo descuento por pronto pago:
+ * es una sola condición comercial, no tres. `getDescuentosPago` resuelve un único valor para el
+ * grupo y se lo asigna a los tres, así no pueden divergir aunque el tablero los cargue por
+ * separado. El orden importa: es la prioridad con la que se busca el valor del grupo.
+ */
+export const MEDIOS_CONTADO: readonly FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque']
+
+/**
  * El medio de cobro es una RETENCIÓN impositiva. No se enumeran las retenciones una por una: se
  * reconocen porque el nombre EMPIEZA con "Retencion" (con o sin tilde, sin distinguir mayúsculas),
  * así agregar "Retencion IVA", "Retencion SUSS" o la que venga al catálogo alcanza para que hereden
@@ -112,20 +120,17 @@ export const SIN_DESCUENTOS_PAGO: DescuentosPago = {
 }
 
 /**
- * Valores de arranque, hasta que llega la configuración real: los descuentos los define el
- * tablero "⚙️Configuracion - Sistema" (ítems de tipo "Medios de Pago"), no la app.
+ * Estado de arranque: TODO en cero, hasta que `getDescuentosPago` traiga la configuración real.
+ *
+ * A propósito no lleva porcentajes: los descuentos por pronto pago los define el tablero
+ * "⚙️Configuracion - Sistema" (ítems de tipo "Medios de Cobro") y son su única fuente. Tener acá
+ * una tabla de valores "por las dudas" crea una segunda verdad que coincide con el tablero sólo
+ * por casualidad, y el día que difieran la app bonifica por un número que nadie configuró.
+ *
+ * Cero es el valor seguro: mientras la consulta viaja no se promete un descuento que quizá no
+ * exista. Sin token, el modo local usa `DESCUENTOS_PAGO_MOCK`, que es explícitamente un mock.
  */
-export const DESCUENTO_PAGO_DEFAULT: DescuentosPago = {
-  Efectivo: 6,
-  Transferencia: 6,
-  Cheque: 6,
-  // Las retenciones no llevan descuento por pronto pago: son un pago por retención impositiva.
-  'Retencion IVA': 0,
-  'Retencion IIBB': 0,
-  'Retencion GAN': 0,
-  'Tarjeta de débito': 5,
-  'Tarjeta de crédito': 3,
-}
+export const DESCUENTO_PAGO_DEFAULT: DescuentosPago = { ...SIN_DESCUENTOS_PAGO }
 
 /** Color de la paleta monday que identifica cada forma de pago. */
 export const COLOR_PAGO: Record<FormaPago, string> = {

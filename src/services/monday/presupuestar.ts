@@ -8,6 +8,8 @@ import {
   CLIENTES,
   COMISIONES_MOCK,
   CONTACTOS_INICIALES,
+  DESCUENTOS_PAGO_MOCK,
+  DIAS_VENC_FACTURA_MOCK,
   DIAS_VIGENCIA_INICIAL,
   PRESUPUESTOS,
   PRODUCTOS,
@@ -35,7 +37,12 @@ import type {
   SituacionCliente,
   Vendedor,
 } from '@/types'
-import { DESCUENTO_PAGO_DEFAULT, FORMAS_PAGO, type DescuentosPago } from '@/lib/cobros'
+import {
+  DESCUENTO_PAGO_DEFAULT,
+  FORMAS_PAGO,
+  MEDIOS_CONTADO,
+  type DescuentosPago,
+} from '@/lib/cobros'
 import {
   BOARDS,
   COL,
@@ -46,6 +53,7 @@ import {
   CTA_BANCARIA_ACTIVA_INDEX,
   CONFIG_DIAS_VIGENCIA_ITEM,
   CONFIG_TIPO_MEDIOS_PAGO_INDEX,
+  CONFIG_TIPO_VENC_FACTURA_INDEX,
   ENVIO_ESTADO,
   MEDIO_ENVIO_LABELS,
   MONEDA_LABEL,
@@ -114,6 +122,37 @@ export async function getDiasVigencia(): Promise<number> {
   return valor || DIAS_VIGENCIA_INICIAL
 }
 
+/**
+ * Días que se le suman a la emisión para la "Fecha Vto. Pago" de la factura: el ítem de tipo
+ * "Dias de Vigencia Fact Vta" del tablero de configuración, en su columna "Dias de Venc Fact Vta".
+ *
+ * Se filtra por el ÍNDICE del "Tipo de Config" y no por el id del ítem: si lo recrean en el
+ * tablero, el id cambia y la app quedaría leyendo un ítem que ya no existe.
+ */
+export async function getDiasVencimientoFactura(): Promise<number> {
+  if (!mondayHabilitado()) return DIAS_VENC_FACTURA_MOCK
+  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
+    `query {
+      boards(ids: [${BOARDS.config}]) {
+        items_page(
+          limit: 10,
+          query_params: {rules: [{column_id: "${COL.config.tipo}", compare_value: [${CONFIG_TIPO_VENC_FACTURA_INDEX}], operator: any_of}]}
+        ) {
+          items {
+            id name
+            column_values(ids: ["${COL.config.diasVencFactura}"]) { id text }
+          }
+        }
+      }
+    }`,
+  )
+  for (const item of data.boards[0].items_page.items) {
+    const dias = num(byId(item)[COL.config.diasVencFactura]?.text)
+    if (dias > 0) return dias
+  }
+  return DIAS_VENC_FACTURA_MOCK
+}
+
 /** Topes del descuento por producto, definidos en el tablero de configuración. */
 export interface TopesDescuento {
   max: number
@@ -153,7 +192,18 @@ export async function getTopesDescuento(): Promise<TopesDescuento> {
  * pago sin configurar no debería quedar sin descuento por accidente.
  */
 export async function getDescuentosPago(): Promise<DescuentosPago> {
-  if (!mondayHabilitado()) return { ...DESCUENTO_PAGO_DEFAULT }
+  /* Sin token no hay tablero que consultar: el modo local usa un mock explícito. Corriendo contra
+     Monday, TODO lo que devuelve esta función sale del tablero; nada está escrito en la app. */
+  if (!mondayHabilitado()) {
+    return {
+      ...DESCUENTO_PAGO_DEFAULT,
+      Efectivo: DESCUENTOS_PAGO_MOCK.contado,
+      Transferencia: DESCUENTOS_PAGO_MOCK.contado,
+      Cheque: DESCUENTOS_PAGO_MOCK.contado,
+      'Tarjeta de débito': DESCUENTOS_PAGO_MOCK.debito,
+      'Tarjeta de crédito': DESCUENTOS_PAGO_MOCK.credito,
+    }
+  }
   const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
     `query {
       boards(ids: [${BOARDS.config}]) {
@@ -169,15 +219,26 @@ export async function getDescuentosPago(): Promise<DescuentosPago> {
       }
     }`,
   )
+
   const descuentos = { ...DESCUENTO_PAGO_DEFAULT }
   for (const item of data.boards[0].items_page.items) {
     const forma = FORMAS_PAGO.find((f) => norm(f) === norm(item.name))
     if (!forma) continue
     const texto = byId(item)[COL.config.valorPct]?.text
-    // Sin valor cargado no se pisa el default; un 0 explícito sí es un descuento válido.
+    // Sin valor cargado el ítem no aporta nada; un 0 explícito sí es un descuento válido.
     if (texto == null || texto.trim() === '') continue
     descuentos[forma] = num(texto)
   }
+
+  /* Efectivo, Transferencia y Cheque son un solo grupo —CONTADO—, así que llevan el MISMO
+     descuento. El tablero los tiene como tres ítems separados y podrían quedar desalineados por
+     error de carga: se toma un único valor del grupo (el primero que lo tenga, en el orden de
+     `MEDIOS_CONTADO`) y se lo asigna a los tres. Así lo que ve el vendedor cobrando en efectivo,
+     por transferencia o con cheque no puede diferir. */
+  const cargado = MEDIOS_CONTADO.find((m) => descuentos[m] > 0)
+  const contado = cargado ? descuentos[cargado] : 0
+  for (const medio of MEDIOS_CONTADO) descuentos[medio] = contado
+
   return descuentos
 }
 

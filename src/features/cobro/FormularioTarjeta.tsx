@@ -10,14 +10,13 @@ import {
 import { aIso, desdeIso } from '@/lib/dates'
 import { formatearImporteAR, importeATexto, money } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
-import type { MovimientoPago, TarjetaTipo, TipoTarjetaCobro } from '@/types'
+import type { MovimientoPago, TipoTarjetaCobro } from '@/types'
 import { AdjuntoComprobante } from './AdjuntoComprobante'
 import { BancoEmisorSelect } from './BancoEmisorSelect'
+import { TipoTarjetaSelect } from './TipoTarjetaSelect'
 import { textoCuentasVacio, useCuentasPropias } from './useCuentasPropias'
 
 type Borrador = Omit<MovimientoPago, 'id'>
-
-const TIPOS_TARJETA: TarjetaTipo[] = ['VISA', 'MASTERCARD']
 
 /** Asterisco rojo que marca un campo obligatorio. */
 const Req = () => <span className="cobro-req"> *</span>
@@ -42,6 +41,7 @@ const borradorVacio = (tipo: TipoTarjetaCobro): Borrador => ({
   numeroTarjeta: '',
   titularTarjeta: '',
   vencimientoTarjeta: '',
+  numeroCupon: '',
 })
 
 interface FormularioTarjetaProps {
@@ -252,27 +252,12 @@ export function FormularioTarjeta({
           Tipo Tarjeta
           <Req />
         </label>
-        <select
+        <TipoTarjetaSelect
           id="tarj-tipo"
-          className={`cobro-in ${mal('tipoTarjeta') ? 'cobro-in--error' : ''}`}
-          aria-invalid={mal('tipoTarjeta') || undefined}
           value={borrador.tipoTarjeta ?? ''}
-          onChange={(e) =>
-            setBorrador({ ...borrador, tipoTarjeta: (e.target.value || null) as TarjetaTipo | null })
-          }
-        >
-          <option value="">Seleccionar…</option>
-          {TIPOS_TARJETA.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        {mal('tipoTarjeta') && (
-          <span className="cobro-in-err" role="alert">
-            Elegí el tipo de tarjeta
-          </span>
-        )}
+          onChange={(tipo) => setBorrador({ ...borrador, tipoTarjeta: tipo || null })}
+          error={mal('tipoTarjeta')}
+        />
       </div>
 
       {/* NRO. TARJETA — se agrupa de a 4 mientras se escribe y exige los 16 dígitos. */}
@@ -330,6 +315,20 @@ export function FormularioTarjeta({
 
       {/* FILA 3 · el respaldo del cobro: cupón, dónde se acredita y —en crédito— el plan de cuotas. */}
       <Fila>
+      {/* NRO CUPÓN — el número que imprime el posnet. Va a la izquierda del comprobante: es el
+          dato del mismo papel que se adjunta al lado. */}
+      <div className="cobro-form-campo cobro-form-campo--val cobro-campo--nrocupon">
+        <label htmlFor="tarj-nrocupon">Nro Cupon</label>
+        <input
+          id="tarj-nrocupon"
+          type="text"
+          className="cobro-in"
+          autoComplete="off"
+          value={borrador.numeroCupon ?? ''}
+          onChange={(e) => setBorrador({ ...borrador, numeroCupon: e.target.value })}
+        />
+      </div>
+
       <div className="cobro-form-campo cobro-form-campo--val cobro-form-campo--drop cobro-campo--cupon">
         <label htmlFor="tarj-file">
           Comprobante

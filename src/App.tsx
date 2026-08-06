@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import {
   getComisionesVenta,
   getDescuentosPago,
+  getDiasVencimientoFactura,
   getDiasVigencia,
   getTasaCambioHoy,
   getTopesDescuento,
@@ -42,7 +43,7 @@ const VISTAS: Record<Paso, () => JSX.Element | null> = {
 }
 
 export function App() {
-  const { paso, cliente, operacion } = useApp()
+  const { paso, operacion } = useApp()
   const dispatch = useDispatch()
   const scrollRef = useRef<HTMLDivElement>(null)
   const Vista = VISTAS[paso]
@@ -55,14 +56,6 @@ export function App() {
   useEffect(() => {
     limpiarCachesConsultas()
   }, [operacion])
-  /* El cobro simultáneo es el único camino que aplica descuentos por forma de pago. Puede
-     llegar por dos lados: el cliente de contado, o el de cuenta corriente que en el cierre
-     elige cobrar en el acto ("SI"). Esa elección se toma en el paso 3, así que los descuentos
-     se traen para los dos casos: si no, el cobro en el acto se cargaría sin ellos. */
-  const clienteId = cliente?.id ?? null
-  const clientePuedeCobrarEnElActo =
-    cliente?.condicionPago === 'CONTADO' || cliente?.condicionPago === 'CUENTA CORRIENTE'
-
   // Cada paso arranca desde arriba, como en una navegación real.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
@@ -76,6 +69,19 @@ export function App() {
       .catch(() => {})
     getTopesDescuento()
       .then((topes) => vivo && dispatch({ type: 'setTopesDescuento', value: topes }))
+      .catch(() => {})
+    /* Descuentos por pronto pago de cada medio de cobro ("Medios de Cobro"). Se traen SIEMPRE y
+       una sola vez, como el resto de la configuración: son la única fuente de esos porcentajes.
+       Antes se pedían recién al elegir un cliente de contado o cuenta corriente, y con cualquier
+       otra condición la app se quedaba con una tabla de valores escrita a mano que coincidía con
+       el tablero por casualidad. Ante un error quedan en 0: no se bonifica lo que no se pudo leer. */
+    getDescuentosPago()
+      .then((d) => vivo && dispatch({ type: 'setDescuentosPago', value: d }))
+      .catch(() => {})
+    /* Días de vencimiento del pago de la factura ("Dias de Vigencia Fact Vta"). Ante un error se
+       conserva el valor de arranque, que es el mismo que hoy tiene el tablero. */
+    getDiasVencimientoFactura()
+      .then((dias) => vivo && dispatch({ type: 'setDiasVencFactura', value: dias }))
       .catch(() => {})
     /* Tasas de comisión del vendedor ("Comision por Venta"): una para la venta con presupuesto
        previo (Activa) y otra para la directa (Pasiva). Ante un error quedan en 0: la comisión no
@@ -104,20 +110,6 @@ export function App() {
       vivo = false
     }
   }, [dispatch])
-
-  /* Los descuentos por forma de pago se releen en cada venta que se vaya a cobrar en el acto:
-     los define el tablero de configuración y pueden haber cambiado desde el arranque. Se
-     dispara al quedar elegido el cliente (paso 1), así llegan cargados al cierre (paso 3). */
-  useEffect(() => {
-    if (!clientePuedeCobrarEnElActo) return
-    let vivo = true
-    getDescuentosPago()
-      .then((descuentos) => vivo && dispatch({ type: 'setDescuentosPago', value: descuentos }))
-      .catch(() => {})
-    return () => {
-      vivo = false
-    }
-  }, [clientePuedeCobrarEnElActo, clienteId, dispatch])
 
   return (
     <div className="scroll" ref={scrollRef}>

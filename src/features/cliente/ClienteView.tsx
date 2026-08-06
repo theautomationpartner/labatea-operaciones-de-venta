@@ -41,7 +41,7 @@ export function ClienteView() {
   const [avisoConfig, setAvisoConfig] = useState(false)
   // Aviso emergente al intentar avanzar sin un cliente cargado.
   const [avisoSinCliente, setAvisoSinCliente] = useState(false)
-  // Ventana emergente cuando la búsqueda no encuentra al cliente (además del aviso en línea).
+  // Ventana emergente cuando la búsqueda no encuentra al cliente: es el ÚNICO aviso de ese caso.
   const [avisoNoEncontrado, setAvisoNoEncontrado] = useState(false)
   // Cada vez que la búsqueda termina en "no encontrado", se abre la ventana emergente.
   useEffect(() => {
@@ -134,13 +134,9 @@ export function ClienteView() {
         </div>
       </div>
 
-      {/* Avisos de la búsqueda (no encontrado / error), arriba de la ficha. */}
-      {estadoBusqueda === 'no-encontrado' && (
-        <div className="cliente-estado cliente-estado--error">
-          <i className="fas fa-triangle-exclamation" />
-          <div>El cliente que buscó no existe o está inactivo en el sistema.</div>
-        </div>
-      )}
+      {/* El cliente no encontrado se avisa SÓLO por la ventana emergente: el cartel en línea decía
+          lo mismo y además empujaba la ficha (que en ese estado es puro skeleton) hacia abajo.
+          El fallo de conexión sí se queda en línea: no tiene ventana propia. */}
       {estadoBusqueda === 'error' && (
         <div className="cliente-estado cliente-estado--error">
           <i className="fas fa-triangle-exclamation" />
@@ -195,7 +191,7 @@ export function ClienteView() {
         </AvisoModal>
       )}
 
-      {/* Cliente no encontrado: el mismo mensaje que el aviso en línea, en una ventana emergente. */}
+      {/* Cliente no encontrado: la ventana es el único aviso, no hay cartel en línea. */}
       {avisoNoEncontrado && (
         <AvisoModal titulo="Cliente no encontrado" onClose={() => setAvisoNoEncontrado(false)}>
           El cliente que buscó no existe o está inactivo en el sistema.

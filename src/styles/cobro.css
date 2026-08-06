@@ -490,18 +490,19 @@
   color: var(--c-danger);
   pointer-events: none;
 }
-/* Alta inline de un banco emisor nuevo: el input ocupa el lugar del select (mismo alto de 40px) y a
-   su lado quedan los botones de confirmar/cancelar, sin desbordar el slot del campo. */
-.cobro-v2 .banco-nuevo {
+/* Alta inline de una opcion nueva del cobro (banco emisor, tipo de tarjeta): el input ocupa el
+   lugar del select (mismo alto de 40px) y a su lado quedan los botones de confirmar/cancelar, sin
+   desbordar el slot del campo. */
+.cobro-v2 .opcion-nueva {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.cobro-v2 .banco-nuevo .cobro-in {
+.cobro-v2 .opcion-nueva .cobro-in {
   flex: 1;
   min-width: 0;
 }
-.cobro-v2 .banco-nuevo-btn {
+.cobro-v2 .opcion-nueva-btn {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -515,11 +516,11 @@
   font-size: 15px;
   cursor: pointer;
 }
-.cobro-v2 .banco-nuevo-btn:disabled {
+.cobro-v2 .opcion-nueva-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.cobro-v2 .banco-nuevo-btn--ghost {
+.cobro-v2 .opcion-nueva-btn--ghost {
   background: var(--c-bg-input);
   border-color: #000;
   color: var(--c-text-main);
@@ -687,6 +688,11 @@
 .cobro-v2 .cobro-form--tarjeta .cobro-campo--fecha {
   flex: 0 0 170px;
   max-width: none;
+}
+/* Nro Cupón: el dato del mismo papel que se adjunta al lado, así que abre el renglón del cupón.
+   Ancho fijo y angosto, como el resto de los campos cortos de la tarjeta. */
+.cobro-v2 .cobro-form--tarjeta .cobro-campo--nrocupon {
+  flex: 0 0 150px;
 }
 /* Cupón: 259px (un 20% más que los 216px anteriores), sin quitarle lugar en la fila al banco de
    acreditación ni al "+ Agregar". La regla vive en el formulario de tarjeta, así que sólo aplica

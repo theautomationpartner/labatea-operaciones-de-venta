@@ -94,6 +94,13 @@ export const CONFIG_DESCUENTO_ITEM = 12592496747
 export const CONFIG_TIPO_MEDIOS_PAGO_INDEX = 1
 
 /**
+ * Índice de "Dias de Vigencia Fact Vta" en la misma "Tipo de Config": el ítem que define a cuántos
+ * días de la emisión vence el pago de la factura. Se filtra por índice —no por el id del ítem— para
+ * que recrear el ítem en el tablero no deje la app leyendo un id muerto.
+ */
+export const CONFIG_TIPO_VENC_FACTURA_INDEX = 7
+
+/**
  * Índice de "Comision por Venta" en la misma "Tipo de Config". Son los ítems que definen la tasa
  * de comisión del vendedor. OJO con el label: en el board va en SINGULAR ("Comision por Venta").
  */
@@ -501,7 +508,7 @@ export const COL = {
     cliente: 'board_relation_mkwb7fmp',
     /** "🤖Tipo de Cobro" (status): "Simultaneo" o "Posterior". */
     tipoCobro: 'color_mm5yh0gs',
-    /** "📈Ventas": la venta que este recibo cobra. Sólo en el SIMULTÁNEO. */
+    /** "📈Ventas": la venta que este recibo cobra. Va en los DOS tipos de cobro. */
     venta: 'board_relation_mm4kwppn',
     /** "💰Fact Vtas Pends de Cobro": la deuda que respalda el cobro. Sólo en el POSTERIOR. */
     vtaPendiente: 'board_relation_mm58ycfw',
@@ -514,7 +521,8 @@ export const COL = {
     /** ID del recibo ("RECIBO-01"); el ítem se renombra con este valor. */
     pulseId: 'pulse_id_mkwb9111',
   },
-  /* Un movimiento de pago del recibo (board 18421035599). Sólo el SIMULTÁNEO crea subelementos.
+  /* Un movimiento de pago del recibo (board 18421035599): hay uno por cada movimiento cargado,
+     sea el cobro SIMULTÁNEO o POSTERIOR (la venta con TARJETA es POSTERIOR y detalla sus cupones).
      Cada medio de cobro completa su propio juego de columnas; las dos primeras son de todos. */
   cobroSub: {
     /** "✋Caja": el medio de cobro. Es una columna status, con sus propias etiquetas. */
@@ -536,19 +544,24 @@ export const COL = {
     /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */
     cuit: 'text_mm5ydwp2',
     fechaEmisionCheque: 'date_mm5rxdpk',
-    vencimientoCheque: 'date_mm5r3m2h',
     /** "🤖Origen" del cheque (dropdown): "Papel" o "eCheq". */
     origenCheque: 'dropdown_mm5yveka',
     /** "🤖Banco Emisor" del cheque (dropdown de texto libre). */
     bancoEmisorCheque: 'dropdown_mm5yfd8n',
+    /**
+     * "🤖Fecha Venc": la columna de vencimiento es COMPARTIDA. La usan el cheque y las dos
+     * tarjetas —cada movimiento es un subelemento de un solo medio, así que nunca compiten—.
+     */
+    vencimiento: 'date_mm5y4zxa',
     // TARJETA (débito y crédito)
     nroTarjeta: 'text_mm5ybw7q',
     titularTarjeta: 'text_mm5yr164',
-    /** "🤖Tipo Tarjeta" (dropdown): VISA o MASTERCARD. */
+    /** "🤖Tipo Tarjeta" (dropdown): VISA, MASTERCARD o el tipo que cargue el usuario. */
     tipoTarjeta: 'dropdown_mm5rx800',
-    vencimientoTarjeta: 'date_mm5y4zxa',
     /** "🤖Cupon" (file): el comprobante del cobro con tarjeta. */
     cupon: 'file_mm5yy4je',
+    /** "🤖Numero Cupon" (texto): el número que imprime el posnet, cargado a mano. */
+    nroCupon: 'text_mm5zs69e',
     // Sólo TARJETA DE CRÉDITO
     cuotas: 'numeric_mm5ydy8',
     valorCuota: 'numeric_mm5yx0ec',
@@ -967,6 +980,8 @@ export const COL = {
     valorPct: 'numeric_mm4e5cta',
     /** "Tipo de Gestion": distingue la comisión "Activa" de la "Pasiva". */
     tipoGestion: 'color_mm4ewj21',
+    /** "Dias de Venc Fact Vta": a cuántos días de la emisión vence el pago de la factura. */
+    diasVencFactura: 'numeric_mm5g141e',
   },
 } as const
 
@@ -1068,9 +1083,6 @@ export const FACT_CONDICION_VENTA = {
   cuentaCorriente: 'Cuenta Corriente',
   tarjeta: 'Tarjeta',
 } as const
-
-/** Días que se le suman a la emisión para la "Fecha Vto. Pago", mientras no se configure. */
-export const FACT_VENCIMIENTO_DIAS = 30
 
 /** "Unidad de Medida" del subelemento. En el board la etiqueta es "Unidades", en plural. */
 export const FACT_SUB_UNIDAD_MEDIDA = 'Unidades'

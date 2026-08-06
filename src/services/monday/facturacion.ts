@@ -33,7 +33,6 @@ import {
   FACT_SUB_PROD_SERV,
   FACT_SUB_UNIDAD_MEDIDA,
   FACT_TIPO_COMPROBANTE,
-  FACT_VENCIMIENTO_DIAS,
   MEDIO_ENVIO_LABELS,
   VENTA_ENVIO_FACTURA_INDEX,
 } from './columns'
@@ -59,6 +58,11 @@ export interface DatosFacturacion {
    * total con el que se vendió (el mismo de la selección de productos).
    */
   descFormaPago?: number
+  /**
+   * Días de vencimiento del pago, del tablero de configuración ("Dias de Vigencia Fact Vta").
+   * Sólo se usa si el comprobante no trae su propia fecha de vencimiento ya resuelta.
+   */
+  diasVencimiento: number
   observaciones: string
   /** Ítem de la venta en "📈Ventas", para dejar el comprobante conectado a ella. */
   ventaId?: string | null
@@ -93,12 +97,12 @@ function columnasComprobante(
   comprobante: ComprobanteAGenerar,
   datos: DatosFacturacion,
 ): Record<string, unknown> {
-  const { cliente, moneda, tipoCambio, letra, ivaReceptor, fechaEmision } = datos
+  const { cliente, moneda, tipoCambio, letra, ivaReceptor, fechaEmision, diasVencimiento } = datos
   const emision = fechaMonday(fechaEmision)
-  /* El vencimiento es por comprobante: cada uno puede tener el suyo. Sin elegir, van los 30
-     días por defecto contados desde la emisión. */
+  /* El vencimiento es por comprobante: cada uno puede tener el suyo. Sin elegir, se cuentan desde
+     la emisión los días que define el tablero de configuración. */
   const vencimiento = fechaMonday(
-    comprobante.vencimiento || addDays(fechaEmision, FACT_VENCIMIENTO_DIAS),
+    comprobante.vencimiento || addDays(fechaEmision, diasVencimiento),
   )
 
   const cv: Record<string, unknown> = {
@@ -116,7 +120,7 @@ function columnasComprobante(
     [COL.facturacion.observaciones]: datos.observaciones,
   }
   if (emision) cv[COL.facturacion.fechaEmision] = { date: emision }
-  // Vencimiento del pago: emisión + 30 días por defecto, hasta que sea configurable.
+  // Vencimiento del pago: el que trae el comprobante, o emisión + los días configurados.
   if (vencimiento) cv[COL.facturacion.fechaVtoPago] = { date: vencimiento }
   // En pesos el tipo de cambio no significa nada, así que la columna queda vacía.
   if (moneda === 'Dólares (USD)' && tipoCambio > 0) {

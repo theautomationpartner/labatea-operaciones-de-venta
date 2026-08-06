@@ -19,6 +19,7 @@ function detalleDe(m: MovimientoPago): Dato[] {
   return [
     { label: 'Nro. Tarjeta', valor: formatearNroTarjeta(m.numeroTarjeta ?? '').texto || '—' },
     { label: 'Fecha de Venc.', valor: m.vencimientoTarjeta || '—' },
+    { label: 'Nro Cupon', valor: m.numeroCupon?.trim() || '—' },
     { label: 'Comprobante', valor: m.comprobanteNombre || '—' },
     { label: 'Banco de Acreditación', valor: m.cuentaPropia || '—' },
   ]

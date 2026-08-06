@@ -152,16 +152,21 @@ export function PresupuestoAGenerar({ numero, lineas, emitido = false }: Presupu
               </tbody>
             </table>
 
-            {/* Totales estándar (mismas clases/posición que factura y proforma). El presupuesto no
-                liquida IVA (IVA = 0, Total = Gravado). El total en dólares va aparte, en verde. */}
-            <TotalesDoc
-              subtotal={brutoPesos}
-              descuento={descuentoPesos}
-              gravado={totalPesos}
-              iva={0}
-              total={totalPesos}
-              totalUsd={hayDolares ? totalUsd : null}
-            />
+            {/* Totales estándar, en el MISMO renglón y posición que en la card de factura: el
+                `comp-pie` es el que los separa de la tabla y los alinea a la derecha (acá no hay
+                vencimiento a la izquierda, pero el bloque cae igual donde en la factura).
+                El presupuesto no liquida IVA (IVA = 0, Total = Gravado); el total en dólares va
+                aparte, en verde. */}
+            <div className="comp-pie">
+              <TotalesDoc
+                subtotal={brutoPesos}
+                descuento={descuentoPesos}
+                gravado={totalPesos}
+                iva={0}
+                total={totalPesos}
+                totalUsd={hayDolares ? totalUsd : null}
+              />
+            </div>
           </div>
         )}
       </div>

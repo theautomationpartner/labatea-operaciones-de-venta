@@ -487,11 +487,20 @@
   font-size: 11px;
   color: var(--f-text-label);
 }
+/* Bloque de totales de TODAS las cards de documento (factura, proforma y presupuesto).
+   Ancho FIJO y pegado al borde derecho: la factura lo tiene a la derecha porque comparte el
+   renglón con el vencimiento, y el presupuesto y la proforma no tienen nada a su izquierda, así
+   que sin el `margin-left: auto` se estiraban a lo ancho de la card y los rótulos terminaban en
+   una columna distinta. Con el ancho fijo, los cinco renglones arrancan en el mismo lugar en las
+   tres cards, sin depender de cuántos dígitos tenga el importe. */
 .factura-v2 .comp-tot {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 220px;
+  flex: 0 0 auto;
+  width: 300px;
+  max-width: 100%;
+  margin-left: auto;
 }
 .factura-v2 .comp-tot-row {
   display: flex;

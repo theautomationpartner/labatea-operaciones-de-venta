@@ -151,7 +151,7 @@ function CardComprobante({
 
           <div className="comp-pie">
             {/* Vencimiento SÓLO cuando la forma de pago es CUENTA CORRIENTE: el plazo es fijo
-                (30 días) y de sólo lectura. En cualquier otra forma (contado, tarjetas) la factura
+                (el del tablero de configuración) y de sólo lectura. En cualquier otra forma la factura
                 se cobra al emitirse: se muestra "Pago contado", sin fecha de vencimiento. */}
             <div className="comp-venc">
               {venceAPlazo ? (
@@ -163,7 +163,7 @@ function CardComprobante({
                       <i className="fas fa-arrow-right" /> {addDays(fechaEmision, dias)}
                     </span>
                   </div>
-                  <span className="comp-venc-nota">Fijo en 30 días desde la emisión.</span>
+                  <span className="comp-venc-nota">Fijo en {dias} días desde la emisión.</span>
                 </>
               ) : (
                 <span className="comp-head-lbl">Pago contado</span>

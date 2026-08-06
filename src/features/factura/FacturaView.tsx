@@ -28,7 +28,6 @@ import {
   crearComprobantes,
   crearConsignacionesCYO,
   crearVenta,
-  FACT_VENCIMIENTO_DIAS,
   marcarProformaUsada,
   registrarCobro,
   registrarDeudaPosterior,
@@ -208,10 +207,12 @@ export function FacturaView() {
   // A para responsable inscripto y monotributista; B para consumidor final y exento.
   const letra = factura.letra ?? letraComprobante(cliente.status)
   /* El vencimiento a plazo depende de la FORMA DE PAGO elegida: sólo la CUENTA CORRIENTE vence a
-     plazo (30 días). En cualquier otra forma (contado, tarjetas) la factura se cobra al emitirse,
-     así que su vencimiento es la propia fecha de emisión y se muestra "Pago contado". */
+     plazo. En cualquier otra forma (contado, tarjetas) la factura se cobra al emitirse, así que su
+     vencimiento es la propia fecha de emisión y se muestra "Pago contado".
+     El plazo NO está escrito en la app: sale del tablero de configuración ("Dias de Vigencia Fact
+     Vta"), que se lee al arrancar. */
   const venceAPlazo = formaPago === 'CUENTA CORRIENTE'
-  const diasDe = (clave: string) => dias[clave] ?? FACT_VENCIMIENTO_DIAS
+  const diasDe = (clave: string) => dias[clave] ?? state.diasVencFactura
   const vencimientoDe = (clave: string) =>
     venceAPlazo ? addDays(fechaEmision, diasDe(clave)) : fechaEmision
 
@@ -233,6 +234,8 @@ export function FacturaView() {
           letra,
           ivaReceptor,
           fechaEmision,
+          // Plazo de vencimiento del tablero de configuración, no un número escrito en la app.
+          diasVencimiento: state.diasVencFactura,
           observaciones: factura.observaciones,
           ventaId,
           // Entra sólo en el "Importe Bonif $" de cada línea, no en el precio del comprobante.
@@ -373,6 +376,8 @@ export function FacturaView() {
           clienteId: cliente.id,
           nombreCliente: cliente.name,
           vendedorId: state.vendedor?.id ?? null,
+          // La venta que se está cobrando: el recibo la enlaza también en el cobro POSTERIOR.
+          ventaId: vId,
           vtaPendienteId: deudaId,
           /* Los movimientos cargados se detallan como subelementos del recibo: en el cobro con
              TARJETA (POSTERIOR) cada cupón cargado es un subelemento con sus datos de la tarjeta. */

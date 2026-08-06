@@ -3,10 +3,11 @@
  * (18421035524), sea el cobro simultáneo o posterior; lo que cambia es el payload y los
  * subelementos:
  *
- *   SIMULTÁNEO → recibo con los totales de la venta, el vínculo a la venta creada y un
- *                subelemento por movimiento de pago (cada medio completa sus columnas).
- *   POSTERIOR  → recibo apuntando a la deuda de "💰Fact Vtas Pends de Cobro" (18421035508),
- *                SIN subelementos.
+ *   SIMULTÁNEO → recibo con los totales de la venta y el vínculo a la venta creada.
+ *   POSTERIOR  → recibo apuntando a la deuda de "💰Fact Vtas Pends de Cobro" (18421035508).
+ *
+ * En los DOS casos se crea un subelemento por movimiento de pago cargado, y cada medio completa
+ * sus propias columnas: la venta con TARJETA es POSTERIOR y detalla ahí cada cupón.
  *
  * El recibo es un efecto SECUNDARIO de la venta: se dispara una vez que la venta existe y sin
  * bloquear al usuario. En el POSTERIOR hay una dependencia real —el id de la deuda—, así que esa
@@ -92,8 +93,9 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     if (cuitCompleto(m.cuitEmisor)) cv[COL.cobroSub.cuit] = m.cuitEmisor
     const emision = fechaCol(m.fechaEmisionCheque)
     if (emision) cv[COL.cobroSub.fechaEmisionCheque] = emision
+    // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento de la tarjeta.
     const vencimiento = fechaCol(m.chequeVencimiento)
-    if (vencimiento) cv[COL.cobroSub.vencimientoCheque] = vencimiento
+    if (vencimiento) cv[COL.cobroSub.vencimiento] = vencimiento
     const origen = dropdown(m.formatoCheque ? CHEQUE_ORIGEN_LABEL[m.formatoCheque] : null)
     if (origen) cv[COL.cobroSub.origenCheque] = origen
     const banco = dropdown(m.bancoEmisor)
@@ -107,10 +109,13 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     if (bancoEmisor) cv[COL.cobroSub.bancoEmisorCheque] = bancoEmisor
     if (m.numeroTarjeta) cv[COL.cobroSub.nroTarjeta] = m.numeroTarjeta
     if (m.titularTarjeta) cv[COL.cobroSub.titularTarjeta] = m.titularTarjeta
+    // Número de cupón del posnet: es la referencia con la que se concilia la acreditación.
+    if (m.numeroCupon?.trim()) cv[COL.cobroSub.nroCupon] = m.numeroCupon.trim()
     const tipo = dropdown(m.tipoTarjeta)
     if (tipo) cv[COL.cobroSub.tipoTarjeta] = tipo
+    // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento del cheque.
     const vencimiento = fechaCol(m.vencimientoTarjeta)
-    if (vencimiento) cv[COL.cobroSub.vencimientoTarjeta] = vencimiento
+    if (vencimiento) cv[COL.cobroSub.vencimiento] = vencimiento
     // Banco de ACREDITACIÓN (cuenta propia de La Batea donde impacta el cobro).
     const banco = relacion(m.cuentaPropiaId)
     if (banco) cv[COL.cobroSub.bancoAcreditacion] = banco
@@ -128,7 +133,7 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
 }
 
 export interface DatosCobro {
-  /** SIMULTANEO escribe totales y subelementos; POSTERIOR, el vínculo a la deuda. */
+  /** SIMULTANEO escribe los totales de la venta; POSTERIOR, el vínculo a la deuda. */
   tipoPago: TipoPago
   /** Cliente de la venta: va a la relación "🤖Persona" del recibo. */
   clienteId: string
@@ -136,20 +141,20 @@ export interface DatosCobro {
   nombreCliente: string
   /** Vendedor de la operación (usuario de Monday), para la columna Person. */
   vendedorId?: string | null
-  /** SIMULTÁNEO: la venta recién creada, que este recibo cobra. */
+  /** La venta recién creada, que este recibo cobra. Va en los dos tipos de cobro. */
   ventaId?: string | null
   /** POSTERIOR: la deuda de "Fact Vtas Pends de Cobro" que respalda el cobro. */
   vtaPendienteId?: string | null
   /** SIMULTÁNEO: total de la venta y lo efectivamente cobrado (la diferencia se deriva). */
   totalVenta?: number
   totalCobrado?: number
-  /** SIMULTÁNEO: un subelemento por movimiento de pago. En POSTERIOR se ignora. */
+  /** Un subelemento por movimiento de pago cargado, sea el cobro SIMULTÁNEO o POSTERIOR. */
   balances?: BalancePago[]
 }
 
 /**
- * Crea el recibo del cobro y, si es SIMULTÁNEO, sus movimientos. El ítem raíz nace con el nombre
- * del cliente; su ID definitivo ("RECIBO-01") lo asigna la customKey del board.
+ * Crea el recibo del cobro y un subelemento por cada movimiento cargado. El ítem raíz nace con el
+ * nombre del cliente; su ID definitivo ("RECIBO-01") lo asigna la customKey del board.
  */
 export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }> {
   const {
@@ -173,12 +178,13 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
   if (persona) cabecera[COL.cobro.cliente] = persona
   const personaVendedor = personCol(vendedorId)
   if (personaVendedor) cabecera[COL.cobro.vendedor] = personaVendedor
+  /* "📈Ventas" va en los DOS tipos de cobro: todo recibo cobra una venta, sea en el acto o contra
+     la deuda que quedó pendiente. La venta ya existe cuando se crea el recibo —es un efecto
+     secundario suyo—, así que el vínculo va de entrada y no hace falta un segundo update. */
+  const venta = relacion(ventaId)
+  if (venta) cabecera[COL.cobro.venta] = venta
 
   if (esSimultaneo) {
-    /* La venta ya existe cuando se crea el recibo, así que el vínculo va de entrada: no hace falta
-       un segundo update para cerrarlo. */
-    const venta = relacion(ventaId)
-    if (venta) cabecera[COL.cobro.venta] = venta
     cabecera[COL.cobro.totalVenta] = String(round2(totalVenta))
     cabecera[COL.cobro.totalCobrado] = String(round2(totalCobrado))
     cabecera[COL.cobro.diferencia] = String(round2(totalVenta - totalCobrado))

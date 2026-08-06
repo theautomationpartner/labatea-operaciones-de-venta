@@ -1,5 +1,5 @@
 /** Estado único del flujo de operaciones y su reducer. Sin dependencias de React. */
-import { DIAS_VIGENCIA_INICIAL } from '@/data/mock'
+import { DIAS_VENC_FACTURA_MOCK, DIAS_VIGENCIA_INICIAL } from '@/data/mock'
 import { hoy } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
@@ -73,8 +73,13 @@ export interface AppState {
   moneda: Moneda
   /** Topes del descuento por producto, leídos del tablero de configuración. */
   topesDescuento: TopesDescuento
-  /** Descuento por forma de pago ("Medios de Pago" del tablero de configuración). */
+  /** Descuento por forma de pago ("Medios de Cobro" del tablero de configuración). */
   descuentosPago: DescuentosPago
+  /**
+   * Días que se le suman a la emisión para el vencimiento del pago de la factura ("Dias de
+   * Vigencia Fact Vta" del tablero de configuración). No se edita desde la app.
+   */
+  diasVencFactura: number
   /** Tasas de comisión del vendedor ("Comision por Venta" del tablero de configuración). */
   comisiones: ComisionesVenta
   /** Filtros de taxonomía aplicados a la búsqueda de productos (Rubro/Subrubro/Categoría). */
@@ -188,7 +193,9 @@ export const initialState: AppState = {
   diasVigencia: DIAS_VIGENCIA_INICIAL,
   moneda: 'Pesos',
   topesDescuento: TOPES_DESCUENTO_DEFAULT,
+  // Sin la configuración leída, los descuentos son 0: no se asume ninguna bonificación.
   descuentosPago: DESCUENTO_PAGO_DEFAULT,
+  diasVencFactura: DIAS_VENC_FACTURA_MOCK,
   // Sin la configuración leída, la comisión es 0: no se asume ninguna tasa.
   comisiones: { activa: 0, pasiva: 0 },
   filtros: [],
@@ -269,6 +276,7 @@ export type Action =
   | { type: 'setMoneda'; value: Moneda }
   | { type: 'setTopesDescuento'; value: TopesDescuento }
   | { type: 'setDescuentosPago'; value: DescuentosPago }
+  | { type: 'setDiasVencFactura'; value: number }
   | { type: 'setComisiones'; value: ComisionesVenta }
   | { type: 'setPresupuestoId'; value: string | null }
   | { type: 'setVentaId'; value: string | null }
@@ -557,6 +565,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'setDescuentosPago':
       return { ...state, descuentosPago: action.value }
+
+    case 'setDiasVencFactura':
+      return { ...state, diasVencFactura: action.value }
 
     case 'setComisiones':
       return { ...state, comisiones: action.value }

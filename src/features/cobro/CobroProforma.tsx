@@ -276,14 +276,17 @@ export function CobroProforma() {
                   </tbody>
                 </table>
 
-                {/* Totales estándar (mismas clases/posición que factura y presupuesto). */}
-                <TotalesDoc
-                  subtotal={bruto}
-                  descuento={descuento}
-                  gravado={neto}
-                  iva={iva}
-                  total={total}
-                />
+                {/* Totales estándar, en el MISMO renglón y posición que en la card de factura: el
+                    `comp-pie` los separa de la tabla y los alinea a la derecha. */}
+                <div className="comp-pie">
+                  <TotalesDoc
+                    subtotal={bruto}
+                    descuento={descuento}
+                    gravado={neto}
+                    iva={iva}
+                    total={total}
+                  />
+                </div>
 
                 {/* Recordatorio del descuento por pago anticipado / contado, vigente en factura. */}
                 <p className="comp-leyenda">

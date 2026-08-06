@@ -63,8 +63,12 @@ export interface CuentaBancaria {
 /** Por dónde se identificó la cuenta al transferir. */
 export type MedioTransferencia = 'CBU' | 'ALIAS'
 
-/** Marca de la tarjeta, para los cobros con débito o crédito. */
-export type TarjetaTipo = 'VISA' | 'MASTERCARD'
+/**
+ * Marca de la tarjeta, para los cobros con débito o crédito. Es texto libre y no una unión cerrada:
+ * el selector ofrece VISA y MASTERCARD —las que trae el board— pero deja cargar cualquier otra
+ * (AMEX, Cabal, Naranja…) con "➕ Otro tipo…". Ver `TIPOS_TARJETA_BASE`.
+ */
+export type TarjetaTipo = string
 
 /** Formato de un cheque: papel (físico) o electrónico. */
 export type FormatoCheque = 'FISICO' | 'eCheq'
@@ -422,6 +426,8 @@ export interface MovimientoPago {
   /** Tarjeta: nombre del titular y vencimiento del plástico (dd/mm/aaaa). */
   titularTarjeta?: string
   vencimientoTarjeta?: string
+  /** Tarjeta: número de cupón que imprime el posnet. Es la referencia de la acreditación. */
+  numeroCupon?: string
 }
 
 /**

@@ -570,6 +570,20 @@ export const DIAS_VIGENCIA_INICIAL = 14
  */
 export const COMISIONES_MOCK = { activa: 4, pasiva: 1.5 }
 
+/**
+ * Descuentos por medio de cobro de respaldo para el modo local (sin token). Los reales salen del
+ * tablero de configuración, de los ítems "Medios de Cobro": corriendo contra Monday NUNCA se usan.
+ * Efectivo, Transferencia y Cheque comparten valor porque los tres son CONTADO.
+ */
+export const DESCUENTOS_PAGO_MOCK = {
+  contado: 6,
+  debito: 5,
+  credito: 3,
+} as const
+
+/** Días de vencimiento de la factura de respaldo para el modo local (sin token). */
+export const DIAS_VENC_FACTURA_MOCK = 30
+
 /* ===== Operación REMITO ===== */
 
 export const NRO_REMITO = 'RM-000312'
