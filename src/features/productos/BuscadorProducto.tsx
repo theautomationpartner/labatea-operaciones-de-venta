@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { buscarProductos, siguientePaginaProductos } from '@/services/monday'
 import { useClickOutside } from '@/hooks/useClickOutside'
-import { useApp } from '@/state/hooks'
+import { useApp, useDispatch } from '@/state/hooks'
 import type { ListaPrecio, Producto } from '@/types'
 import {
   SIN_RESULTADOS,
@@ -56,6 +56,7 @@ export function BuscadorProducto({
   onAviso,
 }: BuscadorProductoProps) {
   const { filtros } = useApp()
+  const dispatch = useDispatch()
   const [termino, setTermino] = useState('')
   // Toda la búsqueda paginada vive en un solo estado, con transiciones puras (ver el módulo).
   const [resultados, setResultados] = useState<ResultadosBusqueda>(SIN_RESULTADOS)
@@ -123,7 +124,9 @@ export function BuscadorProducto({
       }
       setResultados(conPrimeraPagina(res))
     } catch {
-      avisar('No se pudo consultar Monday. Reintentá en unos segundos.')
+      /* El fallo de la API lo comunica la ventana global: acá no se deja ningún aviso en línea,
+         que además se confundía con los avisos de "sin resultados" del propio buscador. */
+      dispatch({ type: 'errorMonday', accion: 'buscar productos en el catálogo' })
     } finally {
       setCargando(false)
     }
@@ -151,7 +154,7 @@ export function BuscadorProducto({
       // Cursor agotado: no hay más para mostrar, así que se inactiva la flecha.
       setResultados((r) => (res.productos.length === 0 ? sinMasPaginas(r) : conPaginaSiguiente(r, res)))
     } catch {
-      avisar('No se pudo traer la página siguiente. Reintentá en unos segundos.')
+      dispatch({ type: 'errorMonday', accion: 'traer la página siguiente de productos' })
     } finally {
       setCargando(false)
     }

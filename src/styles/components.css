@@ -20,6 +20,35 @@
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
+/* Logo de la empresa: abre la barra, contra el margen izquierdo.
+
+   El alto lo fija la caja y el ancho lo pone la imagen (`width: auto` + `object-fit: contain`):
+   así entra COMPLETA, sin recorte ni deformación, con cualquier proporción de archivo. Va
+   centrada verticalmente (`align-self: center`) porque el resto de la barra se alinea por abajo
+   —los selectores tienen su rótulo arriba— y un logo pegado a esa base quedaría descolgado.
+   El filete de la derecha separa la marca de los controles. */
+.topsel-logo {
+  align-self: center;
+  flex: 0 0 auto;
+  /* 56px: el archivo trae aire propio arriba y abajo (~14% del alto), así que el logo dibujado
+     queda en ~48px. Es el alto con el que "La Batea" se lee cómodo sin agrandar la cabecera. */
+  height: 56px;
+  width: auto;
+  max-width: 180px;
+  object-fit: contain;
+  object-position: center;
+  padding-right: 20px;
+  border-right: 1px solid var(--border, #e4e7ec);
+  user-select: none;
+}
+/* En pantallas angostas la marca cede altura antes que ocupar una línea propia. */
+@media (max-width: 720px) {
+  .topsel-logo {
+    height: 40px;
+    max-width: 132px;
+    padding-right: 14px;
+  }
+}
 .topsel-item {
   display: flex;
   flex-direction: column;
@@ -108,16 +137,27 @@
 /* ===== Stepper ===== */
 .stepper {
   display: flex;
-  align-items: center;
+  /* Los pasos se alinean por ARRIBA, no por el centro: cada uno mide círculo + "Paso N", así que
+     centrarlos dejaría los conectores a mitad de camino entre el círculo y su rótulo. Alineando
+     arriba, los círculos comparten línea de base y el conector se baja a mano hasta su eje. */
+  align-items: flex-start;
   gap: 14px;
   margin-bottom: 20px;
 }
+/* Cada paso es una columna: el círculo arriba y su ordinal debajo. */
 .step {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 14px;
   color: var(--text-gray);
+}
+/* "Paso N" bajo el círculo. Hereda el color del estado del paso (gris / oscuro). */
+.step-nro {
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 /* El color del número dice en qué estado está la etapa: verde ya cumplida, azul la actual,
    gris la que falta. */
@@ -137,6 +177,26 @@
   background: var(--primary-blue);
   color: #fff;
   border: 1px solid var(--primary-blue);
+  /* Brillo que respira: sin el nombre al lado, el color solo no alcanza para ubicar de un vistazo
+     en qué etapa está parado el usuario. `alternate` hace que suba y baje por el mismo camino, así
+     no hay salto al reiniciar el ciclo. */
+  animation: step-brillo 1.8s ease-in-out infinite alternate;
+}
+/* Halo suave alrededor del círculo: crece y se difumina, sin llegar a "titilar". */
+@keyframes step-brillo {
+  from {
+    box-shadow: 0 0 0 0 rgba(0, 82, 204, 0.35), 0 0 4px 0 rgba(0, 82, 204, 0.25);
+  }
+  to {
+    box-shadow: 0 0 0 6px rgba(0, 82, 204, 0), 0 0 14px 3px rgba(0, 82, 204, 0.55);
+  }
+}
+/* Con movimiento reducido el halo queda fijo: sigue señalando el paso, pero no se anima. */
+@media (prefers-reduced-motion: reduce) {
+  .step.cur .sic {
+    animation: none;
+    box-shadow: 0 0 0 4px rgba(0, 82, 204, 0.22);
+  }
 }
 .step.off .sic {
   background: #fff;
@@ -184,6 +244,9 @@
   background: var(--border);
   border-radius: 2px;
   transition: background 0.3s;
+  /* Baja el conector hasta el eje del círculo (30px de alto → centro en 15px; menos la mitad de
+     sus propios 3px). Sin esto quedaría arriba de todo, porque el stepper alinea por el tope. */
+  margin-top: 13.5px;
 }
 /* Tramo ya transitado: se rellena de verde para simular el avance de la operación. */
 .sline.done {
@@ -225,6 +288,12 @@
   gap: 8px 24px;
   max-width: 1480px;
   margin: 0 auto;
+  /* `space-between` es lo que resuelve la alineación en las DOS situaciones, sin tener que
+     adivinar a qué ancho se produce el salto: `justify-content` se aplica por LÍNEA, no al
+     contenedor entero. Compartiendo fila hay dos ítems y los separa a los extremos (selectores a
+     la izquierda, stepper a la derecha); cuando el stepper baja, queda solo en su línea y un
+     único ítem con `space-between` se ancla al INICIO, o sea a la izquierda. */
+  justify-content: space-between;
 }
 /* Contexto de la transacción: los selectores del header conservan EXACTAMENTE el estilo de la
    pantalla de inicio (etiqueta oscura arriba, caja azul con borde y ancho 220×38, chevron). Sólo se
@@ -239,15 +308,22 @@
 .paso-header-sel .topsel {
   margin-bottom: 0;
 }
-/* El avance vive a la DERECHA: ocupa el ancho restante pero el stepper se pega al borde derecho
-   en vez de estirarse por todo el espacio. */
+/* El avance vive a la DERECHA mientras comparte fila con los selectores, y a la IZQUIERDA cuando
+   baja a su propia línea. De eso se ocupa el `space-between` del contenedor. */
 .paso-header-steps {
-  /* `flex-basis: auto` (no 0%) hace que el stepper mida por su contenido: si no entra junto a los
-     selectores, envuelve a su propia línea; ya en su línea, `flex-grow: 1` lo lleva a la derecha. */
-  flex: 1 1 auto;
+  /* NO crece (`flex-grow: 0`): la caja mide lo que mide el stepper. Con `flex-grow: 1` ocupaba
+     toda su línea al envolver y el `justify-content: flex-end` de adentro lo mantenía pegado a la
+     derecha, que es exactamente lo que había que corregir. Midiendo por contenido, el
+     `space-between` del contenedor lo lleva al inicio de la línea. */
+  flex: 0 1 auto;
   display: flex;
   justify-content: flex-end;
   min-width: 0;
+  /* Aire propio arriba y abajo de la barra de etapas, para que nunca quede pegada ni a los
+     selectores (al envolver, donde además se suma el `row-gap` del contenedor) ni al filete que
+     cierra la cabecera. Va simétrico a propósito: con `align-items: center`, un padding sólo
+     arriba desplazaba el stepper hacia abajo cuando comparte fila con los selectores. */
+  padding: 15px 0;
 }
 .paso-header-steps .stepper {
   flex: 0 1 auto;
@@ -261,24 +337,11 @@
   width: 64px;
   max-width: 64px;
 }
-/* El nombre de la etapa puede envolver SÓLO su última palabra (NBSP entre las demás). */
-.paso-header-steps .step span {
-  white-space: normal;
-  max-width: 92px;
-  line-height: 1.15;
-}
 
-/* MÓDULO 1 · Notebook / panel angosto: cuando el ancho no alcanza y el stepper baja a su propia
-   línea, se ancla a la IZQUIERDA (alineado con los selectores) en vez de quedar a la derecha, para
-   una jerarquía visual limpia. Se mide el ancho REAL del panel (container query), no el viewport. */
-@container (max-width: 1200px) {
-  .paso-header-steps {
-    justify-content: flex-start;
-  }
-  .paso-header-steps .stepper {
-    justify-content: flex-start;
-  }
-}
+/* NO hay regla de posición por ancho de panel: forzaba el stepper a la izquierda apenas el panel
+   bajaba de 1200px, aunque siguiera compartiendo fila con los selectores y sobrara lugar a la
+   derecha. La posición la decide sola el `space-between` del contenedor, por LÍNEA: arriba a la
+   derecha mientras entre, a la izquierda sólo cuando colapsa a su propia línea. */
 
 /* Salir de la operación: acompaña al título del paso, no a la barra de contexto. */
 .btn-cancelar {
@@ -710,13 +773,6 @@
   flex-wrap: wrap;
   margin-top: 16px;
 }
-/* Detalle del error, a la derecha del botón y en rojo (misma semántica que el botón). */
-.enviar-error {
-  color: var(--red);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .spin {
   animation: spin 0.8s linear infinite;
 }

@@ -100,16 +100,21 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
   // Progreso que reporta la columna de estado en Monday: es el callback de las funciones `seguir*`.
   const [, setEstadoMonday] = useState('')
   // Detalle del error, que se muestra a la derecha del botón cuando el envío falla.
-  const [errorMsg, setErrorMsg] = useState('')
   const enviando = estadoEnvio === 'enviando'
   /* Éxito PERSISTENTE: el envío ya se completó (bandera global) o se acaba de completar (estado
      local). Sobrevive a la navegación con el stepper, así el botón NO vuelve a habilitarse ni pierde
      su color de éxito al volver a esta etapa. */
   const enviadoOk = documentoEnviado || estadoEnvio === 'enviado'
   /* Pasar a error: guarda el detalle y tiñe el botón de rojo, con el mensaje a su derecha. */
-  const fallar = (msg: string) => {
-    setErrorMsg(msg)
-    setEstadoEnvio('error')
+  /* Deja el botón en rojo para poder reintentar. Es lo único que hace: el detalle del problema va
+     al log de la derecha, y si el problema fue la API de Monday, a su ventana global. */
+  const marcarError = () => setEstadoEnvio('error')
+
+  /* Fallo de la API de Monday: además del botón en rojo, dispara la ventana global. `accion`
+     completa la frase "No se pudo …". */
+  const fallar = (accion: string) => {
+    marcarError()
+    dispatch({ type: 'errorMonday', accion })
   }
 
   /**
@@ -179,7 +184,8 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         },
       ],
     })
-    fallar(`El PDF ${articulo} ${documento} aún no figura en Monday. Esperá a que se genere y reintentá.`)
+    /* No es un fallo de la API: el documento todavía no se generó. El log de al lado ya lo explica. */
+    marcarError()
   }
 
   const confirmar = async () => {
@@ -196,7 +202,6 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
     setEstadoMonday('')
-    setErrorMsg('')
     try {
       /* Antes de enviar cualquier documento se valida que el PDF EXISTA en la columna del
          tablero que corresponde. Sin documento generado no se dispara el envío. */
@@ -210,7 +215,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         await dispararEnvioFactura(ventaId)
         const final = await seguirEnvioFactura(ventaId, setEstadoMonday)
         if (final === ENVIO_FACTURA_ESTADO.error) {
-          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
+          fallar(`enviar ${articulo} ${documento}`)
           return
         }
       } else if (documento === 'presupuesto' && presupuestoId) {
@@ -225,7 +230,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         // 3) Se sigue la columna de estado hasta que la automatización la cierra.
         const final = await seguirEnvio(presupuestoId, setEstadoMonday)
         if (final === ENVIO_ESTADO.error) {
-          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
+          fallar(`enviar ${articulo} ${documento}`)
           return
         }
       } else if (documento === 'remito' && remito.remitoId) {
@@ -244,7 +249,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         // 3) Se sigue la columna de estado hasta que la automatización la cierra.
         const final = await seguirEnvioRemito(remito.remitoId, setEstadoMonday)
         if (/error/i.test(final)) {
-          fallar('El envío falló en Monday. Revisá los contactos y reintentá.')
+          fallar(`enviar ${articulo} ${documento}`)
           return
         }
       } else if (documento === 'proforma' && proformaId) {
@@ -269,7 +274,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
           },
         ],
       })
-      fallar(`Falló el envío ${articulo === 'la' ? 'de la' : 'del'} ${documento} en Monday. Reintentá.`)
+      fallar(`enviar ${articulo} ${documento}`)
     }
   }
 
@@ -404,13 +409,6 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                   </>
                 )}
               </button>
-
-              {/* Detalle del error, inmediatamente a la derecha del botón y en rojo. */}
-              {estadoEnvio === 'error' && errorMsg && (
-                <span className="enviar-error" role="alert">
-                  {errorMsg}
-                </span>
-              )}
             </div>
           </>
         )}

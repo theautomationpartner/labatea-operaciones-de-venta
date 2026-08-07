@@ -73,6 +73,7 @@ export function RemitoView() {
         if (!vivo) return
         setRemitos([])
         setError(true)
+        dispatch({ type: 'errorMonday', accion: 'traer las ventas pendientes de facturar' })
       })
       .finally(() => {
         if (vivo) setCargando(false)
@@ -80,7 +81,7 @@ export function RemitoView() {
     return () => {
       vivo = false
     }
-  }, [cliente])
+  }, [cliente, dispatch])
 
   /* Descuento por pronto pago de la forma de pago elegida arriba. La mercadería ya salió por
      remito —así que la línea no lleva descuento propio—, pero este sí corre: rebaja el precio
@@ -199,7 +200,7 @@ export function RemitoView() {
             cargando
               ? 'Buscando las ventas pendientes de facturar del cliente…'
               : error
-                ? 'No se pudieron traer los productos de las ventas pendientes. Reintentá en unos segundos.'
+                ? ''
                 : 'Este cliente no tiene ventas con productos pendientes de facturar.'
           }
           colReferencia="Cant. entregada"

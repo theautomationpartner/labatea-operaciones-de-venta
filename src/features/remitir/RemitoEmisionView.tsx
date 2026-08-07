@@ -242,8 +242,10 @@ export function RemitoEmisionView() {
       }
     } catch {
       if (!activo.current) return
-      setError('No se pudo emitir el remito. Reintentá.')
-      setEstado('error')
+      /* Fallo de la API: lo comunica la ventana global de error de Monday. Acá sólo se libera el
+         botón para poder reintentar; no se deja un mensaje propio. */
+      setEstado('idle')
+      dispatch({ type: 'errorMonday', accion: 'emitir el remito' })
     }
   }
 

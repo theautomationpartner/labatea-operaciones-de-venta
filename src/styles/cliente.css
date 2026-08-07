@@ -200,9 +200,6 @@
 .cliente-v2 .cliente-estado--cargando i {
   font-size: 28px;
 }
-.cliente-v2 .cliente-estado--error i {
-  color: var(--red);
-}
 
 /* ===== Ficha del cliente ===== */
 .cliente-v2 .client-header {

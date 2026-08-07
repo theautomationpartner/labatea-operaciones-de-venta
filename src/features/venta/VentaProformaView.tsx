@@ -53,6 +53,7 @@ export function VentaProformaView() {
         if (!vivo) return
         setProformas([])
         setError(true)
+        dispatch({ type: 'errorMonday', accion: 'traer las proformas del cliente' })
         setSeleccionada(null)
       })
       .finally(() => {
@@ -61,7 +62,7 @@ export function VentaProformaView() {
     return () => {
       vivo = false
     }
-  }, [cliente])
+  }, [cliente, dispatch])
 
   // La proforma elegida manda todos sus productos a la venta (reemplazo exclusivo: todo o nada).
   useEffect(() => {

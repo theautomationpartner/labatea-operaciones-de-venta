@@ -76,9 +76,9 @@
   justify-content: center;
 }
 
-/* Feedback bajo el botón de emisión: éxito en verde, error en rojo. */
-.factura-v2 .proforma-ok,
-.factura-v2 .proforma-err {
+/* Feedback bajo el botón de emisión. El error ya no vive acá: los fallos de la API se comunican
+   por ventana emergente. */
+.factura-v2 .proforma-ok {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -86,12 +86,7 @@
   font-size: 13px;
   line-height: 1.4;
   font-weight: 600;
-}
-.factura-v2 .proforma-ok {
   color: var(--green-dark, #027a48);
-}
-.factura-v2 .proforma-err {
-  color: var(--red, #e44258);
 }
 
 .factura-v2 {
@@ -360,9 +355,6 @@
   font-size: 12px;
   font-weight: 700;
   color: var(--f-text-label);
-}
-.factura-v2 .comp-estado-txt--ok {
-  color: var(--f-success);
 }
 .factura-v2 .comp-estado-txt--err {
   color: var(--f-danger);

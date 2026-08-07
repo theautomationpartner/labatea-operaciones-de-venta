@@ -250,7 +250,8 @@ export function FacturaView() {
       }
       dispatch({ type: 'emitirFactura', comprobantes: creados })
     } catch {
-      setErrorEmision('No se pudieron crear los comprobantes. Reintentá en unos segundos.')
+      // Fallo de la API: lo comunica la ventana global de error de Monday.
+      dispatch({ type: 'errorMonday', accion: 'emitir los comprobantes de la venta' })
     } finally {
       setEmitiendo(false)
     }
@@ -309,6 +310,8 @@ export function FacturaView() {
           .map((l) => ({
             productoId: l.productoId,
             nombre: l.nombre,
+            // Proveedor del comprobante consignado: prefija el nombre del ítem CYO ("Proveedor - Producto").
+            proveedorNombre: c.proveedorNombre ?? undefined,
             cantidad: l.cantidad,
             /* Precio unitario NETO (ya bonificado). No es el que va al comprobante —ahí va el de
                lista, con la bonificación en su propia columna—: acá hace falta lo que se cobró. */
@@ -482,7 +485,8 @@ export function FacturaView() {
       setCreandoVenta(false)
       dispatch({ type: 'reset' })
     } catch {
-      setErrorVenta('No se pudo crear la venta en Monday. Reintentá en unos segundos.')
+      // Fallo de la API: lo comunica la ventana global de error de Monday.
+      dispatch({ type: 'errorMonday', accion: 'registrar la venta' })
       setCreandoVenta(false)
     }
   }

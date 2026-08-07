@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { Dropdown } from '@/components/ui/Dropdown'
+import { LogoEmpresa } from '@/components/ui/LogoEmpresa'
 import { Modal } from '@/components/ui/Modal'
 import { hoy } from '@/lib/dates'
 import { OPERACIONES } from '@/lib/pasos'
@@ -173,6 +174,8 @@ function VendedorSelector() {
 export function SelectoresOperacion({ children }: { children?: ReactNode }) {
   return (
     <div className="topsel">
+      {/* La marca abre la barra, contra el margen izquierdo y separada de los controles. */}
+      <LogoEmpresa />
       <TopSel label="Seleccionar tipo de operación:">
         <OperacionSelector />
       </TopSel>

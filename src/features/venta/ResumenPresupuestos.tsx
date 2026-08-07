@@ -38,11 +38,8 @@ export function ResumenPresupuestos({
             <i className="fas fa-spinner fa-spin" /> Buscando presupuestos vigentes…
           </div>
         )}
-        {!cargando && error && (
-          <div className="presup-vacio presup-vacio--alerta">
-            No se pudieron traer los presupuestos del cliente. Reintentá en unos segundos.
-          </div>
-        )}
+        {/* El fallo de la API no se explica acá: lo comunica la ventana global. La lista queda
+            vacía, pero SIN el mensaje de "no tiene…", que sería mentir sobre por qué no hay nada. */}
         {!cargando && !error && presupuestos.length === 0 && (
           <div className="presup-vacio presup-vacio--alerta">
             Este cliente no tiene presupuestos vigentes.

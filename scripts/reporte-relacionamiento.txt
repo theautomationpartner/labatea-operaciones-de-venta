@@ -1,0 +1,98 @@
+REPORTE DE RELACIONAMIENTO — Clonación Polifroni → La Batea
+Cuenta destino: labatea.monday.com · Workspace "La Batea" (16341688) · Carpeta 20931123
+Creado vía MCP (sin tokens). Fecha: 2026-08-06
+
+================================================================================
+1) COLUMNAS board_relation A RECONECTAR MANUALMENTE (creadas sin enlace)
+================================================================================
+Cada una se creó como "Connect boards" vacía. Hay que abrir la columna en el
+tablero destino y conectarla al tablero correspondiente de La Batea.
+
+[🗒️ Facturas Compras] (18425512689)
+  -> "🤖Cta Cte Prov"                      => conectar a Cta Cte Proveedor
+  -> "🤖Facturas Compra Pend de Pago"      => conectar a Facturas Compra Pend de Pago (18425512701)
+
+[🗒️ ❓ Pend de Recibir Fact.] (18425512694)
+  -> "🤖Cta Cte Prov"                      => conectar a Cta Cte Proveedor
+  -> "🛒 Orden Compra"                     => conectar a Orden Compra (18425512714)
+  -> "🤖 Producto"                         => conectar a Productos
+  -> "🤖 Facturas Compras"                 => conectar a Facturas Compras (18425512689)
+  -> "🤖Remito Compra(A Eliminar)"         => conectar a Remito Compra (18425512709)
+
+[❓ Facturas Compra Pend de Pago] (18425512701)
+  -> "🤖 Factura"                          => conectar a Facturas Compras (18425512689)
+  -> "🤖Cta Cte Prov"                      => conectar a Cta Cte Proveedor
+  -> "🤖Orden de Pago"                     => conectar a Orden de Pago
+  -> "🤖 Orden de Pago"                    => conectar a Orden de Pago
+
+[🚛 ❓ Pend de Recibir Compra] (18425512704)
+  -> "🤖Cta Cte Prov"                      => conectar a Cta Cte Proveedor
+  -> "🤖Compra"                            => conectar a Orden Compra (18425512714)
+  -> "🤖 Producto"                         => conectar a Productos
+  -> "🤖Remito Compra"                     => conectar a Remito Compra (18425512709)
+
+[🧾 Remito Compra] (18425512709)
+  -> "✋Proveedor"                          => conectar a Proveedores
+  -> "🤖Pendiente de Carga de Fact."       => conectar a Pend de Recibir Fact. (18425512694)
+
+[🛒 Orden Compra] (18425512714)
+  -> "✋Cta Cte Prov"                       => conectar a Cta Cte Proveedor
+  -> "🤖Pend de Recibir Compra"            => conectar a Pend de Recibir Compra (18425512704)
+  -> "🤖 Pend de Recibir Fact."            => conectar a Pend de Recibir Fact. (18425512694)
+
+================================================================================
+2) COLUMNAS OMITIDAS (la API no las crea de forma útil sin su configuración)
+================================================================================
+Tipos de sistema / autogenerados / dependientes de otra columna. Recrear a mano
+si se necesitan (las mirror dependen de su board_relation ya conectada; las
+formula requieren su fórmula; button son acciones de automatización).
+
+[🗒️ Facturas Compras]
+  - Subelementos (subtasks)
+  - 🤖 SUB Total (mirror)
+  - 🤖 IVA $ (mirror)
+  - 🤖 Total (formula)
+  - 🤖Registrar Factura (button)
+  - 🤖Creación (creation_log)
+  - 🤖N" de Fact (formula)
+  - 🤖ID FACT COMPRA (item_id)
+
+[🗒️ ❓ Pend de Recibir Fact.]
+  - Subelementos (subtasks)
+  - 🤖 Q Facturado (mirror)
+  - 🤖Pend de facturar (formula)
+  - 🤖Creación (creation_log)
+
+[❓ Facturas Compra Pend de Pago]
+  - Subelementos (subtasks)
+  - 🤖Ordenes de Pago $ (mirror)
+  - 🤖Pend de Pago (formula)
+  - 🤖Registro de creación (creation_log)
+
+[🚛 ❓ Pend de Recibir Compra]
+  - Subelementos (subtasks)
+  - 🤖Q RTO Neto (mirror)
+  - 🤖Pend de Recibir (formula)
+  - ID de elemento (item_id)
+  - Registro de creación (creation_log)
+
+[🧾 Remito Compra]
+  - Subelementos (subtasks)
+  - Control n° Comprobante (formula)
+  - 🤖Guardar RTO (button)
+  - 🤖ID REMITO CPRA (item_id)
+  - 🤖Creación (creation_log)
+
+[🛒 Orden Compra]
+  - Subelementos (subtasks)
+  - 🤖Total (mirror)
+  - ✋Emitir y enviar Órden de Compra (button)
+  - Cancelar (button)
+  - 🤖ID COMPRA (item_id)
+  - 🤖Registro de creación (creation_log)
+
+================================================================================
+NOTA: la columna "Name" no se lista: todo tablero la trae por defecto.
+Los status se crearon con las etiquetas por defecto (En curso / Listo / Detenido);
+las etiquetas reales del origen no venían en la lectura (solo título y tipo).
+================================================================================

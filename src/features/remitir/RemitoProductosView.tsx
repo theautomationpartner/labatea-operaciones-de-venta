@@ -71,6 +71,7 @@ export function RemitoProductosView() {
         if (!vivo) return
         setVentas([])
         setError(true)
+        dispatch({ type: 'errorMonday', accion: 'traer las ventas con entrega pendiente' })
       })
       .finally(() => {
         if (vivo) setCargando(false)
@@ -78,7 +79,7 @@ export function RemitoProductosView() {
     return () => {
       vivo = false
     }
-  }, [cliente, esAnterior])
+  }, [cliente, esAnterior, dispatch])
 
   // El remito compromete mercadería a facturar: mismo bloqueo que el resto de la operación.
   const bloqueo = useBloqueoCredito(0)
@@ -163,7 +164,7 @@ export function RemitoProductosView() {
             cargando
               ? 'Buscando los productos pendientes de entregar del cliente…'
               : error
-                ? 'No se pudieron traer los productos pendientes. Reintentá en unos segundos.'
+                ? ''
                 : 'Este cliente no tiene productos pendientes de entregar.'
           }
           colReferencia="Vendida"

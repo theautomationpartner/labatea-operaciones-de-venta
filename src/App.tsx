@@ -10,6 +10,7 @@ import {
   getVendedores,
   limpiarCachesConsultas,
 } from '@/services/monday'
+import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -114,6 +115,8 @@ export function App() {
   return (
     <div className="scroll" ref={scrollRef}>
       <Vista />
+      {/* Único punto donde la app comunica un fallo de la API de Monday, para cualquier pantalla. */}
+      <ModalErrorMonday />
     </div>
   )
 }

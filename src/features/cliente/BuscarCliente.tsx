@@ -63,7 +63,10 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
       setAbierto(true)
       onEstado('idle')
     } catch {
+      /* El fallo de la API lo comunica la ventana global (`ModalErrorMonday`); el estado 'error'
+         sólo sirve para que la vista no muestre la ficha como si hubiera resultado. */
       onEstado('error')
+      dispatch({ type: 'errorMonday', accion: 'buscar el cliente' })
     }
   }
 

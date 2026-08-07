@@ -329,22 +329,22 @@ export function chequeInvalido(m: Pick<MovimientoPago, 'formaPago' | 'chequeVenc
 /* ===== Tipo de cobro de la operación ===== */
 
 /**
- * Formas de pago que dejan el cobro PARA DESPUÉS. Es el complemento exacto de CONTADO dentro de
- * `FormaPagoVenta`: la cuenta corriente se cobra en otro momento y las tarjetas se acreditan
- * después de la venta, así que ninguna de las tres cancela la venta en el acto.
+ * Formas de pago que dejan el cobro PARA DESPUÉS. Sólo la cuenta corriente: se cobra en otro momento
+ * y deja la venta pendiente. Las tarjetas se cobran en el acto (cupones que cancelan la venta), así
+ * que NO entran acá.
  */
-export const FORMAS_PAGO_POSTERIOR: readonly FormaPagoVenta[] = [
-  'CUENTA CORRIENTE',
-  'TARJETA DE DEBITO',
-  'TARJETA DE CREDITO',
-]
+export const FORMAS_PAGO_POSTERIOR: readonly FormaPagoVenta[] = ['CUENTA CORRIENTE']
 
 /**
  * Tipo de cobro de LA OPERACIÓN. Sale de UN SOLO dato: la forma de pago que el vendedor eligió en
  * la selección de productos.
  *
- *   CONTADO                                            → SIMULTANEO
- *   CUENTA CORRIENTE / TARJETA DE DEBITO / DE CREDITO  → POSTERIOR
+ *   CONTADO / TARJETA DE DEBITO / DE CREDITO  → SIMULTANEO
+ *   CUENTA CORRIENTE                          → POSTERIOR
+ *
+ * Las tarjetas se cobran EN EL ACTO (se acreditan tras la venta), así que son SIMULTANEO y NO dejan
+ * una Venta Pend de Cobro: el recibo detalla sus cupones y cancela la venta. Sólo la cuenta corriente
+ * queda para después.
  *
  * NO se deriva de la condición de pago del cliente. Esa condición decide únicamente QUÉ formas de
  * pago se le ofrecen (`formasPagoDeCliente`); no cómo se clasifica la venta que terminó eligiendo.
@@ -354,7 +354,7 @@ export const FORMAS_PAGO_POSTERIOR: readonly FormaPagoVenta[] = [
  * Sin forma de pago elegida se asume POSTERIOR: no se puede afirmar que la venta ya se cobró.
  */
 export const tipoPagoOperacion = (forma: FormaPagoVenta | null): TipoPago =>
-  forma === 'CONTADO' ? 'SIMULTANEO' : 'POSTERIOR'
+  forma === 'CONTADO' || esPagoConTarjeta(forma) ? 'SIMULTANEO' : 'POSTERIOR'
 
 /** La operación se cobra en el acto: recibo con sus movimientos y exigencia del 100%. */
 export const cobroSimultaneoOperacion = (forma: FormaPagoVenta | null): boolean =>

@@ -431,82 +431,122 @@ function mapCliente(item: MondayItem): Cliente {
 }
 
 /**
- * Detecta qué ingresó el usuario: código, CUIT/CUIL o nombre. El CUIT se guarda con guiones en
- * el board ("30-70906788-1"), así que se lo reconoce aunque se escriba con separadores o incompleto:
- * cualquier término formado sólo por dígitos y separadores, con 5 o más dígitos, se toma como
- * CUIT/CUIL. El código es la clave corta que ve el usuario: 4 dígitos exactos.
+ * Qué ingresó el usuario. NO se intenta distinguir código de CUIT por la cantidad de dígitos:
+ * los códigos del tablero van de 1 a 4 dígitos hoy ("2", "41", "107", "2044") y nada impide que
+ * mañana lleguen a 5 o 6, así que cualquier corte por longitud tarde o temprano manda un código
+ * al ramal del CUIT. Un término NUMÉRICO se busca en las DOS columnas y se unen los resultados.
  */
-type TipoBusqueda = 'codigo' | 'cuit' | 'nombre'
-const tipoBusqueda = (t: string): TipoBusqueda => {
-  if (/^\d{4}$/.test(t)) return 'codigo'
-  if (/^[\d.\s-]+$/.test(t) && t.replace(/\D/g, '').length >= 5) return 'cuit'
-  return 'nombre'
-}
+type TipoBusqueda = 'numero' | 'nombre'
+const tipoBusqueda = (t: string): TipoBusqueda =>
+  /^[\d.\s-]+$/.test(t) && /\d/.test(t) ? 'numero' : 'nombre'
 
 const columnasCliente = Object.values(COL.cliente)
 
-async function fetchClientesMonday(): Promise<Cliente[]> {
-  const ids = JSON.stringify(columnasCliente)
-  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
-    `query {
-      boards(ids: [${BOARDS.personas}]) {
-        items_page(limit: 200) {
-          items {
-            id name
-            column_values(ids: ${ids}) {
-              id text
-              ... on StatusValue { index }
-              ... on BoardRelationValue {
-                linked_items {
-                  id name
-                  column_values(ids: ["${COL.ctaCte.totalVentas}","${COL.ctaCte.totalCobros}","${COL.ctaCte.remitosPendFacturar}","${COL.ctaCte.limite}"]) {
-                    id text
-                    ... on MirrorValue { display_value }
-                  }
-                }
-              }
-            }
-          }
+/** Campos que trae cada persona, con la Cta Cte conectada anidada (de ahí sale el crédito). */
+const CAMPOS_CLIENTE = `
+  id name
+  column_values(ids: ${JSON.stringify(columnasCliente)}) {
+    id text
+    ... on StatusValue { index }
+    ... on BoardRelationValue {
+      linked_items {
+        id name
+        column_values(ids: ["${COL.ctaCte.totalVentas}","${COL.ctaCte.totalCobros}","${COL.ctaCte.remitosPendFacturar}","${COL.ctaCte.limite}"]) {
+          id text
+          ... on MirrorValue { display_value }
         }
       }
-    }`,
+    }
+  }`
+
+/** Una consulta con nombre propio: `alias` la identifica en la respuesta. */
+const consultaPersonas = (alias: string, columna: string, valor: string): string => `
+  ${alias}: boards(ids: [${BOARDS.personas}]) {
+    items_page(
+      limit: ${TOPE_RESULTADOS},
+      query_params: {rules: [{column_id: "${columna}", compare_value: ["${valor}"], operator: contains_text}]}
+    ) {
+      items { ${CAMPOS_CLIENTE} }
+    }
+  }`
+
+/** Tope de coincidencias por columna. Sobra: si una búsqueda trae tantas, hay que afinarla. */
+const TOPE_RESULTADOS = 50
+
+/** Escapa el término para poder interpolarlo en la query sin romperla. */
+const literal = (t: string): string => JSON.stringify(t).slice(1, -1)
+
+type RespuestaPersonas = Record<string, { items_page: { items: MondayItem[] } }[]>
+
+/**
+ * Busca personas EN EL SERVIDOR, por una o más columnas a la vez (una consulta con alias por
+ * columna, todas en la misma solicitud). Devuelve los ítems sin repetir, respetando el orden en
+ * que se pidieron las columnas.
+ *
+ * Antes esto se resolvía trayendo `items_page(limit: 200)` y filtrando en memoria. El tablero de
+ * Personas tiene ~3950 ítems, así que el 95% NUNCA llegaba a la app: buscar un cliente que existe
+ * devolvía "no existe" según en qué posición del tablero hubiera caído.
+ */
+async function buscarPersonas(porColumna: readonly { columna: string; valor: string }[]) {
+  const usables = porColumna.filter((x) => x.valor.trim() !== '')
+  if (usables.length === 0) return []
+  const data = await mondayApi<RespuestaPersonas>(
+    `query { ${usables.map((x, i) => consultaPersonas(`q${i}`, x.columna, literal(x.valor))).join('')} }`,
   )
-  return data.boards[0].items_page.items
-    // Sólo los que son Cliente (la categoría es multi-valor: "Cliente, Proveedor, ...").
-    .filter((it) => (byId(it)[COL.cliente.categoria]?.text ?? '').includes('Cliente'))
-    .map(mapCliente)
+  const vistos = new Set<string>()
+  const items: MondayItem[] = []
+  usables.forEach((_, i) => {
+    for (const it of data[`q${i}`]?.[0]?.items_page.items ?? []) {
+      if (vistos.has(it.id)) continue
+      vistos.add(it.id)
+      items.push(it)
+    }
+  })
+  return items
 }
 
 /**
- * Busca clientes por nombre, código de cliente (4 díg) o CUIT/CUIL (con o sin guiones, entero o
- * parcial). La coincidencia no es exacta: por nombre acepta ~60% de similitud y ordena por mejor
- * match; por CUIT compara sólo los dígitos, así "30-70906788-1" y "30709067881" dan lo mismo.
+ * Busca clientes por nombre, código de cliente o CUIT/CUIL (entero o parcial). Un término
+ * numérico se busca a la vez por código y por CUIT; uno con letras, por nombre.
  *
- * Sólo devuelve clientes ACTIVOS: un cliente inactivo no puede operar, así que se filtra antes
- * de buscar y la vista lo trata como inexistente ("no existe o está inactivo").
+ * El filtro por categoría ("Cliente") y por estado (ACTIVO) se aplica sobre el resultado, que ya
+ * viene acotado: un cliente inactivo no puede operar, así que la vista lo trata como inexistente.
  */
 export async function buscarClientes(termino: string): Promise<Cliente[]> {
   const t = termino.trim()
   if (!t) return []
-  const clientes = mondayHabilitado() ? await fetchClientesMonday() : CLIENTES
-  // Los inactivos no se pueden operar: quedan fuera de todo criterio de búsqueda.
-  const activos = clientes.filter((c) => c.activity === 'Activo')
-  const tipo = tipoBusqueda(t)
 
-  if (tipo === 'codigo') {
-    // Se busca por el código del sistema (text_mm542r9d), que es el que ve el usuario.
-    return activos.filter((c) => c.codigo === t || norm(c.codigo).includes(norm(t)))
+  if (!mondayHabilitado()) {
+    // Modo local: el mock es chico, así que se filtra en memoria como siempre.
+    const activos = CLIENTES.filter((c) => c.activity === 'Activo')
+    if (tipoBusqueda(t) === 'numero') {
+      const digitos = t.replace(/\D/g, '')
+      return activos.filter(
+        (c) => norm(c.codigo).includes(norm(t)) || c.cuit.replace(/\D/g, '').includes(digitos),
+      )
+    }
+    return activos
+      .map((c) => ({ c, s: similitud(t, c.name) }))
+      .filter((x) => x.s >= UMBRAL_SIMILITUD)
+      .sort((a, b) => b.s - a.s)
+      .map((x) => x.c)
   }
-  if (tipo === 'cuit') {
-    const soloDigitos = (s: string) => s.replace(/\D/g, '')
-    return activos.filter((c) => soloDigitos(c.cuit).includes(soloDigitos(t)))
-  }
-  // Nombre: ranking por similitud, quedándonos con los que superan el umbral.
-  return activos
-    .map((c) => ({ c, s: similitud(t, c.name) }))
-    .filter((x) => x.s >= UMBRAL_SIMILITUD)
-    .sort((a, b) => b.s - a.s)
-    .map((x) => x.c)
+
+  /* El CUIT se guarda SIN separadores ("30526228746"), así que se busca por sus dígitos: el
+     usuario puede escribirlo con guiones o sin ellos y da lo mismo. */
+  const items =
+    tipoBusqueda(t) === 'numero'
+      ? await buscarPersonas([
+          { columna: COL.cliente.codigo, valor: t },
+          { columna: COL.cliente.cuit, valor: t.replace(/\D/g, '') },
+        ])
+      : await buscarPersonas([{ columna: 'name', valor: t }])
+
+  return items
+    // La categoría es multi-valor ("Clientes, Proveedor, …"): alcanza con que contenga "Cliente".
+    .filter((it) => (byId(it)[COL.cliente.categoria]?.text ?? '').includes('Cliente'))
+    .map(mapCliente)
+    .filter((c) => c.activity === 'Activo')
 }
 
 /* ===== 3) Búsqueda de producto (precio/rentabilidad según lista del cliente) ===== */

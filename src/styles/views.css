@@ -51,15 +51,6 @@
   font-size: 34px;
   color: var(--primary-blue);
 }
-.cliente-estado--error {
-  background: #fff5f6;
-  border-color: #ffccd1;
-  color: var(--red);
-  font-weight: 600;
-}
-.cliente-estado--error i {
-  color: var(--red);
-}
 
 /* ===== VISTA CLIENTE · ficha ===== */
 /* Card limpia: blanco nítido, esquinas suaves y sombra sutil (sin el tono crema anterior). */

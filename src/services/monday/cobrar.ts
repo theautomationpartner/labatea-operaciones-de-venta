@@ -7,7 +7,8 @@
  *   POSTERIOR  → recibo apuntando a la deuda de "💰Fact Vtas Pends de Cobro" (18421035508).
  *
  * En los DOS casos se crea un subelemento por movimiento de pago cargado, y cada medio completa
- * sus propias columnas: la venta con TARJETA es POSTERIOR y detalla ahí cada cupón.
+ * sus propias columnas: la venta con TARJETA es SIMULTÁNEA (se cobra en el acto) y detalla ahí cada
+ * cupón; no deja una Venta Pend de Cobro.
  *
  * El recibo es un efecto SECUNDARIO de la venta: se dispara una vez que la venta existe y sin
  * bloquear al usuario. En el POSTERIOR hay una dependencia real —el id de la deuda—, así que esa
@@ -203,7 +204,7 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
   const itemId = creado.create_item.id
 
   /* Se detalla UN subelemento por cada movimiento cargado, sin importar el tipo de cobro: en la
-     venta con TARJETA (que es POSTERIOR) cada CUPÓN es un subelemento; en la cuenta corriente sin
+     venta con TARJETA (que es SIMULTÁNEA) cada CUPÓN es un subelemento; en la cuenta corriente sin
      cobro en el acto no hay movimientos y no se crea ninguno. Los comprobantes (cupones/archivos)
      van en un segundo paso, porque necesitan el id del subelemento ya creado. */
   if (balances.length > 0) {

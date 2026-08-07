@@ -57,6 +57,12 @@ export interface AppState {
   usuarioActual: UsuarioActual | null
   /** Tasa de cambio del dólar de HOY, leída al iniciar la app. null = todavía no hay dato. */
   tasaCambio: number | null
+  /**
+   * Fallo de la API de Monday: qué se estaba intentando hacer ("consultar el cliente"). Lo despacha
+   * el `catch` de cualquier consulta o mutación y lo consume `ModalErrorMonday`, la ÚNICA forma en
+   * que la app comunica estos errores. null = sin error pendiente.
+   */
+  errorMonday: string | null
 
   /* Configuración de la operación */
   tipoVenta: TipoVenta | null
@@ -184,6 +190,7 @@ export const initialState: AppState = {
   // Arranca en true: la carga se dispara al montar la app y el selector nace deshabilitado.
   vendedoresCargando: true,
   tasaCambio: null,
+  errorMonday: null,
 
   tipoVenta: null,
   tipoEntrega: null,
@@ -268,6 +275,9 @@ export type Action =
   | { type: 'setVendedores'; vendedores: Vendedor[] }
   | { type: 'setUsuarioActual'; usuario: UsuarioActual | null }
   | { type: 'setTasaCambio'; value: number | null }
+  /** `accion` describe lo que falló, en infinitivo: "traer los presupuestos del cliente". */
+  | { type: 'errorMonday'; accion: string }
+  | { type: 'limpiarErrorMonday' }
   | { type: 'setCliente'; cliente: Cliente }
   | { type: 'setTipoVenta'; value: TipoVenta }
   | { type: 'setTipoEntrega'; value: TipoEntrega }
@@ -565,6 +575,12 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'setDescuentosPago':
       return { ...state, descuentosPago: action.value }
+
+    case 'errorMonday':
+      return { ...state, errorMonday: action.accion }
+
+    case 'limpiarErrorMonday':
+      return { ...state, errorMonday: null }
 
     case 'setDiasVencFactura':
       return { ...state, diasVencFactura: action.value }

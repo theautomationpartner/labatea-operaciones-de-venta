@@ -96,10 +96,11 @@ function CardComprobante({
           </Dato>
         </div>
 
-        {/* Se tilda cuando el comprobante terminó de escribirse en el board. */}
+        {/* Se tilda cuando el comprobante terminó de escribirse en el board. El check en verde ya
+            dice que se emitió: el rótulo "Emitida" al lado era redundante. Los otros dos estados sí
+            llevan texto porque el tilde solo no alcanza para explicarlos. */}
         <span className="comp-estado">
           {emitiendo && !emitido && <span className="comp-estado-txt">Emitiendo…</span>}
-          {completo && <span className="comp-estado-txt comp-estado-txt--ok">Emitida</span>}
           {incompleto && (
             <span className="comp-estado-txt comp-estado-txt--err">
               {emitido!.lineasCreadas}/{emitido!.lineasEsperadas} líneas

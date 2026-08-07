@@ -134,15 +134,8 @@ export function ClienteView() {
         </div>
       </div>
 
-      {/* El cliente no encontrado se avisa SÓLO por la ventana emergente: el cartel en línea decía
-          lo mismo y además empujaba la ficha (que en ese estado es puro skeleton) hacia abajo.
-          El fallo de conexión sí se queda en línea: no tiene ventana propia. */}
-      {estadoBusqueda === 'error' && (
-        <div className="cliente-estado cliente-estado--error">
-          <i className="fas fa-triangle-exclamation" />
-          <div>No se pudo consultar Monday. Reintentá en unos segundos.</div>
-        </div>
-      )}
+      {/* Ni el cliente no encontrado ni el fallo de la API tienen cartel en línea: los dos se
+          avisan por ventana emergente (el segundo, desde `ModalErrorMonday`). */}
 
       {/* La ficha del cliente se muestra SIEMPRE: skeleton mientras no hay cliente o se consulta,
           y se rellena con los datos reales al resolver la búsqueda. */}

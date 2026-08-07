@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment } from 'react'
 
 interface StepperProps {
   steps: readonly string[]
@@ -18,17 +18,11 @@ const stateOf = (index: number, current: number) =>
   index < current ? 'done' : index === current ? 'cur' : 'off'
 
 /**
- * Une todas las palabras del nombre con espacios DE NO-QUIEBRE salvo la última: así, cuando el
- * texto no entra, el único salto de línea posible es antes de la última palabra (no en el medio).
+ * Stepper sólo NUMÉRICO: cada etapa es su número, sin el nombre al lado. El nombre igual viaja en
+ * `aria-label` y en el `title`, así que sigue disponible para el lector de pantalla y al pasar el
+ * mouse; lo único que se quita es el texto impreso, que hacía crecer la barra hasta ocupar media
+ * cabecera y partirse en dos renglones.
  */
-function etiquetaConSaltoUltima(label: string): ReactNode {
-  const palabras = label.trim().split(/\s+/)
-  if (palabras.length < 2) return label
-  const inicio = palabras.slice(0, -1).join(' ')
-  const ultima = palabras[palabras.length - 1]
-  return `${inicio} ${ultima}`
-}
-
 export function Stepper({ steps, current, className = '', maxReached, onStep }: StepperProps) {
   // Tope navegable: hasta el paso más avanzado alcanzado (o, si no se pasó, sólo hasta el actual).
   const limite = Math.max(maxReached ?? current, current)
@@ -50,7 +44,12 @@ export function Stepper({ steps, current, className = '', maxReached, onStep }: 
               tabIndex={nav ? 0 : undefined}
               aria-disabled={bloqueado || undefined}
               aria-current={state === 'cur' ? 'step' : undefined}
-              title={bloqueado ? 'Completá los pasos anteriores para llegar a esta etapa.' : undefined}
+              /* El número solo no dice nada: el nombre de la etapa se conserva como rótulo
+                 accesible y como tooltip, aunque ya no se imprima. */
+              aria-label={`Paso ${i + 1}: ${label}`}
+              title={
+                bloqueado ? `${label} · completá los pasos anteriores para llegar a esta etapa.` : label
+              }
               onClick={nav ? () => onStep!(i) : undefined}
               onKeyDown={
                 nav
@@ -64,7 +63,9 @@ export function Stepper({ steps, current, className = '', maxReached, onStep }: 
               }
             >
               <div className="sic">{state === 'done' ? <i className="fas fa-check" /> : i + 1}</div>
-              <span>{etiquetaConSaltoUltima(label)}</span>
+              {/* Debajo del círculo, el ordinal de la etapa. El NOMBRE sigue sin imprimirse: vive
+                  en el `title` y en el `aria-label` del paso. */}
+              <span className="step-nro">Paso {i + 1}</span>
             </div>
             {/* La línea se rellena de verde cuando el tramo ya fue transitado. */}
             {i < steps.length - 1 && <div className={`sline ${i < current ? 'done' : ''}`} />}

@@ -85,7 +85,6 @@ export function CobroProforma() {
   }, [filas, neto])
 
   const [emitiendo, setEmitiendo] = useState(false)
-  const [error, setError] = useState(false)
   const [abierta, setAbierta] = useState(true)
 
   /**
@@ -96,7 +95,6 @@ export function CobroProforma() {
   const emitir = async () => {
     if (emitiendo || emitida || productos.length === 0) return
     setEmitiendo(true)
-    setError(false)
     try {
       const creada = await crearProforma({
         clienteId: cliente!.id,
@@ -112,8 +110,9 @@ export function CobroProforma() {
       // El estado de "emitida" se deriva de este id global: sobrevive a la navegación entre pasos.
       dispatch({ type: 'setProformaId', value: creada.id })
     } catch {
-      // Si falla, el botón vuelve a habilitarse para reintentar.
-      setError(true)
+      /* Si falla, el botón vuelve a habilitarse para reintentar; el porqué lo explica la ventana
+         global de error de Monday, no un texto suelto debajo del botón. */
+      dispatch({ type: 'errorMonday', accion: 'emitir la factura proforma' })
     } finally {
       setEmitiendo(false)
     }
@@ -192,13 +191,6 @@ export function CobroProforma() {
             )}
           </button>
 
-          {/* Error: la emisión falló; el botón queda habilitado para reintentar. */}
-          {error && !emitiendo && (
-            <p className="proforma-err" role="alert">
-              <i className="fas fa-circle-exclamation" /> No se pudo emitir la proforma en Monday.
-              Reintentá en unos segundos.
-            </p>
-          )}
         </aside>
 
         {/* ===== DERECHA · Card desplegable + envío ===== */}

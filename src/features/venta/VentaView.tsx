@@ -78,6 +78,7 @@ export function VentaView() {
         if (!vivo) return
         setPresupuestos([])
         setError(true)
+        dispatch({ type: 'errorMonday', accion: 'traer los presupuestos del cliente' })
       })
       .finally(() => {
         if (vivo) setCargando(false)
@@ -85,7 +86,7 @@ export function VentaView() {
     return () => {
       vivo = false
     }
-  }, [cliente])
+  }, [cliente, dispatch])
 
   // Sólo se llega acá con la venta configurada como CON PRESUPUESTO PREVIO.
   const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
@@ -217,7 +218,7 @@ export function VentaView() {
               cargando
                 ? 'Buscando los presupuestos vigentes del cliente…'
                 : error
-                  ? 'No se pudieron traer los productos presupuestados. Reintentá en unos segundos.'
+                  ? ''
                   : 'Este cliente no tiene presupuestos vigentes con productos disponibles.'
             }
             colReferencia="Presupuestada"

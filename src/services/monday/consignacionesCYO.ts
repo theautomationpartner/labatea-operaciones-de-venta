@@ -20,6 +20,8 @@ export interface LineaConsignacionCYO {
   productoId?: string
   /** Nombre del producto, para rotular el ítem. */
   nombre: string
+  /** Nombre del proveedor del producto: prefija el nombre del ítem ("Proveedor - Producto"). */
+  proveedorNombre?: string
   cantidad: number
   precioUnitario: number
   /** Comprobante emitido (board 18422405731) que facturó este producto; de él sale el PDF. */
@@ -93,8 +95,10 @@ export async function crearConsignacionesCYO(
       [COL.consignacionCYO.cantidad]: round2(l.cantidad),
       [COL.consignacionCYO.precio]: round2(l.precioUnitario),
     }
-    // Ítem raíz del tablero de consignaciones: nombre general; su ID lo asigna la customKey del board.
-    variables[`n${i}`] = 'Consignaciones CYO'
+    /* Nombre del ítem con el template "Proveedor - Producto": la liquidación CYO se lee por proveedor.
+       Si el producto no trae proveedor, se cae al nombre del producto solo (no deja un guion suelto). */
+    const proveedor = l.proveedorNombre?.trim()
+    variables[`n${i}`] = proveedor ? `${proveedor} - ${l.nombre}` : l.nombre
     variables[`cv${i}`] = JSON.stringify(cv)
     return `c${i}: create_item(board_id: $boardId, item_name: $n${i}, column_values: $cv${i}) { id }`
   })
