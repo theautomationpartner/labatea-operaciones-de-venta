@@ -291,6 +291,43 @@ async function vincularComprobantesAVenta(ventaId: string, itemIds: string[]): P
   )
 }
 
+/**
+ * Cuelga cada comprobante ya emitido de la venta que lo originó: escribe "📈Ventas"
+ * (board_relation_mm5bve7q) del board de Facturación con el ítem de la venta.
+ *
+ * Va SEPARADO de la creación porque el orden de la operación lo obliga: las facturas se emiten en
+ * el paso 4 y la venta recién existe al finalizar, así que al crear el comprobante todavía no hay
+ * ID de venta que asignarle. Este es el único momento en que el vínculo se puede escribir.
+ *
+ * Una venta puede haber emitido varios comprobantes (la división de mercadería deja uno común y
+ * uno por proveedor consignado): van TODOS en una sola solicitud, con alias, y todos apuntan a la
+ * misma venta. Sin ids válidos no se manda nada.
+ */
+export async function vincularVentaAComprobantes(
+  ventaId: string,
+  comprobanteIds: string[],
+): Promise<void> {
+  if (!mondayHabilitado()) return
+  const venta = Number(ventaId)
+  const ids = comprobanteIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+  if (!Number.isFinite(venta) || venta <= 0 || ids.length === 0) return
+
+  // El valor es el MISMO para todos los comprobantes, así que viaja una sola vez.
+  const variables: Record<string, unknown> = {
+    board: BOARDS.facturacion,
+    cv: JSON.stringify({ [COL.facturacion.venta]: { item_ids: [venta] } }),
+  }
+  const campos = ids.map((id, i) => {
+    variables[`item${i}`] = String(id)
+    return `v${i}: change_multiple_column_values(item_id: $item${i}, board_id: $board, column_values: $cv) { id }`
+  })
+  const declaraciones = ids.map((_, i) => `$item${i}: ID!`).join(', ')
+  await mondayApi(
+    `mutation ($board: ID!, $cv: JSON!, ${declaraciones}) { ${campos.join('\n')} }`,
+    variables,
+  )
+}
+
 /** Las líneas de un comprobante, en tandas de una sola solicitud cada una. */
 async function crearLineas(
   itemId: string,

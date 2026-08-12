@@ -32,6 +32,7 @@ import {
   registrarCobro,
   registrarDeudaPosterior,
   registrarFacturacionVtasPend,
+  vincularVentaAComprobantes,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
@@ -337,6 +338,9 @@ export function FacturaView() {
     return [{ facturaId: emitido.id, importe: c.total }]
   })
 
+  /** Ítems del board de Facturación que dejó la emisión: los comprobantes que hay que enlazar. */
+  const comprobantesEmitidos = factura.comprobantes.map((c) => c.id).filter(Boolean)
+
   /**
    * Efectos secundarios de la venta, disparados TODOS fire-and-forget (sin `await` bloqueante) una
    * vez creada la venta: el usuario finaliza sin esperar a que terminen en Monday.
@@ -346,6 +350,16 @@ export function FacturaView() {
    *   · Consignación CYO. (Los pendientes de entrega ya los dispara `crearVenta` internamente.)
    */
   const dispararEfectosSecundarios = (vId: string) => {
+    /* Las facturas quedan colgadas de la venta que las originó ("📈Ventas" del comprobante). Recién
+       se puede acá: se emiten en este mismo paso, cuando la venta todavía no existe, así que al
+       crear el comprobante no había id que asignarle. Universal: corre para cualquier tipo de venta
+       y de cobro. */
+    if (comprobantesEmitidos.length > 0) {
+      void vincularVentaAComprobantes(vId, comprobantesEmitidos).catch(() => {
+        /* El vínculo es best-effort: un fallo no revierte la venta ni las facturas ya emitidas. */
+      })
+    }
+
     /* El recibo se crea SIEMPRE, sea el cobro simultáneo o posterior. Es un efecto secundario de la
        venta: se dispara con la venta ya creada y NUNCA se espera, para no congelar el cierre. */
     if (cobroSimultaneoOperacion(formaPago)) {
