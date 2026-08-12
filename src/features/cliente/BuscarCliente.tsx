@@ -103,8 +103,17 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
             onKeyDown={(e) => e.key === 'Enter' && !buscando && buscar()}
           />
         </div>
-        <span className={`search-helper ${errorInput ? 'search-helper--error' : ''}`}>
-          {errorInput || 'Buscar por razón social, código de cliente o Cuil/CUIT.'}
+        {/* Debajo del campo ya NO va la ayuda de siempre ("Buscar por razón social…"): el
+            placeholder del input dice lo mismo. Queda sólo el error de "buscaste sin escribir
+            nada", que aparece y desaparece —y por eso el renglón se monta igual cuando está
+            vacío, con el alto reservado por CSS, para que el buscador no pegue un salto—.
+            Siempre presente, además, puede ser una región viva de verdad. */}
+        <span
+          className={`search-helper ${errorInput ? 'search-helper--error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {errorInput}
         </span>
 
         {/* Varios clientes con el mismo nombre: se elige por código. */}

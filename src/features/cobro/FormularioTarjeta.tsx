@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PAGOS_DEBITO, formaPagoTarjeta } from '@/lib/cobros'
+import { PAGOS_TARJETA, formaPagoTarjeta } from '@/lib/cobros'
 import { aIso, desdeIso } from '@/lib/dates'
 import { formatearImporteAR, importeATexto, money } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
@@ -60,7 +60,6 @@ export function FormularioTarjeta({
   bloqueado = false,
 }: FormularioTarjetaProps) {
   const dispatch = useDispatch()
-  const esCredito = tipo === 'CREDITO'
   /* Al entrar, el importe ya viene precargado con lo que falta cobrar: el caso normal es cerrar la
      venta con una sola tarjeta, y así el vendedor no tiene que copiar el número a mano. */
   const sugeridoInicial = Math.max(diferencia, 0)
@@ -71,20 +70,20 @@ export function FormularioTarjeta({
   const [importeTexto, setImporteTexto] = useState(() =>
     sugeridoInicial > 0 ? importeATexto(sugeridoInicial) : '',
   )
-  /* Débito: el pago se puede partir en una o dos tarjetas. En crédito no se pregunta (siempre es
-     una), así que la precarga se comporta como el "1 pago". */
+  /* El cobro se puede partir en una o dos tarjetas. Vale para los DOS tipos: el crédito se
+     comportaba antes como un "1 pago" fijo, sin preguntar. */
   const [cantPagos, setCantPagos] = useState<string>('1')
   // Recién al intentar agregar se muestran los errores: no se reta al vendedor mientras carga.
   const [intento, setIntento] = useState(false)
   // Banco de acreditación: mismas cuentas propias que usa la transferencia.
   const { cuentas, estado: estadoCuentas } = useCuentasPropias(true)
 
-  /* Precarga del importe. Con un solo pago —o en crédito— el importe sugerido es TODA la diferencia,
-     porque esa tarjeta tiene que cancelar la venta. Partido en dos, el primero lo escribe el
-     vendedor y el segundo se precarga con lo que quedó pendiente.
+  /* Precarga del importe. Con un solo pago el importe sugerido es TODA la diferencia, porque esa
+     tarjeta tiene que cancelar la venta. Partido en dos, el primero lo escribe el vendedor y el
+     segundo se precarga con lo que quedó pendiente.
      Se recalcula sólo cuando cambia la cantidad de pagos o entra una tarjeta nueva: si dependiera de
      la diferencia en vivo, pisaría el importe justo mientras se lo está tipeando. */
-  const manual = !esCredito && cantPagos === '2' && cargadas === 0
+  const manual = cantPagos === '2' && cargadas === 0
   const claveDePrecarga = `${cantPagos}·${cargadas}`
   const [clavePrevia, setClavePrevia] = useState(claveDePrecarga)
   if (clavePrevia !== claveDePrecarga) {
@@ -121,24 +120,22 @@ export function FormularioTarjeta({
     <fieldset className="cobro-form cobro-form--tarjeta" disabled={bloqueado}>
       {/* FILA 1 · cuántos pagos y por cuánto. */}
       <Fila>
-      {/* CANT. PAGOS — sólo débito: en crédito el cobro va en una sola tarjeta. */}
-      {!esCredito && (
-        <div className="cobro-form-campo cobro-campo--pagos">
-          <label htmlFor="tarj-pagos">Cant. Pagos</label>
-          <select
-            id="tarj-pagos"
-            className="cobro-in"
-            value={cantPagos}
-            onChange={(e) => setCantPagos(e.target.value)}
-          >
-            {PAGOS_DEBITO.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* CANT. PAGOS — para los DOS tipos de tarjeta: el cobro se puede partir en una o dos. */}
+      <div className="cobro-form-campo cobro-campo--pagos">
+        <label htmlFor="tarj-pagos">Cant. Pagos</label>
+        <select
+          id="tarj-pagos"
+          className="cobro-in"
+          value={cantPagos}
+          onChange={(e) => setCantPagos(e.target.value)}
+        >
+          {PAGOS_TARJETA.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* IMPORTE — siempre editable, aunque venga precargado con la diferencia. */}
       <div className="cobro-form-campo cobro-form-campo--val cobro-campo--importe-tarj">

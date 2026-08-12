@@ -2,7 +2,9 @@
  * Subelemento de una RETENCIÓN en el recibo: además del medio y el importe recibido, declara el
  * certificado que la respalda (año y número de comprobante).
  *
- * Las dos columnas del board son NUMÉRICAS, así que lo que viaja son sólo los dígitos.
+ * El número de comprobante va a "🤖Nro Comprobante" (text_mm654900), que es de TEXTO y COMPARTIDA
+ * con el número de cheque: se manda tal cual se cargó, con guiones y ceros a la izquierda. El año
+ * sí es numérico, así que de ahí viajan sólo los dígitos.
  *
  * Se corre contra el servicio real con `fetch` interceptado: lo que se verifica es exactamente el
  * payload que sale hacia Monday.
@@ -66,12 +68,12 @@ FORMAS.forEach((forma, n) => {
   const cv = cols(n)
   assert.equal(sub.variables[`n${n}`], forma, `m${n} se nombra con su medio de cobro`)
   assert.equal(cv['numeric_mm64dwpx'], '2026', `${forma}: el año del certificado`)
-  /* Columna numérica: los guiones no viajan y el valor se manda como dígitos corridos. Los ceros
-     a la izquierda salen en el payload, pero los pierde la propia columna al guardar el número. */
+  /* Columna de TEXTO: el comprobante se guarda como lo tipeó el vendedor. Con la numérica anterior
+     este mismo dato llegaba como "000100001234" y perdía el formato del certificado. */
   assert.equal(
-    cv['numeric_mm64qm1'],
-    '000100001234',
-    `${forma}: el nro de comprobante, sólo dígitos`,
+    cv['text_mm654900'],
+    '0001-00001234',
+    `${forma}: el nro de comprobante, tal cual se cargó`,
   )
   assert.equal(cv['numeric_mm63j1mv'], '5000', `${forma}: el importe recibido`)
   assert.ok(!('numeric_mm4e61yk' in cv), `${forma}: no cancela una factura`)
@@ -95,9 +97,52 @@ await registrarCobro({
 })
 const sinCert = JSON.parse(llamadas[1].variables.c0 as string) as Record<string, unknown>
 assert.ok(!('numeric_mm64dwpx' in sinCert), 'sin año la columna no viaja')
-assert.ok(!('numeric_mm64qm1' in sinCert), 'sin número la columna no viaja')
+assert.ok(!('text_mm654900' in sinCert), 'sin número la columna no viaja')
 const efectivo = JSON.parse(llamadas[1].variables.c1 as string) as Record<string, unknown>
 assert.ok(!('numeric_mm64dwpx' in efectivo), 'el efectivo no declara certificado')
-assert.ok(!('numeric_mm64qm1' in efectivo), 'el efectivo no declara certificado')
+assert.ok(!('text_mm654900' in efectivo), 'el efectivo no declara certificado')
 
-console.log('OK · certificado de retención en el subelemento del recibo')
+/* ---------- "🤖Nro Comprobante" la comparten los TRES medios que traen un papel numerado ----------
+   El certificado de la retención, el número del cheque y el cupón del posnet caen todos en la misma
+   columna. Cada subelemento es de un solo medio, así que nunca compiten; lo que hay que sostener es
+   que NINGUNO se desvíe a una columna propia, y que el número llegue tal cual se cargó (la columna
+   es de texto: los guiones y los ceros a la izquierda sobreviven). */
+llamadas.length = 0
+await registrarCobro({
+  clienteId: '111',
+  nombreCliente: 'AGRO LUCIA S.A.',
+  totalVenta: 13000,
+  totalCobrado: 13000,
+  balances: balancePagos(
+    [
+      { formaPago: 'Cheque', importe: 10000, numeroCheque: '00123456' } as MovimientoPago,
+      {
+        formaPago: 'Tarjeta de crédito',
+        importe: 3000,
+        numeroCupon: '0042-0007',
+      } as MovimientoPago,
+    ],
+    SIN_DESCUENTOS_PAGO,
+  ),
+})
+const compartida = (n: number) =>
+  JSON.parse(llamadas[1].variables[`c${n}`] as string) as Record<string, unknown>
+
+assert.equal(
+  compartida(0)['text_mm654900'],
+  '00123456',
+  'el nro de cheque va a la columna compartida, con sus ceros a la izquierda',
+)
+assert.equal(
+  compartida(1)['text_mm654900'],
+  '0042-0007',
+  'y el nro de cupón de la tarjeta también, con su guión',
+)
+/* La columna vieja del cupón sigue existiendo en el board pero ya no se escribe: si volviera a
+   aparecer en el payload, el número quedaría partido en dos lugares distintos. */
+assert.ok(
+  !('text_mm5zs69e' in compartida(1)),
+  'el cupón ya no se escribe además en su columna vieja',
+)
+
+console.log('OK · certificado de retención y "Nro Comprobante" compartido por cheque, tarjeta y retención')

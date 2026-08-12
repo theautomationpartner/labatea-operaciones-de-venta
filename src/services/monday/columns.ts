@@ -592,12 +592,21 @@ export const COL = {
     // RETENCIONES (IVA, IIBB, GAN…): todas comparten estas tres columnas.
     /** "🤖Comp Retencion" (file): el comprobante de cualquier retención (IVA, IIBB, GAN…). */
     compRetencion: 'file_mm5yzcnk',
-    /** "🤖Nro Comprobante": el número del certificado. Es NUMÉRICA: sólo viajan los dígitos. */
-    nroComprobanteRet: 'numeric_mm64qm1',
     /** "🤖Año" del certificado de retención (numérica, los cuatro dígitos). */
     anioRet: 'numeric_mm64dwpx',
+    /**
+     * "🤖Nro Comprobante": el número del papel que respalda el movimiento. Es UNA sola columna
+     * COMPARTIDA por los tres medios que traen un papel numerado —la retención (nro del
+     * certificado), el cheque (nro del cheque) y la tarjeta (nro del cupón del posnet)—: cada
+     * movimiento es un subelemento de un solo medio, así que nunca compiten.
+     *
+     * Es de TEXTO, así que el número viaja TAL CUAL se cargó. Antes eran dos columnas numéricas
+     * (`numeric_mm64qm1` y `numeric_mm5rrwjg`, ya borradas del board) y había que mandar sólo los
+     * dígitos: "0001-00001234" se perdía los guiones y, al guardarse como número, también los ceros
+     * a la izquierda. Con la columna de texto el comprobante se guarda como lo tipeó el vendedor.
+     */
+    nroComprobante: 'text_mm654900',
     // CHEQUE
-    nroCheque: 'numeric_mm5rrwjg',
     /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */
     cuit: 'text_mm5ydwp2',
     fechaEmisionCheque: 'date_mm5rxdpk',
@@ -617,8 +626,10 @@ export const COL = {
     tipoTarjeta: 'dropdown_mm5rx800',
     /** "🤖Cupon" (file): el comprobante del cobro con tarjeta. */
     cupon: 'file_mm5yy4je',
-    /** "🤖Numero Cupon" (texto): el número que imprime el posnet, cargado a mano. */
-    nroCupon: 'text_mm5zs69e',
+    /* El número del cupón NO va a "🤖Numero Cupon" (text_mm5zs69e, que sigue existiendo en el
+       board pero quedó sin uso): va a `nroComprobante`, la misma columna que el nro de cheque y el
+       del certificado de retención. Los tres son "el número del papel que respalda el movimiento",
+       y cada subelemento es de un solo medio, así que no compiten. */
     /* El recibo NO guarda el plan de cuotas del crédito: ni la cantidad ("🤖Cuotas",
        numeric_mm5ydy8) ni el valor de cada una ("🤖Valor Cuota", numeric_mm5yx0ec). El cobro se
        registra por su importe total, así que el formulario no las pide y el bulk no las manda. */

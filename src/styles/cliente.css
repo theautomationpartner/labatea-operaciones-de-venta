@@ -113,7 +113,14 @@
   background: transparent;
   color: var(--c-text-muted);
 }
+/* Renglón del aviso del buscador. Está SIEMPRE montado aunque no haya nada que decir: reserva su
+   alto para que mostrar el error no empuje la ficha del cliente hacia abajo. `min-height` y
+   `line-height` van por la misma variable para que no se puedan desincronizar. */
 .cliente-v2 .search-helper {
+  --linea: 18px;
+  display: block;
+  min-height: var(--linea);
+  line-height: var(--linea);
   font-size: 13px;
   color: var(--c-text-muted);
   padding-left: 4px;

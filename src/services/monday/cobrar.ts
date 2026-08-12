@@ -88,9 +88,10 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
   }
 
   if (m.formaPago === 'Cheque') {
-    // El número de cheque va a una columna numérica: sólo los dígitos.
-    const nro = (m.numeroCheque ?? '').replace(/\D/g, '')
-    if (nro) cv[COL.cobroSub.nroCheque] = nro
+    /* El número del cheque va a "🤖Nro Comprobante", la MISMA columna que usa el certificado de
+       retención. Es de texto: se manda tal cual se cargó, sin recortarle nada. */
+    const nro = (m.numeroCheque ?? '').trim()
+    if (nro) cv[COL.cobroSub.nroComprobante] = nro
     /* El CUIT va a una columna de TEXTO, así que se escribe tal como se cargó, con los guiones del
        formato ("20-45037195-6"). Sólo se manda completo: un CUIT a medio cargar no es un dato. */
     if (cuitCompleto(m.cuitEmisor)) cv[COL.cobroSub.cuit] = m.cuitEmisor
@@ -110,8 +111,9 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     // Banco EMISOR de la tarjeta (dropdown de texto libre), distinto del banco de acreditación.
     const bancoEmisor = dropdown(m.bancoTarjeta)
     if (bancoEmisor) cv[COL.cobroSub.bancoEmisorCheque] = bancoEmisor
-    // Número de cupón del posnet: es la referencia con la que se concilia la acreditación.
-    if (m.numeroCupon?.trim()) cv[COL.cobroSub.nroCupon] = m.numeroCupon.trim()
+    /* Número de cupón del posnet: es la referencia con la que se concilia la acreditación. Va a
+       "🤖Nro Comprobante", la MISMA columna que el nro de cheque y el del certificado. */
+    if (m.numeroCupon?.trim()) cv[COL.cobroSub.nroComprobante] = m.numeroCupon.trim()
     const tipo = dropdown(m.tipoTarjeta)
     if (tipo) cv[COL.cobroSub.tipoTarjeta] = tipo
     // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento del cheque.
@@ -126,11 +128,11 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
   /* RETENCIONES (IVA, IIBB, GAN… y las que se sumen): el certificado que las respalda. Se
      reconocen por el prefijo del medio de cobro, así que una retención nueva entra sola. */
   if (esRetencion(m.formaPago)) {
-    /* Las dos columnas son NUMÉRICAS, así que viajan sólo los dígitos, igual que el número de
-       cheque: "0001-00001234" se manda como "000100001234". Los ceros a la izquierda los pierde
-       la columna al guardarlo como número, y eso no se puede evitar desde acá. */
-    const nro = (m.nroComprobanteRetencion ?? '').replace(/\D/g, '')
-    if (nro) cv[COL.cobroSub.nroComprobanteRet] = nro
+    /* El número del certificado va a "🤖Nro Comprobante", de TEXTO, así que se guarda tal como lo
+       tipeó el vendedor: "0001-00001234" llega con sus guiones y sus ceros a la izquierda. El AÑO
+       sigue siendo una columna numérica, y ahí sí viajan sólo los dígitos. */
+    const nro = (m.nroComprobanteRetencion ?? '').trim()
+    if (nro) cv[COL.cobroSub.nroComprobante] = nro
     const anio = (m.anioRetencion ?? '').replace(/\D/g, '')
     if (anio) cv[COL.cobroSub.anioRet] = anio
     return cv

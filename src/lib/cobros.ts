@@ -337,8 +337,8 @@ export const cuitCompleto = (cuit: string | undefined): boolean => tramoCuitInco
 export const formaPagoTarjeta = (tipo: TipoTarjetaCobro): FormaPago =>
   tipo === 'CREDITO' ? 'Tarjeta de crédito' : 'Tarjeta de débito'
 
-/** Un pago con tarjeta de débito se puede partir en una o dos tarjetas. */
-export const PAGOS_DEBITO = ['1', '2'] as const
+/** Un cobro con tarjeta —débito o crédito— se puede partir en una o dos tarjetas. */
+export const PAGOS_TARJETA = ['1', '2'] as const
 
 /** El cheque tiene una fecha de vencimiento que incumple la regla (o no la tiene cargada). */
 export function chequeInvalido(m: Pick<MovimientoPago, 'formaPago' | 'chequeVencimiento'>): boolean {
