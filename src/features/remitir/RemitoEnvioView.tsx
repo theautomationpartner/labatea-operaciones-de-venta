@@ -3,7 +3,7 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { TRANSPORTISTA } from '@/data/mock'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
   getComisionistas,
   getDestinosCliente,
@@ -165,10 +165,10 @@ export function RemitoEnvioView() {
     <section className="view paso-layout remito-envio-layout">
       <PasoHeader
         pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        actual={2}
+        actual={indiceDePaso('remito-envio', operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
       />
       <PasoTitulo
-        numero={3}
+        numero={indiceDePaso('remito-envio', operacion, tipoVenta, tipoEntrega, remito.tipoEmision) + 1}
         titulo="Entrega de Mercadería"
         descripcion="Indicá quién entrega la mercadería y completá los datos del transporte para generar el remito."
       />

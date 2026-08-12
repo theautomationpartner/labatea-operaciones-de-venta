@@ -47,24 +47,97 @@ export const totalLinea = (l: LineaPresupuesto): number =>
   round2(l.producto.precio * l.cantidad * (1 - l.descuento / 100))
 
 /**
- * Rentabilidad que queda tras bonificar. El margen de lista se mide sobre el precio de lista;
- * al bajar el precio, el costo pesa más y el margen cae:
+ * RENTABILIDAD de un producto, en %. Es la fórmula del propio Maestro, la misma con la que el board
+ * calcula sus columnas "🤖Margen L1/L2/L3":
  *
- *   costo = precio × (1 − rent/100)   ·   precio bonificado = precio × (1 − desc/100)
- *   rent efectiva = 1 − costo / precio bonificado
+ *   rentabilidad = ROUND(((precio S/IVA / Costo Final) − 1) × 100, 2)
  *
- * Un producto regalado (100%) se lleva el costo entero: −100%.
+ * Las dos puntas van SIN IVA: las columnas "🤖Precio S/Iva Lx" ya son netas y el "🤖Costo Final"
+ * también, así que comparar contra un precio con la alícuota sumada inflaría el resultado.
+ *
+ * El descuento no entra como parámetro: ya viene aplicado en `precioVenta`. Al bajar el precio la
+ * rentabilidad cae sola; regalado (precio 0) da −100%.
  */
-export function rentabilidadEfectiva(rentabilidadLista: number, descuento: number): number {
-  if (!descuento) return rentabilidadLista
-  if (descuento >= 100) return -100
-  const costo = 1 - rentabilidadLista / 100
-  return (1 - costo / (1 - descuento / 100)) * 100
+export function rentabilidadDe(precioVentaSinIva: number, costoSinIva: number): number {
+  if (!Number.isFinite(precioVentaSinIva) || !Number.isFinite(costoSinIva)) return 0
+  // Sin costo cargado no hay contra qué medir: no se inventa una rentabilidad.
+  if (costoSinIva <= 0) return 0
+  if (precioVentaSinIva <= 0) return -100
+  return round2((precioVentaSinIva / costoSinIva - 1) * 100)
 }
 
-/** La rentabilidad de la línea, ya con su descuento aplicado. */
+/**
+ * Rentabilidad de un producto con un descuento aplicado. El descuento baja el precio de venta; el
+ * costo no se mueve.
+ */
+export const rentabilidadConDescuento = (
+  precioSinIva: number,
+  costoSinIva: number,
+  descuentoPct: number,
+): number =>
+  rentabilidadDe(precioSinIva * (1 - Math.min(Math.max(descuentoPct, 0), 100) / 100), costoSinIva)
+
+/**
+ * Costo SIN IVA de un producto. Sale de "🤖Costo Final"; si el maestro no lo trajo, se despeja del
+ * margen de su lista, que es la misma fórmula al revés: `precio = costo × (1 + margen/100)`.
+ */
+export function costoDe(p: {
+  precioCosto?: number
+  precioSinIva?: number
+  precio: number
+  rentabilidad: number
+}): number {
+  if (p.precioCosto && p.precioCosto > 0) return p.precioCosto
+  const precio = p.precioSinIva ?? p.precio
+  const markup = 1 + p.rentabilidad / 100
+  return markup > 0 ? round2(precio / markup) : 0
+}
+
+/** Precio de lista SIN IVA de un producto. Sin el dato cargado se cae al precio a secas. */
+export const precioNetoDe = (p: { precioSinIva?: number; precio: number }): number =>
+  p.precioSinIva ?? p.precio
+
+/**
+ * Rentabilidad recalculada a partir de la BASE del maestro, para los flujos que no traen el costo:
+ * la venta sobre un presupuesto o una proforma y la entrega ANTERIOR leen el margen espejado, no el
+ * "Costo Final".
+ *
+ * El costo se cancela solo. Con `precio = costo × (1 + base/100)` y un descuento `d` sobre el
+ * precio, la rentabilidad del precio ya descontado es:
+ *
+ *   (1 + base) × (1 − d) − 1
+ *
+ * Da EXACTAMENTE lo mismo que `rentabilidadDe(precio, costo)`; es la misma cuenta sin los importes.
+ */
+export function rentabilidadDeMarkup(basePct: number, descuentoPct = 0): number {
+  const d = Math.min(Math.max(descuentoPct, 0), 100) / 100
+  const base = 1 + (Number.isFinite(basePct) ? basePct : 0) / 100
+  if (base <= 0) return 0
+  return round2((base * (1 - d) - 1) * 100)
+}
+
+/** Rentabilidad BASE del producto de la línea: sin ningún descuento, sobre su precio de lista. */
+export const rentabilidadBaseLinea = (l: LineaPresupuesto): number =>
+  rentabilidadDe(precioNetoDe(l.producto), costoDe(l.producto))
+
+/** La rentabilidad de la línea, con su descuento manual aplicado. */
 export const rentabilidadLinea = (l: LineaPresupuesto): number =>
-  rentabilidadEfectiva(l.producto.rentabilidad, l.descuento)
+  rentabilidadConDescuento(precioNetoDe(l.producto), costoDe(l.producto), l.descuento)
+
+/**
+ * Rentabilidad FINAL de la línea: la ganancia sobre el precio que efectivamente se cobra, o sea con
+ * los DOS descuentos ya aplicados (el manual y el de forma de pago, compuestos en cascada).
+ *
+ * Con la rentabilidad forzada aplicada es estrictamente el % forzado: ahí el precio se fijó para
+ * dar ese número, así que reemplaza al cálculo.
+ */
+export const rentabilidadFinalLinea = (l: LineaPresupuesto, descFormaPago = 0): number =>
+  l.rentabForzadaAplicada ??
+  rentabilidadConDescuento(
+    precioNetoDe(l.producto),
+    costoDe(l.producto),
+    descuentoCompuesto(l.descuento, descFormaPago),
+  )
 
 export const subtotalLinea = (l: LineaPresupuesto): number =>
   round2(l.producto.precio * l.cantidad)
@@ -104,8 +177,8 @@ export function resumenPresupuesto(
      total del documento es exactamente la suma de la columna Subtotal. */
   const totalCon = (l: LineaPresupuesto) =>
     netoLinea(l.producto.precio, l.cantidad, l.descuento, descFormaPago)
-  const rentCon = (l: LineaPresupuesto) =>
-    rentabilidadEfectiva(l.producto.rentabilidad, descuentoCompuesto(l.descuento, descFormaPago))
+  // La rentabilidad forzada, si está aplicada, reemplaza la final de la línea (no la base).
+  const rentCon = (l: LineaPresupuesto) => rentabilidadFinalLinea(l, descFormaPago)
   // Los dos suman líneas ya redondeadas: es lo mismo que se ve producto por producto.
   const subtotal = round2(lineas.reduce((acc, l) => acc + subtotalLinea(l), 0))
   const neto = round2(lineas.reduce((acc, l) => acc + totalCon(l), 0))
@@ -331,7 +404,7 @@ export function resumenVenta(
      defecto). El total se suma al neto para el importe con impuestos. */
   const iva = round2(items.reduce((acc, it) => acc + ivaLinea(importeItem(it), it.iva ?? 21), 0))
   const rentPonderada = items.reduce(
-    (acc, it) => acc + rentabilidadEfectiva(it.rent, descTotal(it)) * importeItem(it),
+    (acc, it) => acc + rentabilidadDeMarkup(it.rent, descTotal(it)) * importeItem(it),
     0,
   )
 
@@ -485,7 +558,7 @@ export function resumenFactura(
   /* Rentabilidad general: cada línea aporta la que le queda DESPUÉS de bonificar y pesa por su
      importe ya bonificado, igual que en el presupuesto y en la venta. */
   const rentPonderada = items.reduce(
-    (acc, it) => acc + rentabilidadEfectiva(it.rent, descuentoCompuesto(0, descFormaPago)) * netoDe(it),
+    (acc, it) => acc + rentabilidadDeMarkup(it.rent, descuentoCompuesto(0, descFormaPago)) * netoDe(it),
     0,
   )
 

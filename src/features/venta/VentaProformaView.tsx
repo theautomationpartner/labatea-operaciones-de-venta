@@ -4,7 +4,7 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import { resumenVenta, ventaItemUid } from '@/lib/selectors'
 import { getProformasCliente, type ProformaVigente } from '@/services/monday'
 import { hayDocumentoEmitido, type SeleccionVenta } from '@/state/appState'
@@ -125,10 +125,10 @@ export function VentaProformaView() {
 
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={1} />
+      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={indiceDePaso('venta-proforma', operacion, tipoVenta, tipoEntrega)} />
 
       <PasoTitulo
-        numero={2}
+        numero={indiceDePaso('venta-proforma', operacion, tipoVenta, tipoEntrega) + 1}
         titulo="Cargar productos"
         descripcion="Elegí una proforma del cliente: entran todos sus productos, sin edición. La selección es exclusiva (una proforma a la vez)."
       />

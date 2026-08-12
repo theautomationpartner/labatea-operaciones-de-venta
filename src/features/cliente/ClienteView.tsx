@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { clienteBloqueado, MENSAJE_CLIENTE_BLOQUEADO } from '@/lib/credito'
-import { pasoDeProductos, pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasoDeProductos, pasosDe } from '@/lib/pasos'
 import { faltantesCliente } from '@/lib/validaciones'
 import { useApp, useDispatch } from '@/state/hooks'
 import { BuscarCliente, type BusquedaEstado } from './BuscarCliente'
@@ -111,13 +111,13 @@ export function ClienteView() {
       {/* ZONA 1 · contexto de la operación y navegación, siempre a la vista. */}
       <PasoHeader
         pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        actual={0}
+        actual={indiceDePaso('cliente', operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
       />
 
       {/* ZONA 2 · el trabajo del paso: buscar y validar al cliente. */}
       <div className="paso-body">
         <PasoTitulo
-          numero={1}
+          numero={indiceDePaso('cliente', operacion, tipoVenta, tipoEntrega, remito.tipoEmision) + 1}
           titulo="Seleccionar cliente"
           descripcion={SUBTITULO_PASO[operacion ?? 'PRESUPUESTAR']}
         />

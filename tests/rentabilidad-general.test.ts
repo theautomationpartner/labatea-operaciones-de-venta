@@ -6,9 +6,9 @@
  * Se corre con esbuild + node (`npm run test:rentabilidad-general`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { pctDec } from '@/lib/format'
+import { pctDec, round2 } from '@/lib/format'
 import {
-  rentabilidadEfectiva,
+  rentabilidadDeMarkup,
   resumenFactura,
   resumenPresupuesto,
   resumenVenta,
@@ -24,21 +24,29 @@ const linea = (precio: number, rent: number, cantidad = 1, descuento = 0): Linea
 // ---------- PRESUPUESTO / VENTA DIRECTA ----------
 /* Dos productos con rentabilidades distintas y pesos distintos: el promedio ponderado cae entre
    medio y NO es un entero. */
+/* Los márgenes del maestro (40 y 25) son MARKUP sobre el costo: rinden 28,57% y 20%. Ponderados
+   por su importe (10.000 y 30.000) dan el promedio de abajo, que no es entero. */
+const ESPERADO_MIXTO = round2(
+  (rentabilidadDeMarkup(40) * 10_000 + rentabilidadDeMarkup(25) * 30_000) / 40_000,
+)
 const mixto = [linea(10_000, 40, 1), linea(30_000, 25, 1)]
 const rPresu = resumenPresupuesto(mixto, false).rentabilidad
 assert.ok(!Number.isInteger(rPresu), 'el caso de prueba tiene que dar decimales')
-assert.equal(rPresu, 28.75, '40% y 25% ponderados 1:3 → 28,75%')
-assert.equal(pctDec(rPresu), '28,75%', 'se muestra con sus decimales, no redondeado a 29%')
+assert.equal(rPresu, ESPERADO_MIXTO, 'el ponderado por importe no coincide')
+assert.equal(pctDec(rPresu), pctDec(ESPERADO_MIXTO), 'se muestra con sus decimales, no redondeado')
 
 // El descuento la baja y tampoco deja un entero.
 const rConDto = resumenPresupuesto([linea(10_000, 40, 1, 6)], false).rentabilidad
-assert.equal(rConDto, 36.17, '40% con 6% de descuento → 36,17%')
-assert.equal(pctDec(rConDto), '36,17%', 'antes se mostraba 36%')
-// Coincide con la fórmula por línea, que ya trabajaba con decimales.
-assert.equal(rConDto, Math.round(rentabilidadEfectiva(40, 6) * 100) / 100, 'misma fórmula')
+assert.equal(rConDto, rentabilidadDeMarkup(40, 6), 'misma fórmula que la línea')
+assert.ok(!Number.isInteger(rConDto), 'con descuento tampoco queda un entero')
+assert.equal(pctDec(rConDto), pctDec(rentabilidadDeMarkup(40, 6)), 'se muestra con sus decimales')
 
-// Un solo producto sin descuento sí da entero: no se le agregan decimales de más.
-assert.equal(pctDec(resumenPresupuesto([linea(10_000, 40)], false).rentabilidad), '40%')
+// Un solo producto sin descuento: la rentabilidad de su markup, tal cual.
+assert.equal(
+  resumenPresupuesto([linea(10_000, 40)], false).rentabilidad,
+  rentabilidadDeMarkup(40),
+  'un solo producto rinde exactamente lo suyo',
+)
 // Sin líneas, cero.
 assert.equal(resumenPresupuesto([], false).rentabilidad, 0, 'sin productos, 0')
 
@@ -47,12 +55,12 @@ const item = (precio: number, rent: number, aVender = 1, desc = 0): VentaItem =>
   ({ uid: `u${precio}`, precio, aVender, desc, rent, iva: 21 }) as VentaItem
 
 const rVenta = resumenVenta([item(10_000, 40), item(30_000, 25)], null, 'CON PRESUPUESTO PREVIO')
-assert.equal(rVenta.rentabilidad, 28.75, 'el resumen de la venta también pondera con decimales')
+assert.equal(rVenta.rentabilidad, ESPERADO_MIXTO, 'la venta pondera igual que el presupuesto')
 assert.ok(!Number.isInteger(rVenta.rentabilidad), 'ya NO se redondea a entero en el origen')
 assert.equal(
   resumenVenta([item(10_000, 40, 1, 6)], null, 'CON PRESUPUESTO PREVIO').rentabilidad,
-  36.17,
-  'con descuento de línea, 36,17%',
+  rentabilidadDeMarkup(40, 6),
+  'con descuento de línea, la misma fórmula',
 )
 
 // ---------- VENTA CON ENTREGA ANTERIOR (lo remitido a facturar) ----------
@@ -61,8 +69,8 @@ const fact = (precio: number, rent: number, aFacturar = 1): FacturaItem =>
 
 assert.equal(
   resumenFactura([fact(10_000, 40), fact(30_000, 25)], null, 0).rentabilidad,
-  28.75,
-  'el resumen de la factura también conserva los decimales',
+  ESPERADO_MIXTO,
+  'el resumen de la factura pondera igual que los otros dos',
 )
 
 console.log('OK · la rentabilidad general conserva sus decimales en presupuesto y venta')

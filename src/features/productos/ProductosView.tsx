@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { pasosDe } from '@/lib/pasos'
-import { puedeEditarPrecio } from '@/lib/permisos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
+import { esAdministrador, puedeEditarPrecio } from '@/lib/permisos'
 import { clienteLlevaIva, productoConPrecio } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import {
   comisionLineas,
   impactoCredito,
+  rentabilidadFinalLinea,
   resumenPresupuesto,
   resumenPresupuestoBimoneda,
 } from '@/lib/selectors'
@@ -18,6 +19,7 @@ import { BuscadorProducto } from './BuscadorProducto'
 import { CargaLinea } from './CargaLinea'
 import { FiltrosProductos } from './FiltrosProductos'
 import { FormaPagoSelect } from './FormaPagoSelect'
+import { RentabForzada } from './RentabForzada'
 import { ResumenBox } from './ResumenBox'
 import { TablaProductos, type FilaProducto } from './TablaProductos'
 import { useCotizacionProducto } from './useCotizacionProducto'
@@ -57,6 +59,13 @@ export function ProductosView() {
   )
 
   const esVenta = operacion === 'VENTA'
+  /* La Rentabilidad Forzada es EXCLUSIVA del rol ADMINISTRADOR: un vendedor no la ve ni puede
+     accederla. Además se habilita sólo en PRESUPUESTO y en la VENTA DIRECTA, salvo cuando la entrega
+     es ANTERIOR (la mercadería ya salió por remito y sus precios no se pisan acá). */
+  const mostrarRentabForzada =
+    esAdministrador(state.usuarioActual) &&
+    (operacion === 'PRESUPUESTAR' ||
+      (esVenta && tipoVenta === 'DIRECTA' && tipoEntrega !== 'ANTERIOR'))
   /* Descuento por pronto pago de la forma de pago elegida (sólo en la venta). Se compone con el
      descuento manual de cada línea en la tabla y en el resumen. */
   const descFormaPago = esVenta ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
@@ -98,8 +107,15 @@ export function ProductosView() {
         descuento: l.descuento,
         rentabilidad: l.producto.rentabilidad,
         producto: l.producto,
+        // Nota de Crédito x Comisión por unidad (rentabilidad forzada), para el "Detalle".
+        notaCredito: l.montoDifNotaDeCreditoComision,
+        // % forzado aplicado: es la rentabilidad FINAL de la línea (la base no se toca).
+        rentabForzada: l.rentabForzadaAplicada,
+        /* FINAL: el precio vigente —con el override del administrador y los dos descuentos— contra
+           el costo del producto. Mismo selector que alimenta la rentabilidad general del resumen. */
+        rentabFinal: rentabilidadFinalLinea(l, descFormaPago),
       })),
-    [lineas],
+    [lineas, descFormaPago],
   )
 
   if (!cliente) return null
@@ -144,11 +160,11 @@ export function ProductosView() {
     <section className="view productos-v2 paso-layout">
       <PasoHeader
         pasos={pasosDe(operacion, tipoVenta, tipoEntrega)}
-        actual={1}
+        actual={indiceDePaso('productos', operacion, tipoVenta, tipoEntrega)}
       />
 
       <PasoTitulo
-        numero={2}
+        numero={indiceDePaso('productos', operacion, tipoVenta, tipoEntrega) + 1}
         titulo="Seleccionar productos"
         descripcion={`Buscá y filtrá para encontrar los productos que formarán parte ${
           esVenta ? 'de la venta' : 'del presupuesto'
@@ -178,6 +194,8 @@ export function ProductosView() {
             />
             <FiltrosProductos />
           </div>
+          {/* Rentabilidad Forzada: debajo de los filtros del buscador (PRESUPUESTO / VENTA DIRECTA). */}
+          {mostrarRentabForzada && <RentabForzada bloqueado={bloqueadoPorEmision} />}
           <CargaLinea
             key={seleccionado?.codigo ?? 'vacio'}
             producto={seleccionado}

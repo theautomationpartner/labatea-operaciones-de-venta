@@ -5,7 +5,6 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
   SIN_DESCUENTOS_PAGO,
   balancePagos,
-  chequeBloqueado,
   cobroSimultaneoOperacion,
   descuentoDeFormaPago,
   diferenciaCobro,
@@ -13,7 +12,7 @@ import {
   resumenCobro,
   tipoTarjetaDe,
 } from '@/lib/cobros'
-import { pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
 import { totalVentaOperacion } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
@@ -199,11 +198,11 @@ export function CobroView() {
   return (
     <section className="view cobro-v2 paso-layout">
       {/* ZONA 1 · mismo encabezado que el resto de las etapas. */}
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={2} />
+      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega)} />
 
       <div className="paso-body">
         <PasoTitulo
-          numero={3}
+          numero={indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega) + 1}
           titulo="Cobro"
           descripcion={
             formaPago === 'CUENTA CORRIENTE'
@@ -286,24 +285,30 @@ export function CobroView() {
               <h3 className="cobro-card-title">Registrar cobro</h3>
               <p className="cobro-card-desc">Especificar cómo pagó el cliente</p>
 
-              {/* El CRM del cliente puede vedar el cheque en las ventas de CONTADO. */}
-              <FormularioCobro
-                chequeBloqueado={chequeBloqueado(cliente, formaPago)}
-                bloqueado={bloqueado}
-              />
+              {/* El cliente viaja entero: su CUIT y su "Recibimos CHEQUE" validan cada cheque. */}
+              <FormularioCobro cliente={cliente} bloqueado={bloqueado} />
 
               <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
               <TablaMovimientos balances={balances} bloqueado={bloqueado} />
 
               {/* Sin botón "Confirmar cobro": la diferencia se valida al Continuar. Acá sólo se avisa
                   en vivo si el total cobrado todavía no iguala el de la venta (falta o se cobró de más). */}
-              {bloqueoMsg && (
-                <div className="cobro-card-acts">
-                  <span className="cobro-bloqueo-inline">
-                    <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
-                  </span>
-                </div>
-              )}
+{/* El renglón del aviso va SIEMPRE montado, con o sin mensaje: su alto está reservado por
+                  CSS, así que completar el cobro hace desaparecer el texto sin que la card pegue un
+                  salto. Montarlo condicionalmente le sacaba ~65px de golpe (el renglón más su
+                  separación con la tabla).
+                  Al estar siempre presente puede ser una región viva de verdad: el lector de
+                  pantalla anuncia el aviso cuando aparece, cosa que con el montaje condicional no
+                  pasaba. */}
+              <div className="cobro-card-acts">
+                <span className="cobro-bloqueo-inline" role="status" aria-live="polite">
+                  {bloqueoMsg && (
+                    <>
+                      <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
+                    </>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
         )}

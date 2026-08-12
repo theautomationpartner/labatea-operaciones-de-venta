@@ -5,7 +5,7 @@ import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { addDays } from '@/lib/dates'
-import { PASOS_PRESUPUESTO } from '@/lib/pasos'
+import { PASOS_PRESUPUESTO, indiceDePaso } from '@/lib/pasos'
 import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
 import {
@@ -34,6 +34,9 @@ export function EmisionView() {
     moneda,
     tasaCambio,
     documentoEmitido,
+    operacion,
+    tipoVenta,
+    tipoEntrega,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
@@ -153,10 +156,10 @@ export function EmisionView() {
 
   return (
     <section className="view emision-v2 paso-layout">
-      <PasoHeader pasos={PASOS_PRESUPUESTO} actual={2} />
+      <PasoHeader pasos={PASOS_PRESUPUESTO} actual={indiceDePaso('emision', operacion, tipoVenta, tipoEntrega)} />
 
       <PasoTitulo
-        numero={3}
+        numero={indiceDePaso('emision', operacion, tipoVenta, tipoEntrega) + 1}
         titulo="Emitir y enviar presupuesto"
         descripcion="Revisá el resumen, generá el PDF y mandáselo a los contactos del cliente."
       />

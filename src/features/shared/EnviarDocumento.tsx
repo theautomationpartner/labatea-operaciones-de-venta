@@ -3,24 +3,8 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ContactosPicker } from '@/features/shared/ContactosPicker'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { faltaParaMedio, sinViaDeEnvio } from '@/lib/validaciones'
-import {
-  asignarDestinatarios,
-  asignarDestinatariosFactura,
-  asignarDestinatariosRemito,
-  comprobanteFacturaGenerado,
-  dispararEnvio,
-  dispararEnvioFactura,
-  dispararEnvioRemito,
-  enviarProforma,
-  ENVIO_ESTADO,
-  ENVIO_FACTURA_ESTADO,
-  getContactosCliente,
-  getPresupuestoPdf,
-  getRemitoPdf,
-  seguirEnvio,
-  seguirEnvioFactura,
-  seguirEnvioRemito,
-} from '@/services/monday'
+import { comprobanteEnviable } from '@/features/shared/comprobantesEnviables'
+import { getContactosCliente } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { Contacto, LogEntry, MedioEnvio } from '@/types'
 
@@ -37,7 +21,11 @@ const ICONO_MEDIO: Record<MedioEnvio, string> = {
 }
 
 interface EnviarDocumentoProps {
-  /** 'presupuesto' | 'factura' | 'remito': arma los textos del bloque y del log. */
+  /**
+   * Clave del comprobante en `COMPROBANTES_ENVIABLES` ('presupuesto', 'factura', 'remito',
+   * 'proforma'). De ahí sale TODO lo que distingue a un comprobante de otro: de qué ítem se
+   * despacha, si ya se emitió, si el crédito lo frena y cómo se envía.
+   */
   documento: string
   numero: string
   /** Se dispara cuando el envío se completó bien: habilita "Finalizar Operación" en la vista. */
@@ -66,35 +54,22 @@ function construirLog(contactos: Contacto[], documento: string, numero: string):
 
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
-  const {
-    medioEnvio,
-    contactos,
-    cliente,
-    presupuestoId,
-    ventaId,
-    proformaId,
-    remito,
-    documentoEnviado,
-    documentoEmitido,
-    factura,
-  } = useApp()
+  const state = useApp()
+  const { medioEnvio, contactos, cliente, documentoEnviado } = state
   const dispatch = useDispatch()
-  const esFactura = documento === 'factura'
-  const articulo = documento === 'factura' || documento === 'proforma' ? 'la' : 'el'
-  /* ¿El comprobante ya fue emitido? De ello depende poder enviarlo (MÓDULO 1). La bandera cambia
-     según el documento: factura → hay comprobantes escritos; proforma → hay id de proforma; el resto
-     (presupuesto y remito) → la bandera global de emisión. */
-  const emitido =
-    documento === 'factura'
-      ? factura.comprobantes.length > 0
-      : documento === 'proforma'
-        ? Boolean(proformaId)
-        : documentoEmitido
+  /* El comprobante a enviar. Es lo ÚNICO que sabe de las diferencias entre uno y otro: el
+     componente sólo le pregunta. */
+  const comprobante = comprobanteEnviable(documento)
+  const articulo = comprobante.articulo
+  // ¿Ya fue emitido? De eso depende poder enviarlo.
+  const emitido = comprobante.emitido(state)
   // Aviso al intentar enviar sin haber emitido el comprobante todavía.
   const [avisoNoEmitido, setAvisoNoEmitido] = useState(false)
   /* El envío no consume línea nueva: el bloqueo sólo mira el estado del cliente, no un importe
-     (por eso va con cero). Y el PRESUPUESTO no frena por crédito: se envía siempre. */
-  const bloqueo = useBloqueoCredito(0, { bloqueante: documento !== 'presupuesto' })
+     (por eso va con cero). Cada comprobante decide si el crédito lo frena. */
+  const bloqueo = useBloqueoCredito(0, { bloqueante: comprobante.frenaPorCredito })
+  /* Con qué texto el contacto declara que acepta este comprobante en su "Para Enviar". */
+  const etiquetaContacto = comprobante.etiquetaContacto ?? comprobante.nombre
   // Estado del envío: gobierna íntegramente el botón (idle / loading / success / error).
   const [estadoEnvio, setEstadoEnvio] = useState<EstadoEnvio>('idle')
   // Progreso que reporta la columna de estado en Monday: es el callback de las funciones `seguir*`.
@@ -140,7 +115,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     setCargando(true)
     /* La consulta está CACHEADA por cliente y documento: al volver a esta etapa con el stepper
        resuelve al instante y no se le pega de nuevo a Monday. */
-    getContactosCliente(cliente.id, documento)
+    getContactosCliente(cliente.id, etiquetaContacto)
       .then((cs) => {
         if (!vivo) return
         setSinContactos(cs.length === 0)
@@ -165,7 +140,7 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     return () => {
       vivo = false
     }
-  }, [cliente, documento, dispatch])
+  }, [cliente, etiquetaContacto, dispatch])
 
   /** Item de Monday a enviar según el documento, y contactos como ids numéricos. */
   const contactoItemIds = () =>
@@ -179,8 +154,8 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         {
           id: 'err-doc',
           tipo: 'err',
-          titulo: `Todavía no hay ${documento} generada`,
-          detalle: `El PDF de la ${documento} aún no figura en Monday. Esperá a que termine de generarse y reintentá.`,
+          titulo: `Todavía no hay ${comprobante.nombre} generado${comprobante.articulo === 'la' ? 'a' : ''}`,
+          detalle: `El PDF ${comprobante.articulo === 'la' ? 'de la' : 'del'} ${comprobante.nombre} aún no figura en Monday. Esperá a que termine de generarse y reintentá.`,
         },
       ],
     })
@@ -202,61 +177,32 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
     setEstadoMonday('')
+    const itemId = comprobante.itemId(state)
+    /* Sin ítem en el tablero no hay de dónde despachar. `emitido` ya lo cubre en el caso normal;
+       esto es el resguardo por si las dos señales se desincronizan. */
+    if (!itemId) {
+      avisarSinDocumento()
+      return
+    }
     try {
-      /* Antes de enviar cualquier documento se valida que el PDF EXISTA en la columna del
-         tablero que corresponde. Sin documento generado no se dispara el envío. */
-      if (esFactura && ventaId) {
-        // Factura: el PDF vive en el mirror del ítem de la venta; el envío se dispara ahí.
-        if (!(await comprobanteFacturaGenerado(ventaId))) {
-          avisarSinDocumento()
-          return
-        }
-        await asignarDestinatariosFactura(ventaId, contactoItemIds(), medioEnvio)
-        await dispararEnvioFactura(ventaId)
-        const final = await seguirEnvioFactura(ventaId, setEstadoMonday)
-        if (final === ENVIO_FACTURA_ESTADO.error) {
-          fallar(`enviar ${articulo} ${documento}`)
-          return
-        }
-      } else if (documento === 'presupuesto' && presupuestoId) {
-        // Presupuesto: el PDF vive en la columna file del propio ítem (file_mkse56g9).
-        if (!(await getPresupuestoPdf(presupuestoId))) {
-          avisarSinDocumento()
-          return
-        }
-        // 1) Destinatarios y medio en el ítem; 2) el estado dispara el envío.
-        await asignarDestinatarios(presupuestoId, contactoItemIds(), medioEnvio)
-        await dispararEnvio(presupuestoId)
-        // 3) Se sigue la columna de estado hasta que la automatización la cierra.
-        const final = await seguirEnvio(presupuestoId, setEstadoMonday)
-        if (final === ENVIO_ESTADO.error) {
-          fallar(`enviar ${articulo} ${documento}`)
-          return
-        }
-      } else if (documento === 'remito' && remito.remitoId) {
-        // Remito: el PDF vive en la columna file del propio ítem (file_mkwbmr11).
-        if (!(await getRemitoPdf(remito.remitoId))) {
-          avisarSinDocumento()
-          return
-        }
-        // Ventas de origen de la mercadería remitada: se aseguran en el link del remito.
-        const ventaIds = Array.from(
-          new Set(remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
-        )
-        // 1) Contactos, medio y ventas en el ítem; 2) el estado dispara el envío.
-        await asignarDestinatariosRemito(remito.remitoId, contactoItemIds(), medioEnvio, ventaIds)
-        await dispararEnvioRemito(remito.remitoId)
-        // 3) Se sigue la columna de estado hasta que la automatización la cierra.
-        const final = await seguirEnvioRemito(remito.remitoId, setEstadoMonday)
-        if (/error/i.test(final)) {
-          fallar(`enviar ${articulo} ${documento}`)
-          return
-        }
-      } else if (documento === 'proforma' && proformaId) {
-        // Proforma: se despacha desde el ítem de la proforma (contactos + medio + estado "Enviar").
-        await enviarProforma(proformaId, contactoItemIds(), medioEnvio)
+      const resultado = await comprobante.enviar({
+        state,
+        itemId,
+        contactoIds: contactoItemIds(),
+        medio: medioEnvio,
+        onProgreso: setEstadoMonday,
+      })
+      // El PDF todavía no se generó: no es un fallo, hay que esperar y reintentar.
+      if (resultado.estado === 'sin-documento') {
+        avisarSinDocumento()
+        return
       }
-      dispatch({ type: 'setLog', entries: construirLog(contactos, documento, numero) })
+      // El tablero reportó error en el envío (destinatarios, medio, la automatización).
+      if (resultado.estado === 'error-envio') {
+        fallar(`enviar ${articulo} ${comprobante.nombre}`)
+        return
+      }
+      dispatch({ type: 'setLog', entries: construirLog(contactos, comprobante.nombre, numero) })
       // Bandera GLOBAL de éxito: persiste el envío para que el botón quede bloqueado y en verde
       // aunque el usuario navegue con el stepper y vuelva a esta etapa.
       dispatch({ type: 'setDocumentoEnviado', value: true })
@@ -270,11 +216,11 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
             id: 'err-envio',
             tipo: 'err',
             titulo: 'No se pudo enviar',
-            detalle: `Falló el envío de la ${documento} en Monday. Reintentá.`,
+            detalle: `Falló el envío ${articulo === 'la' ? 'de la' : 'del'} ${comprobante.nombre} en Monday. Reintentá.`,
           },
         ],
       })
-      fallar(`enviar ${articulo} ${documento}`)
+      fallar(`enviar ${articulo} ${comprobante.nombre}`)
     }
   }
 

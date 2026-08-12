@@ -107,6 +107,12 @@ export const CONFIG_TIPO_VENC_FACTURA_INDEX = 7
 export const CONFIG_TIPO_COMISION_INDEX = 0
 
 /**
+ * Índice de "Rentab Forzada" en "Tipo de Config": el ítem cuyo "Valor %" (numeric_mm4e5cta) define el
+ * porcentaje por defecto de rentabilidad forzada que se precarga en la selección de productos.
+ */
+export const CONFIG_TIPO_RENTAB_FORZADA_INDEX = 9
+
+/**
  * "Tipo de Gestion" (color_mm4ewj21) del ítem de comisión → tipo de venta al que aplica su tasa.
  * Se filtra por índice, que aguanta que le reescriban el texto a la etiqueta.
  */
@@ -246,6 +252,19 @@ export const SITUACION_CLIENTE_INDEX = {
   bloqueado: 2,
 } as const
 
+/**
+ * Índice de "Activo" en "✋️Estado de Persona" (color_mm588vd6). Se compara contra ESTE índice, no
+ * contra el texto: una persona sólo es operable si está explícitamente activa.
+ *
+ * Antes la regla estaba escrita al revés —"es Inactivo, si no, Activo"—, así que cualquier
+ * etiqueta nueva del board ("Suspendido", "Dado de baja") habría entrado como activa sin que
+ * nadie lo notara.
+ */
+export const CLIENTE_ACTIVO_INDEX = 1
+
+/** Índice de "Clientes" en "✋Categoria" (dropdown_mm54e5ag). La columna es multi-valor. */
+export const CATEGORIA_CLIENTE_INDEX = 1
+
 export const COL = {
   cliente: {
     categoria: 'dropdown_mm54e5ag', // multi-valor: se filtra por "contiene Cliente"
@@ -297,6 +316,11 @@ export const COL = {
     /** "🤖Código Sistema Prov": espeja el código del proveedor conectado. */
     proveedorCodigo: 'lookup_mm5fh97p',
     tipoMercaderia: 'color_mm48hm74',
+    /** "🤖Costo Final" (fórmula): precio de costo del producto. Se lee por `display_value`. */
+    precioCosto: 'formula_mm54qnz9',
+    /** "🤖Rentabilidad Forzada" (status): label "Con Rentab Forzada" habilita aplicarle al producto
+     *  la rentabilidad forzada (nota de crédito x comisión) en la selección de productos. */
+    rentabForzada: 'color_mm60m95h',
     /** "Moneda" del producto (status): "Dolares" / "Pesos". En dólares el precio se convierte a
      *  pesos con la cotización antes de cargarlo. */
     moneda: 'color_mm4kwdj6',
@@ -371,6 +395,10 @@ export const COL = {
     totalPesos: 'numeric_mm5w1sm5',
     /** "🤖TOTAL EN DOLARES $u": neto en dólares del presupuesto (columna numérica, se escribe al crear). */
     totalUsd: 'numeric_mm5wfyfe',
+    /** "🤖TOTAL Nota de Credito x Comision $": suma de la Nota de Crédito x Comisión de cada producto. */
+    notaCreditoComision: 'numeric_mm604gas',
+    /** "✋Rentabilidad Forzada %": el porcentaje de rentabilidad forzada aplicado en la operación. */
+    rentabForzadaPct: 'numeric_mm6319pp',
   },
   // Columnas del subelemento (un producto de la lista):
   presupuestoSub: {
@@ -403,6 +431,12 @@ export const COL = {
     /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %desc/100), en la
      *  moneda del producto. A diferencia de "Importe Bonif.", sin descuento vale 0 (no el precio). */
     descProdMonto: 'numeric_mm5x3wee',
+    /** "🤖Nota de Credito x Comision": Costo Original − Nuevo Precio de Costo, por la rentabilidad forzada. */
+    notaCreditoComision: 'numeric_mm63sbtd',
+    /** "🤖Costo $": costo del producto en PESOS (original, o el nuevo si se forzó la rentabilidad). */
+    costoPesos: 'numeric_mm63w7c5',
+    /** "🤖Costo U$": costo del producto en DÓLARES (original, o el nuevo si se forzó la rentabilidad). */
+    costoUsd: 'numeric_mm63j2m7',
     /** "🤖 Cant Vendida": unidades del producto ya llevadas a una venta. */
     cantVendida: 'numeric_mm54546t',
     /** "🤖Estado de Uso": 0% / Parcialmente / 100% Vendido. */
@@ -508,13 +542,16 @@ export const COL = {
     cliente: 'board_relation_mkwb7fmp',
     /** "🤖Tipo de Cobro" (status): "Simultaneo" o "Posterior". */
     tipoCobro: 'color_mm5yh0gs',
-    /** "📈Ventas": la venta que este recibo cobra. Va en los DOS tipos de cobro. */
-    venta: 'board_relation_mm4kwppn',
-    /** "💰Fact Vtas Pends de Cobro": la deuda que respalda el cobro. Sólo en el POSTERIOR. */
-    vtaPendiente: 'board_relation_mm58ycfw',
-    /** "🤖 TOTAL $ Vta": el total de la venta que se está cobrando. */
+    /*
+     * Las relaciones "📈Ventas" (board_relation_mm4kwppn) y "💰Fact Vtas Pends de Cobro"
+     * (board_relation_mm58ycfw) YA NO EXISTEN a nivel ítem: el board las bajó al subelemento
+     * ("📈Ventas" = board_relation_mm64xmwm, "💰Fact Cancelada" = board_relation_mm63pczd).
+     * Mandarlas en `column_values` hace que la API rechace la mutación entera, así que se
+     * quitaron del mapa y del payload.
+     */
+    /** "🤖 TOTAL $ Cancelado": el total de la venta que se está cancelando. */
     totalVenta: 'numeric_mm5xbjkm',
-    /** "🤖TOTAL $ Cobrado": lo efectivamente cobrado. */
+    /** "🤖TOTAL $ Recibido": lo efectivamente cobrado. */
     totalCobrado: 'numeric_mm5xbkj',
     /** "🤖TOTAL $ Diferencia": total de la venta − total cobrado. */
     diferencia: 'numeric_mm5xfznj',
@@ -522,12 +559,27 @@ export const COL = {
     pulseId: 'pulse_id_mkwb9111',
   },
   /* Un movimiento de pago del recibo (board 18421035599): hay uno por cada movimiento cargado,
-     sea el cobro SIMULTÁNEO o POSTERIOR (la venta con TARJETA es POSTERIOR y detalla sus cupones).
+     sea el cobro SIMULTÁNEO o POSTERIOR (la venta con TARJETA es SIMULTÁNEA y detalla ahí sus cupones).
      Cada medio de cobro completa su propio juego de columnas; las dos primeras son de todos. */
   cobroSub: {
-    /** "✋Caja": el medio de cobro. Es una columna status, con sus propias etiquetas. */
+    /**
+     * "✋Caja": qué es el subelemento. En los movimientos de pago lleva el medio de cobro; en los
+     * subelementos de factura cancelada lleva "Fact Cancelada" (ver `CAJA_INDEX`).
+     */
     formaPago: 'status',
-    importe: 'numeric_mm4e61yk',
+    /**
+     * "🤖Importe Cancelado $": SÓLO para el subelemento de factura cancelada. Es el total de la
+     * venta que se imputa al comprobante de "💰Fact Cancelada"; un movimiento de pago NO lo toca.
+     */
+    importeCancelado: 'numeric_mm4e61yk',
+    /** "🤖Importe Recibido $": lo que entra por ESE movimiento de pago. */
+    importeRecibido: 'numeric_mm63j1mv',
+    /**
+     * "💰Fact Cancelada": el comprobante que este subelemento cancela. La relación acepta
+     * "💰Fact Vtas Pends de Cobro" (18421035508) y "🧾Facturación" (18422405731); en el cobro
+     * SIMULTÁNEO va el ítem de facturación recién emitido.
+     */
+    factCancelada: 'board_relation_mm63pczd',
     /**
      * "🤖Banco de Acreditacion": la cuenta propia donde impacta el pago (ítem del board de config).
      * Es UNA sola columna para todos los medios: la usan tanto la transferencia (cuenta de destino)
@@ -553,18 +605,18 @@ export const COL = {
      * tarjetas —cada movimiento es un subelemento de un solo medio, así que nunca compiten—.
      */
     vencimiento: 'date_mm5y4zxa',
-    // TARJETA (débito y crédito)
-    nroTarjeta: 'text_mm5ybw7q',
-    titularTarjeta: 'text_mm5yr164',
+    /* TARJETA (débito y crédito). El recibo NO guarda el número del plástico ("🤖Nro Tarjeta",
+       text_mm5ybw7q) ni su titular ("🤖Titular", text_mm5yr164): son datos sensibles que la
+       operación no necesita, así que el formulario no los pide y el bulk no los manda. */
     /** "🤖Tipo Tarjeta" (dropdown): VISA, MASTERCARD o el tipo que cargue el usuario. */
     tipoTarjeta: 'dropdown_mm5rx800',
     /** "🤖Cupon" (file): el comprobante del cobro con tarjeta. */
     cupon: 'file_mm5yy4je',
     /** "🤖Numero Cupon" (texto): el número que imprime el posnet, cargado a mano. */
     nroCupon: 'text_mm5zs69e',
-    // Sólo TARJETA DE CRÉDITO
-    cuotas: 'numeric_mm5ydy8',
-    valorCuota: 'numeric_mm5yx0ec',
+    /* El recibo NO guarda el plan de cuotas del crédito: ni la cantidad ("🤖Cuotas",
+       numeric_mm5ydy8) ni el valor de cada una ("🤖Valor Cuota", numeric_mm5yx0ec). El cobro se
+       registra por su importe total, así que el formulario no las pide y el bulk no las manda. */
     pulseId: 'pulse_id_mkwbrvf5',
   },
   // Factura de venta pendiente de cobro (board 18421035508): la deuda del pago POSTERIOR.
@@ -574,6 +626,12 @@ export const COL = {
      * "💵Cta Cte Cliente" (board_relation_mkwbweqx) lo resuelve el tablero desde acá.
      */
     venta: 'board_relation_mm4d3nn0',
+    /** "🤖Personas": el cliente que queda debiendo (board de Personas, 18420688238). */
+    cliente: 'board_relation_mm5zaxck',
+    /** "🤖Fecha Emision": la fecha de emisión de la factura que dejó la deuda. */
+    fechaEmision: 'date_mm648d33',
+    /** "🤖Fecha Vto": cuándo vence esa factura. Es el plazo que el cliente tiene para pagarla. */
+    vencimiento: 'date_mm647vwr',
     /** "🤖Vta $": el importe total a cobrar que queda pendiente. */
     total: 'numeric_mkwbck5d',
     /** "🤖Estado": cuánto de esta factura ya se cobró. Nace pendiente al 100%. */
@@ -617,6 +675,10 @@ export const COL = {
     ivaTotal: 'numeric_mm5skvne',
     /** TOTAL de la venta = subtotal − descuento total + IVA total (neto bonificado + IVA). */
     total: 'numeric_mm5s9zx5',
+    /** "🤖TOTAL Nota de Credito x Comision $": suma de la Nota de Crédito x Comisión de cada producto. */
+    notaCreditoComision: 'numeric_mm60s7hh',
+    /** "🤖Rentab Forzada Aplicada": el porcentaje de rentabilidad forzada aplicado en la operación. */
+    rentabForzada: 'numeric_mm4exqdc',
     /** "🤖Importe Total $": total en pesos de la venta. Se envía como número. */
     importeTotalPesos: 'numeric_mm5qbwer',
     /** "🤖Estado de Entrega": cuánto de la venta ya se entregó (a nivel venta). */
@@ -661,6 +723,9 @@ export const COL = {
        informativas, distintas del Imp. Bonificado / Precio Bonif (que sí van en cascada). */
     /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %prod/100). */
     descProdMonto: 'numeric_mm5x74b0',
+    /** "🤖Nota de Credito x Comision": Costo Original − Nuevo Precio de Costo por la rentabilidad forzada.
+     *  Se escribe SIEMPRE (0 si no se forzó o el producto no la acepta). */
+    notaCreditoComision: 'numeric_mm63pmsr',
     /** "🤖Precio Unit C/Desc x Prod": precio unitario con el descuento por producto (precio − Desc $ x Prod). */
     precioConDescProd: 'numeric_mm5xfseb',
     /** "🤖Desc $ x Forma de Pago": monto del descuento por forma de pago por unidad (precio × %fp/100). */
@@ -978,6 +1043,9 @@ export const COL = {
     /** "Valor %": el porcentaje del ítem. En los medios de pago, su descuento; en las comisiones,
      *  la tasa que se le paga al vendedor. */
     valorPct: 'numeric_mm4e5cta',
+    /** "Rentab %": porcentaje por defecto de la rentabilidad forzada. Vive en su propia columna del
+     *  ítem "Rentab Forzada" (NO en "Valor %"). */
+    rentabForzadaPct: 'numeric_mm60s077',
     /** "Tipo de Gestion": distingue la comisión "Activa" de la "Pasiva". */
     tipoGestion: 'color_mm4ewj21',
     /** "Dias de Venc Fact Vta": a cuántos días de la emisión vence el pago de la factura. */
@@ -1035,6 +1103,15 @@ export const FORMA_PAGO_LABEL: Record<string, string> = {
   'Tarjeta de débito': 'Tarjeta de Débito',
   'Tarjeta de crédito': 'Tarjeta de Crédito',
 }
+
+/**
+ * Índices de "✋Caja" (`status`) en los subelementos del recibo. Los medios de cobro se mandan por
+ * etiqueta (`FORMA_PAGO_LABEL`); "Fact Cancelada" va por índice porque es una etiqueta de sistema
+ * que NO se puede crear al vuelo y su posición en el board (10) no coincide con la que se ve.
+ */
+export const CAJA_INDEX = {
+  factCancelada: 10,
+} as const
 
 /** Tipo de cobro de la app → etiqueta de "🤖Tipo de Cobro" (color_mm5yh0gs) del recibo. */
 export const TIPO_COBRO_LABEL: Record<'SIMULTANEO' | 'POSTERIOR', string> = {

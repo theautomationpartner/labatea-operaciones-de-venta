@@ -44,19 +44,28 @@ export function precioListaSinRedondear(
 /**
  * Producto con el precio unitario PISADO a mano (override del administrador, ver `lib/permisos`).
  *
- * El COSTO del producto no cambia porque se venda más barato: se conserva —costo = precio ×
- * (1 − rent/100)— y la rentabilidad se recalcula contra el precio nuevo, así el margen que se
- * muestra sigue siendo el real. Al conservarse el costo, pisar el precio dos veces da exactamente
- * lo mismo que pisarlo una sola vez con el valor final.
+ * La rentabilidad BASE (`rentabilidad`, el "Margen" del maestro) NO se toca: es el dato de
+ * referencia de dónde arrancaba el producto y tiene que seguir diciendo eso aunque se pise el
+ * precio. Lo que cambia es la rentabilidad FINAL, que no se guarda: se deriva del precio vigente
+ * contra el costo cada vez que se muestra (ver `rentabilidadFinalLinea`).
+ *
+ * El COSTO tampoco cambia porque se venda más barato. Si el producto no lo trajo del maestro, se
+ * despeja del precio y el margen ORIGINALES y queda fijado: si no, al recalcularlo después contra
+ * el precio ya pisado, el costo se movería con cada override.
  *
  * Un precio de 0 o negativo no es un precio: se devuelve el producto sin tocar.
  */
-export function productoConPrecio<T extends { precio: number; rentabilidad: number }>(
-  producto: T,
-  precio: number,
-): T {
+export function productoConPrecio<
+  T extends { precio: number; rentabilidad: number; precioSinIva?: number; precioCosto?: number },
+>(producto: T, precio: number): T {
   const nuevo = round2(precio)
-  if (!(nuevo > 0)) return producto
-  const costo = producto.precio * (1 - producto.rentabilidad / 100)
-  return { ...producto, precio: nuevo, rentabilidad: (1 - costo / nuevo) * 100 }
+  if (!(nuevo > 0) || !(producto.precio > 0)) return producto
+  const netoAnterior = producto.precioSinIva ?? producto.precio
+  const costo =
+    producto.precioCosto && producto.precioCosto > 0
+      ? producto.precioCosto
+      : round2(netoAnterior / (1 + producto.rentabilidad / 100))
+  // El precio SIN IVA acompaña al override en la misma proporción: la alícuota no cambió.
+  const netoNuevo = round2(netoAnterior * (nuevo / producto.precio))
+  return { ...producto, precio: nuevo, precioSinIva: netoNuevo, precioCosto: costo }
 }

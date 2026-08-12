@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { round2 } from '@/lib/format'
+import { esDolar } from '@/lib/moneda'
 import { topesDescuentoDe } from '@/lib/permisos'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import { DetalleDescuentos } from './DetalleDescuentos'
+import { FichaCostoForzada } from './FichaCostoForzada'
 import { ProveedorLinea, StockPanel } from './StockPanel'
 import type { FilaProducto } from './TablaProductos'
 
@@ -112,16 +115,32 @@ export function LineaDetalle({
   fmt,
   onDescuento,
 }: LineaDetalleProps) {
+  /* Rentabilidad forzada aplicada a la línea: el "Detalle" muestra el % forzado (la rentabilidad FINAL,
+     NO la base) y el Nuevo Precio de Costo (= precio de venta × (1 − %/100), el costo implícito del
+     margen forzado). El precio de venta y la rentabilidad base NO cambian con la forzada. */
+  const rentabForzada = fila.rentabForzada
+  const nuevoPrecioCosto =
+    rentabForzada != null ? round2(fila.precio * (1 - rentabForzada / 100)) : undefined
   return (
     /* Sin ficha de catálogo no hay bloque de stock: el desglose ocupa una sola columna en vez
        de dejar media fila vacía. */
     <div className={`lindet ${fila.producto ? '' : 'lindet--solo'}`}>
+      {/* Precio de Costo del maestro (y, con la rentabilidad forzada, el % y el Nuevo Precio de Costo). */}
+      <FichaCostoForzada
+        precioCosto={fila.producto?.precioCosto}
+        prefijo={esDolar(fila.producto?.moneda) ? 'U$' : '$'}
+        rentabForzada={rentabForzada}
+        nuevoPrecioCosto={nuevoPrecioCosto}
+        fmt={fmt}
+      />
+
       <DetalleDescuentos
         descFormaPago={descFormaPago}
         dtoPago={dtoPago}
         descuentoManual={fila.descuento}
         dtoPrecio={dtoPrecio}
         dtoTotal={dtoTotal}
+        notaCredito={fila.notaCredito}
         fmt={fmt}
         // En la tabla el % manual se edita acá mismo (en la carga de producto vive arriba).
         editorManual={

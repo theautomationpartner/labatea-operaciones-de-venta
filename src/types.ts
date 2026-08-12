@@ -161,6 +161,15 @@ export interface Producto {
    *  decimal del dólar, que al cambio son ~1,5 pesos). */
   precioBase?: number
   rentabilidad: number
+  /** "🤖Costo Final" del maestro (fórmula): precio de COSTO del producto, SIN IVA. Es la base de la
+   *  rentabilidad y del contraste con el "Nuevo Precio de Costo" de la rentabilidad forzada. */
+  precioCosto?: number
+  /**
+   * Precio de lista SIN IVA, en la misma moneda que `precio`. Es el que se compara contra el costo:
+   * `precio` puede venir con la alícuota sumada (cuando el cliente paga IVA) y medir la ganancia
+   * contra un costo neto la inflaría en esa alícuota.
+   */
+  precioSinIva?: number
   provCod: string
   provNombre: string
   /** ID del ítem del proveedor en el board de Personas. Agrupa la mercadería consignada. */
@@ -181,6 +190,9 @@ export interface Producto {
   /** Si el producto admite comisión ("✋️Comision" del maestro = "SI"). El PORCENTAJE no vive acá:
    *  es una tasa única por tipo de venta, configurada en el tablero del sistema. */
   comisionable?: boolean
+  /** "🤖Rentabilidad Forzada" del maestro = "Con Rentab Forzada": habilita aplicarle la rentabilidad
+   *  forzada (nota de crédito x comisión) en la selección de productos. */
+  conRentabForzada?: boolean
   /** Taxonomía del Maestro de Productos (columnas dropdown). Texto tal cual viene de Monday
    *  (puede traer varias etiquetas separadas por coma). Se usa para filtrar la búsqueda. */
   rubro?: string
@@ -217,6 +229,15 @@ export interface LineaPresupuesto {
   producto: Producto
   cantidad: number
   descuento: number
+  /** "Nota de Crédito x Comisión" por unidad = Costo Original − Nuevo Precio de Costo (con el Nuevo
+   *  Precio de Costo = Precio de Venta × (1 − %forzado/100)). Sólo lo tienen los productos "Con Rentab
+   *  Forzada" con el interruptor encendido; alimenta el feedback visual y las columnas de Monday. Sin
+   *  forzar (o sin Costo Original conocido) queda undefined. */
+  montoDifNotaDeCreditoComision?: number
+  /** Rentabilidad FORZADA aplicada a la línea (%). Pasa a ser la rentabilidad FINAL del producto; la
+   *  rentabilidad BASE (catálogo, junto al precio unitario y al costo) NO se toca. El precio de venta
+   *  tampoco cambia. undefined = interruptor apagado / producto no habilitado. */
+  rentabForzadaAplicada?: number
 }
 
 export type EstadoPresupuesto = 'En uso' | 'Vencido' | 'Completado'
@@ -409,6 +430,13 @@ export interface MovimientoPago {
    * columnas de relación del recibo ("Banco de Acreditación"); el nombre sólo sirve para mostrar.
    */
   cuentaPropiaId?: string | null
+  /**
+   * Retenciones (IVA, IIBB, GAN…): año del certificado y número del comprobante que lo respalda.
+   * Son de TODAS las retenciones, no de una en particular: el ramal se reconoce por el prefijo del
+   * medio de cobro (ver `esRetencion`), así que una retención nueva los pide sola.
+   */
+  anioRetencion?: string
+  nroComprobanteRetencion?: string
   /** Nombre del archivo de comprobante adjunto. Obligatorio en transferencia, retenciones y tarjeta. */
   comprobanteNombre?: string
   /**
@@ -417,14 +445,10 @@ export interface MovimientoPago {
    * persiste ni viaja en ningún payload JSON.
    */
   comprobanteArchivo?: File | null
-  /** Tarjeta (débito/crédito): banco emisor y tipo de tarjeta; las cuotas sólo aplican al crédito. */
+  /** Tarjeta (débito/crédito): banco emisor y tipo de tarjeta. */
   bancoTarjeta?: string
   tipoTarjeta?: TarjetaTipo | null
-  cuotas?: number
-  /** Tarjeta: los 16 dígitos del número, SIN los espacios del agrupado visual. */
-  numeroTarjeta?: string
-  /** Tarjeta: nombre del titular y vencimiento del plástico (dd/mm/aaaa). */
-  titularTarjeta?: string
+  /** Tarjeta: vencimiento del plástico (dd/mm/aaaa). */
   vencimientoTarjeta?: string
   /** Tarjeta: número de cupón que imprime el posnet. Es la referencia de la acreditación. */
   numeroCupon?: string
@@ -437,19 +461,15 @@ export interface MovimientoPago {
  */
 export type TipoPago = 'SIMULTANEO' | 'POSTERIOR'
 
+/**
+ * El cobro en curso. Sólo existe para la venta que se cobra EN EL ACTO: la venta a CUENTA
+ * CORRIENTE no carga movimientos —queda pendiente y su deuda se escribe al finalizar—.
+ */
 export interface CobroState {
-  /** Sólo en pago POSTERIOR: si el vendedor eligió registrar un pago ahora (SI/NO). */
-  registrar: boolean
   fecha: string
   movimientos: MovimientoPago[]
   /** Se confirma a mano; cualquier cambio en los movimientos lo vuelve a abrir. */
   confirmado: boolean
-  /** SIMULTÁNEO: ítem del recibo creado en el tablero de Cobros. */
-  cobroId: string | null
-  /** POSTERIOR: ítem de la factura pendiente de cobro (la deuda generada). */
-  deudaId: string | null
-  /** POSTERIOR: saldo que traía la cuenta corriente antes de este movimiento. */
-  saldoAnterior: number | null
 }
 
 /* ===== Emisión de la factura ===== */

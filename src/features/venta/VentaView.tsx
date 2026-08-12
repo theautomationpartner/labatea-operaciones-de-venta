@@ -10,7 +10,7 @@ import { descuentoDeFormaPago } from '@/lib/cobros'
 import { descuentoUnitario } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
   AVANCE_LABEL,
@@ -184,10 +184,10 @@ export function VentaView() {
 
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={1} />
+      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={indiceDePaso('venta', operacion, tipoVenta, tipoEntrega)} />
 
       <PasoTitulo
-        numero={2}
+        numero={indiceDePaso('venta', operacion, tipoVenta, tipoEntrega) + 1}
         titulo="Cargar productos"
         descripcion="Elegí los productos disponibles de los presupuestos vigentes y ajustá la cantidad a vender."
       />

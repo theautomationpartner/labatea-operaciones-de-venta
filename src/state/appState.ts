@@ -88,6 +88,15 @@ export interface AppState {
   diasVencFactura: number
   /** Tasas de comisión del vendedor ("Comision por Venta" del tablero de configuración). */
   comisiones: ComisionesVenta
+  /** Porcentaje POR DEFECTO de rentabilidad forzada (config "Rentab Forzada"): precarga el input de
+   *  la selección de productos. El usuario puede cambiarlo antes de activar. */
+  rentabForzadaPct: number
+  /** Rentabilidad Forzada ACTIVA: mientras está encendida, cada producto que la acepta ("Con Rentab
+   *  Forzada") recibe el descuento —los ya cargados y los que se agreguen después— hasta apagarla. */
+  rentabForzadaActiva: boolean
+  /** Porcentaje con el que se activó la rentabilidad forzada: es el que se aplica a los productos que
+   *  se agregan mientras está encendida. */
+  rentabForzadaPctActiva: number
   /** Filtros de taxonomía aplicados a la búsqueda de productos (Rubro/Subrubro/Categoría). */
   filtros: Filtro[]
   lineas: LineaPresupuesto[]
@@ -161,13 +170,9 @@ const remitoInicial: RemitoState = {
 }
 
 const cobroInicial: CobroState = {
-  registrar: false,
   fecha: hoy(),
   movimientos: [],
   confirmado: false,
-  cobroId: null,
-  deudaId: null,
-  saldoAnterior: null,
 }
 
 const entregaVentaInicial: EntregaVentaState = {
@@ -205,6 +210,9 @@ export const initialState: AppState = {
   diasVencFactura: DIAS_VENC_FACTURA_MOCK,
   // Sin la configuración leída, la comisión es 0: no se asume ninguna tasa.
   comisiones: { activa: 0, pasiva: 0 },
+  rentabForzadaPct: 0,
+  rentabForzadaActiva: false,
+  rentabForzadaPctActiva: 0,
   filtros: [],
   lineas: [],
   presupuestoId: null,
@@ -301,6 +309,8 @@ export type Action =
   | { type: 'setCantidadLinea'; id: string; cantidad: number }
   | { type: 'setDescuentoLinea'; id: string; descuento: number }
   | { type: 'setPrecioLinea'; id: string; precio: number }
+  | { type: 'setRentabForzada'; value: number }
+  | { type: 'toggleRentabForzada'; porcentaje: number }
   | { type: 'removeLinea'; id: string }
   | { type: 'setEnviar'; value: boolean }
   | { type: 'setMedioEnvio'; value: MedioEnvio }
@@ -316,11 +326,10 @@ export type Action =
   | { type: 'setConEnvio'; value: boolean }
   | { type: 'agregarFacturaSeleccion'; seleccion: SeleccionFactura[] }
   | { type: 'removeFacturaItem'; uid: string }
-  | { type: 'setRegistrarCobro'; value: boolean }
   | { type: 'agregarMovimientoPago'; movimiento: Omit<MovimientoPago, 'id'> }
   | { type: 'removeMovimientoPago'; id: string }
   | { type: 'setMovimientoImporte'; id: string; importe: number }
-  | { type: 'confirmarCobro'; cobroId?: string; deudaId?: string; saldoAnterior?: number }
+  | { type: 'confirmarCobro' }
   | { type: 'desconfirmarCobro' }
   | { type: 'setFactura'; patch: Partial<FacturaState> }
   | { type: 'registrarFactura' }
@@ -402,6 +411,33 @@ function pasoDelModo(
 ): Paso {
   if (paso === 'inicio' || paso === 'cliente') return paso
   return pasoDeProductos(operacion, tipoVenta, tipoEntrega)
+}
+
+/**
+ * Aplica la RENTABILIDAD FORZADA a una línea con el porcentaje dado: sólo si su producto la acepta
+ * ("Con Rentab Forzada"). El porcentaje pasa a ser la rentabilidad FINAL de la línea (se guarda en
+ * `rentabForzadaAplicada`); la rentabilidad BASE del producto (catálogo) y el PRECIO DE VENTA NO se
+ * tocan. La "Nota de Crédito x Comisión" por unidad = Costo Original − Nuevo Precio de Costo, con
+ * Nuevo Precio de Costo = Precio de Venta × (1 − %/100). Sin Costo Original conocido no hay monto.
+ */
+function aplicarRentabForzadaLinea(l: LineaPresupuesto, pct: number): LineaPresupuesto {
+  if (!l.producto.conRentabForzada) return l
+  const nuevoCosto = round2(l.producto.precio * (1 - pct / 100))
+  const monto =
+    l.producto.precioCosto != null ? round2(l.producto.precioCosto - nuevoCosto) : undefined
+  return {
+    ...l,
+    montoDifNotaDeCreditoComision: monto,
+    rentabForzadaAplicada: pct,
+  }
+}
+
+/** Revierte la rentabilidad forzada de una línea: limpia el % forzado y el monto. El producto (base
+ *  y precio) nunca se tocó, así que no hay nada que restaurar; las no forzadas quedan intactas. */
+function revertirRentabForzadaLinea(l: LineaPresupuesto): LineaPresupuesto {
+  if (l.rentabForzadaAplicada == null) return l
+  const { montoDifNotaDeCreditoComision: _m, rentabForzadaAplicada: _r, ...resto } = l
+  return resto
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -492,6 +528,9 @@ export function reducer(state: AppState, action: Action): AppState {
         documentoEmitido: false,
         documentoEnviado: false,
         lineas: [],
+        // Otro cliente arranca de cero: la rentabilidad forzada vuelve a estar apagada.
+        rentabForzadaActiva: false,
+        rentabForzadaPctActiva: 0,
         presupuestoId: null,
         // La venta creada pertenece al cliente anterior: no puede arrastrarse.
         ventaId: null,
@@ -582,6 +621,9 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'limpiarErrorMonday':
       return { ...state, errorMonday: null }
 
+    case 'setRentabForzada':
+      return { ...state, rentabForzadaPct: action.value }
+
     case 'setDiasVencFactura':
       return { ...state, diasVencFactura: action.value }
 
@@ -619,6 +661,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...initialState,
         diasVigencia: state.diasVigencia,
+        // El % por defecto de rentabilidad forzada es config del sistema: se conserva entre operaciones.
+        rentabForzadaPct: state.rentabForzadaPct,
         fechaEmision: state.fechaEmision,
         // Los vendedores, la sesión y la tasa de cambio ya se cargaron al iniciar: se conservan.
         vendedores: state.vendedores,
@@ -644,20 +688,25 @@ export function reducer(state: AppState, action: Action): AppState {
       }
 
     // Editar la lista invalida un borrador ya creado en Monday: se vuelve a crear al guardar/emitir.
-    case 'addLinea':
+    case 'addLinea': {
+      const nueva: LineaPresupuesto = {
+        id: nuevoId(),
+        producto: action.producto,
+        cantidad: action.cantidad,
+        descuento: action.descuento,
+      }
       return {
         ...state,
         presupuestoId: null,
+        // Con la rentabilidad forzada ENCENDIDA, el producto nuevo también la recibe (si la acepta).
         lineas: [
           ...state.lineas,
-          {
-            id: nuevoId(),
-            producto: action.producto,
-            cantidad: action.cantidad,
-            descuento: action.descuento,
-          },
+          state.rentabForzadaActiva
+            ? aplicarRentabForzadaLinea(nueva, state.rentabForzadaPctActiva)
+            : nueva,
         ],
       }
+    }
 
     // Editar la cantidad desde la tabla. Mínimo 1: una línea en cero no es una línea.
     case 'setCantidadLinea': {
@@ -699,6 +748,31 @@ export function reducer(state: AppState, action: Action): AppState {
         lineas: state.lineas.map((l) =>
           l.id === action.id ? { ...l, producto: productoConPrecio(l.producto, precio) } : l,
         ),
+      }
+    }
+
+    /* Enciende/apaga la RENTABILIDAD FORZADA (no es por producto: es un modo global de la etapa).
+       Al ENCENDERLA, se le aplica el descuento a todas las líneas habilitadas ("Con Rentab Forzada")
+       con el `porcentaje` recibido, y queda activa: los productos que se agreguen después también lo
+       reciben (ver `addLinea`). Al APAGARLA, se revierte en todas las líneas (precio y rentabilidad
+       vuelven a su base). Los productos no habilitados nunca se tocan. */
+    case 'toggleRentabForzada': {
+      const activar = !state.rentabForzadaActiva
+      if (activar) {
+        return {
+          ...state,
+          presupuestoId: null,
+          rentabForzadaActiva: true,
+          rentabForzadaPctActiva: action.porcentaje,
+          lineas: state.lineas.map((l) => aplicarRentabForzadaLinea(l, action.porcentaje)),
+        }
+      }
+      return {
+        ...state,
+        presupuestoId: null,
+        rentabForzadaActiva: false,
+        rentabForzadaPctActiva: 0,
+        lineas: state.lineas.map(revertirRentabForzadaLinea),
       }
     }
 
@@ -794,9 +868,6 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'removeFacturaItem':
       return { ...state, facturaItems: state.facturaItems.filter((it) => it.uid !== action.uid) }
 
-    case 'setRegistrarCobro':
-      return { ...state, cobro: { ...state.cobro, registrar: action.value, confirmado: false } }
-
     // Tocar los movimientos invalida la confirmación: hay que volver a registrarlo.
     case 'agregarMovimientoPago':
       return {
@@ -837,13 +908,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'confirmarCobro':
       return {
         ...state,
-        cobro: {
-          ...state.cobro,
-          confirmado: true,
-          cobroId: action.cobroId ?? state.cobro.cobroId,
-          deudaId: action.deudaId ?? state.cobro.deudaId,
-          saldoAnterior: action.saldoAnterior ?? state.cobro.saldoAnterior,
-        },
+        cobro: { ...state.cobro, confirmado: true },
       }
 
     /* Reabre el cobro: la venta cambió (se editaron productos) y el total ya no coincide con lo

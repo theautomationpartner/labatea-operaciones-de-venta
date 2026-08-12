@@ -4,7 +4,7 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { AVANCE_COLOR, AVANCE_LABEL_ENTREGA, avanceLinea, remitoItemUid } from '@/lib/selectors'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import { getVentasEntregaPendiente } from '@/services/monday'
 import { hayDocumentoEmitido, type SeleccionRemito } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -135,12 +135,12 @@ export function RemitoProductosView() {
     <section className="view productos-v2 paso-layout">
       <PasoHeader
         pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        actual={1}
+        actual={indiceDePaso('remito-productos', operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
       />
 
       {/* La bajada cambia según de dónde sale la mercadería. */}
       <PasoTitulo
-        numero={2}
+        numero={indiceDePaso('remito-productos', operacion, tipoVenta, tipoEntrega, remito.tipoEmision) + 1}
         titulo="Cargar productos del remito"
         descripcion={
           esAnterior

@@ -7,7 +7,7 @@
  * sola forma, y es esta.
  */
 import { esFlujoRemito } from '@/lib/pasos'
-import { rentabilidadEfectiva } from '@/lib/selectors'
+import { rentabilidadDeMarkup, rentabilidadLinea } from '@/lib/selectors'
 import type { LineaVenta } from '@/services/monday'
 import type {
   FacturaItem,
@@ -75,7 +75,7 @@ export function lineasDeVenta({
       // VENTA sobre PROFORMA: el descuento por forma de pago se toma del subelemento de la proforma
       // (no se recalcula). En CON PRESUPUESTO PREVIO viene indefinido (el presupuesto no lo tiene).
       descFormaPago: it.descFormaPago,
-      rentabilidad: rentabilidadEfectiva(it.rent, it.desc ?? 0),
+      rentabilidad: rentabilidadDeMarkup(it.rent, it.desc ?? 0),
       // Comisión: mirror "🤖Comision" del subelemento del presupuesto (SI/NO).
       comisionable: it.comisionable === true,
       // U.M.: mirror "🤖Unidad de Venta" del subelemento del presupuesto.
@@ -98,7 +98,9 @@ export function lineasDeVenta({
     // Precio original en USD (sólo si el producto estaba en dólares): auditoría de la venta.
     precioUsd: l.producto.precioUsd,
     descuento: l.descuento,
-    rentabilidad: rentabilidadEfectiva(l.producto.rentabilidad, l.descuento),
+    /* Rentabilidad FINAL: el % forzado si la rentabilidad forzada está aplicada; si no, la ganancia
+       sobre el precio ya descontado, medida contra el costo del maestro. */
+    rentabilidad: l.rentabForzadaAplicada ?? rentabilidadLinea(l),
     // Comisión: "✋️Comision" del Maestro (SI/NO), que la línea trae del catálogo.
     comisionable: l.producto.comisionable === true,
     codigo: l.producto.codigo,
@@ -109,5 +111,7 @@ export function lineasDeVenta({
     iva: l.producto.iva,
     // El ítem de stock viene directo del maestro (venta DIRECTA).
     stockId: l.producto.stockId,
+    // Nota de Crédito x Comisión por unidad (rentabilidad forzada), si se aplicó a la línea.
+    notaCreditoComision: l.montoDifNotaDeCreditoComision,
   }))
 }

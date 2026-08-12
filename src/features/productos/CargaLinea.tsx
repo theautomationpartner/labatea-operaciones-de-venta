@@ -4,7 +4,7 @@ import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from
 import { esDolar } from '@/lib/moneda'
 import { puedeEditarPrecio, topesDescuentoDe } from '@/lib/permisos'
 import { productoConPrecio } from '@/lib/precios'
-import { rentabilidadEfectiva } from '@/lib/selectors'
+import { costoDe, precioNetoDe, rentabilidadConDescuento } from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
@@ -57,7 +57,7 @@ export function CargaLinea({
   convirtiendo = false,
   descFormaPago = 0,
 }: CargaLineaProps) {
-  const { topesDescuento: topesTablero, usuarioActual, paso, operacion } = useApp()
+  const { topesDescuento: topesTablero, usuarioActual, paso, operacion, rentabForzadaActiva, rentabForzadaPctActiva } = useApp()
   const [cantidad, setCantidad] = useState(1)
   const [descuento, setDescuento] = useState('')
   // Aviso de la tecla rechazada por pasarse del máximo; se limpia al corregir.
@@ -65,7 +65,13 @@ export function CargaLinea({
   /* Precio unitario pisado a mano por un administrador (null = el de la lista). Lo que se teclea
      se guarda aparte para poder escribir con comas y miles sin saltos. */
   const [precioOverride, setPrecioOverride] = useState<number | null>(null)
-  const [precioTexto, setPrecioTexto] = useState('')
+  /* El input arranca con el precio de lista, pero el administrador PUEDE dejarlo vacío (nulo). No se
+     cae al precio de lista al vaciarlo: si lo deja sin precio, se valida al intentar agregar. */
+  const [precioTexto, setPrecioTexto] = useState(() =>
+    producto ? importeATexto(producto.precio) : '',
+  )
+  /* Se intentó agregar el producto con el precio vacío o en 0: dispara el borde rojo y el mensaje. */
+  const [precioSinAsignar, setPrecioSinAsignar] = useState(false)
 
   /* RBAC: el administrador puede pisar el precio de lista y pasarse del tope de descuento; el
      vendedor ve el precio como dato y tiene el máximo del tablero. */
@@ -105,13 +111,18 @@ export function CargaLinea({
      precio, el mismo con el precio nuevo y la rentabilidad recalculada a costo constante. */
   const prod = producto && precioOverride ? productoConPrecio(producto, precioOverride) : producto
 
-  /** Tecleo del precio: se aplica sólo con un importe válido; vacío o en cero se marca en rojo. */
+  /** Tecleo del precio: con un importe válido lo pisa; vacío o en cero deja el override en null y no
+   *  se agrega hasta corregir. Un valor válido limpia el aviso de "precio sin asignar". */
   const cambiarPrecio = (valor: string) => {
     const { texto, valor: n } = formatearImporteAR(valor)
     setPrecioTexto(texto)
-    if (n > 0) setPrecioOverride(n)
+    setPrecioOverride(n > 0 ? n : null)
+    if (n > 0) setPrecioSinAsignar(false)
   }
   const precioOk = !precioEditable || precioTexto === '' || formatearImporteAR(precioTexto).valor > 0
+  /* Error visible del precio (borde rojo + mensaje): un valor tecleado que no supera 0, o el intento
+     de agregar con el input vacío/0. Sólo el administrador edita el precio. */
+  const errorPrecio = precioEditable && (!precioOk || precioSinAsignar)
 
   /* Precio de lista, descuento por forma de pago y descuento manual, con las mismas fórmulas en
      cascada que la tabla: el % manual muerde el PRECIO ACTUAL (el de lista ya rebajado por la
@@ -125,15 +136,29 @@ export function CargaLinea({
   /* El descuento en pesos NO se teclea: es el mismo descuento del %, mostrado en su importe. */
   const montoMostrado = descuento ? importeATexto(dto.manual) : ''
 
-  /* Rentabilidad de CATÁLOGO del producto, sin descuentos: el margen al precio de lista (o al que
-     pisó el administrador, recalculado a costo constante). Es el dato de la ficha de arriba. */
-  const rentabilidadLista = prod?.rentabilidad ?? 0
-  /* Rentabilidad que quedaría si se cargara la línea así: la de catálogo bajada por el descuento
-     TOTAL (forma de pago + manual, compuesto). Es la métrica "Rentabilidad Final" del resumen, y
-     la ÚNICA de las dos que se mueve al bonificar. */
-  const rentabilidadPrevista = prod
-    ? rentabilidadEfectiva(rentabilidadLista, descuentoCompuesto(pctManual, descFormaPago))
-    : 0
+  /* Rentabilidad Forzada en la PREVISUALIZACIÓN: si el interruptor está encendido y el producto la
+     acepta ("Con Rentab Forzada"), el % forzado será la rentabilidad FINAL, y se muestra el Nuevo
+     Precio de Costo (Precio Unit × (1 − %/100)), tal como va a quedar al agregarlo a la lista. */
+  const forzarRentab = rentabForzadaActiva && prod?.conRentabForzada === true
+  const nuevoPrecioCosto = forzarRentab
+    ? round2(precio * (1 - rentabForzadaPctActiva / 100))
+    : undefined
+  /* Rentabilidad BASE: el "Margen" del maestro para la lista del cliente, TAL CUAL. Es el punto de
+     partida y no se recalcula nunca —ni por descuentos, ni por el override del precio, ni por la
+     rentabilidad forzada—: es el dato de referencia que acompaña al precio y al costo en la ficha. */
+  const rentabilidadLista = round2(prod?.rentabilidad ?? 0)
+  /* Rentabilidad FINAL de la línea: con la forzada encendida es estrictamente el % forzado; si no, la
+     de catálogo bajada por el descuento TOTAL (forma de pago + manual, compuesto). Es la métrica
+     "Rentabilidad Final" del resumen. */
+  const rentabilidadPrevista = forzarRentab
+    ? rentabForzadaPctActiva
+    : prod
+      ? rentabilidadConDescuento(
+          precioNetoDe(prod),
+          costoDe(prod),
+          descuentoCompuesto(pctManual, descFormaPago),
+        )
+      : 0
 
   /** Subtotal de la configuración, SIN IVA: precio final por unidad × cantidad. */
   const subtotal = round2(dto.precioFinal * cantidad)
@@ -146,8 +171,20 @@ export function CargaLinea({
   // El precio todavía se está convirtiendo a pesos: no hay importe que mostrar.
   const enEspera = !producto || convirtiendo
 
-  const puedeAgregar =
-    Boolean(producto) && descuentoOk.ok && precioOk && !bloqueado && !convirtiendo
+  /* El precio inválido NO deshabilita el botón: se deja clickear para que la validación explique el
+     problema (borde rojo + mensaje), en vez de un botón muerto sin motivo. */
+  const puedeAgregar = Boolean(producto) && descuentoOk.ok && !bloqueado && !convirtiendo
+
+  /* Agregar el producto: primero valida el precio (el administrador no puede dejarlo vacío ni en 0).
+     Si falta, marca el error y no agrega; si está, dispara el alta con el override (o el de lista). */
+  const intentarAgregar = () => {
+    if (!puedeAgregar) return
+    if (precioEditable && !(formatearImporteAR(precioTexto).valor > 0)) {
+      setPrecioSinAsignar(true)
+      return
+    }
+    onAdd(cantidad, pctManual, precioOverride ?? undefined)
+  }
 
   const botonAgregar = (
     <button
@@ -164,7 +201,7 @@ export function CargaLinea({
               ? ''
               : descuentoOk.mensaje
       }
-      onClick={() => puedeAgregar && onAdd(cantidad, pctManual, precioOverride ?? undefined)}
+      onClick={intentarAgregar}
     >
       {convirtiendo ? (
         <>
@@ -211,8 +248,42 @@ export function CargaLinea({
 
           {showFinancialData && producto && (
             <>
-              {/* Los dos datos de catálogo del producto, sin descuentos de por medio. */}
+              {/* Datos de catálogo. El Precio de Costo (y el Nuevo Precio de Costo con la rentabilidad
+                  forzada) son el MISMO elemento que el Precio Unitario —un KPI con la caja de precio—,
+                  pero de SÓLO LECTURA. Van a la izquierda del precio unitario. */}
               <div className="cl-kpis">
+                {prod?.precioCosto != null && (
+                  <div className="cl-kpi">
+                    <span className="cl-kpi-l">Precio de Costo</span>
+                    <span className="pbox pbox--ro">
+                      <span className="pbox-pre">{dolar ? 'U$' : '$'}</span>
+                      <input
+                        type="text"
+                        value={importeATexto(prod.precioCosto)}
+                        readOnly
+                        disabled
+                        tabIndex={-1}
+                        aria-label="Precio de costo (no editable)"
+                      />
+                    </span>
+                  </div>
+                )}
+                {forzarRentab && nuevoPrecioCosto != null && (
+                  <div className="cl-kpi">
+                    <span className="cl-kpi-l">Nuevo Precio de Costo</span>
+                    <span className="pbox pbox--ro">
+                      <span className="pbox-pre">{dolar ? 'U$' : '$'}</span>
+                      <input
+                        type="text"
+                        value={importeATexto(nuevoPrecioCosto)}
+                        readOnly
+                        disabled
+                        tabIndex={-1}
+                        aria-label="Nuevo precio de costo (no editable)"
+                      />
+                    </span>
+                  </div>
+                )}
                 <div className="cl-kpi">
                   <label className="cl-kpi-l" htmlFor={precioEditable ? 'pprecio' : undefined}>
                     Precio Unitario
@@ -220,20 +291,27 @@ export function CargaLinea({
                   {/* RBAC: el administrador lo pisa a mano (override del precio de lista) y todo
                       lo que deriva —rentabilidad, descuentos, subtotal— se recalcula solo. */}
                   {precioEditable ? (
-                    <span className={`pbox ${precioOk ? '' : 'pbox--error'}`}>
-                      <span className="pbox-pre">{dolar ? '$U' : '$'}</span>
-                      <input
-                        id="pprecio"
-                        type="text"
-                        inputMode="decimal"
-                        aria-label={`Precio unitario de ${producto.nombre}`}
-                        aria-invalid={!precioOk}
-                        title={precioOk ? '' : 'El precio tiene que ser mayor a cero'}
-                        value={precioTexto || importeATexto(precio)}
-                        disabled={convirtiendo}
-                        onChange={(e) => cambiarPrecio(e.target.value)}
-                      />
-                    </span>
+                    <>
+                      <span className={`pbox ${errorPrecio ? 'pbox--error' : ''}`}>
+                        <span className="pbox-pre">{dolar ? '$U' : '$'}</span>
+                        <input
+                          id="pprecio"
+                          type="text"
+                          inputMode="decimal"
+                          aria-label={`Precio unitario de ${producto.nombre}`}
+                          aria-invalid={errorPrecio}
+                          placeholder="Asigná un precio"
+                          value={precioTexto}
+                          disabled={convirtiendo}
+                          onChange={(e) => cambiarPrecio(e.target.value)}
+                        />
+                      </span>
+                      {errorPrecio && (
+                        <span className="cl-precio-err" role="alert">
+                          Asigná un precio de venta al producto.
+                        </span>
+                      )}
+                    </>
                   ) : (
                     <span
                       className="cl-kpi-v"

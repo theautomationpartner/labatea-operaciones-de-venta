@@ -10,7 +10,7 @@ import {
   round2,
 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
-import { rentabilidadEfectiva } from '@/lib/selectors'
+import { rentabilidadDeMarkup } from '@/lib/selectors'
 import type { Producto } from '@/types'
 import { LineaDetalle } from './LineaDetalle'
 
@@ -36,6 +36,18 @@ export interface FilaProducto {
   descFormaPago?: number
   descProdMonto?: number
   descFpMonto?: number
+  /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Se muestra
+   *  en el "Detalle" de los productos afectados. */
+  notaCredito?: number
+  /** Rentabilidad FORZADA aplicada (%): es la rentabilidad FINAL del producto cuando el interruptor
+   *  está encendido. La base (columna Rentabilidad) no se toca. */
+  rentabForzada?: number
+  /**
+   * Rentabilidad FINAL ya calculada por el paso, con el precio vigente (descuentos y override del
+   * administrador incluidos) contra el costo del producto. Cuando no viene, la tabla la deriva de
+   * la BASE y el descuento, que es lo mejor que puede hacer sin el costo a mano.
+   */
+  rentabFinal?: number
 }
 
 interface TablaProductosProps {
@@ -233,8 +245,15 @@ export function TablaProductos({
             const tope = fila.cantidadMax
             const excede = tope !== undefined && fila.cantidad > tope
             const calc = calculosDe(fila, descFormaPago)
-            // La rentabilidad se mide con el % compuesto, no con la suma de los dos descuentos.
-            const rentFila = rentabilidadEfectiva(fila.rentabilidad, calc.descPct)
+            /* Rentabilidad FINAL de la fila: el % forzado si la rentabilidad forzada está aplicada;
+               si no, la base bajada por el descuento compuesto. La base (columna) no se toca. */
+            /* Rentabilidad FINAL de la fila, por orden de preferencia: el % forzado, la que ya
+               calculó el paso con el costo real, o —sin esos datos— la derivada de la BASE y el
+               descuento total. La BASE del producto NUNCA se recalcula: es el punto de partida. */
+            const rentFila =
+              fila.rentabForzada ??
+              fila.rentabFinal ??
+              rentabilidadDeMarkup(fila.rentabilidad, calc.descPct)
             /* Línea en dólares (presupuesto bimonetario): sus importes van con prefijo `$u` y en
                verde. En la venta —mono-moneda— nunca se cumple, así que no altera esa tabla. */
             const dolar = esDolar(fila.producto?.moneda)

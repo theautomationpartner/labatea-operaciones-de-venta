@@ -62,12 +62,15 @@ export function CabeceraCobro({
           rotulo="TOTAL COBRADO"
           valor={money(resumen.totalCobrado)}
         />
+        {/* Cobrado de más, la cifra sale en negativo y NADA la aclara al pie: el exceso ya lo
+            explica el aviso que frena el "Continuar" ("el total cobrado supera el total de la
+            venta"). Un texto acá repetía el mismo mensaje dos veces y movía la altura de la
+            métrica según el resultado. */}
         <MetricaCobro
           icono="fa-receipt"
           tono="rojo"
           rotulo="DIFERENCIA"
           valor={restante < 0 ? `- ${money(-restante)}` : money(restante)}
-          nota={restante < 0 ? 'Se pasa del total de la venta' : undefined}
         />
       </div>
     </div>

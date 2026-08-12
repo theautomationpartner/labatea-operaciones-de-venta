@@ -82,6 +82,9 @@ export interface LineaVenta {
   iva?: number
   /** ID del ítem de "Stock y Movimientos" del producto. Enlaza el subítem y afecta el stock. */
   stockId?: string
+  /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Sólo lo
+   *  traen las líneas de la venta DIRECTA cuyos productos son "Con Rentab Forzada" y se aplicó. */
+  notaCreditoComision?: number
 }
 
 export interface DatosVenta {
@@ -209,6 +212,9 @@ const columnasLinea = (
   if (l.productoId) cv[COL.ventaSub.producto] = { item_ids: [Number(l.productoId)] }
   // Ítem de stock del producto (heredado del maestro o del presupuesto): se enlaza en el subítem.
   if (l.stockId) cv[COL.ventaSub.stock] = { item_ids: [Number(l.stockId)] }
+  // Nota de Crédito x Comisión por unidad (Costo Original − Nuevo Precio de Costo). Se escribe SIEMPRE:
+  // 0 si no se activó la rentabilidad forzada o el producto no la acepta.
+  cv[COL.ventaSub.notaCreditoComision] = String(round2(l.notaCreditoComision ?? 0))
   return cv
 }
 
@@ -294,8 +300,11 @@ const ID_VTA_ESPERA_MS = 400
  * consultar DESPUÉS de crear la venta: antes no existe el ítem del que sale.
  *
  * Devuelve '' si el tablero no llegó a completarlo; el llamador decide qué hacer con eso.
+ *
+ * Se exporta porque lo necesita todo lo que nombra ítems con la venta de origen: los movimientos
+ * de stock y la deuda pendiente de cobro.
  */
-async function leerIdVenta(itemId: string): Promise<string> {
+export async function leerIdVenta(itemId: string): Promise<string> {
   for (let intento = 1; intento <= ID_VTA_INTENTOS; intento++) {
     const data = await mondayApi<{
       items: { column_values: { id: string; text: string | null }[] }[]
@@ -444,6 +453,17 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   cabecera[COL.venta.descuentoTotal] = descuentoTotal
   cabecera[COL.venta.ivaTotal] = ivaTotal
   cabecera[COL.venta.total] = totalVenta
+  /* Rentabilidad forzada: si alguna línea la aplicó, va su % (la rentabilidad final de esa línea, que
+     es estrictamente el % forzado) a "Rentab Forzada Aplicada", y la suma de la Nota de Crédito x
+     Comisión de cada producto (monto por unidad, sin multiplicar por cantidad) al TOTAL. */
+  const lineaForzada = lineas.find((l) => l.notaCreditoComision != null)
+  if (lineaForzada) {
+    cabecera[COL.venta.rentabForzada] = String(round2(lineaForzada.rentabilidad))
+    const totalNotaCredito = round2(
+      lineas.reduce((acc, l) => acc + (l.notaCreditoComision ?? 0), 0),
+    )
+    cabecera[COL.venta.notaCreditoComision] = String(totalNotaCredito)
+  }
   // Total en pesos de la venta: se envía como NÚMERO (no string) para las fórmulas del board.
   if (importeTotalPesos != null) {
     cabecera[COL.venta.importeTotalPesos] = round2(importeTotalPesos)

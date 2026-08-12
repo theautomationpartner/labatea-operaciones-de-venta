@@ -3,10 +3,9 @@
  * movimiento y trackeo de lo cobrado contra el total de la venta.
  */
 import { parseDate } from '@/lib/dates'
-import { money, round2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import type {
   Cliente,
-  CobroState,
   CondicionPago,
   FormaPago,
   FormaPagoVenta,
@@ -204,18 +203,68 @@ export function resumenCobro(balances: BalancePago[], totalVenta: number): Resum
   }
 }
 
-/** Aviso al lado del medio de cobro que el CRM del cliente no habilita. */
-export const MSG_CLIENTE_SIN_CHEQUE = 'cliente no acepta cheque'
+/** Error debajo del CUIT del emisor cuando el cheque es del cliente y el CRM no se los recibe. */
+export const MSG_CHEQUE_CLIENTE_NO =
+  'No se reciben cheques del cliente seleccionado. Ingrese otro CUIT.'
+
+/** Los 11 dígitos de un CUIT, sin guiones ni espacios: es la forma en que se comparan dos CUIT. */
+const digitosCuit = (cuit: string | undefined): string => (cuit ?? '').replace(/\D/g, '')
 
 /**
- * El cliente no puede pagar con cheque. Son las DOS condiciones juntas: que el CRM diga que no le
- * recibimos cheques ("Recibimos CHEQUE" = NO) y que la venta se haya armado como CONTADO. Con
- * cualquier otra forma de pago el medio sigue disponible.
+ * El CUIT cargado es el del cliente de la operación. Se compara por DÍGITOS: el CRM guarda el CUIT
+ * como texto libre y puede traerlo con guiones, sin ellos o con espacios de más, y ninguna de esas
+ * diferencias de tipeo cambia de quién es el cheque.
  */
-export const chequeBloqueado = (
-  cliente: Pick<Cliente, 'aceptaCheques'> | null | undefined,
-  forma: FormaPagoVenta | null,
-): boolean => cliente?.aceptaCheques === false && forma === 'CONTADO'
+export const cuitEsDelCliente = (
+  cliente: Pick<Cliente, 'cuit'> | null | undefined,
+  cuitEmisor: string | undefined,
+): boolean => {
+  const delCliente = digitosCuit(cliente?.cuit)
+  const delCheque = digitosCuit(cuitEmisor)
+  return delCliente.length > 0 && delCliente === delCheque
+}
+
+/**
+ * El cheque NO se puede registrar: es un cheque PROPIO del cliente (mismo CUIT de emisor) y su CRM
+ * marca "Recibimos CHEQUE" = NO. Un cheque de un TERCERO —cualquier otro CUIT— se acepta igual, y
+ * por eso el mensaje pide otro CUIT en lugar de vedar el medio de cobro entero.
+ *
+ * Sólo se pronuncia con el CUIT completo: una coincidencia parcial no significa nada.
+ */
+export const chequeDelClienteVedado = (
+  cliente: Pick<Cliente, 'cuit' | 'aceptaCheques'> | null | undefined,
+  cuitEmisor: string | undefined,
+): boolean =>
+  cuitCompleto(cuitEmisor) && cuitEsDelCliente(cliente, cuitEmisor) && cliente?.aceptaCheques === false
+
+/**
+ * En qué punto está el CUIT del emisor respecto de la validación contra el CRM. La valida el
+ * vendedor a mano, con el botón "Validar" que está a la derecha del campo: NO se dispara sola al
+ * terminar de escribir, así que un CUIT cargado y nunca validado sigue en 'pendiente'.
+ *
+ *   · 'pendiente'  → todavía no se validó (o se editó el CUIT después de validarlo).
+ *   · 'validado'   → el cheque se puede cargar. El CUIT queda fijo: ya no se edita.
+ *   · 'rechazado'  → es el cheque del propio cliente y no se los recibimos. No se puede agregar.
+ */
+export type EstadoCuitEmisor = 'pendiente' | 'validado' | 'rechazado'
+
+/**
+ * Resultado de apretar "Validar". Un CUIT incompleto no se puede validar y queda como estaba: el
+ * campo ya avisa por su cuenta qué tramo le falta.
+ *
+ * Que dé 'validado' NO quiere decir que el CUIT exista en el CRM: quiere decir que nada impide
+ * cobrar con ese cheque. Es el caso del cheque de un TERCERO, que no se contrasta contra nada.
+ */
+export const validarCuitEmisor = (
+  cliente: Pick<Cliente, 'cuit' | 'aceptaCheques'> | null | undefined,
+  cuitEmisor: string | undefined,
+): EstadoCuitEmisor => {
+  if (!cuitCompleto(cuitEmisor)) return 'pendiente'
+  return chequeDelClienteVedado(cliente, cuitEmisor) ? 'rechazado' : 'validado'
+}
+
+/** Aviso al intentar agregar un cheque cuyo CUIT de emisor todavía no se validó. */
+export const MSG_CUIT_SIN_VALIDAR = 'Validá el CUIT del emisor antes de agregar el cheque'
 
 /** Mensaje único de la regla de vencimiento del cheque: lo comparten el formulario y el bloqueo. */
 export const MSG_CHEQUE_VENCIMIENTO = 'La fecha de vencimiento debe ser como máximo la fecha de hoy'
@@ -291,35 +340,6 @@ export const formaPagoTarjeta = (tipo: TipoTarjetaCobro): FormaPago =>
 /** Un pago con tarjeta de débito se puede partir en una o dos tarjetas. */
 export const PAGOS_DEBITO = ['1', '2'] as const
 
-/** Cuotas que se ofrecen en el crédito. Son fijas: las define el acuerdo con la tarjeta. */
-export const CUOTAS_CREDITO = [3, 6, 12] as const
-
-/** Dígitos reales de un número de tarjeta, sin los espacios del agrupado visual. */
-export const NRO_TARJETA_DIGITOS = 16
-
-export const MSG_NRO_TARJETA = 'Número de tarjeta inválido. Debe contener 16 dígitos'
-
-/**
- * Número de tarjeta agrupado de a 4 para mostrar ("XXXX XXXX XXXX XXXX"), junto con los dígitos
- * puros que se guardan. Lo que no es número no entra y de 16 dígitos no se pasa: el agrupado es
- * sólo presentación, nunca parte del dato.
- */
-export function formatearNroTarjeta(entrada: string): { texto: string; digitos: string } {
-  const digitos = soloDigitos(entrada, NRO_TARJETA_DIGITOS)
-  return { texto: digitos.replace(/(.{4})/g, '$1 ').trim(), digitos }
-}
-
-/** El número de tarjeta está completo: los 16 dígitos, ni uno menos. */
-export const nroTarjetaCompleto = (numero: string | undefined): boolean =>
-  (numero ?? '').length === NRO_TARJETA_DIGITOS
-
-/**
- * Valor de cada cuota: el importe repartido en la cantidad de cuotas. Se recalcula solo cada vez
- * que cambia el importe del movimiento. Sin cuotas (débito) no hay valor por cuota.
- */
-export const valorPorCuota = (importe: number, cuotas: number | undefined): number | null =>
-  cuotas && cuotas > 0 ? round2(importe / cuotas) : null
-
 /** El cheque tiene una fecha de vencimiento que incumple la regla (o no la tiene cargada). */
 export function chequeInvalido(m: Pick<MovimientoPago, 'formaPago' | 'chequeVencimiento'>): boolean {
   if (m.formaPago !== 'Cheque') return false
@@ -376,22 +396,14 @@ export const datosCobroVenta = (forma: FormaPagoVenta | null): { tipoPago: TipoP
 })
 
 /**
- * La venta queda pendiente de cobro y todavía no se registró. Es la condición que dispara la
- * creación de la deuda en "Fact Vtas Pends de Cobro": tipo de cobro POSTERIOR y sin `deudaId`
- * escrito (se mira para no duplicar el registro si ya se creó).
+ * La venta deja deuda en "💰Fact Vtas Pends de Cobro". Es exactamente el cobro POSTERIOR, o sea la
+ * forma de pago CUENTA CORRIENTE: la venta se factura pero no se cobra, así que queda pendiente.
+ *
+ * No mira el estado del cobro. Antes exigía además `!cobro.deudaId` para no duplicar, pero ese id
+ * NUNCA se guardaba, así que la condición era inerte y aparentaba una protección que no existía.
  */
-export const requiereRegistroDeuda = (forma: FormaPagoVenta | null, cobro: CobroState): boolean =>
-  tipoPagoOperacion(forma) === 'POSTERIOR' && !cobro.deudaId
-
-/**
- * Simultáneo: el formulario está siempre activo (se cobra ahora).
- * Posterior: sólo se activa si el vendedor eligió registrar un pago (SI).
- */
-export const cobroActivo = (forma: FormaPagoVenta | null, cobro: CobroState): boolean =>
-  cobroSimultaneoOperacion(forma) || cobro.registrar
-
-/** Importe en pesos para los mensajes de bloqueo. Mismo formato que el resto de la app. */
-const moneda = (v: number): string => money(v)
+export const requiereRegistroDeuda = (forma: FormaPagoVenta | null): boolean =>
+  tipoPagoOperacion(forma) === 'POSTERIOR'
 
 /**
  * El cobro simultáneo exige el 100%: lo que entra a caja más los descuentos otorgados tiene
@@ -415,62 +427,6 @@ export const diferenciaCobro = (resumen: ResumenCobro): number =>
  * cobro con tarjeta: ni de menos (falta cobrar) ni de más (cobro excedente).
  */
 export const diferenciaEnCero = (resumen: ResumenCobro): boolean => diferenciaCobro(resumen) === 0
-
-/**
- * Motivo por el que el cobro no cierra, o null si está bien cargado. Ya no recibe la fecha de la
- * factura: la regla del cheque se mide contra el día de hoy, no contra la emisión.
- */
-export function bloqueoCobro(
-  forma: FormaPagoVenta | null,
-  cobro: CobroState,
-  resumen?: ResumenCobro,
-): string | null {
-  /* Que falte cargar el cobro no se avisa acá: lo dice la nota que acompaña al tipo de pago,
-     y el avance ya queda bloqueado porque el registro nunca se confirmó. */
-  if (!cobroActivo(forma, cobro) || cobro.movimientos.length === 0) return null
-  if (cobro.movimientos.some(chequeInvalido)) return `${MSG_CHEQUE_VENCIMIENTO}.`
-  // Retención sin comprobante adjunto: no se puede registrar el cobro.
-  if (cobro.movimientos.some(retencionSinComprobante)) {
-    return 'Las retenciones necesitan el comprobante adjunto.'
-  }
-  /* Simultáneo es todo o nada: cobrar de menos deja la venta sin cerrar y cobrar de más no
-     corresponde a esta venta. En los dos casos se bloquea el registro. */
-  if (cobroSimultaneoOperacion(forma) && resumen && !cobroCompleto(resumen)) {
-    // Lo que falta se mide contra lo cancelado (caja + descuentos), no contra la caja sola.
-    const falta = resumen.totalACobrar - resumen.cancelado
-    return falta > 0
-      ? 'El cobro simultáneo exige el 100% cobrado del total de la venta.'
-      : `Lo cobrado más los descuentos supera el total de la venta en ${moneda(-falta)}: ajustá los movimientos.`
-  }
-  return null
-}
-
-/** El cobro se puede confirmar: hay movimientos cargados y ninguno tiene problemas. */
-export const cobroConfirmable = (
-  forma: FormaPagoVenta | null,
-  cobro: CobroState,
-  resumen?: ResumenCobro,
-): boolean =>
-  cobroActivo(forma, cobro) &&
-  cobro.movimientos.length > 0 &&
-  bloqueoCobro(forma, cobro, resumen) === null
-
-/** El cobro quedó registrado: sólo tras confirmarlo a mano. */
-export const cobroRegistrado = (
-  forma: FormaPagoVenta | null,
-  cobro: CobroState,
-  resumen?: ResumenCobro,
-): boolean => cobro.confirmado && cobroConfirmable(forma, cobro, resumen)
-
-/**
- * La etapa de cierre quedó cumplida. En posterior se asume cumplida de entrada: lo que la
- * cierra de verdad (la deuda) se escribe recién al finalizar la operación.
- */
-export const cierreCompleto = (
-  forma: FormaPagoVenta | null,
-  cobro: CobroState,
-  resumen?: ResumenCobro,
-): boolean => (cobroSimultaneoOperacion(forma) ? cobroRegistrado(forma, cobro, resumen) : true)
 
 export interface EstadoCtaCte {
   cuenta: string

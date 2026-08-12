@@ -1,4 +1,4 @@
-import { SelectoresOperacion } from '@/features/shared/TopSelectors'
+import { PasoHeader } from '@/features/shared/PasoHeader'
 import { getProximoNroPresupuesto } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 
@@ -19,8 +19,11 @@ export function InicioView() {
   }
 
   return (
-    <section className="view">
-      <SelectoresOperacion>
+    /* Misma barra que el resto de los pasos, sin stepper (todavía no hay operación confirmada):
+       así el logo y los selectores quedan exactamente donde van a estar después de confirmar, en
+       vez de arrancar pegados al borde izquierdo y saltar de lugar. */
+    <section className="view paso-layout">
+      <PasoHeader>
         <button
           type="button"
           className="btn btn-primary btn--h38"
@@ -29,7 +32,7 @@ export function InicioView() {
         >
           Confirmar <i className="fas fa-check" />
         </button>
-      </SelectoresOperacion>
+      </PasoHeader>
     </section>
   )
 }

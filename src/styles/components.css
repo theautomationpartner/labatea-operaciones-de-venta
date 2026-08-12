@@ -153,11 +153,20 @@
   font-size: 14px;
   color: var(--text-gray);
 }
-/* "Paso N" bajo el círculo. Hereda el color del estado del paso (gris / oscuro). */
+/* Nombre de la etapa bajo el círculo. Hereda el color del estado del paso (gris / oscuro).
+   Ancho acotado y con salto: "Entrega de Mercadería" en una sola línea estiraría la barra hasta
+   empujarla a su propio renglón. */
 .step-nro {
   font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 1.2;
+  /* El rótulo es lo que fija el ancho de CADA paso, y el ancho de cada paso es lo que decide si la
+     barra entra al lado de los selectores o se va a su propio renglón. 72px alcanza para partir en
+     dos líneas el nombre más largo ("Entrega de Mercadería") y deja el ancho total de la barra en
+     el mismo orden que tenía cuando decía "Paso N". */
+  max-width: 72px;
+  text-align: center;
+  /* Reparte las palabras entre las líneas en vez de dejar una sola colgando en la última. */
+  text-wrap: balance;
 }
 /* El color del número dice en qué estado está la etapa: verde ya cumplida, azul la actual,
    gris la que falta. */
@@ -256,6 +265,13 @@
 .stepper--tight {
   margin-bottom: 0;
 }
+/* Barra FANTASMA del paso inicial: reserva el alto exacto que va a ocupar la barra real al
+   confirmar la operación, sin pintarse ni recibir foco. `visibility: hidden` —no `display: none`—
+   es justamente lo que conserva el espacio. */
+.stepper--fantasma {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* ===== Layout de paso: header fijo · trabajo scrollable · footer fijo =====
    El contexto (operación, vendedor, avance) y la acción principal quedan siempre visibles;
@@ -274,7 +290,9 @@
   background: #fff;
   border-bottom: 1px solid #e4e7ec;
   margin: 0 -24px;
-  padding: 10px 24px;
+  /* Sin padding ARRIBA: la barra arranca pegada al tope del panel. El aire de abajo lo mantiene
+     separada del filete que la cierra. */
+  padding: 0 24px 10px;
 }
 .paso-header-in {
   display: flex;
@@ -328,14 +346,16 @@
 .paso-header-steps .stepper {
   flex: 0 1 auto;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
-/* Conectores de ancho fijo. Más largos que antes: alargan la barra de etapas ~20% (32 → 64px)
-   sin dejar de estar alineada a la derecha. */
+/* Conectores cortos. Medían 64px de cuando cada paso era SÓLO su círculo (30px) y la barra se
+   veía sparse: entre los cuatro pasos aportaban 192px de puro adorno. Con el nombre de la etapa
+   debajo, el ancho lo pone el rótulo y ese largo pasó a ser lo que empujaba la barra a su propio
+   renglón en pantallas donde antes entraba. */
 .paso-header-steps .sline {
   flex: 0 0 auto;
-  width: 64px;
-  max-width: 64px;
+  width: 28px;
+  max-width: 28px;
 }
 
 /* NO hay regla de posición por ancho de panel: forzaba el stepper a la izquierda apenas el panel

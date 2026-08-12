@@ -10,30 +10,27 @@
 import assert from 'node:assert/strict'
 import {
   CUIT_TRAMOS,
-  CUOTAS_CREDITO,
   DESCUENTO_PAGO_DEFAULT,
   FORMAS_PAGO,
   MSG_CHEQUE_VENCIMIENTO,
-  MSG_CLIENTE_SIN_CHEQUE,
-  MSG_NRO_TARJETA,
+  MSG_CHEQUE_CLIENTE_NO,
+  MSG_CUIT_SIN_VALIDAR,
   SIN_DESCUENTOS_PAGO,
   balancePagos,
-  bloqueoCobro,
-  chequeBloqueado,
+  chequeDelClienteVedado,
+  validarCuitEmisor,
   chequeInvalido,
   cuitCompleto,
+  cuitEsDelCliente,
   diferenciaCobro,
   diferenciaEnCero,
   esRetencion,
   formaPagoTarjeta,
-  formatearNroTarjeta,
-  nroTarjetaCompleto,
   partesCuit,
   resumenCobro,
   retencionSinComprobante,
   soloDigitos,
   tramoCuitIncompleto,
-  valorPorCuota,
   vencimientoChequeInvalido,
 } from '@/lib/cobros'
 import { formatDate } from '@/lib/dates'
@@ -78,18 +75,83 @@ assert.ok(
   'el efectivo no pide comprobante',
 )
 
-// ---------- CRM: el cliente que no acepta cheques ----------
-const conCheques = (aceptaCheques: boolean) => ({ aceptaCheques }) as Cliente
-// Las DOS condiciones juntas: el CRM dice que no, y la venta se armó como CONTADO.
-assert.ok(chequeBloqueado(conCheques(false), 'CONTADO'), 'NO + CONTADO bloquea el cheque')
-assert.ok(!chequeBloqueado(conCheques(true), 'CONTADO'), 'SI lo deja elegir libremente')
+/* ---------- CRM: el cheque PROPIO del cliente que no acepta cheques ----------
+   La veda ya no es del medio de cobro entero: es de ESE cheque. Se dispara sólo cuando el CUIT del
+   emisor es el del cliente de la operación y su "Recibimos CHEQUE" (color_mm5yb27h) dice NO; el
+   cheque de un tercero se cobra igual, y por eso el mensaje pide otro CUIT. */
+const CUIT_CLIENTE = '20-45037195-6'
+const cli = (cuit: string, aceptaCheques: boolean) => ({ cuit, aceptaCheques }) as Cliente
+
 assert.ok(
-  !chequeBloqueado(conCheques(false), 'CUENTA CORRIENTE'),
-  'con otra forma de pago el cheque sigue disponible aunque el CRM diga NO',
+  chequeDelClienteVedado(cli(CUIT_CLIENTE, false), CUIT_CLIENTE),
+  'mismo CUIT + "NO" en el CRM: el cheque no se puede registrar',
 )
-assert.ok(!chequeBloqueado(conCheques(false), null), 'sin forma de pago elegida no bloquea')
-assert.ok(!chequeBloqueado(null, 'CONTADO'), 'sin cliente cargado no bloquea')
-assert.equal(MSG_CLIENTE_SIN_CHEQUE, 'cliente no acepta cheque', 'el aviso es el pedido')
+assert.ok(
+  !chequeDelClienteVedado(cli(CUIT_CLIENTE, true), CUIT_CLIENTE),
+  'mismo CUIT pero "SI" en el CRM: se registra sin problema',
+)
+assert.ok(
+  !chequeDelClienteVedado(cli(CUIT_CLIENTE, false), '30-71234567-4'),
+  'el cheque de un TERCERO se acepta aunque al cliente no le recibamos los suyos',
+)
+assert.ok(
+  !chequeDelClienteVedado(cli(CUIT_CLIENTE, false), '20-45037195'),
+  'con el CUIT a medio cargar todavía no se opina: la regla espera los 11 dígitos',
+)
+assert.ok(!chequeDelClienteVedado(null, CUIT_CLIENTE), 'sin cliente cargado no veda nada')
+assert.ok(
+  !chequeDelClienteVedado(cli('', false), CUIT_CLIENTE),
+  'un cliente sin CUIT en el CRM no puede "coincidir" con ningún emisor',
+)
+
+// La comparación es por DÍGITOS: el CRM guarda el CUIT como texto y el formato varía.
+assert.ok(cuitEsDelCliente(cli('20450371956', true), CUIT_CLIENTE), 'sin guiones es el mismo CUIT')
+assert.ok(cuitEsDelCliente(cli(' 20-45037195-6 ', true), CUIT_CLIENTE), 'los espacios no cuentan')
+assert.ok(!cuitEsDelCliente(cli('20-45037195-7', true), CUIT_CLIENTE), 'un dígito distinto ya no')
+
+assert.equal(
+  MSG_CHEQUE_CLIENTE_NO,
+  'No se reciben cheques del cliente seleccionado. Ingrese otro CUIT.',
+  'el mensaje debajo del CUIT es el pedido',
+)
+
+/* ---------- El botón "Validar": los tres estados del CUIT del emisor ----------
+   La validación NO se dispara sola al terminar de escribir: la corre el vendedor apretando el
+   botón. Eso es lo que distingue 'pendiente' (cargado pero nunca contrastado) de los otros dos. */
+assert.equal(
+  validarCuitEmisor(cli(CUIT_CLIENTE, true), CUIT_CLIENTE),
+  'validado',
+  'el cheque del cliente al que SÍ le recibimos cheques queda validado',
+)
+assert.equal(
+  validarCuitEmisor(cli(CUIT_CLIENTE, false), CUIT_CLIENTE),
+  'rechazado',
+  'el cheque del cliente al que NO le recibimos cheques queda rechazado',
+)
+assert.equal(
+  validarCuitEmisor(cli(CUIT_CLIENTE, false), '30-71234567-4'),
+  'validado',
+  'el cheque de un tercero se valida sin contrastar nada: no hay regla que lo impida',
+)
+assert.equal(
+  validarCuitEmisor(null, CUIT_CLIENTE),
+  'validado',
+  'sin cliente cargado no hay contra qué rechazar',
+)
+/* Un CUIT a medio cargar NO se puede validar: apretar el botón lo deja como estaba. El campo ya
+   avisa por su cuenta qué tramo le falta, así que no hace falta un segundo mensaje. */
+assert.equal(
+  validarCuitEmisor(cli(CUIT_CLIENTE, false), '20-45037195'),
+  'pendiente',
+  'el CUIT incompleto no se valida ni se rechaza: sigue pendiente',
+)
+assert.equal(validarCuitEmisor(cli(CUIT_CLIENTE, false), ''), 'pendiente', 'y vacío tampoco')
+
+assert.equal(
+  MSG_CUIT_SIN_VALIDAR,
+  'Validá el CUIT del emisor antes de agregar el cheque',
+  'el recordatorio de validar es el que ve el vendedor al intentar agregar sin haber validado',
+)
 
 // ---------- MÓDULO 2: vencimiento del cheque ----------
 assert.ok(!vencimientoChequeInvalido(HOY), 'vencer HOY es válido (la regla es <=)')
@@ -147,44 +209,11 @@ assert.equal(
   'el mensaje dice qué input está por debajo de lo requerido',
 )
 
-// ---------- Cobro con tarjeta: máscara, 16 dígitos, cuotas y diferencia ----------
+/* ---------- Cobro con tarjeta: medio y diferencia ----------
+   Débito y crédito registran medios distintos, pero piden EXACTAMENTE los mismos datos: el plan de
+   cuotas —cantidad y valor de cada una— era lo único que los separaba y ya no se carga. */
 assert.equal(formaPagoTarjeta('DEBITO'), 'Tarjeta de débito', 'el débito registra su propio medio')
 assert.equal(formaPagoTarjeta('CREDITO'), 'Tarjeta de crédito', 'y el crédito el suyo')
-assert.deepEqual([...CUOTAS_CREDITO], [3, 6, 12], 'las cuotas del crédito son fijas')
-
-// Máscara: agrupa de a 4, sólo números y nunca más de 16 dígitos.
-assert.deepEqual(
-  formatearNroTarjeta('4509953566233704'),
-  { texto: '4509 9535 6623 3704', digitos: '4509953566233704' },
-  'el número se agrupa de a 4 para mostrar y se guarda sin espacios',
-)
-assert.equal(formatearNroTarjeta('4509').texto, '4509', 'sin espacio de más al completar un grupo')
-assert.equal(formatearNroTarjeta('45099').texto, '4509 9', 'el espacio entra solo al seguir')
-assert.equal(
-  formatearNroTarjeta('4509-9535 abc 6623').digitos,
-  '450995356623',
-  'lo que no es número se descarta',
-)
-assert.equal(
-  formatearNroTarjeta('45099535662337041234').digitos.length,
-  16,
-  'no se pasa de 16 dígitos',
-)
-
-assert.ok(nroTarjetaCompleto('4509953566233704'), '16 dígitos habilita el agregado')
-assert.ok(!nroTarjetaCompleto('450995356623370'), '15 dígitos NO alcanzan')
-assert.ok(!nroTarjetaCompleto(''), 'sin número tampoco')
-assert.equal(
-  MSG_NRO_TARJETA,
-  'Número de tarjeta inválido. Debe contener 16 dígitos',
-  'el mensaje del número de tarjeta es el pedido',
-)
-
-// Valor x cuota: se recalcula con el importe del movimiento.
-assert.equal(valorPorCuota(120000, 3), 40000, 'importe / cuotas')
-assert.equal(valorPorCuota(100000, 6), 16666.67, 'redondeado a dos decimales')
-assert.equal(valorPorCuota(120000, 0), null, 'sin cuotas (débito) no hay valor por cuota')
-assert.equal(valorPorCuota(120000, undefined), null, 'sin cuotas cargadas tampoco')
 
 // Diferencia: sólo el CERO exacto habilita avanzar de etapa.
 const resumenDe = (total: number, cobrado: number) =>
@@ -244,41 +273,32 @@ assert.equal(
   'la proforma manda sobre cualquier recálculo',
 )
 
-// ---------- Bloqueo del cobro: los dos módulos frenan el registro ----------
-const cliente = { condicionPago: 'CONTADO' } as Cliente
-const cobroCon = (movimientos: Partial<MovimientoPago>[]): CobroState =>
-  ({
-    registrar: true,
-    movimientos: movimientos.map((m, i) => ({
-      id: String(i),
-      importe: 100,
-      referencia: '',
-      chequeVencimiento: '',
-      formaPago: 'Efectivo',
-      ...m,
-    })),
-  }) as CobroState
+/* ---------- Lo que frena la carga de un movimiento ----------
+   Cada regla se evalúa por movimiento, en el formulario, antes de dejar agregarlo. Antes había
+   además un `bloqueoCobro` que las componía en un mensaje: nunca se mostró en ninguna pantalla
+   —la card arma el suyo con el total— así que se eliminó junto con el resto del código muerto. */
+const movimiento = (m: Partial<MovimientoPago>): MovimientoPago =>
+  ({ id: '1', importe: 100, referencia: '', chequeVencimiento: '', formaPago: 'Efectivo', ...m }) as MovimientoPago
 
 assert.equal(
-  bloqueoCobro(cliente, cobroCon([{ formaPago: 'Cheque', chequeVencimiento: MANANA }])),
-  `${MSG_CHEQUE_VENCIMIENTO}.`,
-  'un cheque a futuro bloquea el cobro con el mensaje de la regla',
+  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeVencimiento: MANANA })),
+  true,
+  'un cheque a futuro no se puede cargar',
 )
 assert.equal(
-  bloqueoCobro(cliente, cobroCon([{ formaPago: 'Retencion IVA' }])),
-  'Las retenciones necesitan el comprobante adjunto.',
-  'una retención sin comprobante bloquea el cobro',
+  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeVencimiento: HOY, cuitEmisor: '20-12345678-3' })),
+  false,
+  'un cheque de hoy con CUIT completo se puede cargar',
 )
 assert.equal(
-  bloqueoCobro(
-    cliente,
-    cobroCon([
-      { formaPago: 'Cheque', chequeVencimiento: HOY },
-      { formaPago: 'Retencion IVA', comprobanteNombre: 'ret.pdf' },
-    ]),
-  ),
-  null,
-  'movimientos bien cargados no bloquean (sin resumen no se mide el 100%)',
+  retencionSinComprobante(movimiento({ formaPago: 'Retencion IVA' })),
+  true,
+  'una retención sin comprobante no se puede cargar',
+)
+assert.equal(
+  retencionSinComprobante(movimiento({ formaPago: 'Retencion IVA', comprobanteNombre: 'ret.pdf' })),
+  false,
+  'con el comprobante adjunto sí',
 )
 
 console.log('OK · validaciones del cobro (retenciones, cheque con CUIT y cobro con tarjeta)')

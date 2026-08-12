@@ -50,10 +50,13 @@ import {
   CONFIG_DESCUENTO_ITEM,
   CONFIG_GESTION_INDEX,
   CONFIG_TIPO_COMISION_INDEX,
+  CONFIG_TIPO_RENTAB_FORZADA_INDEX,
   CTA_BANCARIA_ACTIVA_INDEX,
   CONFIG_DIAS_VIGENCIA_ITEM,
   CONFIG_TIPO_MEDIOS_PAGO_INDEX,
   CONFIG_TIPO_VENC_FACTURA_INDEX,
+  CATEGORIA_CLIENTE_INDEX,
+  CLIENTE_ACTIVO_INDEX,
   ENVIO_ESTADO,
   MEDIO_ENVIO_LABELS,
   MONEDA_LABEL,
@@ -286,6 +289,34 @@ export async function getComisionesVenta(): Promise<ComisionesVenta> {
 }
 
 /**
+ * Porcentaje POR DEFECTO de rentabilidad forzada, del tablero de configuración: el ítem cuyo "Tipo
+ * de Config" es "Rentab Forzada" trae su valor en "Rentab %" (numeric_mm60s077, su propia columna, NO
+ * "Valor %"). Es sólo el valor que se precarga en el input de la selección de productos; el usuario
+ * puede cambiarlo antes de aplicar. Sin ítem o sin valor cargado devuelve 0.
+ */
+export async function getRentabForzada(): Promise<number> {
+  if (!mondayHabilitado()) return 0
+  const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
+    `query {
+      boards(ids: [${BOARDS.config}]) {
+        items_page(
+          limit: 1,
+          query_params: {rules: [{column_id: "${COL.config.tipo}", compare_value: [${CONFIG_TIPO_RENTAB_FORZADA_INDEX}], operator: any_of}]}
+        ) {
+          items {
+            id
+            column_values(ids: ["${COL.config.rentabForzadaPct}"]) { id text }
+          }
+        }
+      }
+    }`,
+  )
+  const item = data.boards[0]?.items_page?.items?.[0]
+  if (!item) return 0
+  return num(byId(item)[COL.config.rentabForzadaPct]?.text)
+}
+
+/**
  * Cuentas bancarias ACTIVAS del cliente. Los dos filtros van en la consulta: el estado por
  * índice ("Activa" es el 1 de `color_mm57wxbx`) y la relación con Personas, que acota al
  * cliente. Las cuentas inactivas no llegan ni a la app.
@@ -425,7 +456,12 @@ function mapCliente(item: MondayItem): Cliente {
        que haya deuda. */
     disponible: cta ? limite - lineaUtilizada : limite,
     addr: c[COL.cliente.dirFiscal]?.text ?? '',
-    activity: (c[COL.cliente.estado]?.text === 'Inactivo' ? 'Inactivo' : 'Activo') as ActividadCliente,
+    /* Activo SÓLO con el índice 1 de "✋️Estado de Persona". Antes se preguntaba por el texto
+       "Inactivo" y todo lo demás pasaba por activo: sin etiqueta, o con una nueva, el cliente
+       quedaba habilitado para operar sin que nadie lo hubiera decidido. */
+    activity: (c[COL.cliente.estado]?.index === CLIENTE_ACTIVO_INDEX
+      ? 'Activo'
+      : 'Inactivo') as ActividadCliente,
     situation: situacionDe(c[COL.cliente.situacion]?.index),
   }
 }
@@ -459,12 +495,28 @@ const CAMPOS_CLIENTE = `
     }
   }`
 
+/**
+ * Reglas que TODA búsqueda de clientes arrastra, resueltas en el servidor junto con el término:
+ * la persona tiene que ser de categoría "Clientes" y estar ACTIVA.
+ *
+ * Van por ÍNDICE de etiqueta, no por texto: aguantan que en el board renombren "Activo" o
+ * "Clientes" sin que la app deje de encontrar a nadie. Y van en la consulta —no filtrando la
+ * respuesta— para que los lugares del resultado los ocupen sólo clientes utilizables.
+ */
+const REGLAS_CLIENTE_OPERABLE = [
+  `{column_id: "${COL.cliente.estado}", compare_value: [${CLIENTE_ACTIVO_INDEX}], operator: any_of}`,
+  `{column_id: "${COL.cliente.categoria}", compare_value: [${CATEGORIA_CLIENTE_INDEX}], operator: any_of}`,
+].join(', ')
+
 /** Una consulta con nombre propio: `alias` la identifica en la respuesta. */
 const consultaPersonas = (alias: string, columna: string, valor: string): string => `
   ${alias}: boards(ids: [${BOARDS.personas}]) {
     items_page(
       limit: ${TOPE_RESULTADOS},
-      query_params: {rules: [{column_id: "${columna}", compare_value: ["${valor}"], operator: contains_text}]}
+      query_params: {rules: [
+        {column_id: "${columna}", compare_value: ["${valor}"], operator: contains_text},
+        ${REGLAS_CLIENTE_OPERABLE}
+      ]}
     ) {
       items { ${CAMPOS_CLIENTE} }
     }
@@ -542,11 +594,9 @@ export async function buscarClientes(termino: string): Promise<Cliente[]> {
         ])
       : await buscarPersonas([{ columna: 'name', valor: t }])
 
-  return items
-    // La categoría es multi-valor ("Clientes, Proveedor, …"): alcanza con que contenga "Cliente".
-    .filter((it) => (byId(it)[COL.cliente.categoria]?.text ?? '').includes('Cliente'))
-    .map(mapCliente)
-    .filter((c) => c.activity === 'Activo')
+  /* Sin filtros de acá: la categoría y el estado ACTIVO ya vienen aplicados en la consulta
+     (`REGLAS_CLIENTE_OPERABLE`), así que lo que llega es directamente operable. */
+  return items.map(mapCliente)
 }
 
 /* ===== 3) Búsqueda de producto (precio/rentabilidad según lista del cliente) ===== */
@@ -580,7 +630,16 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
       numCol(c[COL.producto.iva]),
       conIva,
     ),
+    /* Precio de lista SIN IVA: es el que se compara contra el costo para medir la rentabilidad.
+       `precio` puede traer la alícuota sumada, y contra un costo neto la inflaría. */
+    precioSinIva: round2(numCol(c[columnaPrecio(lista)])),
+    /* "✋Margen" del maestro. OJO: es un MARKUP SOBRE EL COSTO (`precio = costo × (1 + margen/100)`),
+       no la rentabilidad —por eso hay productos con 223%—. Se sigue leyendo porque es el dato que
+       el board publica, pero la rentabilidad NO se deriva de acá: sale del costo (ver
+       `rentabilidadDe`). */
     rentabilidad: margenCol ? numCol(c[margenCol]) : 0,
+    // "Costo Final" (fórmula del maestro): el costo del producto, SIN IVA. Base de la rentabilidad.
+    precioCosto: numCol(c[COL.producto.precioCosto]),
     // El proveedor es el ítem conectado; su código, la mirror que espeja el del maestro.
     provCod: valor(c[COL.producto.proveedorCodigo]),
     provNombre: c[COL.producto.proveedor]?.linked_items?.[0]?.name ?? '',
@@ -593,6 +652,9 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     /* El producto SÓLO dice si comisiona ("SI"); la tasa es única por tipo de venta y vive en el
        tablero de configuración. Es la fuente de la venta DIRECTA (armada desde el catálogo). */
     comisionable: valor(c[COL.producto.comisionable]).trim().toUpperCase() === 'SI',
+    /* "🤖Rentabilidad Forzada" del maestro: sólo el label "Con Rentab Forzada" habilita aplicarle la
+       rentabilidad forzada (nota de crédito x comisión) en la selección de productos. */
+    conRentabForzada: valor(c[COL.producto.rentabForzada]).trim() === 'Con Rentab Forzada',
     rubro: valor(c[COL.producto.rubro]),
     subrubro: valor(c[COL.producto.subrubro]),
     categoria: valor(c[COL.producto.categoria]),
@@ -631,6 +693,8 @@ const columnasProducto = (lista: ListaPrecio): string =>
     COL.producto.proveedor,
     COL.producto.proveedorCodigo,
     COL.producto.tipoMercaderia,
+    COL.producto.precioCosto,
+    COL.producto.rentabForzada,
     COL.producto.moneda,
     COL.producto.iva,
     COL.producto.comisionable,
@@ -1168,6 +1232,18 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     // Totales globales calculados en la UI (desglose bimonetario): pesos y dólares por separado.
     [COL.presupuesto.totalPesos]: String(round2(totalPesos)),
     [COL.presupuesto.totalUsd]: String(round2(totalUsd)),
+  }
+  /* Rentabilidad forzada: todas las líneas afectadas llevan el mismo % (el del interruptor), que queda
+     como rentabilidad del producto. Se toma de la primera línea forzada y va a "Rentabilidad Forzada %".
+     TOTAL Nota de Crédito x Comisión $: la suma de la Nota de Crédito x Comisión de CADA producto (el
+     monto por unidad de cada línea, sin multiplicar por cantidad). Se escriben si alguna se forzó. */
+  const lineaForzada = lineas.find((l) => l.montoDifNotaDeCreditoComision != null)
+  if (lineaForzada) {
+    cabecera[COL.presupuesto.rentabForzadaPct] = String(round2(lineaForzada.producto.rentabilidad))
+    const totalNotaCredito = round2(
+      lineas.reduce((acc, l) => acc + (l.montoDifNotaDeCreditoComision ?? 0), 0),
+    )
+    cabecera[COL.presupuesto.notaCreditoComision] = String(totalNotaCredito)
   }
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
   if (vencimiento) cabecera[COL.presupuesto.fechaVencimiento] = { date: vencimiento }

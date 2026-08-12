@@ -38,19 +38,20 @@ function detalleDe(m: MovimientoPago): Dato[] {
       { label: 'Comprobante', valor: m.comprobanteNombre || '—' },
     ]
   }
-  // Retenciones: lo único que agregan al importe es el comprobante que las respalda.
+  /* Retenciones: el certificado que las respalda —año y número— más el archivo adjunto. Vale para
+     todas por igual, porque se reconocen por el prefijo del medio de cobro. */
   if (esRetencion(m.formaPago)) {
-    return [{ label: 'Comprobante', valor: m.comprobanteNombre || '—' }]
+    return [
+      { label: 'Año', valor: m.anioRetencion || '—' },
+      { label: 'Nro. de comprobante', valor: m.nroComprobanteRetencion || '—' },
+      { label: 'Comprobante', valor: m.comprobanteNombre || '—' },
+    ]
   }
   if (m.formaPago === 'Tarjeta de débito' || m.formaPago === 'Tarjeta de crédito') {
     const filas: Dato[] = [
       { label: 'Banco', valor: m.bancoTarjeta || '—' },
       { label: 'Tipo', valor: m.tipoTarjeta || '—' },
     ]
-    // Las cuotas sólo existen en el crédito.
-    if (m.formaPago === 'Tarjeta de crédito') {
-      filas.push({ label: 'Cantidad de cuotas', valor: m.cuotas ? String(m.cuotas) : '—' })
-    }
     return filas
   }
   return []

@@ -1,20 +1,23 @@
-﻿import { Fragment, useRef, useState } from 'react'
+﻿import { Fragment, useEffect, useRef, useState } from 'react'
 import {
   CUIT_TRAMOS,
   FORMAS_PAGO,
+  MSG_CHEQUE_CLIENTE_NO,
   MSG_CHEQUE_VENCIMIENTO,
-  MSG_CLIENTE_SIN_CHEQUE,
+  MSG_CUIT_SIN_VALIDAR,
   cuitCompleto,
   esRetencion,
   partesCuit,
   soloDigitos,
   tramoCuitIncompleto,
+  validarCuitEmisor,
   vencimientoChequeInvalido,
+  type EstadoCuitEmisor,
 } from '@/lib/cobros'
 import { aIso, desdeIso } from '@/lib/dates'
 import { formatearImporteAR } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
-import type { FormaPago, FormatoCheque, MovimientoPago } from '@/types'
+import type { Cliente, FormaPago, FormatoCheque, MovimientoPago } from '@/types'
 import { AdjuntoComprobante } from './AdjuntoComprobante'
 import { BancoEmisorSelect } from './BancoEmisorSelect'
 import { textoCuentasVacio, useCuentasPropias } from './useCuentasPropias'
@@ -33,12 +36,19 @@ const BORRADOR_VACIO: Borrador = {
   formatoCheque: 'FISICO',
   cuentaPropia: null,
   cuentaPropiaId: null,
+  anioRetencion: '',
+  nroComprobanteRetencion: '',
   comprobanteNombre: '',
   comprobanteArchivo: null,
   bancoTarjeta: '',
   tipoTarjeta: null,
-  cuotas: 0,
 }
+
+/**
+ * Año del certificado de retención: los cuatro dígitos completos. El campo no deja tipear otra
+ * cosa, así que lo único que puede fallar es que quede corto ("202").
+ */
+const ANIO_RETENCION = /^\d{4}$/
 
 /** Formato del cheque: el valor es el del sistema, el rótulo es el que ve el vendedor. */
 const FORMATOS_CHEQUE: { valor: FormatoCheque; rotulo: string }[] = [
@@ -48,6 +58,37 @@ const FORMATOS_CHEQUE: { valor: FormatoCheque; rotulo: string }[] = [
 
 /** Asterisco rojo que marca un campo obligatorio. */
 const Req = () => <span className="cobro-req"> *</span>
+
+/**
+ * Los tres aspectos del botón "Validar", uno por estado del CUIT del emisor.
+ *
+ * Validado y rechazado se leen SIN texto: el resultado lo dice el ícono —tilde o cruz—, y el color
+ * sólo lo refuerza. Es a propósito: un botón que dependiera nada más del verde y el rojo no diría
+ * nada a quien no distingue esos dos colores, que es el daltonismo más común.
+ *
+ * Sin texto visible, el nombre accesible pasa a `aria-label`, y va también en `title` para que el
+ * mouse lo muestre: es la única forma de recuperar el "qué pasó acá" cuando queda sólo el ícono.
+ */
+export const BOTON_VALIDAR = {
+  pendiente: {
+    clase: '',
+    icono: null,
+    texto: 'Validar',
+    rotulo: 'Validar el CUIT del emisor contra el CRM del cliente',
+  },
+  validado: {
+    clase: 'cobro-btn--validar-ok',
+    icono: 'fa-check',
+    texto: null,
+    rotulo: 'CUIT validado: el cheque se puede registrar',
+  },
+  rechazado: {
+    clase: 'cobro-btn--validar-mal',
+    icono: 'fa-xmark',
+    texto: null,
+    rotulo: 'CUIT rechazado: no se reciben cheques de este cliente',
+  },
+} as const
 
 /** Un renglón del formulario: agrupa los campos de esa línea. */
 const Fila = ({ children }: { children: React.ReactNode }) => (
@@ -62,22 +103,53 @@ const Fila = ({ children }: { children: React.ReactNode }) => (
  * al siguiente, para cargar el CUIT de corrido sin tocar el mouse ni el tabulador.
  *
  * El tramo corto se avisa cuando el vendedor lo dejó (blur) o cuando intentó agregar el movimiento.
+ *
+ * A la derecha va "Validar", que contrasta el CUIT contra el CRM del cliente. Es un acto
+ * explícito del vendedor y no una reacción al tipeo: hasta que no lo aprieta, el CUIT sigue sin
+ * validar. Validado, el campo queda FIJO —el dato ya se dio por bueno, no hay nada que seguir
+ * editando— y sin ningún cartel: la ausencia de error es todo el acuse de recibo.
  */
 function CampoCuit({
   valor,
   forzarError,
+  error,
+  estado,
   onCambio,
+  onValidar,
 }: {
   valor: string
   /** Se intentó agregar el movimiento: el CUIT incompleto ya no espera al blur para avisar. */
   forzarError: boolean
+  /** Mensaje que invalida el CUIT cargado. null = el CUIT no tiene nada en contra. */
+  error: string | null
+  /** En qué punto está la validación: gobierna el aspecto del botón y si el CUIT se puede editar. */
+  estado: EstadoCuitEmisor
   onCambio: (cuit: string) => void
+  onValidar: () => void
 }) {
   const [tocados, setTocados] = useState([false, false, false])
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const partes = partesCuit(valor)
 
+  /* Validado, el CUIT ya no se toca: el dato se dio por bueno. Rechazado SÍ se puede editar —es lo
+     único que el vendedor puede hacer para destrabarlo, y es justo lo que le pide el mensaje—. */
+  const fijo = estado === 'validado'
+  const aspecto = BOTON_VALIDAR[estado]
+
+  /* Rechazado, el formulario ya borró el CUIT y acá se deja el campo listo para el siguiente: el
+     foco vuelve al primer tramo —el mensaje pide cargar otro, así que se tipea de inmediato sin
+     volver a apuntar con el mouse— y se olvida qué tramos se habían visitado, para que el CUIT
+     nuevo no arranque con los errores del anterior. Depende SÓLO de `estado`, con lo que corre una
+     vez por rechazo y no le roba el foco en los demás renders. */
+  useEffect(() => {
+    if (estado !== 'rechazado') return
+    refs.current[0]?.focus()
+    setTocados([false, false, false])
+  }, [estado])
+
   const escribir = (i: number, entrada: string) => {
+    // Validado, el campo es de sólo lectura: ni el tipeo ni un paste lo cambian.
+    if (fijo) return
     const nuevas = [...partes]
     nuevas[i] = soloDigitos(entrada, CUIT_TRAMOS[i].digitos)
     onCambio(nuevas.join('-'))
@@ -89,9 +161,12 @@ function CampoCuit({
 
   /* Primer tramo con menos dígitos de los que pide. Al intentar agregar se marca aunque esté vacío;
      mientras se carga, sólo si ya se lo visitó y tiene algo escrito. */
-  const iMal = forzarError
+  const incompleto = forzarError
     ? tramoCuitIncompleto(valor)
     : partes.findIndex((p, i) => tocados[i] && p.length > 0 && p.length < CUIT_TRAMOS[i].digitos)
+  /* Un CUIT rechazado pinta los TRES tramos: el problema es de quién es el CUIT, no de un tramo. */
+  const iMal = error ? -1 : incompleto
+  const enRojo = (i: number) => !!error || iMal === i
 
   return (
     <div className="cobro-form-campo cobro-form-campo--val cobro-campo--cuit">
@@ -110,24 +185,38 @@ function CampoCuit({
                 refs.current[i] = el
               }}
               className={`cobro-in cobro-cuit-in cobro-cuit-in--${t.digitos} ${
-                iMal === i ? 'cobro-in--error' : ''
+                enRojo(i) ? 'cobro-in--error' : ''
               }`}
               inputMode="numeric"
               autoComplete="off"
               maxLength={t.digitos}
               placeholder={'0'.repeat(t.digitos)}
+              readOnly={fijo}
               aria-label={t.aria}
-              aria-invalid={iMal === i || undefined}
+              aria-invalid={enRojo(i) || undefined}
               value={partes[i]}
               onChange={(e) => escribir(i, e.target.value)}
               onBlur={() => setTocados((prev) => prev.map((v, j) => (j === i ? true : v)))}
             />
           </Fragment>
         ))}
+        {/* VALIDAR: contrasta el CUIT contra el CRM del cliente. Validado, ya no hay qué apretar;
+            rechazado sigue vivo, para volver a validar apenas se corrija el CUIT. */}
+        <button
+          type="button"
+          className={`cobro-btn cobro-btn--validar ${aspecto.clase}`}
+          disabled={fijo}
+          aria-label={aspecto.texto ? undefined : aspecto.rotulo}
+          title={aspecto.rotulo}
+          onClick={onValidar}
+        >
+          {aspecto.icono && <i className={`fas ${aspecto.icono}`} aria-hidden="true" />}
+          {aspecto.texto}
+        </button>
       </div>
-      {iMal >= 0 && (
+      {(error || iMal >= 0) && (
         <span className="cobro-in-err" role="alert">
-          {CUIT_TRAMOS[iMal].error}
+          {error ?? CUIT_TRAMOS[iMal].error}
         </span>
       )}
     </div>
@@ -135,8 +224,8 @@ function CampoCuit({
 }
 
 interface FormularioCobroProps {
-  /** El CRM del cliente no habilita el cheque para esta venta: el medio se ofrece inhabilitado. */
-  chequeBloqueado?: boolean
+  /** Cliente de la operación: su CUIT y su "Recibimos CHEQUE" validan el cheque que se carga. */
+  cliente: Cliente | null
   /** Cobro ya registrado en Monday: se muestra, no se edita. */
   bloqueado?: boolean
 }
@@ -149,16 +238,15 @@ interface FormularioCobroProps {
  * La validación corre al hacer CLICK en "+ Agregar": marca en rojo cada campo que falte y muestra
  * su mensaje debajo, sin agregar nada. Es el mismo tratamiento que el cobro con tarjeta.
  */
-export function FormularioCobro({
-  chequeBloqueado = false,
-  bloqueado = false,
-}: FormularioCobroProps) {
+export function FormularioCobro({ cliente, bloqueado = false }: FormularioCobroProps) {
   const dispatch = useDispatch()
   const [borrador, setBorrador] = useState<Borrador>(BORRADOR_VACIO)
   // Texto formateado (miles con punto, coma decimal) del importe del borrador.
   const [importeTexto, setImporteTexto] = useState('')
   // Recién al intentar agregar se muestran los errores: no se reta al vendedor mientras carga.
   const [intento, setIntento] = useState(false)
+  /* Validación del CUIT del emisor contra el CRM: la dispara el botón "Validar", nunca el tipeo. */
+  const [estadoCuit, setEstadoCuit] = useState<EstadoCuitEmisor>('pendiente')
 
   const esCheque = borrador.formaPago === 'Cheque'
   const esTransferencia = borrador.formaPago === 'Transferencia'
@@ -180,6 +268,10 @@ export function FormularioCobro({
     // CHEQUE
     bancoEmisor: esCheque && !borrador.bancoEmisor?.trim(),
     cuit: esCheque && !cuitCompleto(borrador.cuitEmisor),
+    /* El cheque no entra a la tabla sin pasar por "Validar": ni el rechazado —es del cliente y no
+       le recibimos cheques— ni el que nunca se contrastó contra el CRM. Sin esta segunda mitad la
+       regla se esquivaría sola, salteándose el botón. */
+    cuitSinValidar: esCheque && estadoCuit !== 'validado',
     numeroCheque: esCheque && !borrador.numeroCheque?.trim(),
     fechaEmision: esCheque && !borrador.fechaEmisionCheque?.trim(),
     vencimiento: esCheque && vencMal,
@@ -187,10 +279,23 @@ export function FormularioCobro({
     cuenta: esTransferencia && !borrador.cuentaPropiaId,
     comprobanteTransf: esTransferencia && !borrador.comprobanteNombre,
     // RETENCIÓN
+    anioRet: esRet && !ANIO_RETENCION.test(borrador.anioRetencion ?? ''),
+    nroCompRet: esRet && !borrador.nroComprobanteRetencion?.trim(),
     comprobanteRet: esRet && !borrador.comprobanteNombre,
   }
   const completo = !Object.values(faltantes).some(Boolean)
   const mal = (campo: string) => intento && faltantes[campo]
+
+  /* Qué se lee debajo del CUIT. El rechazo del CRM aparece apenas se valida —es la respuesta a
+     haber apretado el botón—; el recordatorio de validar, recién al intentar agregar, para no
+     retar al vendedor por algo que todavía no llegó a hacer. */
+  const mensajeCuit = !esCheque
+    ? null
+    : estadoCuit === 'rechazado'
+      ? MSG_CHEQUE_CLIENTE_NO
+      : intento && cuitCompleto(borrador.cuitEmisor) && estadoCuit === 'pendiente'
+        ? MSG_CUIT_SIN_VALIDAR
+        : null
 
   const agregar = () => {
     setIntento(true)
@@ -199,11 +304,28 @@ export function FormularioCobro({
     setBorrador(BORRADOR_VACIO)
     setImporteTexto('')
     setIntento(false)
+    setEstadoCuit('pendiente')
+  }
+
+  /**
+   * "Validar": contrasta el CUIT del emisor contra el CRM del cliente.
+   *
+   * Rechazado, el CUIT se BORRA. El cheque no se va a poder cargar con ese emisor, así que dejarlo
+   * escrito sólo serviría para que el vendedor lo revalide en círculos; vaciarlo es la forma más
+   * directa de decir lo mismo que el mensaje —"Ingrese otro CUIT"— y deja el campo listo para el
+   * siguiente. El estado sigue en 'rechazado' con el campo ya vacío: el error tiene que quedar a la
+   * vista, y recién se limpia cuando se empieza a escribir el CUIT nuevo.
+   */
+  const validarCuit = () => {
+    const resultado = validarCuitEmisor(cliente, borrador.cuitEmisor)
+    setEstadoCuit(resultado)
+    if (resultado === 'rechazado') setBorrador({ ...borrador, cuitEmisor: '' })
   }
 
   /** Cambiar de forma de pago descarta lo que sólo valía para la anterior. */
   const cambiarForma = (formaPago: FormaPago) => {
     setIntento(false)
+    setEstadoCuit('pendiente')
     setBorrador({
       ...BORRADOR_VACIO,
       formaPago,
@@ -239,25 +361,16 @@ export function FormularioCobro({
           onChange={(e) => cambiarForma(e.target.value as FormaPago)}
         >
           {/* En el cobro de contado no se ofrecen tarjetas: son formas de pago de la venta y
-              tienen su propio ramal (TARJETA DE DEBITO / TARJETA DE CREDITO). */}
-          {FORMAS_PAGO.filter(
-            (f) => f !== 'Tarjeta de débito' && f !== 'Tarjeta de crédito',
-          ).map((f) => {
-            /* El cheque que el CRM no habilita se sigue VIENDO, pero no se puede elegir: queda
-               tachado en rojo y el motivo aparece al pasarle el mouse por encima. */
-            const vedado = f === 'Cheque' && chequeBloqueado
-            return (
-              <option
-                key={f}
-                value={f}
-                disabled={vedado}
-                title={vedado ? MSG_CLIENTE_SIN_CHEQUE : undefined}
-                className={vedado ? 'cobro-op--vedada' : undefined}
-              >
+              tienen su propio ramal (TARJETA DE DEBITO / TARJETA DE CREDITO).
+              El cheque se ofrece SIEMPRE: que el CRM no le reciba cheques al cliente no impide
+              cobrarle con el cheque de un tercero, y eso se decide recién con el CUIT del emisor. */}
+          {FORMAS_PAGO.filter((f) => f !== 'Tarjeta de débito' && f !== 'Tarjeta de crédito').map(
+            (f) => (
+              <option key={f} value={f}>
                 {f}
               </option>
-            )
-          })}
+            ),
+          )}
         </select>
       </div>
 
@@ -311,7 +424,14 @@ export function FormularioCobro({
           <CampoCuit
             valor={borrador.cuitEmisor ?? ''}
             forzarError={intento && faltantes.cuit}
-            onCambio={(cuitEmisor) => setBorrador({ ...borrador, cuitEmisor })}
+            error={mensajeCuit}
+            estado={esCheque ? estadoCuit : 'pendiente'}
+            onValidar={validarCuit}
+            /* Tocar el CUIT invalida lo validado: el que se dio por bueno era el anterior. */
+            onCambio={(cuitEmisor) => {
+              setEstadoCuit('pendiente')
+              setBorrador({ ...borrador, cuitEmisor })
+            }}
           />
 
           <div className="cobro-form-campo cobro-form-campo--val cobro-campo--formato">
@@ -474,10 +594,60 @@ export function FormularioCobro({
         </div>
       )}
 
-      {/* RETENCIÓN (IVA / IIBB / GAN / la que se sume): comprobante adjunto obligatorio. El importe
-          se carga en la fila principal; sin archivo, el movimiento no se agrega. */}
+      {/* RETENCIÓN (IVA / IIBB / GAN / la que se sume): año y número del certificado, y el
+          comprobante adjunto. El importe se carga en la fila principal; sin los tres, el movimiento
+          no se agrega. El ramal es UNO SOLO para todas las retenciones —se reconocen por el prefijo
+          del medio de cobro—, así que la que se sume al catálogo hereda estos campos sin tocar nada. */}
       {esRet && (
         <div className="cobro-cond" key="retencion">
+          <div className="cobro-form-campo cobro-form-campo--val cobro-campo--anio-ret">
+            <label htmlFor="cobro-ret-anio">
+              Año
+              <Req />
+            </label>
+            {/* Sólo dígitos y cuatro como mucho: lo que no cumple no entra, sin mensaje. */}
+            <input
+              id="cobro-ret-anio"
+              className={`cobro-in ${mal('anioRet') ? 'cobro-in--error' : ''}`}
+              inputMode="numeric"
+              placeholder="Ej: 2026"
+              aria-invalid={mal('anioRet') || undefined}
+              value={borrador.anioRetencion ?? ''}
+              onChange={(e) =>
+                setBorrador({ ...borrador, anioRetencion: soloDigitos(e.target.value, 4) })
+              }
+            />
+            {mal('anioRet') && (
+              <span className="cobro-in-err" role="alert">
+                Ingresá el año (4 dígitos)
+              </span>
+            )}
+          </div>
+
+          <div className="cobro-form-campo cobro-form-campo--val cobro-campo--nro-ret">
+            <label htmlFor="cobro-ret-nro">
+              Nro. de Comprobante
+              <Req />
+            </label>
+            {/* Texto libre: el número del certificado puede venir con ceros a la izquierda o
+                partido en guiones, y recortarlo a dígitos sueltos lo cambiaría. */}
+            <input
+              id="cobro-ret-nro"
+              className={`cobro-in ${mal('nroCompRet') ? 'cobro-in--error' : ''}`}
+              placeholder="Ej: 0001-00001234"
+              aria-invalid={mal('nroCompRet') || undefined}
+              value={borrador.nroComprobanteRetencion ?? ''}
+              onChange={(e) =>
+                setBorrador({ ...borrador, nroComprobanteRetencion: e.target.value })
+              }
+            />
+            {mal('nroCompRet') && (
+              <span className="cobro-in-err" role="alert">
+                Ingresá el número de comprobante
+              </span>
+            )}
+          </div>
+
           <div className="cobro-form-campo cobro-form-campo--val cobro-form-campo--drop">
             <label htmlFor="cobro-ret-file">
               Comprobante de la retención

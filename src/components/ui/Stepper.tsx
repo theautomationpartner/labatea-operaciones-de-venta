@@ -18,10 +18,9 @@ const stateOf = (index: number, current: number) =>
   index < current ? 'done' : index === current ? 'cur' : 'off'
 
 /**
- * Stepper sólo NUMÉRICO: cada etapa es su número, sin el nombre al lado. El nombre igual viaja en
- * `aria-label` y en el `title`, así que sigue disponible para el lector de pantalla y al pasar el
- * mouse; lo único que se quita es el texto impreso, que hacía crecer la barra hasta ocupar media
- * cabecera y partirse en dos renglones.
+ * Barra de etapas: el número en el círculo y, debajo, el NOMBRE de la etapa. El nombre lo decide
+ * `pasosDe` según la operación, así que la misma barra sirve para presupuesto, venta, proforma y
+ * remito sin que el componente sepa nada de los recorridos.
  */
 export function Stepper({ steps, current, className = '', maxReached, onStep }: StepperProps) {
   // Tope navegable: hasta el paso más avanzado alcanzado (o, si no se pasó, sólo hasta el actual).
@@ -44,11 +43,12 @@ export function Stepper({ steps, current, className = '', maxReached, onStep }: 
               tabIndex={nav ? 0 : undefined}
               aria-disabled={bloqueado || undefined}
               aria-current={state === 'cur' ? 'step' : undefined}
-              /* El número solo no dice nada: el nombre de la etapa se conserva como rótulo
-                 accesible y como tooltip, aunque ya no se imprima. */
+              /* El nombre ya está impreso; el rótulo accesible le suma el ordinal, que en pantalla
+                 vive en el círculo. El `title` sólo aparece cuando hay algo MÁS que decir: por qué
+                 el paso está bloqueado. Repetir el nombre en un tooltip no aporta nada. */
               aria-label={`Paso ${i + 1}: ${label}`}
               title={
-                bloqueado ? `${label} · completá los pasos anteriores para llegar a esta etapa.` : label
+                bloqueado ? 'Completá los pasos anteriores para llegar a esta etapa.' : undefined
               }
               onClick={nav ? () => onStep!(i) : undefined}
               onKeyDown={
@@ -63,9 +63,9 @@ export function Stepper({ steps, current, className = '', maxReached, onStep }: 
               }
             >
               <div className="sic">{state === 'done' ? <i className="fas fa-check" /> : i + 1}</div>
-              {/* Debajo del círculo, el ordinal de la etapa. El NOMBRE sigue sin imprimirse: vive
-                  en el `title` y en el `aria-label` del paso. */}
-              <span className="step-nro">Paso {i + 1}</span>
+              {/* Debajo del círculo, el NOMBRE de la etapa: dice de qué se trata el paso, que es
+                  lo que el ordinal no aportaba (el número ya está en el círculo). */}
+              <span className="step-nro">{label}</span>
             </div>
             {/* La línea se rellena de verde cuando el tramo ya fue transitado. */}
             {i < steps.length - 1 && <div className={`sline ${i < current ? 'done' : ''}`} />}

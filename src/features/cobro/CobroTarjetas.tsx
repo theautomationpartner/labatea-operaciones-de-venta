@@ -63,15 +63,18 @@ export function CobroTarjetas({
         />
 
         <h4 className="cobro-card-sub">Tarjetas registradas ({balances.length})</h4>
-        <TablaTarjetas balances={balances} esCredito={esCredito} bloqueado={bloqueado} />
+        <TablaTarjetas balances={balances} bloqueado={bloqueado} />
 
-        {bloqueoMsg && (
-          <div className="cobro-card-acts">
-            <span className="cobro-bloqueo-inline">
-              <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
-            </span>
-          </div>
-        )}
+        {/* Siempre montado y con el alto reservado: ver el mismo renglón en `CobroView`. */}
+        <div className="cobro-card-acts">
+          <span className="cobro-bloqueo-inline" role="status" aria-live="polite">
+            {bloqueoMsg && (
+              <>
+                <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
+              </>
+            )}
+          </span>
+        </div>
       </div>
     </div>
   )

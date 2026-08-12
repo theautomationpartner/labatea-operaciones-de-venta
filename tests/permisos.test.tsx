@@ -20,6 +20,8 @@ import {
   rolUsuario,
   topesDescuentoDe,
 } from '@/lib/permisos'
+import { round2 } from '@/lib/format'
+import { costoDe, rentabilidadDe } from '@/lib/selectors'
 import { TOPES_DESCUENTO_DEFAULT } from '@/lib/validaciones'
 import { initialState, reducer, type AppState } from '@/state/appState'
 import { DispatchContext, StateContext } from '@/state/context'
@@ -98,22 +100,39 @@ const conLinea = reducer(initialState, {
   descuento: 0,
 })
 const idLinea = conLinea.lineas[0].id
-const costo = (s: typeof conLinea) =>
-  s.lineas[0].producto.precio * (1 - s.lineas[0].producto.rentabilidad / 100)
+/* El costo sale de `costoDe`: del "🤖Costo Final" si el maestro lo trajo y, si no, despejado del
+   precio y el margen ORIGINALES. Al pisar el precio queda fijado, así que ya no se puede volver a
+   despejar del margen —que a propósito NO se recalcula—. */
+const costo = (s: typeof conLinea) => round2(costoDe(s.lineas[0].producto))
 
+const costoOriginal = costo(conLinea)
 const pisado = reducer(conLinea, { type: 'setPrecioLinea', id: idLinea, precio: 8000 })
 assert.equal(pisado.lineas[0].producto.precio, 8000, 'el precio no se aplicó')
-assert.equal(costo(pisado), 6000, 'el costo del producto no puede cambiar al pisar el precio')
-assert.equal(pisado.lineas[0].producto.rentabilidad, 25, 'rentabilidad = 1 − costo/precio nuevo')
+assert.equal(costo(pisado), costoOriginal, 'el costo del producto no puede cambiar al pisar el precio')
+/* La rentabilidad BASE del maestro NO se toca al pisar el precio: es el dato de referencia. Lo que
+   cambia es la FINAL, que se deriva del precio vigente contra el costo. */
+assert.equal(
+  pisado.lineas[0].producto.rentabilidad,
+  conLinea.lineas[0].producto.rentabilidad,
+  'pisar el precio movió la rentabilidad BASE',
+)
+assert.equal(
+  rentabilidadDe(pisado.lineas[0].producto.precioSinIva!, costoOriginal),
+  round2((8000 / costoOriginal - 1) * 100),
+  'la rentabilidad FINAL no siguió al precio pisado',
+)
 // Pisarlo dos veces equivale a pisarlo una sola con el valor final (el costo se conserva).
 const dosVeces = reducer(pisado, { type: 'setPrecioLinea', id: idLinea, precio: 12000 })
 const unaVez = reducer(conLinea, { type: 'setPrecioLinea', id: idLinea, precio: 12000 })
+/* Se comparan redondeados: los dos caminos hacen distinta cantidad de multiplicaciones en punto
+   flotante, así que difieren en el orden de 1e-14 (68 vs 67.99999999999997). Lo que importa es que
+   describan el mismo margen, no que compartan los últimos bits. */
 assert.equal(
-  dosVeces.lineas[0].producto.rentabilidad,
-  unaVez.lineas[0].producto.rentabilidad,
-  'el override no es idempotente: la rentabilidad se arrastra',
+  round2(dosVeces.lineas[0].producto.precioSinIva ?? 0),
+  round2(unaVez.lineas[0].producto.precioSinIva ?? 0),
+  'el override no es idempotente: el precio neto se arrastra',
 )
-assert.equal(costo(dosVeces), 6000, 'el costo se corrió tras dos overrides')
+assert.equal(costo(dosVeces), costoOriginal, 'el costo se corrió tras dos overrides')
 // Un precio inválido se ignora: el estado queda tal cual.
 assert.equal(
   reducer(pisado, { type: 'setPrecioLinea', id: idLinea, precio: 0 }),

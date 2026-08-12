@@ -326,6 +326,18 @@ export function FacturaView() {
   }
 
   /**
+   * Las facturas que el cobro cancela: un elemento por comprobante EFECTIVAMENTE emitido, con su
+   * id en el board de Facturación y su total (con IVA) como importe cancelado. La división de
+   * mercadería puede emitir varios —el común y uno por proveedor consignado—, y cada uno deja su
+   * propio subelemento en el recibo. Un comprobante que no llegó a crearse no cancela nada.
+   */
+  const facturasCanceladas = comprobantes.flatMap((c) => {
+    const emitido = emitidos.get(c.clave)
+    if (!emitido?.id) return []
+    return [{ facturaId: emitido.id, importe: c.total }]
+  })
+
+  /**
    * Efectos secundarios de la venta, disparados TODOS fire-and-forget (sin `await` bloqueante) una
    * vez creada la venta: el usuario finaliza sin esperar a que terminen en Monday.
    *   · Cobro: el recibo del cobro SIMULTÁNEO (+ su vínculo a la venta) o la deuda del POSTERIOR.
@@ -337,23 +349,25 @@ export function FacturaView() {
     /* El recibo se crea SIEMPRE, sea el cobro simultáneo o posterior. Es un efecto secundario de la
        venta: se dispara con la venta ya creada y NUNCA se espera, para no congelar el cierre. */
     if (cobroSimultaneoOperacion(formaPago)) {
-      // SIMULTÁNEO: el recibo ya nace apuntando a la venta y con sus movimientos de pago.
+      /* SIMULTÁNEO: el recibo nace con las facturas que cancela y con sus movimientos de pago.
+         Las facturas salen de los comprobantes efectivamente EMITIDOS —la división de mercadería
+         puede dejar más de uno— con el total de cada uno como importe cancelado. */
       void registrarCobro({
-        tipoPago: 'SIMULTANEO',
         clienteId: cliente.id,
         nombreCliente: cliente.name,
         vendedorId: state.vendedor?.id ?? null,
-        ventaId: vId,
         totalVenta,
         totalCobrado: resumenC.cancelado,
+        facturas: facturasCanceladas,
         balances,
       }).catch(() => {
         /* El recibo del cobro es best-effort: un fallo no revierte la venta ya creada. */
       })
       dispararComisiones(vId)
     } else {
-      /* POSTERIOR: el recibo cuelga de la deuda, así que su id es una dependencia REAL. Es lo único
-         que se espera; con el id en mano se dispara el recibo sin bloquear.
+      /* POSTERIOR (CUENTA CORRIENTE): la venta NO deja recibo. Lo único que se escribe es la deuda
+         en "💰Fact Vtas Pends de Cobro": todavía no entró plata, así que no hay nada que recibir.
+         El recibo lo va a crear el cobro de esa deuda, cuando ocurra.
          La comisión NO depende de la deuda: si la deuda falla, igual se registra (sin el vínculo).
          Encadenarla acá adentro hacía que un fallo de la deuda se llevara puesta la comisión. */
       void (async () => {
@@ -361,12 +375,18 @@ export function FacturaView() {
         try {
           /* Ya no se exige que el cliente tenga cuenta corriente: la deuda cuelga de la VENTA
              (board_relation_mm4d3nn0) y el tablero resuelve desde ahí la imputación a la cuenta. */
-          if (requiereRegistroDeuda(formaPago, cobro)) {
+          if (requiereRegistroDeuda(formaPago)) {
             deudaId = (
               await registrarDeudaPosterior({
                 ventaId: vId,
+                clienteId: cliente.id,
+                nombreCliente: cliente.name,
                 total: totalVenta,
-                concepto: `${cliente.name} · ${cobro.fecha}`,
+                /* Las MISMAS fechas que declara el comprobante: la deuda vence cuando vence la
+                   factura. Todos los comprobantes de la venta comparten el plazo (sale del tablero
+                   de configuración), así que alcanza con el primero. */
+                fechaEmision,
+                vencimiento: vencimientoDe(comprobantes[0]?.clave ?? ''),
               })
             ).deudaId
           }
@@ -374,20 +394,6 @@ export function FacturaView() {
           /* El registro de la deuda es best-effort: se sigue sin su id. */
         }
         dispararComisiones(vId, deudaId ?? undefined)
-        void registrarCobro({
-          tipoPago: 'POSTERIOR',
-          clienteId: cliente.id,
-          nombreCliente: cliente.name,
-          vendedorId: state.vendedor?.id ?? null,
-          // La venta que se está cobrando: el recibo la enlaza también en el cobro POSTERIOR.
-          ventaId: vId,
-          vtaPendienteId: deudaId,
-          /* Los movimientos cargados se detallan como subelementos del recibo: en el cobro con
-             TARJETA (POSTERIOR) cada cupón cargado es un subelemento con sus datos de la tarjeta. */
-          balances,
-        }).catch(() => {
-          /* El recibo del cobro posterior es best-effort. */
-        })
       })().catch(() => {
         /* Ningún efecto secundario revierte la venta ya creada. */
       })

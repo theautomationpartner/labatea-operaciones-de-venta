@@ -1,12 +1,5 @@
 import { useState } from 'react'
-import {
-  CUOTAS_CREDITO,
-  MSG_NRO_TARJETA,
-  PAGOS_DEBITO,
-  formaPagoTarjeta,
-  formatearNroTarjeta,
-  nroTarjetaCompleto,
-} from '@/lib/cobros'
+import { PAGOS_DEBITO, formaPagoTarjeta } from '@/lib/cobros'
 import { aIso, desdeIso } from '@/lib/dates'
 import { formatearImporteAR, importeATexto, money } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
@@ -37,9 +30,6 @@ const borradorVacio = (tipo: TipoTarjetaCobro): Borrador => ({
   comprobanteArchivo: null,
   bancoTarjeta: '',
   tipoTarjeta: null,
-  cuotas: 0,
-  numeroTarjeta: '',
-  titularTarjeta: '',
   vencimientoTarjeta: '',
   numeroCupon: '',
 })
@@ -104,19 +94,15 @@ export function FormularioTarjeta({
     setImporteTexto(sugerido > 0 ? importeATexto(sugerido) : '')
   }
 
-  const nroMal = !nroTarjetaCompleto(borrador.numeroTarjeta)
-  /* Campos obligatorios del movimiento. El número de tarjeta se valida aparte porque tiene su
-     propio mensaje: no alcanza con que esté cargado, tiene que tener los 16 dígitos. */
+  /* Campos obligatorios del movimiento. El plástico se identifica por banco y tipo: ni el número
+     de tarjeta ni el titular se piden —son datos sensibles que el recibo no necesita—. */
   const faltantes: Record<string, boolean> = {
     importe: borrador.importe <= 0,
     banco: !borrador.bancoTarjeta?.trim(),
     tipoTarjeta: !borrador.tipoTarjeta,
-    numero: nroMal,
-    titular: !borrador.titularTarjeta?.trim(),
     vencimiento: !borrador.vencimientoTarjeta,
     comprobante: !borrador.comprobanteNombre,
     acreditacion: !borrador.cuentaPropia,
-    cuotas: esCredito && !(borrador.cuotas && borrador.cuotas > 0),
   }
   const completo = !Object.values(faltantes).some(Boolean)
   // Sólo se marca en rojo lo que falta DESPUÉS de haber intentado agregar.
@@ -130,8 +116,6 @@ export function FormularioTarjeta({
     setImporteTexto('')
     setIntento(false)
   }
-
-  const nroTexto = formatearNroTarjeta(borrador.numeroTarjeta ?? '').texto
 
   return (
     <fieldset className="cobro-form cobro-form--tarjeta" disabled={bloqueado}>
@@ -181,59 +165,10 @@ export function FormularioTarjeta({
         )}
       </div>
 
-      {/* CANT. CUOTAS — sólo crédito. Va pegado al importe: el plan de cuotas se decide junto con
-          el monto, no al final de la carga. */}
-      {esCredito && (
-        <div className="cobro-form-campo cobro-form-campo--val cobro-campo--cuotas">
-          <label htmlFor="tarj-cuotas">
-            Cant. Cuotas
-            <Req />
-          </label>
-          <select
-            id="tarj-cuotas"
-            className={`cobro-in ${mal('cuotas') ? 'cobro-in--error' : ''}`}
-            aria-invalid={mal('cuotas') || undefined}
-            value={borrador.cuotas || ''}
-            onChange={(e) => setBorrador({ ...borrador, cuotas: Number(e.target.value) || 0 })}
-          >
-            <option value="">Seleccionar…</option>
-            {CUOTAS_CREDITO.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          {mal('cuotas') && (
-            <span className="cobro-in-err" role="alert">
-              Elegí la cantidad de cuotas
-            </span>
-          )}
-        </div>
-      )}
       </Fila>
 
-      {/* FILA 2 · los datos del plástico: titular, banco, tipo, número y vencimiento. */}
+      {/* FILA 2 · los datos del plástico: banco, tipo y vencimiento. */}
       <Fila>
-      <div className="cobro-form-campo cobro-form-campo--val">
-        <label htmlFor="tarj-titular">
-          Titular Tarjeta
-          <Req />
-        </label>
-        <input
-          id="tarj-titular"
-          className={`cobro-in ${mal('titular') ? 'cobro-in--error' : ''}`}
-          placeholder="Como figura en la tarjeta"
-          aria-invalid={mal('titular') || undefined}
-          value={borrador.titularTarjeta ?? ''}
-          onChange={(e) => setBorrador({ ...borrador, titularTarjeta: e.target.value })}
-        />
-        {mal('titular') && (
-          <span className="cobro-in-err" role="alert">
-            Ingresá el titular de la tarjeta
-          </span>
-        )}
-      </div>
-
       <div className="cobro-form-campo cobro-form-campo--val">
         <label htmlFor="tarj-banco">
           Banco Emisor
@@ -258,34 +193,6 @@ export function FormularioTarjeta({
           onChange={(tipo) => setBorrador({ ...borrador, tipoTarjeta: tipo || null })}
           error={mal('tipoTarjeta')}
         />
-      </div>
-
-      {/* NRO. TARJETA — se agrupa de a 4 mientras se escribe y exige los 16 dígitos. */}
-      <div className="cobro-form-campo cobro-form-campo--val cobro-campo--nrotarj">
-        <label htmlFor="tarj-nro">
-          Nro. Tarjeta
-          <Req />
-        </label>
-        <input
-          id="tarj-nro"
-          className={`cobro-in ${mal('numero') ? 'cobro-in--error' : ''}`}
-          inputMode="numeric"
-          autoComplete="off"
-          placeholder="XXXX XXXX XXXX XXXX"
-          aria-invalid={mal('numero') || undefined}
-          value={nroTexto}
-          onChange={(e) =>
-            setBorrador({
-              ...borrador,
-              numeroTarjeta: formatearNroTarjeta(e.target.value).digitos,
-            })
-          }
-        />
-        {mal('numero') && (
-          <span className="cobro-in-err" role="alert">
-            {MSG_NRO_TARJETA}
-          </span>
-        )}
       </div>
 
       {/* FECHA DE VENCIMIENTO del plástico. */}
@@ -313,7 +220,7 @@ export function FormularioTarjeta({
 
       </Fila>
 
-      {/* FILA 3 · el respaldo del cobro: cupón, dónde se acredita y —en crédito— el plan de cuotas. */}
+      {/* FILA 3 · el respaldo del cobro: cupón y dónde se acredita. */}
       <Fila>
       {/* NRO CUPÓN — el número que imprime el posnet. Va a la izquierda del comprobante: es el
           dato del mismo papel que se adjunta al lado. */}

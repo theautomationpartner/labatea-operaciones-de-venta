@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatearNroTarjeta, valorPorCuota, type BalancePago } from '@/lib/cobros'
+import type { BalancePago } from '@/lib/cobros'
 import { money } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
 import type { MovimientoPago } from '@/types'
@@ -17,7 +17,6 @@ interface Dato {
  */
 function detalleDe(m: MovimientoPago): Dato[] {
   return [
-    { label: 'Nro. Tarjeta', valor: formatearNroTarjeta(m.numeroTarjeta ?? '').texto || '—' },
     { label: 'Fecha de Venc.', valor: m.vencimientoTarjeta || '—' },
     { label: 'Nro Cupon', valor: m.numeroCupon?.trim() || '—' },
     { label: 'Comprobante', valor: m.comprobanteNombre || '—' },
@@ -28,23 +27,18 @@ function detalleDe(m: MovimientoPago): Dato[] {
 function FilaTarjeta({
   balance,
   bloqueado,
-  esCredito,
   columnas,
   onQuitar,
   onImporte,
 }: {
   balance: BalancePago
   bloqueado: boolean
-  esCredito: boolean
   columnas: number
   onQuitar: () => void
   onImporte: (importe: number) => void
 }) {
   const [abierto, setAbierto] = useState(false)
   const { movimiento: m } = balance
-  /* Valor por cuota: se recalcula solo con el importe, así editarlo en la tabla actualiza el plan
-     de cuotas en el momento. */
-  const porCuota = valorPorCuota(m.importe, m.cuotas)
 
   return (
     <>
@@ -55,8 +49,8 @@ function FilaTarjeta({
               type="button"
               className="cobro-fila-chev"
               aria-expanded={abierto}
-              aria-label={`${abierto ? 'Ocultar' : 'Ver'} el detalle de la tarjeta de ${
-                m.titularTarjeta || 'la venta'
+              aria-label={`${abierto ? 'Ocultar' : 'Ver'} el detalle de la tarjeta ${
+                m.bancoTarjeta || 'de la venta'
               }`}
               onClick={() => setAbierto((v) => !v)}
             >
@@ -66,20 +60,17 @@ function FilaTarjeta({
           </span>
         </td>
         <td>{m.tipoTarjeta || '—'}</td>
-        <td>{m.titularTarjeta || '—'}</td>
         {/* Importe editable mientras el cobro no esté registrado: es la forma de llevar la
             DIFERENCIA a 0 sin quitar la tarjeta. */}
         <td>
           {bloqueado ? money(m.importe) : <ImporteEditable valor={m.importe} onCambio={onImporte} />}
         </td>
-        {esCredito && <td>{m.cuotas || '—'}</td>}
-        {esCredito && <td>{porCuota == null ? '—' : money(porCuota)}</td>}
         {!bloqueado && (
           <td className="ta-r">
             <button
               type="button"
               className="cobro-tabla-del"
-              aria-label={`Quitar la tarjeta de ${m.titularTarjeta || m.bancoTarjeta || 'la venta'}`}
+              aria-label={`Quitar la tarjeta ${m.bancoTarjeta || 'de la venta'}`}
               onClick={onQuitar}
             >
               <i className="far fa-trash-alt" />
@@ -108,16 +99,15 @@ function FilaTarjeta({
 
 interface TablaTarjetasProps {
   balances: BalancePago[]
-  /** Crédito: agrega las columnas de cuotas y valor por cuota. */
-  esCredito: boolean
   bloqueado?: boolean
 }
 
 /** Tarjetas ya cargadas al cobro. */
-export function TablaTarjetas({ balances, esCredito, bloqueado = false }: TablaTarjetasProps) {
+export function TablaTarjetas({ balances, bloqueado = false }: TablaTarjetasProps) {
   const dispatch = useDispatch()
-  // Banco emisor, tipo, titular e importe; el crédito suma cuotas y valor por cuota.
-  const columnas = 4 + (esCredito ? 2 : 0) + (bloqueado ? 0 : 1)
+  /* Banco emisor, tipo e importe. El débito y el crédito muestran lo MISMO: el plan de cuotas era
+     lo único que los diferenciaba en la tabla. */
+  const columnas = 3 + (bloqueado ? 0 : 1)
 
   return (
     <table className="cobro-tabla cobro-tabla--tarjetas">
@@ -125,10 +115,7 @@ export function TablaTarjetas({ balances, esCredito, bloqueado = false }: TablaT
         <tr>
           <th>Banco Emisor</th>
           <th>Tipo Tarjeta</th>
-          <th>Titular Tarjeta</th>
           <th>Importe</th>
-          {esCredito && <th>Cant. Cuotas</th>}
-          {esCredito && <th>Valor x Cuota</th>}
           {!bloqueado && <th className="ta-r">Acciones</th>}
         </tr>
       </thead>
@@ -143,7 +130,6 @@ export function TablaTarjetas({ balances, esCredito, bloqueado = false }: TablaT
               key={b.movimiento.id}
               balance={b}
               bloqueado={bloqueado}
-              esCredito={esCredito}
               columnas={columnas}
               onQuitar={() => dispatch({ type: 'removeMovimientoPago', id: b.movimiento.id })}
               onImporte={(importe) =>

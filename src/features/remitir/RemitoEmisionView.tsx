@@ -5,7 +5,7 @@ import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { round2 } from '@/lib/format'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
   afectarEntregaAnterior,
   crearRemito,
@@ -255,10 +255,10 @@ export function RemitoEmisionView() {
     <section className="view emision-v2 paso-layout">
       <PasoHeader
         pasos={pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
-        actual={3}
+        actual={indiceDePaso('remito-emision', operacion, tipoVenta, tipoEntrega, remito.tipoEmision)}
       />
       <PasoTitulo
-        numero={4}
+        numero={indiceDePaso('remito-emision', operacion, tipoVenta, tipoEntrega, remito.tipoEmision) + 1}
         titulo="Emitir y enviar remito"
         descripcion="Revisá el resumen del remito, emitilo y mandáselo a los contactos del cliente."
       />

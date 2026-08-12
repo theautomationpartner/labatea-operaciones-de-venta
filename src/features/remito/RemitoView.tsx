@@ -7,7 +7,7 @@ import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { descuentoDeFormaPago } from '@/lib/cobros'
-import { PASOS_REMITO } from '@/lib/pasos'
+import { PASOS_REMITO, indiceDePaso } from '@/lib/pasos'
 import {
   AVANCE_COLOR,
   AVANCE_LABEL_FACTURA,
@@ -45,7 +45,8 @@ function colorEstado(estado: string | undefined, avance: ReturnType<typeof avanc
  * queda pendiente. De ahí se llevan a la factura con la cantidad elegida.
  */
 export function RemitoView() {
-  const { cliente, facturaItems, tipoVenta, comisiones, formaPago, descuentosPago } = useApp()
+  const { cliente, facturaItems, operacion, tipoVenta, tipoEntrega, comisiones, formaPago, descuentosPago } =
+    useApp()
   const dispatch = useDispatch()
   // Remito elegido como filtro de la lista de productos (toggle desde las cards).
   const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null)
@@ -173,10 +174,10 @@ export function RemitoView() {
 
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={PASOS_REMITO} actual={1} />
+      <PasoHeader pasos={PASOS_REMITO} actual={indiceDePaso('remito', operacion, tipoVenta, tipoEntrega)} />
 
       <PasoTitulo
-        numero={2}
+        numero={indiceDePaso('remito', operacion, tipoVenta, tipoEntrega) + 1}
         titulo="Cargar productos"
         descripcion="Elegí los productos ya remitidos que quedan pendientes de facturar y ajustá la cantidad."
       />

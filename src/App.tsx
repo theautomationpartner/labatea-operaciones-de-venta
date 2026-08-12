@@ -4,6 +4,7 @@ import {
   getDescuentosPago,
   getDiasVencimientoFactura,
   getDiasVigencia,
+  getRentabForzada,
   getTasaCambioHoy,
   getTopesDescuento,
   getUsuarioActual,
@@ -89,6 +90,11 @@ export function App() {
        se muestra, pero la operación sigue. */
     getComisionesVenta()
       .then((c) => vivo && dispatch({ type: 'setComisiones', value: c }))
+      .catch(() => {})
+    /* Rentabilidad forzada por defecto ("Rentab Forzada" del tablero de config): precarga el input de
+       la selección de productos. Ante un error queda en 0 (no se fuerza nada hasta que se cargue). */
+    getRentabForzada()
+      .then((v) => vivo && dispatch({ type: 'setRentabForzada', value: v }))
       .catch(() => {})
     /* Vendedores del equipo "Vendedores" (Monday): pueblan el selector de vendedor. Se piden una
        sola vez, al montar la app. Ante un error se deja la lista vacía (y el selector deja de

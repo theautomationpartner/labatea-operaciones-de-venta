@@ -12,6 +12,9 @@ interface DetalleDescuentosProps {
   dtoPrecio: number
   /** Suma de los dos anteriores: lo descontado por unidad. */
   dtoTotal: number
+  /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Se muestra
+   *  como una fila extra sólo en los productos afectados (mayor que 0). */
+  notaCredito?: number
   /** Formato de importes: pesos, o dólares en el presupuesto bimonetario. */
   fmt: (n: number) => string
   /**
@@ -33,6 +36,7 @@ export function DetalleDescuentos({
   descuentoManual,
   dtoPrecio,
   dtoTotal,
+  notaCredito = 0,
   fmt,
   editorManual,
 }: DetalleDescuentosProps) {
@@ -68,6 +72,16 @@ export function DetalleDescuentos({
           <span className="lindet-mid" />
           <span className="lindet-val">{fmt(dtoTotal)}</span>
         </div>
+
+        {/* Rentabilidad forzada: sólo los productos afectados muestran la Nota de Crédito x Comisión
+            por unidad, debajo del descuento total y por separado. */}
+        {notaCredito !== 0 && (
+          <div className="lindet-row lindet-row--credito">
+            <span className="lindet-lbl">Nota de Crédito x Comisión</span>
+            <span className="lindet-mid" />
+            <span className="lindet-val">{fmt(notaCredito)}</span>
+          </div>
+        )}
       </div>
     </section>
   )

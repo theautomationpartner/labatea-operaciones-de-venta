@@ -12,7 +12,7 @@ import { AppProvider } from '@/state/AppProvider'
 import { CargaLinea } from '@/features/productos/CargaLinea'
 import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
 import { money, pctDec, round2 } from '@/lib/format'
-import { rentabilidadEfectiva } from '@/lib/selectors'
+import { rentabilidadDeMarkup } from '@/lib/selectors'
 import type { Producto } from '@/types'
 
 const PRECIO = 89440.15
@@ -128,7 +128,14 @@ const rentDe = (h: string, marca: string, clase: string) =>
 const rentFicha = (h: string) => rentDe(h, 'Rentabilidad', 'cl-kpi-v')
 const rentFinal = (h: string) => rentDe(h, 'Rentabilidad Final', 'cl-metric-v')
 
-assert.equal(rentFicha(html), pctDec(producto.rentabilidad), 'la ficha debe mostrar la de catálogo')
+/* La ficha muestra la rentabilidad de CATÁLOGO: la ganancia sobre el precio de lista. `rentabilidad`
+   del maestro es el markup sobre el costo (32% → el producto rinde 24,24%), así que el esperado sale
+   de la conversión, no del número crudo del board. */
+assert.equal(
+  rentFicha(html),
+  pctDec(rentabilidadDeMarkup(producto.rentabilidad)),
+  'la ficha debe mostrar la de catálogo',
+)
 assert.notEqual(
   rentFinal(html),
   rentFicha(html),
@@ -136,12 +143,16 @@ assert.notEqual(
 )
 assert.equal(
   rentFinal(html),
-  pctDec(rentabilidadEfectiva(producto.rentabilidad, descuentoCompuesto(0, FP))),
+  pctDec(rentabilidadDeMarkup(producto.rentabilidad, descuentoCompuesto(0, FP))),
   'la Rentabilidad Final no aplica el descuento total',
 )
 // Sin ningún descuento, las dos coinciden: no hay bonificación que las separe.
 const sinDto = render({ descFormaPago: 0 })
-assert.equal(rentFicha(sinDto), pctDec(producto.rentabilidad), 'sin descuento, la ficha no cambia')
+assert.equal(
+  rentFicha(sinDto),
+  pctDec(rentabilidadDeMarkup(producto.rentabilidad)),
+  'sin descuento, la ficha no cambia',
+)
 assert.equal(rentFinal(sinDto), rentFicha(sinDto), 'sin descuento las dos tienen que coincidir')
 
 // ---------- Detalle ----------

@@ -68,6 +68,20 @@ export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): Fragm
   /* Sin descuento: el "Precio Unit $" (numeric_mkw85hdw) también lleva el precio unitario original,
      además de la columna de la moneda del producto. */
   if (!tieneDescuento) columnas[COL.presupuestoSub.precioUnit] = String(precio)
+  /* Rentabilidad forzada: cuando está aplicada, la línea trae la "Nota de Crédito x Comisión" (Costo
+     Original − Nuevo Precio de Costo) y su costo pasa a ser el NUEVO (= Costo Original − ese monto);
+     sin forzar, el costo es el original del maestro. El costo va a la columna de su moneda. */
+  const montoNC = linea.montoDifNotaDeCreditoComision
+  const forzada = montoNC != null
+  const costoEfectivo =
+    forzada && p.precioCosto != null ? round2(p.precioCosto - montoNC) : p.precioCosto
+  if (costoEfectivo != null) {
+    columnas[usd ? COL.presupuestoSub.costoUsd : COL.presupuestoSub.costoPesos] =
+      String(round2(costoEfectivo))
+  }
+  if (montoNC != null) {
+    columnas[COL.presupuestoSub.notaCreditoComision] = String(round2(montoNC))
+  }
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
   // Se arrastra el ítem de stock del maestro para que viaje del presupuesto a la venta.
   if (p.stockId) columnas[COL.presupuestoSub.stock] = { item_ids: [Number(p.stockId)] }

@@ -5,13 +5,16 @@
  *
  * UNA sola fuente de verdad (`tipoPagoOperacion`) y UN solo dato de entrada: la FORMA DE PAGO
  * elegida en la selección de productos.
- *   · CONTADO                                           → SIMULTANEO
- *   · CUENTA CORRIENTE / TARJETA DE DEBITO / DE CREDITO → POSTERIOR (y su deuda al finalizar)
+ *   · CONTADO / TARJETA DE DEBITO / DE CREDITO → SIMULTANEO
+ *   · CUENTA CORRIENTE                         → POSTERIOR (y su deuda al finalizar)
+ *
+ * La tarjeta se cobra EN EL ACTO: sus cupones cancelan la venta, así que no deja Venta Pend de
+ * Cobro. Lo único que se difiere es la acreditación bancaria, que no es asunto de la venta.
  *
  * La condición de pago del CLIENTE no participa: sólo decide qué formas se le ofrecen.
  */
 import assert from 'node:assert/strict'
-import type { CobroState, FormaPagoVenta } from '@/types'
+import type { FormaPagoVenta } from '@/types'
 import {
   FORMAS_PAGO_POSTERIOR,
   FORMAS_PAGO_VENTA,
@@ -23,19 +26,6 @@ import {
   tipoPagoOperacion,
 } from '@/lib/cobros'
 
-function cobroBase(over: Partial<CobroState> = {}): CobroState {
-  return {
-    registrar: false,
-    fecha: '01/01/2026',
-    movimientos: [],
-    confirmado: false,
-    cobroId: null,
-    deudaId: null,
-    saldoAnterior: null,
-    ...over,
-  } as CobroState
-}
-
 let asserts = 0
 function ok(nombre: string, cond: boolean) {
   assert.ok(cond, nombre)
@@ -43,54 +33,55 @@ function ok(nombre: string, cond: boolean) {
   console.log('  ✓', nombre)
 }
 
-const cobro = cobroBase()
-
-console.log('Caso 1 · SIMULTANEO es CONTADO, y sólo CONTADO:')
-ok("CONTADO → 'SIMULTANEO'", tipoPagoOperacion('CONTADO') === 'SIMULTANEO')
-ok('el flujo que corre es el del cobro inmediato', cobroSimultaneoOperacion('CONTADO'))
-assert.deepEqual(datosCobroVenta('CONTADO'), { tipoPago: 'SIMULTANEO' })
-ok("el payload de la venta contiene { tipoPago: 'SIMULTANEO' }", true)
-// Ninguna otra forma de pago clasifica como simultánea.
-for (const forma of FORMAS_PAGO_VENTA.filter((f) => f !== 'CONTADO')) {
-  ok(`${forma} NO es simultáneo`, !cobroSimultaneoOperacion(forma))
+console.log('Caso 1 · SIMULTANEO es CONTADO y las dos tarjetas (se cobran en el acto):')
+const SIMULTANEAS: readonly FormaPagoVenta[] = ['CONTADO', 'TARJETA DE DEBITO', 'TARJETA DE CREDITO']
+for (const forma of SIMULTANEAS) {
+  ok(`${forma} → 'SIMULTANEO'`, tipoPagoOperacion(forma) === 'SIMULTANEO')
+  ok(`${forma}: corre el flujo del cobro inmediato`, cobroSimultaneoOperacion(forma))
+  assert.deepEqual(datosCobroVenta(forma), { tipoPago: 'SIMULTANEO' })
+  ok(`${forma}: el payload de la venta viaja como SIMULTANEO`, true)
+  /* Lo importante del cambio: la tarjeta NO deja Venta Pend de Cobro. El cupón cancela la venta;
+     que el banco acredite después es otro problema, no una deuda del cliente. */
+  ok(`${forma}: NO deja Venta Pend de Cobro`, requiereRegistroDeuda(forma) === false)
 }
 
-console.log('Caso 2 · POSTERIOR son las otras tres formas de pago:')
+console.log('Caso 2 · POSTERIOR es SÓLO la cuenta corriente:')
 assert.deepEqual(
-  [...FORMAS_PAGO_POSTERIOR].sort(),
-  ['CUENTA CORRIENTE', 'TARJETA DE CREDITO', 'TARJETA DE DEBITO'],
+  [...FORMAS_PAGO_POSTERIOR],
+  ['CUENTA CORRIENTE'],
   'el catálogo de formas posteriores es exactamente el pedido',
 )
 for (const forma of FORMAS_PAGO_POSTERIOR) {
   ok(`${forma} → 'POSTERIOR'`, tipoPagoOperacion(forma) === 'POSTERIOR')
   assert.deepEqual(datosCobroVenta(forma), { tipoPago: 'POSTERIOR' })
   ok(`${forma}: el payload viaja como POSTERIOR`, true)
-  ok(`${forma}: se pide el registro de la deuda`, requiereRegistroDeuda(forma, cobro) === true)
+  ok(`${forma}: se pide el registro de la deuda`, requiereRegistroDeuda(forma) === true)
 }
-// Las tres posteriores más CONTADO son TODAS las formas de pago: no queda ninguna sin clasificar.
+// Simultáneas + posteriores son TODAS las formas de pago: no queda ninguna sin clasificar.
 assert.equal(
-  FORMAS_PAGO_POSTERIOR.length + 1,
+  SIMULTANEAS.length + FORMAS_PAGO_POSTERIOR.length,
   FORMAS_PAGO_VENTA.length,
   'toda forma de pago cae en SIMULTANEO o POSTERIOR',
 )
+// Y ninguna forma está en los dos grupos a la vez.
+for (const forma of SIMULTANEAS) {
+  ok(`${forma} no figura entre las posteriores`, !FORMAS_PAGO_POSTERIOR.includes(forma))
+}
 
-console.log('Caso 3 · La deuda: sólo en POSTERIOR y sólo una vez:')
-ok('CONTADO no genera deuda', requiereRegistroDeuda('CONTADO', cobro) === false)
-ok(
-  'con deudaId ya escrito no se vuelve a pedir',
-  requiereRegistroDeuda('CUENTA CORRIENTE', cobroBase({ deudaId: '123', confirmado: true })) ===
-    false,
-)
+/* La deuda depende de UN solo dato: la forma de pago. No mira el estado del cobro —antes recibía
+   el `CobroState` entero para no duplicar la escritura mirando un `deudaId` que nunca se guardaba,
+   así que la condición era inerte y aparentaba una protección inexistente—. */
+console.log('Caso 3 · La deuda: sólo en POSTERIOR:')
+for (const forma of SIMULTANEAS) {
+  ok(`${forma} no genera deuda`, requiereRegistroDeuda(forma) === false)
+}
+ok('CUENTA CORRIENTE la genera', requiereRegistroDeuda('CUENTA CORRIENTE') === true)
+ok('sin forma de pago no se pide deuda de una venta inexistente', requiereRegistroDeuda(null) === true)
 
-console.log('Caso 4 · El "SI/NO" del cierre ya NO cambia la clasificación (era el bug):')
-const cobroSi = cobroBase({ registrar: true })
+console.log('Caso 4 · La condición del cliente NO clasifica el cobro (era el bug):')
 ok(
-  'CUENTA CORRIENTE sigue siendo POSTERIOR aunque se registre un cobro en el acto',
+  'CUENTA CORRIENTE es POSTERIOR por la FORMA DE PAGO, no por la condición del cliente',
   tipoPagoOperacion('CUENTA CORRIENTE') === 'POSTERIOR',
-)
-ok(
-  'y su deuda se sigue pidiendo igual',
-  requiereRegistroDeuda('CUENTA CORRIENTE', cobroSi) === true,
 )
 
 console.log('Caso 5 · Sin forma de pago elegida no se puede afirmar que se cobró:')

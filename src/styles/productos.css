@@ -306,6 +306,14 @@
   font-weight: 700;
   color: var(--p-text-main);
 }
+/* Mensaje de error del precio unitario (administrador): debajo de la caja, cuando falta o es 0. */
+.productos-v2 .cl-precio-err {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--p-danger);
+  max-width: 180px;
+  line-height: 1.25;
+}
 /* Sub-card del precio de partida real (lista − pronto pago): abre la cuenta de la fila de
    operación, en lugar de un input, porque es un dato que no se edita en ningún caso. */
 .productos-v2 .cl-subcard {
@@ -1748,4 +1756,142 @@
 }
 .productos-v2 .kpi-control select:focus {
   border-color: var(--p-primary);
+}
+
+/* ===== Rentabilidad Forzada (debajo de los filtros del buscador) ===== */
+.productos-v2 .rentab-forzada {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Separación con los filtros de arriba IGUAL al gap del `.search-area` (16px), que es lo que separa
+     los filtros de la barra de búsqueda. Así el bloque queda espaciado como el resto de la card. */
+  margin-top: 16px;
+  /* padding-top EXACTO al espaciado (gap) del `.search-area`: la banda que separa el buscador de los
+     filtros. Así el bloque respira igual que la separación de arriba. */
+  padding: 16px 16px 14px;
+  border: 1px solid var(--p-border);
+  border-radius: 10px;
+  background: var(--p-bg-soft, #f7f9fc);
+}
+.productos-v2 .rentab-forzada-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.productos-v2 .rentab-forzada-lbl {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .rentab-forzada-in {
+  width: 110px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--p-border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 15px;
+  color: var(--p-text-main);
+}
+.productos-v2 .rentab-forzada-in:focus {
+  outline: none;
+  border-color: var(--p-primary);
+}
+.productos-v2 .rentab-forzada-btn {
+  height: 40px;
+}
+/* Encendida: el botón cambia de color (verde) para indicar que la funcionalidad está activa. */
+.productos-v2 .rentab-forzada-btn--activa,
+.productos-v2 .rentab-forzada-btn--activa:hover {
+  background: var(--p-success, #00a86b);
+  border-color: var(--p-success, #00a86b);
+}
+/* Aclaración a la derecha del botón mientras está encendida. */
+.productos-v2 .rentab-forzada-aviso {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--p-success, #00a86b);
+  max-width: 320px;
+  line-height: 1.25;
+}
+/* Acumulado a la derecha del botón: se empuja al margen cuando hay lugar. */
+.productos-v2 .rentab-forzada-total {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+.productos-v2 .rentab-forzada-total-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .rentab-forzada-total-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--p-success, #00a86b);
+}
+/* ===== Ficha de Precio de Costo (arriba del precio unitario) ===== */
+.productos-v2 .costo-ficha {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--p-border);
+  border-radius: 8px;
+  background: var(--p-bg-soft, #f7f9fc);
+}
+/* Dentro del detalle desplegable (grid de dos columnas), la ficha ocupa el ancho completo, arriba. */
+.productos-v2 .lindet > .costo-ficha {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+.productos-v2 .costo-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.productos-v2 .costo-lbl {
+  color: var(--p-text-secondary);
+  font-weight: 600;
+}
+.productos-v2 .costo-val {
+  font-weight: 700;
+  color: var(--p-text-main);
+  white-space: nowrap;
+}
+/* Input de Precio de Costo: mismo cuerpo que el Precio Unitario, pero de SÓLO LECTURA (no editable).
+   Fondo tenue y sin foco; el texto se mantiene nítido (los input disabled se aclaran solos). */
+.productos-v2 .pbox--ro {
+  background: var(--p-bg-soft, #f1f4f8);
+}
+.productos-v2 .pbox--ro:focus-within {
+  border-color: var(--p-border);
+  box-shadow: none;
+}
+.productos-v2 .pbox--ro input {
+  cursor: default;
+  color: var(--p-text-main);
+  -webkit-text-fill-color: var(--p-text-main);
+  opacity: 1;
+}
+/* Filas de la rentabilidad forzada: acento verde para contrastar con el costo original de arriba. */
+.productos-v2 .costo-row--forzada .costo-lbl,
+.productos-v2 .costo-row--forzada .costo-val {
+  color: var(--p-success, #00a86b);
+}
+/* Fila "Nota de Crédito x Comisión" del detalle de la línea: se distingue del descuento con un
+   acento verde, para que se lea como un concepto aparte del descuento total. */
+.productos-v2 .lindet-row--credito .lindet-lbl,
+.productos-v2 .lindet-row--credito .lindet-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--p-success, #00a86b);
 }

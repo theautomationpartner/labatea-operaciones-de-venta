@@ -17,6 +17,17 @@
   --c-danger: #e44258;
   /* Violeta de la ficha del cliente: es el color con el que ya se muestra la condición. */
   --c-cond: #6c4cf1;
+  /* Ritmo vertical del formulario de carga. Es UNO SOLO para los cuatro medios de cobro —tarjeta
+     de débito, de crédito, transferencia y cheque—: la separación entre renglones tiene que
+     leerse igual se haya elegido el medio que se haya elegido.
+       · `--c-form-reserva`: lo que cada campo reserva abajo para su mensaje de error, esté o no
+         en error. El mensaje va absoluto y cae dentro de esa reserva, así que mostrarlo no mueve
+         nada.
+       · `--c-form-fila-gap`: el respiro que se SUMA a esa reserva entre renglón y renglón.
+     Separación real entre dos renglones = reserva + gap. Ojo al tocarlas: son las dos mitades del
+     mismo número, y cambiar una sola desalinea los medios entre sí. */
+  --c-form-reserva: 20px;
+  --c-form-fila-gap: 4px;
   --c-radius-md: 8px;
   --c-radius-lg: 12px;
   --c-shadow-soft: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
@@ -288,13 +299,6 @@
   font-weight: 800;
   white-space: nowrap;
 }
-/* Aclara la cuenta: lo cobrado más esto es lo que cancela la venta. */
-.cobro-v2 .cobro-cab-nota {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--c-text-secondary);
-  white-space: nowrap;
-}
 .cobro-v2 .cobro-cab-num--azul {
   color: var(--c-text-main);
 }
@@ -380,7 +384,9 @@
 .cobro-v2 .cobro-form {
   display: flex;
   align-items: flex-end;
-  gap: 16px;
+  /* A lo ancho, la separación de siempre entre campos; a lo alto, el ritmo entre renglones. */
+  column-gap: 16px;
+  row-gap: var(--c-form-fila-gap);
   flex-wrap: wrap;
   border: none;
   margin: 0;
@@ -471,7 +477,7 @@
    dos renglones (el lugar es del campo, no de la fila).
    Alcanza con una línea de 11px: el mensaje puede crecer a lo ancho antes que a lo alto. */
 .cobro-v2 .cobro-form-campo--val {
-  padding-bottom: 20px;
+  padding-bottom: var(--c-form-reserva);
 }
 /* Mensaje de error del campo: ABSOLUTO, colgado justo debajo del control y dentro del espacio ya
    reservado arriba. Se ancla al control (no al borde inferior del campo) para que un mensaje de dos
@@ -562,16 +568,18 @@
 
 /* --- Campos condicionales según el medio de cobro (cheque / transferencia / tarjeta) --- */
 /* Fila que aparece debajo de la principal, con una animación suave de entrada. */
+/* NO lleva margen, relleno ni línea divisoria propios: sus renglones tienen que caer en el mismo
+   ritmo que los del cobro con tarjeta, que no tiene nada de eso entre renglón y renglón. Con el
+   margen (4px), el relleno (14px) y la línea punteada que traía antes, elegir cheque o
+   transferencia abría un hueco de 54px donde la tarjeta muestra 24. */
 .cobro-v2 .cobro-cond {
   flex-basis: 100%;
   width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 16px;
-  margin-top: 4px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--c-border);
+  column-gap: 16px;
+  row-gap: var(--c-form-fila-gap);
   animation: cobro-cond-in 0.28s ease;
 }
 @keyframes cobro-cond-in {
@@ -596,12 +604,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 16px;
-}
-/* Entre renglones alcanza con un respiro corto: el alto del mensaje de error ya lo reserva cada
-   campo, así que sumarle el gap completo separaba de más. */
-.cobro-v2 .cobro-cond {
-  row-gap: 4px;
+  column-gap: 16px;
+  /* Un renglón que se parte en dos por falta de ancho respeta el mismo ritmo que los demás. */
+  row-gap: var(--c-form-fila-gap);
 }
 /* Cheque · Banco Emisor: al 30% de lo que ocupaba (antes se estiraba a todo el renglón). */
 .cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--banco {
@@ -611,7 +616,8 @@
 /* Cheque: el CUIT del emisor son tres tramos en línea, así que pide algo más de aire que un campo
    normal para no partirse en dos renglones. */
 .cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--cuit {
-  flex: 1 1 240px;
+  /* Los tres tramos MÁS el botón "Validar": ~80px más que cuando el campo era sólo el CUIT. */
+  flex: 1 1 320px;
 }
 /* Los tres tramos del CUIT (XX-XXXXXXXX-X), con los guiones fijos entre medio. */
 .cobro-v2 .cobro-cuit {
@@ -636,6 +642,78 @@
 .cobro-v2 .cobro-cuit-in--1 {
   flex: 0 0 42px;
 }
+/* "Validar" vive DENTRO de la fila del CUIT, a la derecha del último tramo. Alto y tipografía
+   copian al input para que la línea quede pareja; no crece ni se encoge con el contenedor.
+   Fijo (ya validado) se apaga: no queda nada para volver a validar. */
+.cobro-v2 .cobro-btn--validar {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  /* Mismo alto, borde y radio que los tramos del CUIT: la fila queda a ras. */
+  height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid #000;
+  border-radius: var(--c-radius-md);
+  background: var(--c-bg-input);
+  color: var(--c-text-main);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.cobro-v2 .cobro-btn--validar:hover:not(:disabled) {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+/* Deshabilitado sin resultado todavía: no queda nada que validar. */
+.cobro-v2 .cobro-btn--validar:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Resultado de la validación. El ícono es el que comunica —tilde o cruz—; el color acompaña, no
+   informa solo. Sin texto, el ancho se fija para que el botón no se achique al cambiar de estado:
+   la fila del CUIT queda quieta en lugar de saltar. */
+.cobro-v2 .cobro-btn--validar-ok,
+.cobro-v2 .cobro-btn--validar-mal {
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border-color: transparent;
+  color: #fff;
+  font-size: 16px;
+}
+/* VALIDADO: verde pleno con el tilde blanco.
+   Va con DOS clases más `:disabled` a propósito. Al final de este archivo vive un
+   `.cobro-v2 .cobro-btn:disabled` que pinta de gris cualquier botón deshabilitado; con una sola
+   clase, esa regla le gana por especificidad y se comía el verde. Acá el botón está deshabilitado
+   porque no queda nada que validar, no porque esté inactivo: el verde ES el acuse de recibo de la
+   validación, así que tiene que sobrevivir a la regla genérica, sin atenuarse. */
+.cobro-v2 .cobro-btn.cobro-btn--validar-ok,
+.cobro-v2 .cobro-btn.cobro-btn--validar-ok:disabled {
+  background: var(--c-success);
+  border-color: transparent;
+  color: #fff;
+  opacity: 1;
+  cursor: default;
+}
+/* RECHAZADO: cruz blanca sobre rojo. Sigue habilitado —volver a validar es la salida— y comparte
+   el color con el mensaje de error que aparece justo debajo. Misma especificidad que el verde para
+   que los dos estados se lean igual de firmes. */
+.cobro-v2 .cobro-btn.cobro-btn--validar-mal {
+  background: var(--c-danger);
+  border-color: transparent;
+  color: #fff;
+}
+.cobro-v2 .cobro-btn.cobro-btn--validar-mal:hover:not(:disabled) {
+  background: #c62f43;
+  border-color: transparent;
+  color: #fff;
+}
+/* Los tramos del CUIT ya validado: el fondo apagado dice que el dato está cerrado, sin pintarlo de
+   verde (el estado ya lo canta el botón, y dos señales del mismo color compiten entre sí). */
+.cobro-v2 .cobro-cuit-in[readonly] {
+  background: var(--c-bg-panel);
+  color: var(--c-text-secondary);
+  cursor: default;
+}
 .cobro-v2 .cobro-cuit-sep {
   flex: 0 0 auto;
   color: var(--c-text-secondary);
@@ -655,6 +733,14 @@
   flex: 0 0 42%;
   max-width: 42%;
 }
+/* Retención: el año son cuatro dígitos y el número de comprobante entra en un campo corto, así que
+   los dos van angostos y fijos. El adjunto queda a su derecha con el resto del renglón. */
+.cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--anio-ret {
+  flex: 0 0 110px;
+}
+.cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--nro-ret {
+  flex: 0 0 210px;
+}
 .cobro-v2 .cobro-form-campo--drop {
   flex: 2 1 320px;
 }
@@ -664,26 +750,19 @@
   max-width: 30%;
 }
 /* --- Cobro con tarjeta: tres renglones (importe · datos del plástico · respaldo) --- */
-/* Entre renglones, un respiro corto: el alto del mensaje de error ya lo reserva cada campo. */
-.cobro-v2 .cobro-form--tarjeta {
-  row-gap: 4px;
-}
+/* El ritmo entre renglones lo pone `.cobro-form`, igual que en los demás medios de cobro. */
 /* Cada campo pide su propio ancho; el orden de la maqueta es el del circuito de carga. */
 .cobro-v2 .cobro-form--tarjeta .cobro-form-campo {
   flex: 1 1 190px;
   /* TODOS los campos reservan el lugar del mensaje de error, tengan validación o no: la fila se
      alinea por abajo, así que sin la reserva pareja los inputs quedarían a distinta altura. */
-  padding-bottom: 20px;
+  padding-bottom: var(--c-form-reserva);
 }
-.cobro-v2 .cobro-form--tarjeta .cobro-campo--pagos,
-.cobro-v2 .cobro-form--tarjeta .cobro-campo--cuotas {
+.cobro-v2 .cobro-form--tarjeta .cobro-campo--pagos {
   flex: 0 0 120px;
 }
 .cobro-v2 .cobro-form--tarjeta .cobro-campo--importe-tarj {
   flex: 0 0 170px;
-}
-.cobro-v2 .cobro-form--tarjeta .cobro-campo--nrotarj {
-  flex: 1 1 230px;
 }
 .cobro-v2 .cobro-form--tarjeta .cobro-campo--fecha {
   flex: 0 0 170px;
@@ -709,7 +788,7 @@
 }
 /* El "+ Agregar" cierra la grilla, alineado con la base de los campos. */
 .cobro-v2 .cobro-form--tarjeta .cobro-form-campo--accion {
-  padding-bottom: 20px;
+  padding-bottom: var(--c-form-reserva);
 }
 /* El "+ Agregar" mide SIEMPRE lo que mide el botón, esté en la fila principal o dentro de una fila
    condicional. Los selectores de renglón (`.cobro-cond .cobro-form-campo`, el de la grilla de
@@ -748,14 +827,6 @@
 .cobro-v2 .cobro-req {
   color: var(--c-danger);
   font-weight: 700;
-}
-/* Medio de cobro que el CRM del cliente no habilita: se ve, pero tachado en rojo y sin poder
-   elegirse. El estilo de <option> depende del sistema operativo (Windows y Linux lo respetan;
-   macOS dibuja el menú nativo), así que el `disabled` y el mensaje debajo son los que garantizan
-   la restricción. */
-.cobro-v2 .cobro-op--vedada {
-  text-decoration: line-through red;
-  color: var(--c-danger);
 }
 /* Zona de arrastrar y soltar el comprobante de transferencia. */
 .cobro-v2 .cobro-drop {
@@ -895,11 +966,19 @@
   margin-top: 20px;
   padding-top: 25px;
 }
-/* Motivo de bloqueo del cobro, a la derecha del botón: texto en rojo, SIN fondo ni borde. */
+/* Motivo de bloqueo del cobro, a la derecha del botón: texto en rojo, SIN fondo ni borde.
+   El renglón RESERVA su alto siempre, tenga mensaje o no: el aviso aparece y desaparece solo
+   —según cómo vaya quedando la diferencia— y sin la reserva la card se encogía de golpe cada vez
+   que el cobro se completaba. `min-height` y `line-height` son el mismo número a propósito: van por
+   una variable local para que no se puedan desincronizar. El `span` no tiene padding, así que la
+   reserva no depende del `box-sizing`. */
 .cobro-v2 .cobro-bloqueo-inline {
+  --linea: 20px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: var(--linea);
+  line-height: var(--linea);
   color: var(--c-danger);
   font-size: 13px;
   font-weight: 600;
@@ -1014,18 +1093,6 @@
 
 
 /* --- Transferencia: cuenta bancaria del cliente y medio usado --- */
-/* Ocupa su propia línea debajo del formulario: son campos condicionales, no parte de la
-   fila principal de carga. */
-.cobro-v2 .cobro-transf {
-  flex: 1 0 100%;
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--c-border);
-}
 .cobro-v2 .cobro-form-campo--cuenta {
   flex: 0 0 280px;
 }
