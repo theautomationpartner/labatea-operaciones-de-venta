@@ -589,8 +589,13 @@ export const COL = {
     // TRANSFERENCIA
     /** "🤖Comp Transf" (file): el comprobante de la transferencia. */
     compTransferencia: 'file_mm5rtssw',
+    // RETENCIONES (IVA, IIBB, GAN…): todas comparten estas tres columnas.
     /** "🤖Comp Retencion" (file): el comprobante de cualquier retención (IVA, IIBB, GAN…). */
     compRetencion: 'file_mm5yzcnk',
+    /** "🤖Nro Comprobante": el número del certificado. Es NUMÉRICA: sólo viajan los dígitos. */
+    nroComprobanteRet: 'numeric_mm64qm1',
+    /** "🤖Año" del certificado de retención (numérica, los cuatro dígitos). */
+    anioRet: 'numeric_mm64dwpx',
     // CHEQUE
     nroCheque: 'numeric_mm5rrwjg',
     /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */

@@ -123,8 +123,21 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     return cv
   }
 
-  /* Efectivo y retenciones no agregan columnas de VALOR: les alcanza con el medio y el importe.
-     La retención sí adjunta su comprobante, pero eso es un archivo y va en la subida posterior. */
+  /* RETENCIONES (IVA, IIBB, GAN… y las que se sumen): el certificado que las respalda. Se
+     reconocen por el prefijo del medio de cobro, así que una retención nueva entra sola. */
+  if (esRetencion(m.formaPago)) {
+    /* Las dos columnas son NUMÉRICAS, así que viajan sólo los dígitos, igual que el número de
+       cheque: "0001-00001234" se manda como "000100001234". Los ceros a la izquierda los pierde
+       la columna al guardarlo como número, y eso no se puede evitar desde acá. */
+    const nro = (m.nroComprobanteRetencion ?? '').replace(/\D/g, '')
+    if (nro) cv[COL.cobroSub.nroComprobanteRet] = nro
+    const anio = (m.anioRetencion ?? '').replace(/\D/g, '')
+    if (anio) cv[COL.cobroSub.anioRet] = anio
+    return cv
+  }
+
+  /* Efectivo: no agrega ninguna columna de VALOR, le alcanza con el medio y el importe. El
+     comprobante de la retención es un archivo, así que va en la subida posterior. */
   return cv
 }
 
