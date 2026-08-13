@@ -72,6 +72,7 @@ export const FORMAS_PAGO: readonly FormaPago[] = [
   'Retencion IVA',
   'Retencion IIBB',
   'Retencion GAN',
+  'Retencion CCSS',
   'Tarjeta de débito',
   'Tarjeta de crédito',
 ]
@@ -114,6 +115,7 @@ export const SIN_DESCUENTOS_PAGO: DescuentosPago = {
   'Retencion IVA': 0,
   'Retencion IIBB': 0,
   'Retencion GAN': 0,
+  'Retencion CCSS': 0,
   'Tarjeta de débito': 0,
   'Tarjeta de crédito': 0,
 }
@@ -139,6 +141,7 @@ export const COLOR_PAGO: Record<FormaPago, string> = {
   'Retencion IVA': '#f0b429',
   'Retencion IIBB': '#e2a500',
   'Retencion GAN': '#d97706',
+  'Retencion CCSS': '#b45309',
   'Tarjeta de débito': '#4eccc6',
   'Tarjeta de crédito': '#a25ddc',
 }

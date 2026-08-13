@@ -42,12 +42,14 @@ const retencion = (formaPago: FormaPago): MovimientoPago =>
     nroComprobanteRetencion: '0001-00001234',
   }) as MovimientoPago
 
-/* Las TRES retenciones del catálogo + una que no existe todavía: el ramal se resuelve por el
-   prefijo del medio de cobro, así que la que se sume mañana tiene que entrar igual. */
+/* Las CUATRO retenciones del catálogo + una que no existe todavía: el ramal se resuelve por el
+   prefijo del medio de cobro, así que la que se sume mañana entra igual sin tocar nada. Es lo que
+   pasó con "Retencion CCSS": alcanzó con sumarla al catálogo. */
 const FORMAS = [
   'Retencion IVA',
   'Retencion IIBB',
   'Retencion GAN',
+  'Retencion CCSS',
   'Retencion SUSS',
 ] as unknown as FormaPago[]
 
@@ -62,7 +64,7 @@ await registrarCobro({
 const sub = llamadas[1]
 const cols = (n: number) => JSON.parse(sub.variables[`c${n}`] as string) as Record<string, unknown>
 
-assert.equal(sub.query.match(/create_subitem/g)?.length, 4, 'un subelemento por retención')
+assert.equal(sub.query.match(/create_subitem/g)?.length, 5, 'un subelemento por retención')
 
 FORMAS.forEach((forma, n) => {
   const cv = cols(n)

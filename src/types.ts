@@ -397,6 +397,7 @@ export type FormaPago =
   | 'Retencion IVA'
   | 'Retencion IIBB'
   | 'Retencion GAN'
+  | 'Retencion CCSS'
   | 'Tarjeta de débito'
   | 'Tarjeta de crédito'
 

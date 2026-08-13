@@ -1116,6 +1116,9 @@ export const FORMA_PAGO_LABEL: Record<string, string> = {
   'Retencion IVA': 'Retencion IVA',
   'Retencion IIBB': 'Retencion IIBB',
   'Retencion GAN': 'Retencion IG',
+  /* En "✋Caja" la etiqueta se llama igual que acá (índice 13), así que la traducción es la
+     identidad. Sólo "Retencion GAN" se llama distinto en el board ("Retencion IG"). */
+  'Retencion CCSS': 'Retencion CCSS',
   'Tarjeta de débito': 'Tarjeta de Débito',
   'Tarjeta de crédito': 'Tarjeta de Crédito',
 }

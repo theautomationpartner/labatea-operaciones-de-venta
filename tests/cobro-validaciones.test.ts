@@ -75,6 +75,25 @@ assert.ok(
   'el efectivo no pide comprobante',
 )
 
+/* El catálogo de retenciones se resuelve por PREFIJO, no enumerando: sumar una al selector alcanza
+   para que herede todo el ramal (comprobante obligatorio, nro de comprobante, año y su subitem).
+   Se verifica sobre las cuatro reales y sobre una inventada, que es el caso de la que venga. */
+for (const forma of [
+  'Retencion IVA',
+  'Retencion IIBB',
+  'Retencion GAN',
+  'Retencion CCSS',
+  'Retencion QUE_VENGA',
+]) {
+  assert.ok(esRetencion(forma), `${forma} entra al ramal de retenciones`)
+  assert.ok(
+    retencionSinComprobante({ formaPago: forma } as MovimientoPago),
+    `${forma} exige el comprobante adjunto`,
+  )
+}
+// Y la nueva está OFRECIDA en el selector, que es lo único que no sale del prefijo.
+assert.ok(FORMAS_PAGO.includes('Retencion CCSS'), 'Retencion CCSS se ofrece como medio de cobro')
+
 /* ---------- CRM: el cheque PROPIO del cliente que no acepta cheques ----------
    La veda ya no es del medio de cobro entero: es de ESE cheque. Se dispara sólo cuando el CUIT del
    emisor es el del cliente de la operación y su "Recibimos CHEQUE" (color_mm5yb27h) dice NO; el
