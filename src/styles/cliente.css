@@ -129,6 +129,11 @@
   color: var(--red);
   font-weight: 600;
 }
+/* Campo con la lista desplegada: se cuadra abajo para empalmar con ella. */
+.cliente-v2 .search-wrapper--abierto {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 /* Botón de búsqueda: azul sólido con la lupa, a la altura del campo. */
 .cliente-v2 .btn-buscar {
   flex-shrink: 0;
@@ -153,14 +158,22 @@
   background: #9dbdf5;
   cursor: not-allowed;
 }
-/* Varias coincidencias: el desplegable se ancla al campo, no a la fila. */
-.cliente-v2 .search-container {
+/* Varias coincidencias: el desplegable se ancla al CAMPO, no a la columna entera. El anclaje
+   envuelve sólo al input, así que mide lo mismo que él y el `top: 100%` de `.results` cae en su
+   borde de abajo. Si colgara del contenedor —que además del campo lleva el renglón del aviso— la
+   lista aparecería separada del buscador por el gap más ese renglón. */
+.cliente-v2 .search-anclaje {
   position: relative;
+  min-width: 0;
 }
 .cliente-v2 .results {
   right: auto;
   width: 100%;
-  border-radius: 8px;
+  /* Pegado al campo: la lista es la continuación del buscador, no un panel aparte. El borde de
+     arriba se solapa con el de abajo del campo (-1px) para no dibujar una línea doble, y sólo se
+     redondean las esquinas de abajo: las de arriba las cierra el input. */
+  margin-top: -1px;
+  border-radius: 0 0 8px 8px;
   border-color: var(--c-border);
   max-height: 260px;
 }

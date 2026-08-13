@@ -29,6 +29,8 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
   const ref = useRef<HTMLDivElement>(null)
   useClickOutside(ref, useCallback(() => setAbierto(false), []), abierto)
   const buscando = estado === 'buscando'
+  /** Hay lista de resultados montada debajo del campo. */
+  const desplegado = abierto && resultados.length > 0
 
   const elegir = (c: Cliente) => {
     // El campo queda vacío tras elegir: el resultado se ve en la ficha, no en el buscador.
@@ -73,7 +75,14 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
   return (
     <>
       <div className="search-container" ref={ref}>
-        <div className="search-wrapper">
+        {/* El desplegable de resultados cuelga de ACÁ, no del contenedor: así su `top: 100%` cae
+            justo en el borde de abajo del campo. Colgado del contenedor se le sumaba todo lo que
+            viene después del input —el gap y el renglón del aviso—, y la lista quedaba flotando
+            separada del buscador. El anclaje mide exactamente lo que mide el campo. */}
+        <div className="search-anclaje">
+        {/* Con la lista abierta el campo se cuadra abajo, así el borde entre los dos deja de
+            leerse como el corte entre dos cajas y pasan a ser un solo panel. */}
+        <div className={`search-wrapper ${desplegado ? 'search-wrapper--abierto' : ''}`}>
           <svg
             width="18"
             height="18"
@@ -103,6 +112,20 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
             onKeyDown={(e) => e.key === 'Enter' && !buscando && buscar()}
           />
         </div>
+
+        {/* Varios clientes con el mismo nombre: se elige por código. */}
+        {desplegado && (
+          <div className="results">
+            {resultados.map((c) => (
+              <div className="ritem" key={c.id} onClick={() => elegir(c)}>
+                <span className="ritem-name">{c.name}</span>
+                <span className="ritem-code">{c.codigo}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        </div>
+
         {/* Debajo del campo ya NO va la ayuda de siempre ("Buscar por razón social…"): el
             placeholder del input dice lo mismo. Queda sólo el error de "buscaste sin escribir
             nada", que aparece y desaparece —y por eso el renglón se monta igual cuando está
@@ -115,18 +138,6 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
         >
           {errorInput}
         </span>
-
-        {/* Varios clientes con el mismo nombre: se elige por código. */}
-        {abierto && resultados.length > 0 && (
-          <div className="results">
-            {resultados.map((c) => (
-              <div className="ritem" key={c.id} onClick={() => elegir(c)}>
-                <span className="ritem-name">{c.name}</span>
-                <span className="ritem-code">{c.codigo}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       <button type="button" className="btn-buscar" onClick={buscar} disabled={buscando}>
