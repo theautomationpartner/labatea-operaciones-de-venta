@@ -1835,58 +1835,6 @@
   font-weight: 800;
   color: var(--p-success, #00a86b);
 }
-/* ===== Ficha de Precio de Costo (arriba del precio unitario) ===== */
-.productos-v2 .costo-ficha {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--p-border);
-  border-radius: 8px;
-  background: var(--p-bg-soft, #f7f9fc);
-}
-/* Dentro del detalle desplegable (grid de dos columnas), la ficha ocupa el ancho completo, arriba. */
-.productos-v2 .lindet > .costo-ficha {
-  grid-column: 1 / -1;
-  margin-bottom: 0;
-}
-.productos-v2 .costo-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-}
-.productos-v2 .costo-lbl {
-  color: var(--p-text-secondary);
-  font-weight: 600;
-}
-.productos-v2 .costo-val {
-  font-weight: 700;
-  color: var(--p-text-main);
-  white-space: nowrap;
-}
-/* Input de Precio de Costo: mismo cuerpo que el Precio Unitario, pero de SÓLO LECTURA (no editable).
-   Fondo tenue y sin foco; el texto se mantiene nítido (los input disabled se aclaran solos). */
-.productos-v2 .pbox--ro {
-  background: var(--p-bg-soft, #f1f4f8);
-}
-.productos-v2 .pbox--ro:focus-within {
-  border-color: var(--p-border);
-  box-shadow: none;
-}
-.productos-v2 .pbox--ro input {
-  cursor: default;
-  color: var(--p-text-main);
-  -webkit-text-fill-color: var(--p-text-main);
-  opacity: 1;
-}
-/* Filas de la rentabilidad forzada: acento verde para contrastar con el costo original de arriba. */
-.productos-v2 .costo-row--forzada .costo-lbl,
-.productos-v2 .costo-row--forzada .costo-val {
-  color: var(--p-success, #00a86b);
-}
 /* Fila "Nota de Crédito x Comisión" del detalle de la línea: se distingue del descuento con un
    acento verde, para que se lea como un concepto aparte del descuento total. */
 .productos-v2 .lindet-row--credito .lindet-lbl,

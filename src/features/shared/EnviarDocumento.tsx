@@ -325,13 +325,20 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                 type="button"
                 className="btn-block btn-block--enviar"
                 /* MÓDULO 3 · el fondo verde de éxito depende de la bandera GLOBAL (`enviadoOk`): se
-                   conserva al volver a esta etapa con el stepper. */
+                   conserva al volver a esta etapa con el stepper.
+                   El `opacity: 1` del éxito NO es decorativo: enviado el botón queda `disabled`, y
+                   `.btn-block:disabled` (components.css) lo baja al 50%, que dejaba este verde
+                   lavado al lado del "Presupuesto emitido" —el mismo `var(--green)`, pero en un
+                   botón que no se atenúa—. Acá el gris no significa "no disponible" sino "listo",
+                   así que se pisa. En los otros estados apagados (sin contactos, enviando) el 50%
+                   sí corresponde y se deja. */
                 style={{
                   background: enviadoOk
                     ? 'var(--green)'
                     : estadoEnvio === 'error'
                       ? 'var(--red)'
                       : 'var(--primary-blue)',
+                  ...(enviadoOk ? { opacity: 1 } : {}),
                 }}
                 disabled={contactos.length === 0 || enviando || enviadoOk}
                 aria-busy={enviando}

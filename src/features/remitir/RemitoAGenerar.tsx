@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CompBody } from '@/features/shared/CompBody'
 import type { RemitoItem } from '@/types'
 
 interface RemitoAGenerarProps {
@@ -42,7 +43,7 @@ export function RemitoAGenerar({ numero, items }: RemitoAGenerarProps) {
           </div>
         </div>
 
-        {abierta && (
+        <CompBody abierta={abierta}>
           <div className="comp-body">
             <table className="comp-table">
               <thead>
@@ -66,7 +67,7 @@ export function RemitoAGenerar({ numero, items }: RemitoAGenerarProps) {
               </tbody>
             </table>
           </div>
-        )}
+        </CompBody>
       </div>
     </div>
   )

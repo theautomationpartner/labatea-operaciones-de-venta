@@ -1140,6 +1140,17 @@ export interface DatosPresupuesto {
   totalPesos: number
   /** Total en dólares (neto de los productos en dólares): "🤖TOTAL EN DOLARES $u". */
   totalUsd: number
+  /**
+   * Descuento por forma de pago (pronto pago) aplicado al presupuesto, en puntos porcentuales.
+   * 0 cuando el vendedor no pidió aplicarlo. Se compone en cascada con el descuento manual de
+   * cada línea, igual que en la pantalla.
+   */
+  descFormaPago?: number
+  /**
+   * El vendedor contestó que SÍ a "¿Desea aplicar descuentos por forma de pago?" y eligió una.
+   * Tilda la casilla del ítem que hace que el PDF incluya la leyenda de la forma de pago.
+   */
+  descuentoPagoAplicado?: boolean
 }
 
 /** dd/MM/yyyy → yyyy-MM-dd (formato que espera la columna date de Monday). */
@@ -1165,8 +1176,12 @@ export interface PresupuestoCreado {
  * devolvió: si vuelve a fallar se informa, pero no se corta la creación de las demás. Devuelve
  * `true` si el subelemento quedó creado.
  */
-async function crearSubitemSuelto(itemId: string, linea: LineaPresupuesto): Promise<boolean> {
-  const bulk = construirBulkSubitems([linea], 0)
+async function crearSubitemSuelto(
+  itemId: string,
+  linea: LineaPresupuesto,
+  descFormaPago = 0,
+): Promise<boolean> {
+  const bulk = construirBulkSubitems([linea], 0, descFormaPago)
   if (!bulk) return false
   try {
     const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
@@ -1214,6 +1229,8 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     totalPesos,
     totalUsd,
     vendedor,
+    descFormaPago = 0,
+    descuentoPagoAplicado = false,
   } = datos
 
   const emision = fechaMonday(fechaEmision)
@@ -1232,6 +1249,9 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     // Totales globales calculados en la UI (desglose bimonetario): pesos y dólares por separado.
     [COL.presupuesto.totalPesos]: String(round2(totalPesos)),
     [COL.presupuesto.totalUsd]: String(round2(totalUsd)),
+    /* Casilla de la leyenda de formas de pago del PDF: se tilda cuando el presupuesto salió con un
+       descuento por forma de pago aplicado. Sin él va destildada (los precios son los de lista). */
+    [COL.presupuesto.descuentoFormaPago]: { checked: descuentoPagoAplicado ? 'true' : 'false' },
   }
   /* Rentabilidad forzada: todas las líneas afectadas llevan el mismo % (el del interruptor), que queda
      como rentabilidad del producto. Se toma de la primera línea forzada y va a "Rentabilidad Forzada %".
@@ -1271,7 +1291,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   const faltantes: LineaPresupuesto[] = []
   for (let desde = 0; desde < lineas.length; desde += SUBITEMS_POR_TANDA) {
     const tanda = lineas.slice(desde, desde + SUBITEMS_POR_TANDA)
-    const bulk = construirBulkSubitems(tanda, desde)
+    const bulk = construirBulkSubitems(tanda, desde, descFormaPago)
     if (!bulk) continue
 
     const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
@@ -1288,7 +1308,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   // 2.b) Reintento de las líneas que no entraron, una por solicitud.
   const sinCrear: LineaPresupuesto[] = []
   for (const linea of faltantes) {
-    if (await crearSubitemSuelto(itemId, linea)) subitemsCreados++
+    if (await crearSubitemSuelto(itemId, linea, descFormaPago)) subitemsCreados++
     else sinCrear.push(linea)
   }
 
@@ -1479,10 +1499,11 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
   const precio = esDolar(moneda)
     ? numCol(c[COL.presupuestoSub.precioUnitUsd])
     : numCol(c[COL.presupuestoSub.precioUnit])
-  // Importe bonificado por unidad guardado en el presupuesto (en la moneda del producto). Es la
-  // base sobre la que la venta suma el descuento por forma de pago. Se convierte a pesos junto con
-  // el precio si el producto era en dólares.
-  const impBonificado = numCol(c[COL.presupuestoSub.importeBonif])
+  /* Descuento TOTAL por unidad guardado en el presupuesto (en la moneda del producto): la suma del
+     descuento por producto y el de forma de pago. Se convierte a pesos junto con el precio si el
+     producto era en dólares. La venta CON PRESUPUESTO PREVIO no lo usa —recalcula el descuento con
+     su propia forma de pago—, pero viaja con la línea. */
+  const impBonificado = numCol(c[COL.presupuestoSub.descTotal])
   // Alícuota de IVA de la línea: se lee del propio subelemento ("🤖IVA (%)"); si un presupuesto
   // viejo no la tiene, se cae a la del producto conectado.
   const iva = numCol(c[COL.presupuestoSub.iva]) || numCol(prodCols[COL.producto.iva])
@@ -1602,7 +1623,7 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
         column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.importeBonif}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.descTotal}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {

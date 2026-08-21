@@ -400,13 +400,24 @@ export type FormaPago =
   | 'Retencion CCSS'
   | 'Tarjeta de débito'
   | 'Tarjeta de crédito'
+  /**
+   * ANTICIPO: no es plata que entra sino plata que se PARKEA. Se elige cuando el cliente entregó de
+   * más y ese excedente queda a su favor para imputarlo a una factura futura, en vez de retocar los
+   * importes hasta que la diferencia cierre en cero. Por eso suma del lado de lo que hay que
+   * cancelar y no del de lo recibido (ver `resumenCobro`).
+   */
+  | 'Anticipo'
 
 /** Un pago concreto del cobro. La forma de pago define su descuento y qué datos extra pide. */
 export interface MovimientoPago {
   id: string
   formaPago: FormaPago
   importe: number
-  referencia: string
+  /**
+   * Texto libre de referencia del movimiento. Quedó SIN uso: no se muestra ni se escribe en ningún
+   * tablero. Es opcional para que el formulario no tenga que inventarle un valor a cada borrador.
+   */
+  referencia?: string
   /** Sólo cheque: no puede vencer después del día de hoy (ver `chequeInvalido`). */
   chequeVencimiento: string
   /** Cheque: número, fecha de emisión (dd/mm/aaaa) y banco emisor. */
@@ -438,6 +449,12 @@ export interface MovimientoPago {
    */
   anioRetencion?: string
   nroComprobanteRetencion?: string
+  /**
+   * Transferencia: número de la operación que figura en el comprobante bancario. Es la referencia
+   * con la que se concilia el movimiento contra el extracto, y viaja a la misma columna
+   * "🤖Nro Comprobante" que el número del cheque, el del cupón y el del certificado.
+   */
+  nroComprobanteTransferencia?: string
   /** Nombre del archivo de comprobante adjunto. Obligatorio en transferencia, retenciones y tarjeta. */
   comprobanteNombre?: string
   /**

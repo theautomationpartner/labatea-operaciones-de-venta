@@ -5,6 +5,7 @@ import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { pasoDeProductos, pasosKeysDe } from '@/lib/pasos'
 import { productoConPrecio } from '@/lib/precios'
+import { aceptaRentabForzada } from '@/lib/selectors'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
@@ -68,8 +69,17 @@ export interface AppState {
   tipoVenta: TipoVenta | null
   tipoEntrega: TipoEntrega | null
   /* Forma de pago de la VENTA (elegida en la selección de productos): rige el ramal del cobro.
-     Débito y crédito son formas independientes; no hay un tipo de tarjeta aparte. */
+     Débito y crédito son formas independientes; no hay un tipo de tarjeta aparte. En el
+     PRESUPUESTO no define ningún ramal: sólo aporta el descuento por pronto pago, y sólo cuando
+     `descuentoPagoActivo` está encendido. */
   formaPago: FormaPagoVenta | null
+  /**
+   * PRESUPUESTO: el vendedor contestó que SÍ quiere aplicar descuentos por forma de pago. Es el
+   * interruptor de la pregunta que acompaña al selector en la selección de productos: apagado
+   * (por defecto) el selector queda bloqueado y el presupuesto no lleva ningún descuento por
+   * pronto pago. En la VENTA no interviene: ahí la forma de pago siempre rige.
+   */
+  descuentoPagoActivo: boolean
 
   /* Presupuesto en curso */
   /** Derivada: la fecha del día. No se edita. */
@@ -200,6 +210,8 @@ export const initialState: AppState = {
   tipoVenta: null,
   tipoEntrega: null,
   formaPago: null,
+  // El presupuesto NO aplica descuentos por forma de pago hasta que el vendedor lo pida.
+  descuentoPagoActivo: false,
 
   fechaEmision: hoy(),
   diasVigencia: DIAS_VIGENCIA_INICIAL,
@@ -290,6 +302,7 @@ export type Action =
   | { type: 'setTipoVenta'; value: TipoVenta }
   | { type: 'setTipoEntrega'; value: TipoEntrega }
   | { type: 'setFormaPago'; value: FormaPagoVenta }
+  | { type: 'setDescuentoPagoActivo'; value: boolean }
   | { type: 'setDiasVigencia'; value: number }
   | { type: 'setMoneda'; value: Moneda }
   | { type: 'setTopesDescuento'; value: TopesDescuento }
@@ -414,14 +427,15 @@ function pasoDelModo(
 }
 
 /**
- * Aplica la RENTABILIDAD FORZADA a una línea con el porcentaje dado: sólo si su producto la acepta
- * ("Con Rentab Forzada"). El porcentaje pasa a ser la rentabilidad FINAL de la línea (se guarda en
+ * Aplica la RENTABILIDAD FORZADA a una línea con el porcentaje dado, si su producto la acepta: o
+ * porque el maestro lo habilita, o porque su precio quedó por debajo del costo (ver
+ * `aceptaRentabForzada`). El porcentaje pasa a ser la rentabilidad FINAL de la línea (se guarda en
  * `rentabForzadaAplicada`); la rentabilidad BASE del producto (catálogo) y el PRECIO DE VENTA NO se
  * tocan. La "Nota de Crédito x Comisión" por unidad = Costo Original − Nuevo Precio de Costo, con
  * Nuevo Precio de Costo = Precio de Venta × (1 − %/100). Sin Costo Original conocido no hay monto.
  */
 function aplicarRentabForzadaLinea(l: LineaPresupuesto, pct: number): LineaPresupuesto {
-  if (!l.producto.conRentabForzada) return l
+  if (!aceptaRentabForzada(l.producto)) return l
   const nuevoCosto = round2(l.producto.precio * (1 - pct / 100))
   const monto =
     l.producto.precioCosto != null ? round2(l.producto.precioCosto - nuevoCosto) : undefined
@@ -602,6 +616,17 @@ export function reducer(state: AppState, action: Action): AppState {
          no cambia (misma forma de pago), no se toca nada: no se pisan movimientos válidos. */
       if (action.value === state.formaPago) return state
       return { ...state, formaPago: action.value, cobro: cobroInicial }
+
+    case 'setDescuentoPagoActivo':
+      if (action.value === state.descuentoPagoActivo) return state
+      /* Apagar la pregunta descarta la forma de pago elegida: el presupuesto vuelve a los precios
+         de lista y, si se la vuelve a encender, el selector arranca en blanco. Así no queda una
+         forma de pago "escondida" detrás de un check apagado que después se escriba en Monday. */
+      return {
+        ...state,
+        descuentoPagoActivo: action.value,
+        formaPago: action.value ? state.formaPago : null,
+      }
 
     case 'setDiasVigencia':
       return { ...state, diasVigencia: action.value }

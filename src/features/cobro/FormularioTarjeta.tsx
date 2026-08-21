@@ -186,6 +186,9 @@ export function FormularioTarjeta({
         </label>
         <TipoTarjetaSelect
           id="tarj-tipo"
+          /* El selector ofrece los tipos del medio: los de débito o los de crédito, no una lista
+             común. El medio sale del tipo de tarjeta que eligió la etapa anterior. */
+          formaPago={formaPagoTarjeta(tipo)}
           value={borrador.tipoTarjeta ?? ''}
           onChange={(tipo) => setBorrador({ ...borrador, tipoTarjeta: tipo || null })}
           error={mal('tipoTarjeta')}

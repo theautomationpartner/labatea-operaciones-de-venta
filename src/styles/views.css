@@ -369,6 +369,132 @@
   flex-shrink: 0;
 }
 
+/* ===== PRESUPUESTO · descuento por forma de pago (opcional) ===== */
+/* La pregunta y el selector son UN SOLO control: comparten la caja (`cfgbox`), con una divisoria
+   interna entre las dos mitades. La caja no lleva padding propio —lo pone cada mitad— y sus hijos
+   se estiran a la misma altura, así la divisoria llega de borde a borde. */
+.forma-pago--presup .cfgbox {
+  width: auto;
+  min-width: 0;
+  align-items: stretch;
+  padding: 0;
+  gap: 0;
+}
+/* Separación con el buscador de productos: la mitad de la que usa la VENTA, para que el control
+   quede pegado al bloque que habilita. */
+.forma-pago--presup {
+  margin-bottom: 10px;
+}
+
+/* Mitad izquierda: la pregunta con su check cuadrado. */
+.dpago-check {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+/* Presupuesto ya emitido: la pregunta queda congelada. */
+.dpago-check--off {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/* El input real se oculta pero sigue siendo el que recibe foco y teclado (accesible). */
+.dpago-check-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+/* El cuadradito. Sin tildar va en blanco; tildado, verde lleno con la tilde en blanco. Es lo ÚNICO
+   que cambia de color al tildar: ni el texto ni el borde de la caja se tiñen. */
+.dpago-check-box {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 2px solid var(--border, #d0d4e4);
+  border-radius: 5px;
+  background: var(--bg, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  color: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.dpago-check-box--on {
+  background: var(--green, #00c875);
+  border-color: var(--green, #00c875);
+  color: #fff;
+}
+/* Foco por teclado: anillo alrededor del cuadradito (el input está oculto y no lo puede mostrar). */
+.dpago-check-input:focus-visible + .dpago-check-box {
+  outline: 2px solid var(--purple, #6200ee);
+  outline-offset: 2px;
+}
+/* La pregunta va en UNA sola línea, centrada contra el check. */
+.dpago-check-txt {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-dark, #323338);
+}
+
+/* Divisoria interna entre las dos mitades: de borde a borde de la caja. */
+.dpago-sep {
+  flex: 0 0 auto;
+  width: 1.5px;
+  align-self: stretch;
+  background: var(--tint-config-bd, #e8e5ee);
+}
+
+/* Mitad derecha: el selector. Mismo ancho que en la VENTA (30% del ancho del paso, piso de 240px),
+   medido en unidades de CONTENEDOR porque el ancho útil lo define el panel de Monday. */
+.dpago-fp {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 30cqw;
+  min-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  transition: background 0.15s ease;
+}
+/* Pregunta sin tildar: el selector se apaga en gris oscuro —fondo, ícono y texto— para que se lea
+   como un control deshabilitado. Tildarla lo devuelve a los colores de la caja de configuración. */
+.dpago-fp--off {
+  background: var(--tint-neutral, #f7f8fa);
+}
+.dpago-fp--off .cfg-ic {
+  background: var(--text-gray, #676879);
+}
+.dpago-fp--off .cfg-l,
+.dpago-fp--off .cfg-sel {
+  color: var(--text-gray, #676879);
+}
+
+/* Panel angosto: las dos mitades se apilan, la divisoria desaparece y el selector toma todo el
+   ancho. Es una consulta de CONTENEDOR, no de viewport. */
+@container (max-width: 900px) {
+  .forma-pago--presup .cfgbox {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .dpago-sep {
+    display: none;
+  }
+  .dpago-fp {
+    width: 100%;
+    border-top: 1.5px solid var(--tint-config-bd, #e8e5ee);
+  }
+}
+
 /* ===== VISTA PRODUCTOS ===== */
 /* Título de la vista (sin card): código arriba; nombre y límite (destacado) al lado. */
 .prod-cliente-titulo {

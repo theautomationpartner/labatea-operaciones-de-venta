@@ -26,6 +26,18 @@ export const FORMAS_PAGO_VENTA: readonly FormaPagoVenta[] = [
 ]
 
 /**
+ * Formas de pago que ofrece el PRESUPUESTO para el descuento por pronto pago. NO incluye la
+ * CUENTA CORRIENTE: diferir el pago no bonifica nada, así que ofrecerla sería ofrecer un 0%.
+ * A diferencia de la venta, no dependen de la condición de pago del cliente: el presupuesto es
+ * una propuesta comercial, todavía no hay un cobro pactado.
+ */
+export const FORMAS_PAGO_PRESUPUESTO: readonly FormaPagoVenta[] = [
+  'CONTADO',
+  'TARJETA DE CREDITO',
+  'TARJETA DE DEBITO',
+]
+
+/**
  * Formas de pago que puede elegir el cliente según su condición de pago pactada:
  *   · CUENTA CORRIENTE → todas (contado, cuenta corriente y las dos tarjetas).
  *   · cualquier otra (CONTADO, proveedores) → sólo CONTADO.
@@ -38,6 +50,24 @@ export const formasPagoDeCliente = (
 /** Las dos tarjetas comparten el ramal de cobro (formulario de tarjeta). */
 export const esPagoConTarjeta = (forma: FormaPagoVenta | null): boolean =>
   forma === 'TARJETA DE DEBITO' || forma === 'TARJETA DE CREDITO'
+
+/**
+ * El movimiento es un ANTICIPO: el excedente que el cliente entregó de más y queda a su favor.
+ *
+ * No es un medio de cobro como los otros aunque se elija del mismo selector: por los demás entra
+ * plata, y por éste se decide DÓNDE va la que ya entró. De ahí que sume del lado de lo que hay que
+ * cancelar (ver `resumenCobro`) y que en el recibo se declare como un subelemento aparte.
+ */
+export const esAnticipo = (forma: FormaPago | null | undefined): boolean => forma === 'Anticipo'
+
+/**
+ * El MEDIO DE COBRO cargado es una tarjeta. Ojo con `esPagoConTarjeta`, que se le parece pero mira
+ * otra cosa: aquélla mira la FORMA DE PAGO de la venta ("TARJETA DE DEBITO"), ésta el medio con el
+ * que se registra un movimiento del recibo ("Tarjeta de débito"). Son dos vocabularios distintos y
+ * por eso son dos funciones distintas.
+ */
+export const esMedioTarjeta = (forma: FormaPago | null | undefined): boolean =>
+  forma === 'Tarjeta de débito' || forma === 'Tarjeta de crédito'
 
 /** Tipo de tarjeta que le corresponde a la forma de pago elegida. */
 export const tipoTarjetaDe = (forma: FormaPagoVenta | null): TipoTarjetaCobro =>
@@ -75,6 +105,7 @@ export const FORMAS_PAGO: readonly FormaPago[] = [
   'Retencion CCSS',
   'Tarjeta de débito',
   'Tarjeta de crédito',
+  'Anticipo',
 ]
 
 /**
@@ -118,6 +149,7 @@ export const SIN_DESCUENTOS_PAGO: DescuentosPago = {
   'Retencion CCSS': 0,
   'Tarjeta de débito': 0,
   'Tarjeta de crédito': 0,
+  Anticipo: 0,
 }
 
 /**
@@ -144,6 +176,7 @@ export const COLOR_PAGO: Record<FormaPago, string> = {
   'Retencion CCSS': '#b45309',
   'Tarjeta de débito': '#4eccc6',
   'Tarjeta de crédito': '#a25ddc',
+  Anticipo: 'var(--purple)',
 }
 
 export interface BalancePago {
@@ -168,7 +201,10 @@ export function balancePagos(
 }
 
 export interface ResumenCobro {
+  /** Lo que hay que cubrir: el total de la venta MÁS lo que se dejó a favor del cliente. */
   totalACobrar: number
+  /** Lo que se parkeó como saldo a favor. 0 cuando no se cargó ningún anticipo. */
+  anticipos: number
   /** Lo que entra a caja: la suma de los montos cobrados, ya con el descuento aplicado. */
   totalCobrado: number
   /** Lo que el cliente imputa a la venta, antes del descuento de cada forma de pago. */
@@ -187,20 +223,33 @@ export interface ResumenCobro {
 }
 
 export function resumenCobro(balances: BalancePago[], totalVenta: number): ResumenCobro {
-  const recibido = balances.reduce((a, b) => a + b.movimiento.importe, 0)
-  const descuentoTotal = balances.reduce((a, b) => a + b.descuento, 0)
+  /* El ANTICIPO no es plata que entra: es plata que ya entró y se parkea a favor del cliente. Va
+     del lado de lo que hay que CANCELAR —igual que una factura— y no del de lo recibido. Sumarlo
+     como un cobro más agrandaría el excedente en vez de absorberlo, que es justo lo contrario de
+     para lo que existe. */
+  const anticipos = round2(
+    balances.filter((b) => esAnticipo(b.movimiento.formaPago)).reduce((a, b) => a + b.movimiento.importe, 0),
+  )
+  const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
+
+  const recibido = cobros.reduce((a, b) => a + b.movimiento.importe, 0)
+  const descuentoTotal = cobros.reduce((a, b) => a + b.descuento, 0)
   const totalCobrado = recibido - descuentoTotal
   // Lo cobrado más los descuentos: es contra esto que se mide la cobertura de la venta.
   const cancelado = totalCobrado + descuentoTotal
-  const cobradoPct = totalVenta > 0 ? Math.min((cancelado / totalVenta) * 100, 100) : 0
+  /* Lo que hay que cubrir: la venta MÁS lo que se decidió dejar a favor. Con el anticipo cargado
+     por el excedente exacto, la diferencia cierra en cero sola. */
+  const aCubrir = round2(totalVenta + anticipos)
+  const cobradoPct = aCubrir > 0 ? Math.min((cancelado / aCubrir) * 100, 100) : 0
 
   return {
-    totalACobrar: totalVenta,
+    totalACobrar: aCubrir,
+    anticipos,
     totalCobrado,
     recibido,
     descuentoTotal,
     cancelado,
-    pendiente: Math.max(totalVenta - cancelado, 0),
+    pendiente: Math.max(aCubrir - cancelado, 0),
     cobradoPct,
     pendientePct: 100 - cobradoPct,
   }
@@ -462,3 +511,48 @@ export function estadoCtaCte(
     resultante: saldoPendiente + totalVenta - cancelado,
   }
 }
+
+/**
+ * Qué importe se le propone a la tarjeta que se está cargando.
+ *
+ * Con UN pago, la tarjeta tiene que cancelar todo lo que falta: se sugiere la diferencia entera.
+ * Con DOS, la PRIMERA la escribe el usuario —es él quien decide cómo repartir— y por eso arranca en
+ * cero; la segunda vuelve a sugerir la diferencia, que a esa altura es exactamente el resto.
+ *
+ * `cargadas` es cuántas tarjetas ya entraron al cobro: es lo que distingue la primera de la segunda
+ * sin llevar un contador aparte.
+ */
+export function importeSugeridoTarjeta(
+  cantPagos: string,
+  cargadas: number,
+  diferencia: number,
+): number {
+  if (cantPagos === '2' && cargadas === 0) return 0
+  return Math.max(diferencia, 0)
+}
+
+/**
+ * La MISMA regla del vencimiento del cheque, dicha en el ancho de un campo. Debajo de un input hay
+ * lugar para un renglón, no para la explicación entera: ahí se dice qué tiene que pasar, y el
+ * porqué queda para `MSG_CHEQUE_VENCIMIENTO`, que se muestra donde hay ancho de pantalla.
+ */
+export const MSG_CHEQUE_VENC_CORTO = 'El vencimiento no puede ser posterior a hoy'
+
+/**
+ * El cobro ya está CUBIERTO: lo recibido alcanza exactamente lo que hay que cancelar, así que el
+ * formulario se cierra. Otro movimiento sólo podría pasarse del total, y frenarlo ANTES de cargarlo
+ * es mejor que dejarlo cargar y después reclamar el exceso: pedir que se deshaga algo que la app
+ * dejó hacer es peor que no dejarlo hacer.
+ *
+ * Se exige que haya entrado ALGO y no sólo que la diferencia dé cero: con el paso recién abierto los
+ * dos totales valen cero, y ahí no hay nada cubierto —hay un cobro sin empezar—.
+ *
+ * La tabla NO se bloquea: sus importes siguen editables y sus filas se pueden quitar, que es
+ * justamente por dónde se vuelve a abrir el formulario.
+ */
+export const cobroCubierto = (resumen: ResumenCobro): boolean =>
+  resumen.recibido > 0 && diferenciaEnCero(resumen)
+
+/** Lo que se dice cuando el formulario se cierra por eso. Nombra la salida, no sólo el bloqueo. */
+export const MSG_COBRO_CUBIERTO =
+  'El total recibido ya cubre el total a cancelar: para cargar otro movimiento, quitá o ajustá alguno de los registrados.'

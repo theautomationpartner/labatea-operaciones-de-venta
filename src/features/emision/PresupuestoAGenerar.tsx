@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { CompBody } from '@/features/shared/CompBody'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
+import { descuentoUnitario } from '@/lib/descuentos'
 import { money, moneyU, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import type { LineaPresupuesto } from '@/types'
@@ -10,6 +12,12 @@ interface PresupuestoAGenerarProps {
   lineas: LineaPresupuesto[]
   /** El presupuesto ya se emitió en el tablero en esta sesión: tilda el check en verde. */
   emitido?: boolean
+  /**
+   * Descuento por forma de pago del presupuesto, en %. 0 cuando no se aplica. Se compone en
+   * cascada con el descuento manual de cada línea, igual que en la tabla de productos y que en las
+   * columnas del subelemento que se escriben en Monday.
+   */
+  descFormaPago?: number
 }
 
 /** Verde de los importes en dólares (mismo tono que la tabla y el resumen del presupuesto). */
@@ -18,17 +26,20 @@ const VERDE_USD = 'var(--green-dark)'
 /** La línea está cotizada en dólares. */
 const esUsd = (l: LineaPresupuesto): boolean => esDolar(l.producto.moneda)
 
-/** Importe bonificado por unidad: lo que se descuenta (precio × desc%/100). Es el valor que también
- *  se escribe en `numeric_mm5rddvm` del subelemento. En la moneda del producto. */
-const bonifUnitDe = (l: LineaPresupuesto): number => round2(l.producto.precio * (l.descuento / 100))
+/** Importe bonificado por unidad: TODO lo que se descuenta (forma de pago + manual, en cascada).
+ *  Es el "Descuento TOTAL" del subelemento (`numeric_mm5w6h1x`). En la moneda del producto. */
+const bonifUnitDe = (l: LineaPresupuesto, descFormaPago: number): number =>
+  descuentoUnitario(l.producto.precio, l.descuento, descFormaPago).total
 
 /** Total de la línea, ya bonificado: (precio − bonif) × cantidad. En la moneda del producto. */
-const totalDe = (l: LineaPresupuesto): number =>
-  round2(l.producto.precio * (1 - l.descuento / 100) * l.cantidad)
+const totalDe = (l: LineaPresupuesto, descFormaPago: number): number =>
+  round2(descuentoUnitario(l.producto.precio, l.descuento, descFormaPago).precioFinal * l.cantidad)
 
 /** Suma de los totales (ya bonificados) de las líneas de una moneda (pesos o dólares). */
-const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
-  round2(lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l), 0))
+const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean, descFormaPago: number): number =>
+  round2(
+    lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l, descFormaPago), 0),
+  )
 
 /** Suma del BRUTO (precio × cantidad, sin bonificar) de las líneas de una moneda. */
 const brutoMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
@@ -48,11 +59,16 @@ const brutoMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
  * muestran con prefijo `$u` en verde. Precio unitario, Importe Bonif. y Subtotal por línea son los
  * mismos valores que se escriben en las columnas del subelemento en Monday.
  */
-export function PresupuestoAGenerar({ numero, lineas, emitido = false }: PresupuestoAGenerarProps) {
+export function PresupuestoAGenerar({
+  numero,
+  lineas,
+  emitido = false,
+  descFormaPago = 0,
+}: PresupuestoAGenerarProps) {
   const [abierta, setAbierta] = useState(true)
 
-  const totalPesos = totalMoneda(lineas, false)
-  const totalUsd = totalMoneda(lineas, true)
+  const totalPesos = totalMoneda(lineas, false, descFormaPago)
+  const totalUsd = totalMoneda(lineas, true, descFormaPago)
   const hayDolares = lineas.some(esUsd)
   // Totales estándar en pesos: bruto, descuento (bruto − neto) y gravado (= neto). El presupuesto
   // NO liquida IVA, así que el IVA es 0 y el Total coincide con el Gravado.
@@ -108,7 +124,7 @@ export function PresupuestoAGenerar({ numero, lineas, emitido = false }: Presupu
           </span>
         </div>
 
-        {abierta && (
+        <CompBody abierta={abierta}>
           <div className="comp-body">
             <table className="comp-table">
               <thead>
@@ -141,10 +157,10 @@ export function PresupuestoAGenerar({ numero, lineas, emitido = false }: Presupu
                         {fmt(round2(l.producto.precio))}
                       </td>
                       <td className="ta-r" style={{ color: colUsd }}>
-                        {fmt(bonifUnitDe(l))}
+                        {fmt(bonifUnitDe(l, descFormaPago))}
                       </td>
                       <td className="ta-r comp-total-prod" style={{ color: colUsd }}>
-                        {fmt(totalDe(l))}
+                        {fmt(totalDe(l, descFormaPago))}
                       </td>
                     </tr>
                   )
@@ -168,7 +184,7 @@ export function PresupuestoAGenerar({ numero, lineas, emitido = false }: Presupu
               />
             </div>
           </div>
-        )}
+        </CompBody>
       </div>
     </div>
   )

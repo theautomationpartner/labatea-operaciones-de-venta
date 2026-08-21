@@ -116,6 +116,40 @@ export function rentabilidadDeMarkup(basePct: number, descuentoPct = 0): number 
   return round2((base * (1 - d) - 1) * 100)
 }
 
+/**
+ * El precio unitario vigente deja al producto EN PÉRDIDA: se vende por debajo de su costo. Mide el
+ * precio TAL COMO quedó —con el override del administrador ya aplicado, que es de donde sale la
+ * pérdida— contra el "Costo Final" del maestro, sin descuentos de por medio.
+ *
+ * Sin costo conocido devuelve `false`: `rentabilidadDe` no inventa una rentabilidad cuando no hay
+ * contra qué medir, y una pérdida que no se puede probar no se afirma.
+ */
+export const precioDaPerdida = (p: {
+  precioCosto?: number
+  precioSinIva?: number
+  precio: number
+  rentabilidad: number
+}): boolean => rentabilidadDe(precioNetoDe(p), costoDe(p)) < 0
+
+/**
+ * El producto recibe la rentabilidad forzada cuando el interruptor está encendido. Son DOS motivos
+ * independientes, y alcanza con uno:
+ *
+ *   1. El maestro lo habilita ("🤖Rentabilidad Forzada" = "Con Rentab Forzada").
+ *   2. Su precio unitario quedó por debajo del costo. Es el caso que la funcionalidad resuelve: al
+ *      pisar el precio a mano la rentabilidad se va a negativo, y forzarla es lo que lo corrige.
+ *
+ * Es la ÚNICA fuente de esta regla: la usan el reducer —que es el que aplica— y la previsualización
+ * de la carga, así que lo que se muestra antes de agregar no puede diferir de lo que se aplica.
+ */
+export const aceptaRentabForzada = (p: {
+  conRentabForzada?: boolean
+  precioCosto?: number
+  precioSinIva?: number
+  precio: number
+  rentabilidad: number
+}): boolean => p.conRentabForzada === true || precioDaPerdida(p)
+
 /** Rentabilidad BASE del producto de la línea: sin ningún descuento, sobre su precio de lista. */
 export const rentabilidadBaseLinea = (l: LineaPresupuesto): number =>
   rentabilidadDe(precioNetoDe(l.producto), costoDe(l.producto))
@@ -236,24 +270,38 @@ const totalMoneda = (r: ResumenPresupuesto): TotalMoneda => ({
  * neto. El neto en dólares se lleva a pesos con la tasa del día SÓLO para `netoProyectado`, que es
  * lo que se resta del crédito disponible del cliente. La rentabilidad se pondera por el importe de
  * cada línea en pesos-equivalente para que el indicador tenga una sola escala.
+ *
+ * `descFormaPago` es el descuento por pronto pago de la operación (0 si no aplica): se compone EN
+ * CASCADA con el descuento manual de cada línea, las mismas fórmulas que usa la tabla de productos,
+ * así los totales de las dos monedas dicen exactamente lo mismo que las filas.
  */
 export function resumenPresupuestoBimoneda(
   lineas: LineaPresupuesto[],
   tasa: number,
+  descFormaPago = 0,
 ): ResumenBimoneda {
   const t = tasa > 0 ? tasa : 0
   const arsLineas = lineas.filter((l) => !esDolar(l.producto.moneda))
   const usdLineas = lineas.filter((l) => esDolar(l.producto.moneda))
-  const ars = resumenPresupuesto(arsLineas, false)
-  const usd = resumenPresupuesto(usdLineas, false)
-  // Cada línea pesa por su importe en pesos: las de dólares, convertidas con la tasa del día.
-  const pesoLinea = (l: LineaPresupuesto) =>
-    esDolar(l.producto.moneda) ? totalLinea(l) * t : totalLinea(l)
+  const ars = resumenPresupuesto(arsLineas, false, descFormaPago)
+  const usd = resumenPresupuesto(usdLineas, false, descFormaPago)
+  /* Cada línea pesa por su importe YA bonificado en pesos: las de dólares, convertidas con la tasa
+     del día. Es la misma base que usa `resumenPresupuesto` para ponderar dentro de cada moneda. */
+  const netoDe = (l: LineaPresupuesto) =>
+    netoLinea(l.producto.precio, l.cantidad, l.descuento, descFormaPago)
+  const pesoLinea = (l: LineaPresupuesto) => (esDolar(l.producto.moneda) ? netoDe(l) * t : netoDe(l))
   const base = lineas.reduce((acc, l) => acc + pesoLinea(l), 0)
-  // A dos decimales, igual que el resto: la rentabilidad general no es un entero.
+  /* Cada línea aporta su rentabilidad FINAL —con los dos descuentos ya aplicados, y con el % forzado
+     cuando lo tiene—, igual que la rentabilidad de una sola moneda. A dos decimales: la general no
+     es un entero. */
   const rentabilidad =
     base > 0
-      ? round2(lineas.reduce((acc, l) => acc + rentabilidadLinea(l) * (pesoLinea(l) / base), 0))
+      ? round2(
+          lineas.reduce(
+            (acc, l) => acc + rentabilidadFinalLinea(l, descFormaPago) * (pesoLinea(l) / base),
+            0,
+          ),
+        )
       : 0
   return {
     ars: totalMoneda(ars),

@@ -147,9 +147,9 @@ export function VentaView() {
     () =>
       ventaItems.map((it) => {
         const precio = it.precio
-        /* El descuento del presupuesto se RECALCULA con el % de la línea (`it.desc`), no se lee
-           `it.impBonificado`. La columna Importe Bonif. del presupuesto guarda el precio unitario
-           cuando NO hubo descuento (regla del board), así que no es confiable como monto. */
+        /* El descuento se RECALCULA con el % de la línea (`it.desc`) y la forma de pago de ESTA
+           venta, no se lee `it.impBonificado`: el "Descuento TOTAL" que trae el presupuesto lleva
+           el pronto pago que se eligió allá, que no tiene por qué ser el de la venta. */
         const impBonif = descuentoUnitario(precio, it.desc ?? 0, descFormaPago).total
         // Importe Total de la línea, ya bonificado (con la forma de pago aplicada).
         const totalLinea = round2((precio - impBonif) * it.aVender)

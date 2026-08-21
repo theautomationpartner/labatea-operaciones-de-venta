@@ -11,6 +11,16 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* La canaleta de la barra de scroll se reserva SIEMPRE, haya o no desborde. Sin esto, cualquier
+     cosa que cambie el alto del contenido —desplegar una card de comprobante, agregar un producto,
+     abrir un aviso— hace aparecer o desaparecer la barra: el ancho útil salta 8px y TODOS los pasos,
+     que son cajas centradas (`max-width: 1480px; margin: 0 auto`), se corren 4px de costado. Con la
+     animación de las cards ese salto quedaba a la vista a mitad del despliegue.
+     `stable` (y no `both-edges`) porque la canaleta va del lado del scroll: las barras a sangre
+     —la de contexto sticky, que se estira con márgenes negativos— siguen llegando al borde
+     izquierdo, y por la derecha terminan donde termina la barra, que es lo que ya pasaba al
+     scrollear. */
+  scrollbar-gutter: stable;
   padding: 0 24px 20px;
   background: #ffffff;
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CompBody } from '@/features/shared/CompBody'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
@@ -228,7 +229,7 @@ export function CobroProforma() {
               </span>
             </div>
 
-            {abierta && (
+            <CompBody abierta={abierta}>
               <div className="comp-body">
                 <table className="comp-table">
                   <thead>
@@ -286,7 +287,7 @@ export function CobroProforma() {
                   descuento en factura del 6% por pago anticipado o cdo.
                 </p>
               </div>
-            )}
+            </CompBody>
           </div>
 
           <EnviarDocumento documento="proforma" numero="Factura Proforma" />

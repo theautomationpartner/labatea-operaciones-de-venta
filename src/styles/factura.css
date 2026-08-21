@@ -364,6 +364,54 @@
 }
 
 /* --- Detalle plegable --- */
+/* --- Despliegue animado del cuerpo de la card (`CompBody`) ---
+   La altura se anima con el GRID: la fila pasa de `0fr` a `1fr`, así el navegador interpola la
+   altura REAL del contenido sin que haya que medirla en JS ni inventar un `max-height` (que con
+   una tabla larga se corta y con una corta hace que la animación "espere" de más).
+   El contenido queda montado con la card cerrada —si no, no habría nada que animar al cerrar—,
+   pero clipeado y en `visibility: hidden`, de modo que no se puede tabular hacia adentro ni lo
+   anuncian los lectores de pantalla. */
+.factura-v2 .comp-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.factura-v2 .comp-body-wrap.open {
+  grid-template-rows: 1fr;
+}
+.factura-v2 .comp-body-inner {
+  /* `min-height: 0` es lo que deja que la fila del grid baje efectivamente a 0. */
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  /* El ocultado espera a que termine el colapso; al abrir se hace visible en el acto. */
+  transition: visibility 0s linear 0.28s;
+}
+.factura-v2 .comp-body-wrap.open .comp-body-inner {
+  visibility: visible;
+  transition-delay: 0s;
+}
+/* El contenido acompaña con un fundido corto: la tabla no "aparece" de golpe al final. */
+.factura-v2 .comp-body-wrap .comp-body {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.factura-v2 .comp-body-wrap.open .comp-body {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.06s;
+}
+/* Preferencia del sistema por movimiento reducido: se despliega igual, pero sin animar. */
+@media (prefers-reduced-motion: reduce) {
+  .factura-v2 .comp-body-wrap,
+  .factura-v2 .comp-body-wrap .comp-body,
+  .factura-v2 .comp-body-inner {
+    transition-duration: 0s;
+    transition-delay: 0s;
+  }
+}
+
 .factura-v2 .comp-body {
   border-top: 1px solid var(--f-border);
   padding: 4px 18px 18px;

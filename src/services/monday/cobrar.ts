@@ -16,13 +16,14 @@
  * Igual que el resto de la capa, sin token (`mondayHabilitado`) no se escribe nada y se
  * devuelven ids simulados para que el prototipo siga corriendo en local.
  */
-import { cuitCompleto, esRetencion, type BalancePago } from '@/lib/cobros'
+import { cuitCompleto, esAnticipo, esRetencion, type BalancePago } from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import type { MovimientoPago } from '@/types'
 import {
   BOARDS,
   CAJA_INDEX,
+  COBRO_REGISTRO_INDEX,
   COL,
   personCol,
   CHEQUE_ORIGEN_LABEL,
@@ -84,6 +85,12 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
   if (m.formaPago === 'Transferencia') {
     const banco = relacion(m.cuentaPropiaId)
     if (banco) cv[COL.cobroSub.bancoAcreditacion] = banco
+    /* Número de la operación que figura en el comprobante bancario: es la referencia con la que se
+       concilia el movimiento contra el extracto. Va a "🤖Nro Comprobante", la MISMA columna que el
+       nro de cheque, el del cupón y el del certificado, y como es de texto viaja tal cual —el
+       número de un banco puede llevar letras o guiones que son parte del dato—. */
+    const nro = (m.nroComprobanteTransferencia ?? '').trim()
+    if (nro) cv[COL.cobroSub.nroComprobante] = nro
     return cv
   }
 
@@ -163,6 +170,42 @@ const columnasFactura = (f: FacturaCancelada): Record<string, unknown> => {
   return cv
 }
 
+/**
+ * Pone el recibo en "Registrar": el disparador de la automatización que lo asienta en el sistema.
+ *
+ * Va por ÍNDICE (ver `COBRO_REGISTRO_INDEX`) y no se espera: a partir de acá el circuito es del
+ * tablero, y la app no tiene nada que hacer con el resultado. Un fallo se traga —el recibo ya está
+ * creado y completo, así que el estado se puede volver a poner a mano desde Monday—.
+ */
+const dispararRegistro = (itemId: string): Promise<unknown> =>
+  mondayApi(
+    `mutation ($board: ID!, $item: ID!, $cv: JSON!) {
+       change_multiple_column_values(board_id: $board, item_id: $item, column_values: $cv) { id }
+     }`,
+    {
+      board: BOARDS.cobros,
+      item: itemId,
+      cv: JSON.stringify({
+        [COL.cobro.estadoRegistro]: { index: COBRO_REGISTRO_INDEX.registrar },
+      }),
+    },
+  ).catch(() => null)
+
+/** Nombre del subelemento del anticipo, igual que la etiqueta de "✋Caja". */
+const ANTICIPO_LABEL = 'Anticipo'
+
+/**
+ * Columnas del subelemento del ANTICIPO: el excedente que el cliente entregó de más y le queda a
+ * favor. Se declara con las MISMAS dos columnas que una factura cancelada —etiqueta e importe
+ * cancelado— porque es lo mismo desde la caja: plata recibida que ya tiene destino. La diferencia
+ * es a qué se imputa, y por eso no lleva la relación al comprobante: todavía no hay ninguno.
+ */
+const columnasAnticipo = (importe: number): Record<string, unknown> => ({
+  // Etiqueta de sistema: va por índice, no por label (no se puede crear al vuelo).
+  [COL.cobroSub.formaPago]: { index: CAJA_INDEX.anticipo },
+  [COL.cobroSub.importeCancelado]: String(round2(importe)),
+})
+
 /** Una factura emitida por la venta, que este cobro cancela. */
 export interface FacturaCancelada {
   /** Ítem del comprobante en "🧾Facturación" (18422405731). */
@@ -202,6 +245,21 @@ export interface DatosCobro {
 }
 
 /**
+ * El recibo NO CIERRA: lo que el cliente entregó no coincide con lo que se le imputa. Se lanza
+ * antes de escribir nada —un recibo desbalanceado es un asiento contable mal hecho, y corregirlo
+ * después obliga a tocar Monday a mano—.
+ */
+export class ReciboDesbalanceado extends Error {
+  constructor(cancelado: number, recibido: number) {
+    super(
+      `El recibo no cierra: se imputan ${round2(cancelado)} y se reciben ${round2(recibido)} ` +
+        `(diferencia ${round2(cancelado - recibido)}).`,
+    )
+    this.name = 'ReciboDesbalanceado'
+  }
+}
+
+/**
  * Crea el recibo del cobro con un subelemento por cada factura cancelada y otro por cada
  * movimiento cargado, en ese orden. El ítem raíz nace con el nombre del cliente; su ID definitivo
  * ("RECIBO-01") lo asigna la customKey del board.
@@ -220,6 +278,25 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
     facturas = [],
     balances = [],
   } = datos
+
+  /* El ANTICIPO llega como un movimiento más —se elige del mismo selector que el efectivo o el
+     cheque—, pero en el recibo NO es un cobro: es el excedente que queda a favor del cliente. Se
+     separa acá para que cada uno vaya a su lugar. */
+  const anticipos = balances.filter((b) => esAnticipo(b.movimiento.formaPago))
+  const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
+  const anticipo = round2(anticipos.reduce((acc, b) => acc + b.movimiento.importe, 0))
+
+  /* Con ANTICIPO se exige que el recibo cierre EXACTO: lo imputado —las facturas canceladas más el
+     excedente que queda a favor— tiene que igualar lo recibido por los medios de cobro. El anticipo
+     existe justamente para absorber esa diferencia, así que si después de sumarlo el recibo sigue
+     sin cerrar, el importe del anticipo está mal y asentarlo dejaría descuadrado el saldo del
+     cliente. Se compara al centavo, que es la precisión con la que se escribe. */
+  if (anticipo > 0) {
+    const cancelado = round2(facturas.reduce((acc, f) => acc + f.importe, 0) + anticipo)
+    const recibido = round2(cobros.reduce((acc, b) => acc + b.movimiento.importe, 0))
+    if (cancelado !== recibido) throw new ReciboDesbalanceado(cancelado, recibido)
+  }
+
   if (!mondayHabilitado()) return { id: `mock-cobro-${Date.now()}` }
 
   const cabecera: Record<string, unknown> = {
@@ -253,7 +330,14 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
       nombre: FACT_CANCELADA_LABEL,
       columnas: columnasFactura(f),
     })),
-    ...balances.map((b) => ({
+    /* El ANTICIPO va DESPUÉS de las facturas y ANTES de los movimientos: la lectura del recibo es
+       "qué se canceló · qué quedó a favor · con qué se pagó". Es lo que el cliente entregó de más y
+       no se imputa a ninguna factura de esta venta, así que cierra la columna del debe junto a
+       ellas en lugar de mezclarse con los medios de cobro. */
+    ...(anticipo && anticipo > 0
+      ? [{ nombre: ANTICIPO_LABEL, columnas: columnasAnticipo(anticipo) }]
+      : []),
+    ...cobros.map((b) => ({
       nombre: b.movimiento.formaPago,
       columnas: columnasMovimiento(b),
       balance: b,
@@ -261,6 +345,16 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
   ]
   if (subitems.length > 0) {
     const subitemIds = await crearSubitems(itemId, subitems)
+
+    /* RECIÉN ACÁ se dispara el registro del cobro en el sistema, con el ítem y TODOS sus
+       subelementos ya creados —las dos creaciones quedaron awaiteadas más arriba—. El orden es la
+       razón de ser de este bloque: puesto antes, la automatización del tablero correría sobre un
+       recibo sin facturas ni movimientos y asentaría un cobro vacío.
+       Sólo se dispara si hubo movimientos: un recibo sin cobros cargados no tiene nada que
+       registrar. La subida de los comprobantes NO se espera —son archivos que se adjuntan a
+       subelementos que ya existen—, y el disparo tampoco: la venta no se queda esperando a que la
+       automatización termine. */
+    if (cobros.length > 0) void dispararRegistro(itemId)
     await subirComprobantes(subitemIds, subitems)
   }
 

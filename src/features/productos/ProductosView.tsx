@@ -17,6 +17,7 @@ import { hayDocumentoEmitido } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import { BuscadorProducto } from './BuscadorProducto'
 import { CargaLinea } from './CargaLinea'
+import { DescuentoPagoPresupuesto } from './DescuentoPagoPresupuesto'
 import { FiltrosProductos } from './FiltrosProductos'
 import { FormaPagoSelect } from './FormaPagoSelect'
 import { RentabForzada } from './RentabForzada'
@@ -37,6 +38,7 @@ export function ProductosView() {
     tipoVenta,
     tipoEntrega,
     formaPago,
+    descuentoPagoActivo,
     descuentosPago,
     comisiones,
     tasaCambio,
@@ -66,9 +68,12 @@ export function ProductosView() {
     esAdministrador(state.usuarioActual) &&
     (operacion === 'PRESUPUESTAR' ||
       (esVenta && tipoVenta === 'DIRECTA' && tipoEntrega !== 'ANTERIOR'))
-  /* Descuento por pronto pago de la forma de pago elegida (sólo en la venta). Se compone con el
-     descuento manual de cada línea en la tabla y en el resumen. */
-  const descFormaPago = esVenta ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
+  /* Descuento por pronto pago de la forma de pago elegida. Se compone con el descuento manual de
+     cada línea en la tabla y en el resumen. En la VENTA rige siempre (la forma de pago define el
+     ramal del cobro); en el PRESUPUESTO es opcional y sólo cuenta con la pregunta contestada que
+     sí —apagada, el presupuesto sale a precios de lista aunque haya una forma de pago vieja—. */
+  const aplicaDescPago = esVenta || descuentoPagoActivo
+  const descFormaPago = aplicaDescPago ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
   /* El presupuesto no liquida IVA: ni en el precio unitario ni en los totales. La venta sí,
      así que la misma vista calcula distinto según de qué operación se trate. */
   const resumen = useMemo(
@@ -79,8 +84,8 @@ export function ProductosView() {
      pesos y en dólares, y el neto en dólares se proyecta a pesos (a la tasa del día) sólo para
      medir el crédito. La rentabilidad ponderada sale de este mismo cálculo. */
   const bimoneda = useMemo(
-    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0),
-    [lineas, tasaCambio],
+    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0, descFormaPago),
+    [lineas, tasaCambio, descFormaPago],
   )
   /* El crédito se mide sobre el NETO (sin IVA), la misma base que usan el cierre y la venta
      con presupuesto previo. En el presupuesto se usa el neto proyectado a pesos (ARS + USD×tasa),
@@ -171,9 +176,14 @@ export function ProductosView() {
         }.`}
       />
 
-      {/* Forma de Pago: sólo en la VENTA, justo debajo del título y la descripción. Post-emisión
-          queda deshabilitada (no se puede cambiar el ramal del cobro ya facturado). */}
-      {esVenta && <FormaPagoSelect bloqueado={bloqueadoPorEmision} />}
+      {/* Forma de Pago: justo debajo del título y la descripción. En la VENTA es obligatoria y
+          define el ramal del cobro; en el PRESUPUESTO es opcional y va detrás de la pregunta que
+          la habilita. Post-emisión las dos quedan deshabilitadas. */}
+      {esVenta ? (
+        <FormaPagoSelect bloqueado={bloqueadoPorEmision} />
+      ) : (
+        <DescuentoPagoPresupuesto bloqueado={bloqueadoPorEmision} />
+      )}
 
       {/* Con un documento ya emitido, la búsqueda y la carga desaparecen: sólo se avisa que la etapa
           quedó bloqueada. Si no, buscador, filtros y carga de línea conviven en una sola card. */}
@@ -298,6 +308,17 @@ export function ProductosView() {
               /* PRESUPUESTO: avanzar a emisión es una transición local y silenciosa. El ítem NO se
                  crea acá: nace al hacer click en "Emitir Presupuesto". Sin queries ni modales. */
               if (lineas.length === 0) return
+              /* Con la pregunta contestada que SÍ, la forma de pago es obligatoria para avanzar,
+                 igual que en la venta: define el descuento que se aplica a cada precio unitario y
+                 la leyenda que va al PDF. Con la pregunta apagada no hace falta ninguna. */
+              if (descuentoPagoActivo && !formaPago) {
+                setAviso({
+                  titulo: 'Falta la forma de pago',
+                  texto:
+                    'Pediste aplicar descuentos por forma de pago: seleccioná cuál antes de continuar a la siguiente etapa.',
+                })
+                return
+              }
               dispatch({ type: 'goto', paso: 'emision' })
             }}
           >

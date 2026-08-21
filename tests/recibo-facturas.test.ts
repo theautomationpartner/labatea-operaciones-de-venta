@@ -51,7 +51,16 @@ await registrarCobro({
   ),
 })
 
-assert.equal(llamadas.length, 2, 'una mutación para el ítem y una sola tanda para los subelementos')
+/* Lo que se mide acá es el BATCH: los cuatro subelementos —dos facturas y dos movimientos— salen en
+   UNA sola mutación, no en cuatro. La tercera llamada es el disparo del registro, que va aparte
+   porque tiene que salir DESPUÉS de que los subelementos existan (ver `test:registro-cobro`). */
+const creaSubitems = llamadas.filter((l) => l.query.includes('create_subitem'))
+assert.equal(creaSubitems.length, 1, 'los subelementos salen en una sola tanda')
+assert.equal(
+  llamadas.filter((l) => l.query.includes('create_item')).length,
+  1,
+  'y una sola mutación para el ítem',
+)
 
 /* ===== Cabecera: sin las columnas que el board eliminó ===== */
 

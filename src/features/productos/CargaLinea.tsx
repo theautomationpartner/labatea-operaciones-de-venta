@@ -4,7 +4,12 @@ import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from
 import { esDolar } from '@/lib/moneda'
 import { puedeEditarPrecio, topesDescuentoDe } from '@/lib/permisos'
 import { productoConPrecio } from '@/lib/precios'
-import { costoDe, precioNetoDe, rentabilidadConDescuento } from '@/lib/selectors'
+import {
+  aceptaRentabForzada,
+  costoDe,
+  precioNetoDe,
+  rentabilidadConDescuento,
+} from '@/lib/selectors'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
@@ -137,12 +142,12 @@ export function CargaLinea({
   const montoMostrado = descuento ? importeATexto(dto.manual) : ''
 
   /* Rentabilidad Forzada en la PREVISUALIZACIÓN: si el interruptor está encendido y el producto la
-     acepta ("Con Rentab Forzada"), el % forzado será la rentabilidad FINAL, y se muestra el Nuevo
-     Precio de Costo (Precio Unit × (1 − %/100)), tal como va a quedar al agregarlo a la lista. */
-  const forzarRentab = rentabForzadaActiva && prod?.conRentabForzada === true
-  const nuevoPrecioCosto = forzarRentab
-    ? round2(precio * (1 - rentabForzadaPctActiva / 100))
-    : undefined
+     acepta —lo habilita el maestro, o su precio quedó por debajo del costo—, el % forzado va a ser
+     la rentabilidad FINAL. Usa `aceptaRentabForzada`, la MISMA regla que aplica el reducer, así que
+     lo que se ve acá antes de agregar es lo que después se aplica.
+     El Nuevo Precio de Costo y la Nota de Crédito x Comisión se siguen calculando —los arma el
+     reducer al agregar la línea, y de ahí viajan a Monday—, pero ya no se muestran acá. */
+  const forzarRentab = rentabForzadaActiva && prod != null && aceptaRentabForzada(prod)
   /* Rentabilidad BASE: el "Margen" del maestro para la lista del cliente, TAL CUAL. Es el punto de
      partida y no se recalcula nunca —ni por descuentos, ni por el override del precio, ni por la
      rentabilidad forzada—: es el dato de referencia que acompaña al precio y al costo en la ficha. */
@@ -248,42 +253,10 @@ export function CargaLinea({
 
           {showFinancialData && producto && (
             <>
-              {/* Datos de catálogo. El Precio de Costo (y el Nuevo Precio de Costo con la rentabilidad
-                  forzada) son el MISMO elemento que el Precio Unitario —un KPI con la caja de precio—,
-                  pero de SÓLO LECTURA. Van a la izquierda del precio unitario. */}
+              {/* El Precio de Costo y el Nuevo Precio de Costo ya NO se muestran: son datos internos
+                  del cálculo de la rentabilidad forzada, no algo que el vendedor tenga que leer al
+                  cargar el producto. Se siguen calculando y escribiendo en Monday igual. */}
               <div className="cl-kpis">
-                {prod?.precioCosto != null && (
-                  <div className="cl-kpi">
-                    <span className="cl-kpi-l">Precio de Costo</span>
-                    <span className="pbox pbox--ro">
-                      <span className="pbox-pre">{dolar ? 'U$' : '$'}</span>
-                      <input
-                        type="text"
-                        value={importeATexto(prod.precioCosto)}
-                        readOnly
-                        disabled
-                        tabIndex={-1}
-                        aria-label="Precio de costo (no editable)"
-                      />
-                    </span>
-                  </div>
-                )}
-                {forzarRentab && nuevoPrecioCosto != null && (
-                  <div className="cl-kpi">
-                    <span className="cl-kpi-l">Nuevo Precio de Costo</span>
-                    <span className="pbox pbox--ro">
-                      <span className="pbox-pre">{dolar ? 'U$' : '$'}</span>
-                      <input
-                        type="text"
-                        value={importeATexto(nuevoPrecioCosto)}
-                        readOnly
-                        disabled
-                        tabIndex={-1}
-                        aria-label="Nuevo precio de costo (no editable)"
-                      />
-                    </span>
-                  </div>
-                )}
                 <div className="cl-kpi">
                   <label className="cl-kpi-l" htmlFor={precioEditable ? 'pprecio' : undefined}>
                     Precio Unitario

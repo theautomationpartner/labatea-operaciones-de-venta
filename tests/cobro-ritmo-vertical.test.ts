@@ -6,12 +6,16 @@
  * dentro de `.cobro-form`; el cheque y la transferencia los meten adentro de un `.cobro-cond`—, así
  * que la separación se puede desalinear sin que se rompa nada: no hay typecheck ni test que mire el
  * layout, y la diferencia sólo se ve poniendo las dos pantallas al lado. Ya pasó: `.cobro-cond`
- * traía margen, relleno y una línea punteada propios, y elegir cheque abría 54px donde la tarjeta
- * mostraba 24.
+ * sumaba su margen y su relleno AL ritmo entre renglones, y elegir cheque abría 54px donde la
+ * tarjeta mostraba 24.
+ *
+ * `.cobro-cond` HOY vuelve a llevar margen y relleno, pero pagan una línea divisoria —la que separa
+ * el selector del medio de los campos de ese medio— y no la separación entre sus renglones, que
+ * sigue saliendo del `row-gap` compartido. Esa distinción es la que fija el caso 4.
  *
  * El test no mide píxeles renderizados (no hay navegador): verifica las dos cosas de las que sale
- * esa distancia —la reserva de cada campo y el `row-gap` del contenedor— y que ningún contenedor de
- * renglones agregue espacio por su cuenta.
+ * esa distancia —la reserva de cada campo y el `row-gap` del contenedor— y que un renglón no
+ * agregue espacio por su cuenta.
  *
  * Se corre con esbuild + node (`npm run test:cobro-ritmo`); vive fuera de `src/`.
  */
@@ -52,19 +56,39 @@ for (const cont of ['.cobro-v2 .cobro-form', '.cobro-v2 .cobro-cond', '.cobro-v2
   assert.equal(declaracion(cont, 'gap'), null, `${cont} no puede usar el atajo \`gap\``)
 }
 
-/* ---------- 3) Ningún contenedor de renglones suma espacio por su cuenta ----------
-   Es lo que desalineaba al cheque: margen, relleno y línea divisoria arriba del bloque. */
-for (const cont of ['.cobro-v2 .cobro-cond', '.cobro-v2 .cobro-fila']) {
-  for (const prop of ['margin-top', 'padding-top', 'border-top']) {
-    assert.equal(
-      declaracion(cont, prop),
-      null,
-      `${cont} no puede agregar ${prop}: abre un hueco que los otros medios no tienen`,
-    )
-  }
+/* ---------- 3) Un RENGLÓN no suma espacio por su cuenta ----------
+   Es lo que desalineaba al cheque: espacio extra colgado del contenedor de renglones en vez del
+   `row-gap`, que es el único que puede decidir cuánto separa un renglón del siguiente. */
+for (const prop of ['margin-top', 'padding-top', 'border-top']) {
+  assert.equal(
+    declaracion('.cobro-v2 .cobro-fila', prop),
+    null,
+    `.cobro-fila no puede agregar ${prop}: abre un hueco que los otros medios no tienen`,
+  )
 }
 
-/* ---------- 4) Los campos reservan todos lo mismo ----------
+/* ---------- 4) El espacio extra del bloque de campos SÓLO paga un divisor ----------
+   `.cobro-cond` sí lleva margen y relleno, pero no son ritmo: son el aire a cada lado de la línea
+   que separa "con qué se paga" de "los datos de ese medio". La regla que se sostiene es que ese
+   espacio no puede existir SIN la línea: borrado el `border-top` y dejado el relleno, vuelve el
+   hueco que no tiene ningún otro medio. */
+assert.ok(
+  declaracion('.cobro-v2 .cobro-cond', 'border-top'),
+  '.cobro-cond separa el bloque del selector con una línea',
+)
+assert.ok(
+  declaracion('.cobro-v2 .cobro-cond', 'padding-top'),
+  'y le deja aire entre la línea y el primer campo',
+)
+/* Los renglones de ADENTRO siguen cayendo en el ritmo compartido: el divisor es del borde del
+   bloque, no de la separación entre sus renglones. */
+assert.equal(
+  declaracion('.cobro-v2 .cobro-cond', 'row-gap'),
+  'var(--c-form-fila-gap)',
+  'adentro del bloque el ritmo es el mismo que en el resto del formulario',
+)
+
+/* ---------- 5) Los campos reservan todos lo mismo ----------
    El del cheque y la transferencia por `--val`; el de la tarjeta por su grilla, que se lo pone a
    TODOS los campos (ahí hay campos sin validación que igual tienen que alinearse por abajo). */
 for (const campo of [

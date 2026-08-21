@@ -39,6 +39,11 @@ export const BOARDS = {
   factPendientes: 18421035508,
   /** "💳Ctas Bancarias Personas": las cuentas a las que el cliente transfiere. */
   ctasBancarias: 18421723667,
+  /**
+   * "Anticipos y Credito x pase de Saldo - Pends de Aplicar": el saldo a favor del cliente. Acá cae
+   * lo que el cliente entregó DE MÁS en un cobro, para imputarlo a una factura futura.
+   */
+  anticipos: 18426066447,
   /** "📈Ventas": la venta cerrada, con un subelemento por producto. */
   ventas: 18421035510,
   /** "Subelementos de 📈Ventas": un producto de la venta cada uno. */
@@ -399,6 +404,12 @@ export const COL = {
     notaCreditoComision: 'numeric_mm604gas',
     /** "✋Rentabilidad Forzada %": el porcentaje de rentabilidad forzada aplicado en la operación. */
     rentabForzadaPct: 'numeric_mm6319pp',
+    /**
+     * "Casilla de agregar leyenda de Formas de pago AL PDF" (checkbox): se tilda cuando el vendedor
+     * contestó que SÍ quiere aplicar descuentos por forma de pago y eligió una. Es lo que le avisa
+     * al PDF que tiene que incluir la leyenda de la forma de pago bonificada.
+     */
+    descuentoFormaPago: 'boolean_mm6dnwf1',
   },
   // Columnas del subelemento (un producto de la lista):
   presupuestoSub: {
@@ -414,10 +425,15 @@ export const COL = {
     precioUnit: 'numeric_mkw85hdw',
     /** "🤖Precio Unit $u": precio unitario en dólares (productos en dólares). */
     precioUnitUsd: 'numeric_mm5wpag',
-    /** "🤖Importe Bonif.": monto bonificado por unidad (precio × desc%/100), en la moneda del producto. */
-    importeBonif: 'numeric_mm5rddvm',
-    /** "🤖Precio Bonif": precio unitario ya bonificado (precio − importe bonif.), en la moneda del producto. */
-    precioBonif: 'numeric_mm5w6h1x',
+    /**
+     * "🤖Descuento TOTAL": lo que se descuenta por unidad, en la moneda del producto. Es la SUMA de
+     * los dos montos —"Desc $ x Prod" + "Desc $ x Forma de Pago"—, así que sin ningún descuento vale
+     * 0 (nunca el precio unitario).
+     */
+    descTotal: 'numeric_mm5w6h1x',
+    /** "🤖Precio Unit C/Desc Total": precio unitario ya bonificado (precio − Descuento TOTAL), en la
+     *  moneda del producto. Sin descuentos coincide con el precio de lista. */
+    precioConDescTotal: 'numeric_mm5rddvm',
     /** "🤖TOTAL $": total de la línea en pesos (productos en pesos). */
     totalPesos: 'numeric_mm5w3qtg',
     /** "🤖TOTAL $u": total de la línea en dólares (productos en dólares). */
@@ -428,9 +444,15 @@ export const COL = {
      *  presupuesto no la liquida. */
     iva: 'numeric_mm5wt7hg',
     descuento: 'numeric_mm472cqy',
-    /** "🤖Desc $ x Prod": monto del descuento por producto por unidad (precio × %desc/100), en la
-     *  moneda del producto. A diferencia de "Importe Bonif.", sin descuento vale 0 (no el precio). */
+    /** "🤖Desc $ x Prod": monto del descuento por producto por unidad, en la moneda del producto.
+     *  Es el descuento manual del vendedor sobre el precio ya rebajado por la forma de pago. */
     descProdMonto: 'numeric_mm5x3wee',
+    /** "🤖Desc % x Forma de Pago": descuento por pronto pago aplicado al presupuesto, en %. 0 cuando
+     *  el vendedor no pidió aplicarlo. */
+    descFormaPagoPct: 'numeric_mm6e2zs9',
+    /** "🤖Desc $ x Forma de Pago": monto por unidad de ese descuento (precio de lista × %fp/100), en
+     *  la moneda del producto. Junto con "Desc $ x Prod" compone el "Descuento TOTAL". */
+    descFpMonto: 'numeric_mm6ehr78',
     /** "🤖Nota de Credito x Comision": Costo Original − Nuevo Precio de Costo, por la rentabilidad forzada. */
     notaCreditoComision: 'numeric_mm63sbtd',
     /** "🤖Costo $": costo del producto en PESOS (original, o el nuevo si se forzó la rentabilidad). */
@@ -555,6 +577,16 @@ export const COL = {
     totalCobrado: 'numeric_mm5xbkj',
     /** "🤖TOTAL $ Diferencia": total de la venta − total cobrado. */
     diferencia: 'numeric_mm5xfznj',
+    /**
+     * "🤖Estado Registro de Cobro" (status): el DISPARADOR de la automatización que asienta el
+     * cobro en el sistema. La app lo pone en "Registrar" y el tablero se encarga del resto
+     * ("Registrando" → "Registrado", o "Error - Ver Update" / "Reintentar").
+     *
+     * Se escribe RECIÉN con el recibo completo —ítem y subelementos ya creados—: disparado antes,
+     * la automatización correría sobre un recibo sin facturas ni movimientos y registraría un cobro
+     * vacío. Ver `registrarCobro`.
+     */
+    estadoRegistro: 'color_mm5zkr61',
     /** ID del recibo ("RECIBO-01"); el ítem se renombra con este valor. */
     pulseId: 'pulse_id_mkwb9111',
   },
@@ -634,6 +666,24 @@ export const COL = {
        numeric_mm5ydy8) ni el valor de cada una ("🤖Valor Cuota", numeric_mm5yx0ec). El cobro se
        registra por su importe total, así que el formulario no las pide y el bulk no las manda. */
     pulseId: 'pulse_id_mkwbrvf5',
+  },
+  /**
+   * Anticipo del cliente (board 18426066447). Los ids están verificados contra el tablero: el mapa
+   * que traía la app hermana apuntaba a dos columnas que YA NO EXISTEN —"Comentarios"
+   * (`text_mm64a1zb`) y "Recibo y Cobro" (`text_mm64bf3r`)—, y Monday rechaza la mutación entera
+   * cuando una columna no existe, así que el anticipo no se habría creado nunca.
+   */
+  anticipo: {
+    /** "🤖Cliente" (board_relation → Personas): de quién es el saldo a favor. */
+    cliente: 'board_relation_mm64zh21',
+    /** "🤖Fecha de Anticipo/Credito" (date, ISO). */
+    fecha: 'date_mm64k479',
+    /** "🤖Detalle" (long_text): por qué se registró. Reemplaza a la vieja "Comentarios". */
+    detalle: 'long_text_mm659q6c',
+    /** "🤖Importe $" (numbers): con cuánto nació el anticipo. */
+    importe: 'numeric_mm64h18',
+    /** "🤖Estado" (status): nace en "Pend de Aplicar" (ver `ANTICIPO_ESTADO_INDEX`). */
+    estado: 'color_mm64qza0',
   },
   // Factura de venta pendiente de cobro (board 18421035508): la deuda del pago POSTERIOR.
   factPendiente: {
@@ -1130,6 +1180,8 @@ export const FORMA_PAGO_LABEL: Record<string, string> = {
  */
 export const CAJA_INDEX = {
   factCancelada: 10,
+  /** "Anticipo": el excedente que el cliente entregó de más y le queda a favor. */
+  anticipo: 11,
 } as const
 
 /** Tipo de cobro de la app → etiqueta de "🤖Tipo de Cobro" (color_mm5yh0gs) del recibo. */
@@ -1221,4 +1273,33 @@ export const ENVIO_FACTURA_ESTADO = {
   enviando: 'Enviando',
   enviado: 'Enviada',
   error: 'Error - Ver Updates',
+} as const
+
+/**
+ * Índices de "🤖Estado" en el board de Anticipos. Se manda por ÍNDICE y no por etiqueta: los
+ * índices del tablero NO son correlativos —"Pend de Aplicar" es el 17, no el 2— y comparar por
+ * texto ataría la app al rótulo, que se renombra desde la interfaz de Monday sin avisar.
+ */
+export const ANTICIPO_ESTADO_INDEX = {
+  /** Con el que NACE un anticipo: entró plata y todavía no se imputó a ninguna factura. */
+  pendDeAplicar: 17,
+  aplicadoParcialmente: 1,
+  aplicado: 0,
+} as const
+
+/**
+ * Índices de "🤖Estado Registro de Cobro" (color_mm5zkr61) del recibo. Va por ÍNDICE y no por
+ * etiqueta: es una columna de sistema que dispara una automatización, y atarse al rótulo la
+ * rompería el día que alguien lo renombre desde la interfaz de Monday.
+ *
+ * La app SÓLO escribe "Registrar". Los demás estados los va poniendo la automatización, y están
+ * acá para que se lea el circuito completo de un vistazo.
+ */
+export const COBRO_REGISTRO_INDEX = {
+  /** Lo ÚNICO que escribe la app: "andá y registrá este cobro, que ya está completo". */
+  registrar: 4,
+  registrando: 0,
+  registrado: 1,
+  error: 2,
+  reintentar: 3,
 } as const

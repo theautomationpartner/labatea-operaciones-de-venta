@@ -9,6 +9,7 @@
  * La lista de líneas es la fuente de verdad del carrito: los fragmentos se derivan de ella,
  * así no pueden quedar desincronizados con lo que ve el usuario.
  */
+import { descuentoUnitario } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import type { LineaPresupuesto } from '@/types'
@@ -30,35 +31,57 @@ export interface FragmentoSubitem {
  * bimonetario): un producto en dólares llena las columnas `$u` (Precio Unit $u, TOTAL $u) y uno en
  * pesos, las columnas `$` (Precio Unit $, TOTAL $). El Importe Bonif. y el resto de las columnas son
  * comunes. El producto se linkea sólo si trae id de Monday (en modo local no hay ids reales).
+ *
+ * `descFormaPago` es el descuento por pronto pago del presupuesto (0 cuando el vendedor no pidió
+ * aplicarlo). Se compone EN CASCADA con el descuento manual de la línea —con las mismas fórmulas
+ * de `lib/descuentos` que usa la tabla de productos—, así lo que se asienta en el board es
+ * exactamente lo que vio el vendedor.
+ *
+ * Los dos descuentos se asientan por separado, cada uno con su % y su monto por unidad, y el
+ * "Descuento TOTAL" es la SUMA de los dos montos:
+ *
+ *   Desc $ x Prod + Desc $ x Forma de Pago = Descuento TOTAL
+ *   Precio Unit − Descuento TOTAL          = Precio Unit C/Desc Total
+ *   Precio Unit C/Desc Total × Cant        = Subtotal
+ *
+ * Sin descuentos, el "Descuento TOTAL" vale 0 —no el precio unitario— y el precio con descuento
+ * total coincide con el de lista.
  */
-export function fragmentoSubitem(linea: LineaPresupuesto, indice: number): FragmentoSubitem {
+export function fragmentoSubitem(
+  linea: LineaPresupuesto,
+  indice: number,
+  descFormaPago = 0,
+): FragmentoSubitem {
   const p = linea.producto
   const alias = `s${indice}`
   const precio = round2(p.precio)
-  // Importe bonificado por unidad: lo que se descuenta (precio × desc%/100), en la moneda del producto.
-  const importeBonif = round2(p.precio * (linea.descuento / 100))
-  // Precio bonificado por unidad: precio − importe bonif. (= precio × (1 − desc%/100)). En la moneda
-  // del producto: para los dolarizados es el precio final en dólares. Sin descuento, = precio unit.
-  const precioBonif = round2(p.precio * (1 - linea.descuento / 100))
-  // Total de la línea, ya bonificado: (precio − bonif) × cantidad, en la moneda del producto.
-  const total = round2(p.precio * (1 - linea.descuento / 100) * linea.cantidad)
+  /* Descuento de la línea por unidad, en cascada: primero el de forma de pago sobre el precio de
+     lista y después el manual sobre el precio ya rebajado. Todos los montos en la moneda del
+     producto. Sin descuento por forma de pago el resultado es idéntico al de siempre. */
+  const dto = descuentoUnitario(p.precio, linea.descuento, descFormaPago)
+  // Total de la línea, ya bonificado: precio final × cantidad, en la moneda del producto.
+  const total = round2(dto.precioFinal * linea.cantidad)
   const usd = esDolar(p.moneda)
-  // ¿Se aplicó algún descuento (importe bonificado)? De ello depende qué se escribe en "Importe Bonif".
-  const tieneDescuento = importeBonif > 0
+  // ¿Se aplicó algún descuento, por producto o por forma de pago?
+  const tieneDescuento = dto.total > 0
   const columnas: Record<string, unknown> = {
     [COL.presupuestoSub.cantidad]: String(linea.cantidad),
     // Rentabilidad del producto CON DECIMALES (no se redondea a entero).
     [COL.presupuestoSub.rentabilidad]: String(round2(p.rentabilidad)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
-    /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento por producto por unidad, en la moneda
-       del producto. Es el importe bonificado "puro": SIN descuento vale 0 (a diferencia de "Importe
-       Bonif.", que sin descuento guarda el precio). El presupuesto no tiene descuento por forma de pago. */
-    [COL.presupuestoSub.descProdMonto]: String(importeBonif),
-    /* "Importe Bonif." (numeric_mm5rddvm): CON descuento, el monto bonificado; SIN descuento, el
-       precio unitario ORIGINAL (sin bonificar), por regla de negocio del board. */
-    [COL.presupuestoSub.importeBonif]: String(tieneDescuento ? importeBonif : precio),
-    // Precio Bonif: precio unitario ya bonificado, en la moneda del producto.
-    [COL.presupuestoSub.precioBonif]: String(precioBonif),
+    /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento MANUAL por unidad, en la moneda del
+       producto —sobre el precio ya rebajado por la forma de pago, que es donde muerde—. */
+    [COL.presupuestoSub.descProdMonto]: String(dto.manual),
+    // "Desc % x Forma de Pago" (numeric_mm6e2zs9): el % de pronto pago aplicado al presupuesto.
+    [COL.presupuestoSub.descFormaPagoPct]: String(round2(descFormaPago)),
+    /* "Desc $ x Forma de Pago" (numeric_mm6ehr78): su monto por unidad, sobre el precio de LISTA
+       (es el primero de la cascada), en la moneda del producto. */
+    [COL.presupuestoSub.descFpMonto]: String(dto.formaPago),
+    /* "Descuento TOTAL" (numeric_mm5w6h1x): la SUMA de los dos montos de arriba. Sin ningún
+       descuento va en 0 —NO el precio unitario—, que es lo que la columna significa. */
+    [COL.presupuestoSub.descTotal]: String(dto.total),
+    // "Precio Unit C/Desc Total" (numeric_mm5rddvm): precio de lista − Descuento TOTAL.
+    [COL.presupuestoSub.precioConDescTotal]: String(dto.precioFinal),
     // Precio y total se registran en la columna de la moneda del producto ($ pesos / $u dólares).
     [usd ? COL.presupuestoSub.precioUnitUsd : COL.presupuestoSub.precioUnit]: String(precio),
     [usd ? COL.presupuestoSub.totalUsd : COL.presupuestoSub.totalPesos]: String(total),
@@ -114,9 +137,10 @@ export interface SolicitudBulk {
 export function construirBulkSubitems(
   lineas: LineaPresupuesto[],
   desde = 0,
+  descFormaPago = 0,
 ): SolicitudBulk | null {
   if (lineas.length === 0) return null
-  const fragmentos = lineas.map((l, i) => fragmentoSubitem(l, desde + i))
+  const fragmentos = lineas.map((l, i) => fragmentoSubitem(l, desde + i, descFormaPago))
   const declaraciones = ['$parentId: ID!', ...fragmentos.flatMap((f) => f.declaraciones)]
   const variables = Object.assign({}, ...fragmentos.map((f) => f.variables)) as Record<
     string,

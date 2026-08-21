@@ -113,8 +113,8 @@ llamadas.length = 0
 await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
-  totalVenta: 13000,
-  totalCobrado: 13000,
+  totalVenta: 13500,
+  totalCobrado: 13500,
   balances: balancePagos(
     [
       { formaPago: 'Cheque', importe: 10000, numeroCheque: '00123456' } as MovimientoPago,
@@ -122,6 +122,11 @@ await registrarCobro({
         formaPago: 'Tarjeta de crédito',
         importe: 3000,
         numeroCupon: '0042-0007',
+      } as MovimientoPago,
+      {
+        formaPago: 'Transferencia',
+        importe: 500,
+        nroComprobanteTransferencia: 'OP-9911/2026',
       } as MovimientoPago,
     ],
     SIN_DESCUENTOS_PAGO,
@@ -139,6 +144,11 @@ assert.equal(
   compartida(1)['text_mm654900'],
   '0042-0007',
   'y el nro de cupón de la tarjeta también, con su guión',
+)
+assert.equal(
+  compartida(2)['text_mm654900'],
+  'OP-9911/2026',
+  'y el nro de operación de la transferencia, con sus letras y su barra (la columna es de texto)',
 )
 /* La columna vieja del cupón sigue existiendo en el board pero ya no se escribe: si volviera a
    aparecer en el payload, el número quedaría partido en dos lugares distintos. */

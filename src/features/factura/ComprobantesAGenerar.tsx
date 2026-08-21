@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CompBody } from '@/features/shared/CompBody'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { addDays } from '@/lib/dates'
 import { bonifLinea, netoLinea, type ComprobanteAGenerar } from '@/lib/facturacion'
@@ -115,7 +116,7 @@ function CardComprobante({
         </span>
       </div>
 
-      {abierta && (
+      <CompBody abierta={abierta}>
         <div className="comp-body">
           <table className="comp-table">
             <thead>
@@ -192,7 +193,7 @@ function CardComprobante({
             </p>
           )}
         </div>
-      )}
+      </CompBody>
     </div>
   )
 }

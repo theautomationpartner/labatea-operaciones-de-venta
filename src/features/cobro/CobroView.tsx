@@ -7,11 +7,14 @@ import {
   balancePagos,
   cobroSimultaneoOperacion,
   descuentoDeFormaPago,
+  MSG_COBRO_CUBIERTO,
+  cobroCubierto,
   diferenciaCobro,
   esPagoConTarjeta,
   resumenCobro,
   tipoTarjetaDe,
 } from '@/lib/cobros'
+import { money } from '@/lib/format'
 import { indiceDePaso, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
 import { totalVentaOperacion } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -129,12 +132,24 @@ export function CobroView() {
   /* TARJETA: la única condición para avanzar es que la DIFERENCIA sea exactamente 0. No se tolera
      ni de menos ni de más, y tampoco el redondeo de un peso que sí acepta el contado. */
   const tarjetaCobrada = restante === 0 && cobro.movimientos.length > 0
-  /* Motivo por el que el cobro todavía no cierra (hint en vivo dentro de la card). */
-  const bloqueoMsg =
-    cobro.movimientos.length > 0 && !cobroCompleto
-      ? restante < 0
-        ? 'El total cobrado supera el total de la venta: ajustá los importes para no cobrar de más.'
-        : 'El total cobrado debe igualar el total de la venta (sin contar los centavos).'
+  /* El cobro ya está CUBIERTO: lo recibido alcanza exactamente lo que hay que cancelar. El
+     formulario se cierra —otro movimiento sólo podría pasarse del total—, pero la TABLA sigue
+     editable: quitar o ajustar una fila es justamente por dónde se vuelve a abrir. */
+  const cubierto = cobroCubierto(resumen)
+
+  /* Aviso en vivo dentro de la card. Tiene DOS tonos y no uno: cubierto, el formulario queda gris
+     por haber terminado bien, y decirlo en rojo —o no decir nada— haría leer un éxito como una
+     falla. */
+  const aviso: { texto: string; tono: 'ok' | 'error' } | null = cubierto
+    ? { texto: MSG_COBRO_CUBIERTO, tono: 'ok' }
+    : cobro.movimientos.length > 0 && !cobroCompleto
+      ? {
+          texto:
+            restante < 0
+              ? `El total recibido supera el total a cancelar en ${money(-restante)}: ajustá los importes o registrá un anticipo por esa diferencia`
+              : 'El total cobrado debe igualar el total de la venta (sin contar los centavos).',
+          tono: 'error',
+        }
       : null
   /* El responsable logístico (y su ruta) se pregunta SÓLO en la entrega POSTERIOR. */
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
@@ -154,6 +169,9 @@ export function CobroView() {
   /* CONTADO·EMITIR PROFORMA no continúa a otra etapa: la venta se cierra ahí mismo con "Guardar
      Venta" (dentro de CobroProforma), que limpia el estado. Por eso el pie no ofrece "Continuar". */
   const enProforma = formaPago === 'CONTADO' && contadoTab === 'proforma'
+  /* La VENTA PROFORMA no configura forma de pago: su cobro es SIEMPRE el de este formulario, sin
+     pasar por las pestañas del CONTADO (que son de la venta). */
+  const enVentaProforma = operacion === 'VENTA PROFORMA'
 
   /**
    * Continuar a la etapa siguiente. En CONTADO·cobro se VALIDA que la diferencia sea 0 (sin
@@ -273,11 +291,15 @@ export function CobroView() {
           />
         )}
 
-        {/* REGISTRAR COBRO. Bloque ESTÁTICO (ya no es acordeón), siempre visible. OCULTO para
-            CUENTA CORRIENTE y tarjetas; en CONTADO, sólo bajo la pestaña "REGISTRAR COBRO". */}
-        {formaPago !== 'CUENTA CORRIENTE' &&
-          !conTarjeta &&
-          (formaPago !== 'CONTADO' || contadoTab === 'cobro') && (
+        {/* REGISTRAR COBRO. Bloque ESTÁTICO (ya no es acordeón). Son los DOS puntos de entrada del
+            formulario con lectura automática del comprobante:
+              · la VENTA que se cobra en el acto —oculto para CUENTA CORRIENTE y para las tarjetas,
+                que tienen su propio ramal; en CONTADO, sólo bajo la pestaña "REGISTRAR COBRO"—, y
+              · la VENTA PROFORMA entera, que no elige forma de pago: su único cobro es éste. */}
+        {(enVentaProforma ||
+          (formaPago !== 'CUENTA CORRIENTE' &&
+            !conTarjeta &&
+            (formaPago !== 'CONTADO' || contadoTab === 'cobro'))) && (
           <div className="cobro-static">
             <CabeceraCobro cliente={cliente} resumen={resumen} />
 
@@ -285,11 +307,14 @@ export function CobroView() {
               <h3 className="cobro-card-title">Registrar cobro</h3>
               <p className="cobro-card-desc">Especificar cómo pagó el cliente</p>
 
-              {/* El cliente viaja entero: su CUIT y su "Recibimos CHEQUE" validan cada cheque. */}
-              <FormularioCobro cliente={cliente} bloqueado={bloqueado} />
+              {/* El cliente lo lee del estado (su CUIT y su "Recibimos CHEQUE" validan cada
+                  cheque). La DIFERENCIA sí viaja: es lo que el formulario precarga como importe y
+                  lo que reparte entre las dos tarjetas de un pago en dos. */}
+              <FormularioCobro bloqueado={bloqueado || cubierto} diferencia={restante} />
 
               <h4 className="cobro-card-sub">Cobros registrados ({balances.length})</h4>
               <TablaMovimientos balances={balances} bloqueado={bloqueado} />
+
 
               {/* Sin botón "Confirmar cobro": la diferencia se valida al Continuar. Acá sólo se avisa
                   en vivo si el total cobrado todavía no iguala el de la venta (falta o se cobró de más). */}
@@ -301,10 +326,21 @@ export function CobroView() {
                   pantalla anuncia el aviso cuando aparece, cosa que con el montaje condicional no
                   pasaba. */}
               <div className="cobro-card-acts">
-                <span className="cobro-bloqueo-inline" role="status" aria-live="polite">
-                  {bloqueoMsg && (
+                <span
+                  className={`cobro-bloqueo-inline ${
+                    aviso?.tono === 'ok' ? 'cobro-bloqueo-inline--ok' : ''
+                  }`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {aviso && (
                     <>
-                      <i className="fas fa-circle-exclamation" /> {bloqueoMsg}
+                      <i
+                        className={`fas ${
+                          aviso.tono === 'ok' ? 'fa-circle-check' : 'fa-circle-exclamation'
+                        }`}
+                      />{' '}
+                      {aviso.texto}
                     </>
                   )}
                 </span>

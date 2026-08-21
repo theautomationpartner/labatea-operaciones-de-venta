@@ -360,8 +360,11 @@ export function FacturaView() {
       })
     }
 
-    /* El recibo se crea SIEMPRE, sea el cobro simultáneo o posterior. Es un efecto secundario de la
-       venta: se dispara con la venta ya creada y NUNCA se espera, para no congelar el cierre. */
+    /* El recibo se dispara EN SIMULTÁNEO con los demás efectos, apenas confirmada la creación de la
+       venta. Adentro sí encadena: crea el ítem, espera sus subelementos y RECIÉN ahí pone el estado
+       en "Registrar", que es lo que asienta el cobro en el sistema (ver `registrarCobro`). Ese
+       encadenamiento vive del lado del servicio, así que acá se sigue sin esperar y el cierre no se
+       congela. */
     if (cobroSimultaneoOperacion(formaPago)) {
       /* SIMULTÁNEO: el recibo nace con las facturas que cancela y con sus movimientos de pago.
          Las facturas salen de los comprobantes efectivamente EMITIDOS —la división de mercadería
@@ -375,7 +378,10 @@ export function FacturaView() {
         facturas: facturasCanceladas,
         balances,
       }).catch(() => {
-        /* El recibo del cobro es best-effort: un fallo no revierte la venta ya creada. */
+        /* El recibo del cobro es best-effort: un fallo no revierte la venta ya creada. Se avisa
+           igual: un recibo que no se creó deja la caja sin el asiento de esta venta, y enterarse
+           recién al buscarlo en el tablero es peor que un cartel. */
+        dispatch({ type: 'errorMonday', accion: 'registrar el recibo del cobro' })
       })
       dispararComisiones(vId)
     } else {
