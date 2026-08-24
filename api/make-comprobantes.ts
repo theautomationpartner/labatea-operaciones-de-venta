@@ -23,8 +23,8 @@
  * leer un documento, y por eso esta función se quedó en Node con su `maxDuration`.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autorizarPedido, respuestaDeError } from './_guard'
-import { deviceTokenDe } from './_http'
+import { autorizarPedido, respuestaDeError } from './_guard.ts'
+import { deviceTokenDe } from './_http.ts'
 
 /*
  * 60 s es el techo del plan Hobby. En Pro se puede subir hasta 300 s, más cerca del tope que espera

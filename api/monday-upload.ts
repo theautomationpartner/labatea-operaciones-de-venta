@@ -16,8 +16,8 @@
  * Node —no en edge— porque `jsonwebtoken` lo necesita; ver el encabezado de `monday.ts`.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autorizarPedido, respuestaDeError } from './_guard'
-import { deviceTokenDe } from './_http'
+import { autorizarPedido, respuestaDeError } from './_guard.ts'
+import { deviceTokenDe } from './_http.ts'
 
 const API_VERSION = '2024-10'
 

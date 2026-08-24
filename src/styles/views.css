@@ -2778,6 +2778,22 @@
   gap: 10px;
   margin-top: 24px;
 }
+/* Acción secundaria de una ventana: disponible, pero sin competirle a la principal. */
+.btn-secundario {
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--text-dark);
+  padding: 10px 20px;
+}
+.btn-secundario:hover {
+  background: #f5f6f8;
+}
+/* Código técnico del rechazo, al pie del mensaje: sirve para reportarlo, no para leerlo. */
+.modal-detalle {
+  margin-top: 14px;
+  font-size: 12px;
+  color: #676879;
+}
 /* Advertencia: el flujo se frena por datos incompletos, no por un error del sistema. */
 .modal-icon--warn {
   color: var(--yellow);

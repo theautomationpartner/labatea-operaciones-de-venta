@@ -29,8 +29,8 @@ import {
 } from 'node:crypto'
 import { generateSecret, generateURI, verifySync } from 'otplib'
 import QRCode from 'qrcode'
-import { ErrorAuth } from './_errores'
-import { mfaStore, type Usuario } from './_mfaStore'
+import { ErrorAuth } from './_errores.ts'
+import { mfaStore, type Usuario } from './_mfaStore.ts'
 
 /**
  * Tolerancia de ±30 s, o sea un período TOTP para cada lado.

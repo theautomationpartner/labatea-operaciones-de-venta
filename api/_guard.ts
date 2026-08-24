@@ -19,13 +19,13 @@
  * revocado o si la firma no cerró es regalarle al que prueba un mapa de por dónde seguir.
  */
 import jwt from 'jsonwebtoken'
-import { ErrorAuth, type Sesion } from './_errores'
-import { exigirMfa } from './_mfa'
-import { exigirListaBlanca } from './_whitelist'
+import { ErrorAuth, type Sesion } from './_errores.ts'
+import { exigirMfa } from './_mfa.ts'
+import { exigirListaBlanca } from './_whitelist.ts'
 
 /* El vocabulario de rechazo vive en `_errores.ts` para que los imports no se hagan circulares;
    se reexporta acá porque `_guard` sigue siendo la puerta por la que entra el resto. */
-export { ErrorAuth, type Sesion } from './_errores'
+export { ErrorAuth, type Sesion } from './_errores.ts'
 
 /**
  * Payload del session token. Monday lo manda con los datos adentro de `dat`; algunos tokens de la

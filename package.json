@@ -49,7 +49,8 @@
     "test:portero": "esbuild tests/portero-referer.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/portero.test.mjs && node node_modules/.cache/portero.test.mjs",
     "test:guard": "esbuild tests/guard-sesion.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/guard.test.mjs && node node_modules/.cache/guard.test.mjs",
     "test:whitelist": "esbuild tests/lista-blanca.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/whitelist.test.mjs && node node_modules/.cache/whitelist.test.mjs",
-    "test:mfa": "esbuild tests/mfa.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/mfa.test.mjs && node node_modules/.cache/mfa.test.mjs"
+    "test:mfa": "esbuild tests/mfa.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/mfa.test.mjs && node node_modules/.cache/mfa.test.mjs",
+    "test:aviso-seguridad": "esbuild tests/aviso-seguridad.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/aviso-seguridad.test.mjs && node node_modules/.cache/aviso-seguridad.test.mjs"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.3",

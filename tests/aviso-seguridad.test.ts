@@ -1,0 +1,71 @@
+/**
+ * Un rechazo del borde SIEMPRE se ve en pantalla.
+ *
+ * El caso que motivó esto pasó en producción: el backend devolvía 500 a todas las consultas y la
+ * app se veía entera pero sin datos —el selector de vendedor vacío, doce errores en la consola y
+ * ni un cartel—. Los `catch` de cada pantalla están pensados para un fallo aislado, así que ante un
+ * rechazo global no avisa nadie.
+ *
+ * La regla que se fija: el sdk, que es por donde pasan TODOS los pedidos, publica el rechazo en el
+ * canal que mira la ventana emergente. Y publica el primero, no el décimo.
+ *
+ * Se corre con esbuild + node (`npm run test:aviso-seguridad`); vive fuera de `src/`.
+ */
+import assert from 'node:assert/strict'
+import { errorSeguridadActual, limpiarErrorSeguridad } from '@/lib/errorSeguridad'
+import { mondayApi } from '@/services/monday/sdk'
+
+/** Deja a `fetch` respondiendo con ese status y ese cuerpo. */
+function responderCon(status: number, cuerpo: unknown = {}): void {
+  globalThis.fetch = (async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => cuerpo,
+  })) as unknown as typeof fetch
+}
+
+/** Corre una consulta que va a fallar y devuelve la clase de aviso que quedó publicada. */
+async function claseTrasFallar(status: number, cuerpo: unknown = {}): Promise<string | undefined> {
+  limpiarErrorSeguridad()
+  responderCon(status, cuerpo)
+  await mondayApi('{ me { id } }').catch(() => null)
+  return errorSeguridadActual()?.clase
+}
+
+assert.equal(await claseTrasFallar(401), 'sesion', '401 · no se pudo confirmar quién sos')
+assert.equal(await claseTrasFallar(403), 'sinPermiso', '403 · sos vos, pero no estás habilitado')
+assert.equal(await claseTrasFallar(429), 'demasiadosIntentos', '429 · límite de intentos')
+assert.equal(
+  await claseTrasFallar(403, { mfa: 'requerido' }),
+  'segundoFactor',
+  '403 con la pista mfa · es otra pantalla',
+)
+assert.equal(await claseTrasFallar(500), 'servidor', '500 · el backend no puede trabajar')
+assert.equal(await claseTrasFallar(502), 'servidor', '502 también')
+
+// Un 200 no publica nada.
+limpiarErrorSeguridad()
+globalThis.fetch = (async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ data: { me: { id: '1' } } }),
+})) as unknown as typeof fetch
+await mondayApi('{ me { id } }')
+assert.equal(errorSeguridadActual(), null, 'lo que sale bien no avisa nada')
+
+/* Diez consultas en paralelo fallan igual: el aviso es UNO. Cambiarle el texto mientras se lee, o
+   apilar diez ventanas, no informa más. */
+limpiarErrorSeguridad()
+responderCon(403)
+await Promise.all(Array.from({ length: 10 }, () => mondayApi('{ me { id } }').catch(() => null)))
+assert.equal(errorSeguridadActual()?.clase, 'sinPermiso')
+
+// Y el primero es el que queda: un 500 posterior no pisa el rechazo que ya se está mostrando.
+responderCon(500)
+await mondayApi('{ me { id } }').catch(() => null)
+assert.equal(errorSeguridadActual()?.clase, 'sinPermiso', 'gana el primero hasta que se cierre')
+
+limpiarErrorSeguridad()
+assert.equal(errorSeguridadActual(), null, 'al cerrarlo, el canal queda libre')
+
+console.log('aviso-seguridad: OK')

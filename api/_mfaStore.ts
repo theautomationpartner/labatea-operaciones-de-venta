@@ -8,7 +8,7 @@
  *  · si mañana la base cambia (de Neon a Supabase, o a otra cosa), lo que se reescribe es este
  *    archivo y nada más.
  */
-import { consultar } from './_db'
+import { consultar } from './_db.ts'
 
 /** Un usuario es SIEMPRE el par cuenta + usuario: dos cuentas pueden repetir el id de usuario. */
 export interface Usuario {

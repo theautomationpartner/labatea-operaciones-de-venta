@@ -15,7 +15,7 @@
  * transformarse en acceso abierto. El fallo no se cachea, así que en cuanto Monday responde, la
  * app vuelve sola.
  */
-import { ErrorAuth, type Sesion } from './_errores'
+import { ErrorAuth, type Sesion } from './_errores.ts'
 
 const API_MONDAY = 'https://api.monday.com/v2'
 const API_VERSION = '2024-10'

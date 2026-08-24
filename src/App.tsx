@@ -12,6 +12,8 @@ import {
   limpiarCachesConsultas,
 } from '@/services/monday'
 import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
+import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
+import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -48,6 +50,7 @@ export function App() {
   const { paso, operacion } = useApp()
   const dispatch = useDispatch()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const errorSeguridad = useErrorSeguridad()
   const Vista = VISTAS[paso]
 
   /* Al cambiar de operación (y al resetear) se vacían las cachés de consultas: cada operación
@@ -121,8 +124,13 @@ export function App() {
   return (
     <div className="scroll" ref={scrollRef}>
       <Vista />
-      {/* Único punto donde la app comunica un fallo de la API de Monday, para cualquier pantalla. */}
-      <ModalErrorMonday />
+      {/* Un solo aviso a la vez, y el de seguridad manda: el otro invita a reintentar, y un
+          rechazo del borde no se arregla reintentando. */}
+      {errorSeguridad ? (
+        <ModalErrorSeguridad error={errorSeguridad} />
+      ) : (
+        <ModalErrorMonday />
+      )}
     </div>
   )
 }

@@ -16,6 +16,7 @@
  * el token personal de `.env.local`.
  */
 import { leerDeviceToken, olvidarDeviceToken } from '@/lib/deviceToken'
+import { notificarErrorSeguridad } from '@/lib/errorSeguridad'
 import { getSessionToken, invalidarSessionToken, sessionTokenEnCache } from '@/lib/mondayAuth'
 
 const TOKEN = (import.meta.env.VITE_MONDAY_TOKEN as string | undefined)?.trim() || undefined
@@ -60,9 +61,15 @@ interface ApiError {
  * blanca (403). Es distinto de un fallo de la API y se muestra distinto: reintentar no cambia nada,
  * hay que pedir el alta.
  */
+const MENSAJE_RECHAZO: Record<number, string> = {
+  401: 'Tu sesión de Monday no pudo verificarse. Recargá la app.',
+  403: 'No tenés acceso habilitado a esta app. Pedile el alta al administrador.',
+  429: 'Demasiados intentos. Esperá 15 minutos y volvé a probar.',
+}
+
 export class AccesoDenegado extends Error {
   constructor(public readonly status: number) {
-    super('No tenés acceso habilitado a esta app. Pedile el alta al administrador.')
+    super(MENSAJE_RECHAZO[status] ?? 'No se pudo verificar tu acceso a esta app.')
     this.name = 'AccesoDenegado'
   }
 }
@@ -141,14 +148,30 @@ async function pedir(url: string, init: (auth: string) => RequestInit): Promise<
  * lleva a ningún lado— y se lanza el error que la UI sabe interpretar.
  */
 async function verificarRespuesta(res: Response, contexto: string): Promise<void> {
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401 || res.status === 403 || res.status === 429) {
     const cuerpo = (await res.json().catch(() => ({}))) as { mfa?: string }
+
     if (cuerpo.mfa) {
       olvidarDeviceToken()
+      notificarErrorSeguridad('segundoFactor', res.status)
       throw new SegundoFactorRequerido()
     }
+
+    notificarErrorSeguridad(
+      res.status === 401 ? 'sesion' : res.status === 429 ? 'demasiadosIntentos' : 'sinPermiso',
+      res.status,
+    )
     throw new AccesoDenegado(res.status)
   }
+
+  /* Un 5xx de NUESTRO backend no es un dato que falta: es la app que no puede trabajar. Se avisa
+     igual que un rechazo, porque el silencio ante esto ya se pagó una vez —doce errores 500 en la
+     consola y una pantalla que se veía entera pero vacía—. */
+  if (res.status >= 500) {
+    notificarErrorSeguridad('servidor', res.status)
+    throw new Error(`${contexto} HTTP ${res.status}`)
+  }
+
   if (!res.ok) throw new Error(`${contexto} HTTP ${res.status}`)
 }
 

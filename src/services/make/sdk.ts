@@ -13,6 +13,7 @@
  * reconstruirlos antes de leerlos.
  */
 import { leerDeviceToken } from '@/lib/deviceToken'
+import { notificarErrorSeguridad } from '@/lib/errorSeguridad'
 import { getSessionToken } from '@/lib/mondayAuth'
 
 const ENDPOINT = import.meta.env.DEV ? '/make-comprobantes' : '/api/make-comprobantes'
@@ -192,6 +193,7 @@ async function unIntento(form: FormData, signal?: AbortSignal): Promise<Respuest
          (403). No es transitorio ni es del archivo —insistir da lo mismo—, así que va como error
          común con el mensaje que corresponde. */
       if (res.status === 401 || res.status === 403) {
+        notificarErrorSeguridad(res.status === 401 ? 'sesion' : 'sinPermiso', res.status)
         throw new Error('No tenés acceso habilitado a esta app. Pedile el alta al administrador.')
       }
       /* 410 es el caso típico y merece su propio mensaje: el escenario existe pero no está
