@@ -18,19 +18,35 @@ export interface Sesion {
  * existe para el log del servidor.
  */
 export class ErrorAuth extends Error {
-  constructor(
-    readonly status: 401 | 403 | 429,
-    readonly motivo: string,
-    /**
-     * Pista PÚBLICA, la única excepción al mensaje mudo.
-     *
-     * `mfa` significa que falta el segundo factor. No revela nada: para recibirla hay que haber
-     * pasado la firma y la lista blanca, o sea ya ser ese usuario. Y sin ella el frontend no
-     * puede distinguir "enrolate" de "no tenés permiso", que son dos pantallas distintas.
-     */
-    readonly pista?: 'mfa',
-  ) {
+  readonly status: 401 | 403 | 429
+  readonly motivo: string
+  /**
+   * Pista PÚBLICA, la única excepción al mensaje mudo.
+   *
+   * `mfa` significa que falta el segundo factor. No revela nada: para recibirla hay que haber
+   * pasado la firma y la lista blanca, o sea ya ser ese usuario. Y sin ella el frontend no puede
+   * distinguir "enrolate" de "no tenés permiso", que son dos pantallas distintas.
+   */
+  readonly pista?: 'mfa'
+
+  /*
+   * Los campos se declaran y se asignan a mano en vez de usar propiedades de constructor
+   * (`constructor(readonly status: ...)`), que es lo natural en TypeScript.
+   *
+   * El motivo es el runtime: Vercel ejecuta estos `.ts` en modo STRIP-ONLY, que borra tipos pero no
+   * transforma sintaxis. Una propiedad de constructor necesita que alguien genere el
+   * `this.status = status`, y en ese modo no lo genera nadie: el módulo ni siquiera parsea y la
+   * función devuelve 500 antes de correr una línea.
+   *
+   * Es una trampa silenciosa: `tsc` y esbuild lo aceptan porque los dos transforman, así que el
+   * typecheck y los tests pasan en verde y el fallo aparece recién en producción. Lo cubre
+   * `npm run test:funciones`, que carga cada endpoint con el mismo modo que usa el deploy.
+   */
+  constructor(status: 401 | 403 | 429, motivo: string, pista?: 'mfa') {
     super(MENSAJES[status])
+    this.status = status
+    this.motivo = motivo
+    this.pista = pista
     this.name = 'ErrorAuth'
   }
 }
