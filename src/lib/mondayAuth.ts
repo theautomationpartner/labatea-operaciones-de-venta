@@ -161,6 +161,10 @@ export function resumenSessionToken(token: string): Record<string, unknown> {
     partes: token.split('.').length,
     claves: Object.keys(cuerpo),
     tieneDat: Boolean(cuerpo.dat),
+    /* Si el token no es de NUESTRA app, su `app_id` no va a coincidir con el Client ID: eso
+       pasa cuando la URL se embebe con un widget de iframe genérico en vez de un app
+       feature propio, y ahí ningún secreto nuestro puede verificarlo. */
+    appId: dat.app_id ?? '(falta)',
     userId: dat.user_id ?? cuerpo.user_id ?? cuerpo.userId ?? '(falta)',
     accountId: dat.account_id ?? cuerpo.account_id ?? cuerpo.accountId ?? '(falta)',
     vencido: exp === null ? '(sin exp)' : exp * 1000 < Date.now(),

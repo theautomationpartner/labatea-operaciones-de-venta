@@ -92,9 +92,11 @@ assert.equal(status(`Bearer ${firmar(base)}`), 401, 'servidor sin secretos')
 process.env.MONDAY_SIGNING_SECRET = SECRETO
 
 // --- El rescate con el Client Secret ------------------------------------------------------------
-/* Monday documenta el Signing Secret como la clave del session token, pero según el tipo y la
-   versión de la app manda uno firmado con el Client Secret. Los dos son secretos privados de la
-   misma app: aceptar cualquiera de los dos prueba el origen igual, y evita el 401 sistémico. */
+/* Monday documenta el CLIENT SECRET como la clave del session token: su ejemplo es literalmente
+   `jwt.verify(token, MY_CLIENT_SECRET)`. El Signing Secret queda como rescate porque algunas
+   configuraciones usan ése. Los dos son secretos privados de la misma app, así que aceptar
+   cualquiera prueba el origen igual de bien y evita un 401 sistémico por haber cargado uno solo.
+   Este test existe porque cargar el que no era costó una tarde de diagnóstico. */
 const CLIENTE = 'client-secret-de-prueba'
 process.env.MONDAY_CLIENT_SECRET = CLIENTE
 
@@ -115,7 +117,9 @@ process.env.MONDAY_SIGNING_SECRET = SECRETO
    tiene que decir eso y no "firma inválida", que es lo que diría la segunda clave. */
 const vencido = (() => {
   try {
-    verificarSesion(`Bearer ${firmar(base, { expiresIn: -60 })}`)
+    /* Firmado con la PRIMERA clave que se prueba: así el vencimiento es lo primero que
+       aparece, que es la situación que este test quiere fijar. */
+    verificarSesion(`Bearer ${firmar(base, { expiresIn: -60 }, CLIENTE)}`)
   } catch (e) {
     return e as ErrorAuth
   }
@@ -123,7 +127,11 @@ const vencido = (() => {
 })()
 assert.equal(vencido.status, 401)
 assert.match(vencido.motivo, /expired/, 'el log dice que venció')
-assert.doesNotMatch(vencido.motivo, /MONDAY_CLIENT_SECRET/, 'no llegó a probar la segunda clave')
+assert.doesNotMatch(
+  vencido.motivo,
+  /MONDAY_SIGNING_SECRET/,
+  'no llegó a probar la segunda clave',
+)
 
 delete process.env.MONDAY_CLIENT_SECRET
 

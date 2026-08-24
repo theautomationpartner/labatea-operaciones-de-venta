@@ -64,7 +64,7 @@ export function verificarSesion(authorization: string | undefined): Sesion {
        configurada tiene que quedar cerrada, no abierta. */
     throw new ErrorAuth(
       401,
-      'ni MONDAY_SIGNING_SECRET ni MONDAY_CLIENT_SECRET están configurados',
+      'ni MONDAY_CLIENT_SECRET ni MONDAY_SIGNING_SECRET están configurados',
       'config',
     )
   }
@@ -157,18 +157,18 @@ interface ClaveDeFirma {
 /**
  * Las claves con las que puede venir firmado el token, en orden de preferencia.
  *
- * Monday documenta el *Signing Secret* como la clave del session token, pero según el tipo y la
- * versión de la app manda uno firmado con el *Client Secret*. Son dos secretos distintos de la
- * misma app, los dos privados y los dos igual de válidos como prueba de origen: aceptar cualquiera
- * de los dos no afloja el control, sólo evita el 401 sistémico cuando tocó el otro.
+ * Monday documenta el *Client Secret* como la clave del session token: su ejemplo es literalmente
+ * `jwt.verify(token, MY_CLIENT_SECRET)`. Se prueba PRIMERO ése. El *Signing Secret* queda como
+ * rescate porque algunas configuraciones de app usan ése, y son dos secretos privados de la misma
+ * app: aceptar cualquiera de los dos prueba el origen igual de bien.
  *
- * El orden importa poco para la seguridad y mucho para el log: se prueba primero el que Monday
- * documenta, así el caso normal no deja rastro de un intento fallido.
+ * El orden importa poco para la seguridad y mucho para el log: probando primero el que documenta
+ * Monday, el caso normal no deja rastro de un intento fallido.
  */
 function clavesDeFirma(): ClaveDeFirma[] {
   return [
-    { nombre: 'MONDAY_SIGNING_SECRET', valor: process.env.MONDAY_SIGNING_SECRET?.trim() ?? '' },
     { nombre: 'MONDAY_CLIENT_SECRET', valor: process.env.MONDAY_CLIENT_SECRET?.trim() ?? '' },
+    { nombre: 'MONDAY_SIGNING_SECRET', valor: process.env.MONDAY_SIGNING_SECRET?.trim() ?? '' },
   ].filter((clave) => clave.valor !== '')
 }
 

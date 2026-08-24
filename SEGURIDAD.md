@@ -113,9 +113,9 @@ contarle al que prueba si el usuario existe en el tablero es entregarle la mitad
 - **`jwt.verify`, nunca `jwt.decode`.** Decodificar es leer un papel sin mirar el sello. Y el
   algoritmo va fijado a HS256: sin esa lista, un token con `alg: none` y la firma vacía entra como
   si fuera legítimo. Los dos casos están cubiertos por [tests/guard-sesion.test.ts](tests/guard-sesion.test.ts).
-- **Dos claves posibles, un solo intento de rescate.** Monday documenta el *Signing Secret* como la
-  clave del session token, pero según el tipo y la versión de la app manda uno firmado con el
-  *Client Secret*. Son dos secretos privados de la misma app: aceptar cualquiera de los dos prueba
+- **Dos claves posibles, un solo intento de rescate.** Monday firma el session token con el
+  **Client Secret** —su ejemplo es literalmente `jwt.verify(token, MY_CLIENT_SECRET)`—, y algunas
+  configuraciones usan el *Signing Secret*. Son dos secretos privados de la misma app: aceptar cualquiera de los dos prueba
   el origen igual de bien. Un token **vencido** corta el reintento —la firma cerró, el problema es
   otro— para que el log diga "vencido" y no "firma inválida".
 - **La lista blanca se consulta en el backend, siempre.** Si la consulta viviera en el frontend, el
@@ -165,8 +165,8 @@ Project → Settings → Environment Variables (Production y Preview):
 
 | Variable | Valor |
 | --- | --- |
-| `MONDAY_SIGNING_SECRET` | el Signing Secret de la app |
-| `MONDAY_CLIENT_SECRET` | el Client Secret de la app (clave de rescate; cargar las dos) |
+| `MONDAY_CLIENT_SECRET` | **el Client Secret de la app** — es con éste que Monday firma el session token |
+| `MONDAY_SIGNING_SECRET` | el Signing Secret de la misma pantalla (clave de rescate; cargar las dos) |
 | `MONDAY_API_TOKEN` | token de API con lectura sobre el tablero privado |
 | `WHITELIST_BOARD_ID` | `18427866249` |
 | `MONDAY_ACCOUNT_ID` | `35883216` (opcional, ata la app a la cuenta) |
