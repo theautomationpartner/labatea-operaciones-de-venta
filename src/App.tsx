@@ -115,7 +115,12 @@ export function App() {
              esto es lo único que permite distinguir un secreto que no corresponde de un token con
              otra forma. No se imprime el token ni su firma: sólo su forma. */
           if (sesion) {
-            console.warn('[seguridad] el servidor rechazó la sesión', resumenSessionToken(sesion))
+            /* Se imprime como TEXTO y no como objeto: en la consola un objeto sale colapsado, y
+               una captura de pantalla no muestra lo que hace falta leer. */
+            console.warn(
+              '[seguridad] el servidor rechazó la sesión · ' +
+                JSON.stringify(resumenSessionToken(sesion)),
+            )
           }
           setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado')
         })
