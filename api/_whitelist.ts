@@ -16,6 +16,7 @@
  * app vuelve sola.
  */
 import { ErrorAuth, type Sesion } from './_errores.js'
+import { mondayServidor } from './_mondayApi.js'
 
 const API_MONDAY = 'https://api.monday.com/v2'
 const API_VERSION = '2024-10'
@@ -149,4 +150,78 @@ async function consultarTablero(userId: string): Promise<boolean> {
     const estado = item.column_values?.find((c) => c.id === columnaEstado())?.text ?? ''
     return estado.trim().toLowerCase() === activa
   })
+}
+
+/** Una fila del tablero, con las dos columnas que importan. */
+export interface VendedorHabilitado {
+  /** User ID de Monday. Es lo que se asienta como vendedor de la operación. */
+  id: string
+  /** El nombre tal como está cargado en el tablero. */
+  nombre: string
+}
+
+const QUERY_LISTA = `
+  query ($board: ID!, $cols: [String!]) {
+    boards(ids: [$board]) {
+      items_page(limit: 300) {
+        items {
+          name
+          column_values(ids: $cols) {
+            id
+            text
+          }
+        }
+      }
+    }
+  }
+`
+
+interface RespuestaLista2 {
+  boards?: {
+    items_page?: {
+      items?: { name: string; column_values?: { id: string; text: string | null }[] }[]
+    }
+  }[]
+}
+
+/**
+ * Todos los habilitados del tablero, que son los que pueblan el selector de vendedor.
+ *
+ * La lista de vendedores y la lista de quién puede entrar son LA MISMA. Antes eran dos cosas
+ * distintas —el selector salía del equipo "Vendedores" de la cuenta— y eso permitía ofrecer como
+ * vendedor a alguien que la app no dejaba entrar, o al revés. Con una sola fuente eso no puede
+ * pasar: si está en el selector, entra; si no entra, no está en el selector.
+ *
+ * La consulta la arma el servidor con su token: el tablero es privado y su contenido —quiénes
+ * están habilitados— no viaja como una consulta que el cliente pueda reescribir.
+ */
+export async function listarHabilitados(): Promise<VendedorHabilitado[]> {
+  const board = process.env.WHITELIST_BOARD_ID?.trim()
+  if (!board) throw new ErrorAuth(403, 'lista blanca sin configurar (WHITELIST_BOARD_ID)')
+
+  let data: RespuestaLista2
+  try {
+    data = await mondayServidor<RespuestaLista2>(QUERY_LISTA, {
+      board,
+      cols: [columnaUsuario(), columnaEstado()],
+    })
+  } catch (e) {
+    throw new ErrorAuth(403, 'no se pudo leer la lista blanca: ' + (e as Error).message)
+  }
+
+  const items = data.boards?.[0]?.items_page?.items ?? []
+  const activa = etiquetaActiva().toLowerCase()
+
+  return items
+    .filter((item) => {
+      const estado = item.column_values?.find((c) => c.id === columnaEstado())?.text ?? ''
+      return estado.trim().toLowerCase() === activa
+    })
+    .map((item) => ({
+      id: (item.column_values?.find((c) => c.id === columnaUsuario())?.text ?? '').trim(),
+      nombre: item.name,
+    }))
+    /* Sin User ID la fila no sirve: no se puede asentar la venta a nombre de nadie, y tampoco
+       habilitaría a nadie a entrar. Se descarta en vez de ofrecer un vendedor roto. */
+    .filter((v) => v.id !== '')
 }

@@ -36,6 +36,7 @@ interface PayloadMonday {
     user_id?: number | string
     account_id?: number | string
     is_guest?: boolean
+    is_admin?: boolean
     user_kind?: string
   }
   user_id?: number | string
@@ -44,6 +45,7 @@ interface PayloadMonday {
   accountId?: number | string
   is_guest?: boolean
   isGuest?: boolean
+  is_admin?: boolean
 }
 
 /** Tolerancia de reloj entre Monday y el servidor. Sin esto, unos segundos de desfasaje son un 401. */
@@ -72,6 +74,9 @@ export function verificarSesion(authorization: string | undefined): Sesion {
   const userId = texto(dat.user_id ?? payload.user_id ?? payload.userId)
   const accountId = texto(dat.account_id ?? payload.account_id ?? payload.accountId)
   const isGuest = Boolean(dat.is_guest ?? payload.is_guest ?? payload.isGuest)
+  /* Del token, no de una consulta: es un dato firmado por Monday sobre ESTE usuario, así
+     que no se puede falsear ni confundir con el del token del servidor. */
+  const isAdmin = Boolean(dat.is_admin ?? payload.is_admin)
 
   if (!userId || !accountId) throw new ErrorAuth(401, 'el token no trae user_id / account_id')
 
@@ -83,7 +88,7 @@ export function verificarSesion(authorization: string | undefined): Sesion {
     throw new ErrorAuth(403, `cuenta ajena (${accountId})`)
   }
 
-  return { userId, accountId, isGuest }
+  return { userId, accountId, isGuest, isAdmin }
 }
 
 /**

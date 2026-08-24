@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict'
 import { ErrorAuth } from '../api/_guard'
-import { exigirListaBlanca, limpiarCacheListaBlanca } from '../api/_whitelist'
+import { exigirListaBlanca, limpiarCacheListaBlanca, listarHabilitados } from '../api/_whitelist'
 
 process.env.MONDAY_API_TOKEN = 'token-de-prueba'
 process.env.WHITELIST_BOARD_ID = '18427866249'
@@ -134,3 +134,70 @@ assert.equal(pedidos.length, 0, 'ni siquiera se consulta')
 process.env.WHITELIST_BOARD_ID = board
 
 console.log('lista-blanca: OK')
+
+// ── El selector de vendedores sale del MISMO tablero ─────────────────────────────────────────────
+/* La lista de quién puede vender y la de quién puede entrar tienen que ser la misma. Antes eran
+   dos —el selector salía del equipo "Vendedores" de la cuenta— y nada obligaba a que coincidieran:
+   se podía ofrecer como vendedor a alguien que la app rechazaba, y al revés. */
+
+/** Deja a `fetch` devolviendo estas filas del tablero. */
+function tableroCon(...filas: { nombre: string; userId: string | null; estado: string | null }[]) {
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => ({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: filas.map((f) => ({
+                name: f.nombre,
+                column_values: [
+                  { id: 'text_mm6hqsmt', text: f.userId },
+                  { id: 'status', text: f.estado },
+                ],
+              })),
+            },
+          },
+        ],
+      },
+    }),
+  })) as unknown as typeof fetch
+}
+
+tableroCon(
+  { nombre: 'The Automation Partner', userId: '107870718', estado: 'Activo' },
+  { nombre: 'Alguien de baja', userId: '222', estado: 'Inactivo' },
+  { nombre: 'Fila sin User ID', userId: null, estado: 'Activo' },
+  { nombre: 'Fila sin estado', userId: '333', estado: null },
+)
+
+const habilitados = await listarHabilitados()
+assert.deepEqual(
+  habilitados,
+  [{ id: '107870718', nombre: 'The Automation Partner' }],
+  'sólo los Activo, y sólo los que tienen User ID cargado',
+)
+
+// Una fila activa sin User ID no sirve: no habilita a nadie ni se le puede asentar una venta.
+tableroCon({ nombre: 'Sin id', userId: '   ', estado: 'Activo' })
+assert.deepEqual(await listarHabilitados(), [], 'una fila sin User ID se descarta')
+
+// Falla cerrada, igual que la validación de acceso.
+globalThis.fetch = (async () => {
+  throw new Error('ECONNRESET')
+}) as unknown as typeof fetch
+assert.equal(
+  await intentar().catch(() => 403),
+  403,
+  'si el tablero no se puede leer, no entra nadie',
+)
+let statusListado: number | 'ok' = 'ok'
+try {
+  await listarHabilitados()
+} catch (e) {
+  assert.ok(e instanceof ErrorAuth)
+  statusListado = e.status
+}
+assert.equal(statusListado, 403, 'y tampoco se inventa una lista de vendedores')
+
+console.log('lista-blanca (vendedores): OK')

@@ -11,6 +11,8 @@ export interface Sesion {
   userId: string
   accountId: string
   isGuest: boolean
+  /** Admin de la CUENTA de Monday, según el propio token firmado. Define el rol en la app. */
+  isAdmin: boolean
 }
 
 /**

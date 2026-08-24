@@ -24,7 +24,7 @@
 export const config = {
   /* Sólo las rutas que gastan el token del servidor. El resto del sitio (index.html, assets) no
      necesita portero: ahí el control es la CSP. */
-  matcher: ['/api/monday', '/api/monday-upload', '/api/mfa/:path*'],
+  matcher: ['/api/monday', '/api/monday-upload', '/api/vendedores', '/api/mfa/:path*'],
 }
 
 /* Sufijos con punto inicial a propósito: `.monday.com` sólo matchea subdominios reales. El dominio

@@ -38,7 +38,26 @@ function status(authorization: string | undefined): number | 'ok' {
 
 // --- Lo que tiene que pasar ---------------------------------------------------------------------
 const sesion = verificarSesion(`Bearer ${firmar(base)}`)
-assert.deepEqual(sesion, { userId: '107870718', accountId: '35883216', isGuest: false })
+assert.deepEqual(sesion, {
+  userId: '107870718',
+  accountId: '35883216',
+  isGuest: false,
+  isAdmin: false,
+})
+
+/* `is_admin` sale del token FIRMADO, no de una consulta. Es lo que define el rol en la app, y
+   tomarlo de `me` a través del proxy daba el rol del dueño del token del servidor: con una sola
+   cuenta de servicio, todos heredaban su permiso. */
+assert.equal(
+  verificarSesion(`Bearer ${firmar({ ...base, is_admin: true })}`).isAdmin,
+  true,
+  'el token declara al admin de la cuenta',
+)
+assert.equal(
+  verificarSesion(`Bearer ${firmar(base)}`).isAdmin,
+  false,
+  'sin la marca en el token, no es admin',
+)
 
 // Los ids se normalizan a texto vengan como vengan.
 assert.equal(verificarSesion(`Bearer ${firmar({ ...base, user_id: '107870718' })}`).userId, '107870718')

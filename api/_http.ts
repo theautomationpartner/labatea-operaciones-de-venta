@@ -6,7 +6,7 @@
  * de lo que realmente decide.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autorizarSinMfa, respuestaDeError } from './_guard.js'
+import { autorizarPedido, autorizarSinMfa, respuestaDeError } from './_guard.js'
 import type { Sesion } from './_errores.js'
 
 /** El cuerpo puede venir ya parseado por el runtime: con `application/json`, siempre lo está. */
@@ -37,30 +37,53 @@ export function deviceTokenDe(req: IncomingMessage): string | undefined {
 }
 
 /**
- * Corre un endpoint de MFA: sólo POST, autorizado por las capas 1 y 2, con el cuerpo ya parseado.
+ * Corre un endpoint protegido: sólo POST, con las capas ya aplicadas y el cuerpo parseado.
  *
- * Autoriza SIN exigir el segundo factor —es lo que estos endpoints existen para conseguir—, pero sí
- * exige firma válida y alta en la lista blanca.
+ * `conSegundoFactor` es la única diferencia entre los dos usos, y no es un detalle: los endpoints
+ * de `/api/mfa/*` NO pueden exigirlo —pedir el segundo factor para poder enrolarse dejaría a todo
+ * el mundo afuera para siempre—, y todo el resto SÍ.
  */
-export async function endpointMfa<T>(
+async function correr<T>(
   req: Pedido,
   res: ServerResponse,
   fn: (ctx: Contexto<T>) => Promise<unknown>,
+  conSegundoFactor: boolean,
 ): Promise<void> {
   if (req.method !== 'POST') {
     return responderJson(res, 405, { error: 'Method Not Allowed' })
   }
 
   try {
-    const sesion = await autorizarSinMfa(req.headers.authorization)
+    const deviceToken = deviceTokenDe(req)
+    const sesion = conSegundoFactor
+      ? await autorizarPedido(req.headers.authorization, deviceToken)
+      : await autorizarSinMfa(req.headers.authorization)
     const cuerpo = await leerJson<T>(req)
-    responderJson(res, 200, await fn({ sesion, cuerpo, deviceToken: deviceTokenDe(req) }))
+    responderJson(res, 200, await fn({ sesion, cuerpo, deviceToken }))
   } catch (e) {
     // Un cuerpo ilegible es culpa de quien lo mandó, no del servidor.
     if (e instanceof SyntaxError) return responderJson(res, 400, { error: 'Bad Request' })
     const { status, cuerpo } = respuestaDeError(e)
     responderJson(res, status, cuerpo)
   }
+}
+
+/** Endpoint de datos: firma + lista blanca + segundo factor. */
+export async function endpointDatos<T>(
+  req: Pedido,
+  res: ServerResponse,
+  fn: (ctx: Contexto<T>) => Promise<unknown>,
+): Promise<void> {
+  return correr(req, res, fn, true)
+}
+
+/** Endpoint del propio segundo factor: firma + lista blanca, sin exigir el factor que va a crear. */
+export async function endpointMfa<T>(
+  req: Pedido,
+  res: ServerResponse,
+  fn: (ctx: Contexto<T>) => Promise<unknown>,
+): Promise<void> {
+  return correr(req, res, fn, false)
 }
 
 /** El cuerpo como objeto. Un cuerpo vacío es `{}`: varios endpoints no necesitan ninguno. */
