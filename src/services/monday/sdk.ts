@@ -120,6 +120,26 @@ function cabeceras(auth: string, extra: Record<string, string>): Record<string, 
   }
 }
 
+/**
+ * Cabeceras autenticadas para pegarle a NUESTROS endpoints (`/api/*`).
+ *
+ * Existe para que ningún pedido se olvide de la credencial. Pasó: `/api/vendedores` se escribió
+ * con las cabeceras a mano y sin la Authorization, y como es el pedido del que depende el arranque,
+ * la app entera quedó rechazándose a sí misma con un 401 que parecía un problema de secretos.
+ * Buscar la causa afuera —en Monday y en Vercel— costó horas.
+ */
+export async function cabecerasPropias(
+  extra: Record<string, string> = {},
+): Promise<Record<string, string>> {
+  const auth = autorizacion()
+  const device = leerDeviceToken()
+  return {
+    ...extra,
+    Authorization: typeof auth === 'string' ? auth : await auth,
+    ...(device ? { 'X-Device-Token': device } : {}),
+  }
+}
+
 /** Un intento, con el `fetch` disparado apenas se sabe la Authorization. */
 function conAutorizacion(url: string, init: (auth: string) => RequestInit): Promise<Response> {
   const auth = autorizacion()

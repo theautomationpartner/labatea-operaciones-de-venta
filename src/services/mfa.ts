@@ -9,8 +9,8 @@
  * `estadoSegundoFactor` devuelve un estado "no exigido" y la app sigue de largo. Es la misma
  * decisión que en las otras dos capas: localhost no simula el borde.
  */
-import { guardarDeviceToken, leerDeviceToken, olvidarDeviceToken } from '@/lib/deviceToken'
-import { getSessionToken } from '@/lib/mondayAuth'
+import { guardarDeviceToken, olvidarDeviceToken } from '@/lib/deviceToken'
+import { cabecerasPropias } from '@/services/monday/sdk'
 
 export interface EstadoSegundoFactor {
   enrolado: boolean
@@ -54,16 +54,9 @@ export class DemasiadosIntentos extends Error {
 const enDesarrollo = import.meta.env.DEV
 
 async function pedir<T>(ruta: string, cuerpo: Record<string, unknown> = {}): Promise<T> {
-  const sesion = await getSessionToken()
-  const device = leerDeviceToken()
-
   const res = await fetch(`/api/mfa/${ruta}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(sesion ? { Authorization: `Bearer ${sesion}` } : {}),
-      ...(device ? { 'X-Device-Token': device } : {}),
-    },
+    headers: await cabecerasPropias({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(cuerpo),
   })
 

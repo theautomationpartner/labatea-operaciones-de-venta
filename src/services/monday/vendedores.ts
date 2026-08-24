@@ -18,7 +18,7 @@
  */
 import { VENDEDORES } from '@/data/mock'
 import type { UsuarioActual, Vendedor } from '@/types'
-import { mondayApi, mondayHabilitado, verificarRespuesta } from './sdk'
+import { cabecerasPropias, mondayApi, mondayHabilitado, verificarRespuesta } from './sdk'
 
 /** Paleta de colores para el avatar del vendedor, asignada por posición. */
 const COLORES_VENDEDOR = [
@@ -74,7 +74,7 @@ async function pedirEquipo(): Promise<RespuestaEquipo> {
 async function leerDelServidor(): Promise<RespuestaEquipo> {
   const res = await fetch('/api/vendedores', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await cabecerasPropias({ 'Content-Type': 'application/json' }),
     body: '{}',
   })
   /* Misma lectura del rechazo que el resto de los pedidos: un 401 o un 403 acá tienen que
