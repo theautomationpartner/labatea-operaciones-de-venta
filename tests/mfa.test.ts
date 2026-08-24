@@ -140,7 +140,7 @@ reiniciar()
   assert.equal(memoria.registros.get(clave(usuario))!.confirmado, false, 'sigue pendiente')
 
   // El código de verdad sí, y trae los diez códigos de recuperación.
-  const codigos = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
+  const { codigosRecuperacion: codigos } = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
   assert.equal(codigos.length, 10)
   assert.ok(
     codigos.every((c) => /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c)),
@@ -152,6 +152,22 @@ reiniciar()
     'en el almacén sólo queda el hash',
   )
   assert.equal(memoria.registros.get(clave(usuario))!.confirmado, true)
+}
+
+// ── Confirmar el enrolamiento YA deja entrar ────────────────────────────────────────────────────
+reiniciar()
+{
+  const { secreto } = await iniciarEnrolamiento(usuario, 'test')
+  const alta = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
+
+  /* Sin esto, quien termina de enrolarse choca contra el muro un segundo después: el token del
+     dispositivo es la ÚNICA prueba de que pasó el segundo factor, y acaba de probarlo. */
+  assert.ok(alta.deviceToken, 'confirmar tiene que emitir el dispositivo de la jornada')
+  assert.equal(await status(() => exigirMfa(usuario, alta.deviceToken)), 'ok', 'y con eso se entra')
+
+  /* Pero dura la jornada, no 30 días: la casilla de confianza aparece la próxima vez. */
+  const horas = (memoria.dispositivos[0].expira - Date.now()) / (60 * 60_000)
+  assert.ok(horas > 11 && horas < 13, `el dispositivo del alta dura la jornada, no ${horas} horas`)
 }
 
 // ── Anti-reutilización: el corazón de la capa ───────────────────────────────────────────────────
@@ -188,7 +204,7 @@ reiniciar()
   )
 
   // El de hace 30 s sí: es la tolerancia que se pidió (±30 s).
-  const codigos = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto, epoch: epoch - 30 }))
+  const { codigosRecuperacion: codigos } = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto, epoch: epoch - 30 }))
   assert.equal(codigos.length, 10, 'el código del período anterior entra')
 }
 
@@ -225,7 +241,7 @@ reiniciar()
 reiniciar()
 {
   const { secreto } = await iniciarEnrolamiento(usuario, 'test')
-  const codigos = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
+  const { codigosRecuperacion: codigos } = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
 
   const primero = codigos[0]
   const uso = await verificar(usuario, primero, false)
@@ -254,6 +270,12 @@ reiniciar()
   const codigo = generateSync({ secret: secreto, epoch: Math.floor(Date.now() / 1000) + 30 })
   const res = await verificar(usuario, codigo, true)
   const token = res.deviceToken!
+  /* Se captura ACÁ, apenas se emite: más abajo se enrola a otro usuario y eso agrega otro
+     dispositivo a la lista, con lo que "el último" dejaría de ser éste. */
+  const emitido = memoria.dispositivos[memoria.dispositivos.length - 1]
+  const dias = (new Date(res.expiraEn!).getTime() - Date.now()) / (24 * 60 * 60_000)
+  assert.ok(Math.abs(dias - 30) < 0.01, `con la casilla tildada dura 30 días, no ${dias}`)
+  assert.equal(res.recordado, true, 'y la respuesta lo declara')
 
   assert.ok(token.length >= 40, 'el token es largo y aleatorio')
   assert.ok(
@@ -267,9 +289,7 @@ reiniciar()
   assert.equal(await status(() => exigirMfa(otro, token)), 403, 'el token no es transferible')
 
   // Y vence.
-  const dias = (Date.now() - memoria.dispositivos[0].expira) / (24 * 60 * 60_000)
-  assert.ok(Math.abs(dias + 30) < 0.01, 'dura 30 días')
-  memoria.dispositivos[0].expira = Date.now() - 1
+  emitido.expira = Date.now() - 1
   assert.equal(await status(() => exigirMfa(usuario, token)), 403, 'vencido no sirve')
 }
 

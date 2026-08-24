@@ -2818,3 +2818,129 @@
   color: var(--red);
   margin-right: 6px;
 }
+
+/* ── Capa 3 · el muro del segundo factor ──────────────────────────────────────────────────────── */
+/* Ocupa la pantalla entera a propósito: mientras está, de la operación no se ve nada. */
+.mfa-muro {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f6f7fb;
+  overflow-y: auto;
+}
+.mfa-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+.mfa-icono {
+  font-size: 34px;
+  color: var(--yellow);
+}
+.mfa-titulo {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+.mfa-texto {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #676879;
+}
+/* El QR con fondo blanco y borde: sobre un panel claro, sin borde se pierde. */
+.mfa-qr {
+  width: 190px;
+  height: 190px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mfa-secreto {
+  margin: 0;
+  font-size: 12px;
+  color: #676879;
+}
+.mfa-secreto code {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dark);
+}
+.mfa-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+/* Ancho y espaciado: son seis dígitos que se copian mirando el teléfono. */
+.mfa-input {
+  width: 100%;
+  padding: 12px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+  color: var(--text-dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mfa-input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+}
+.mfa-confiar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dark);
+  cursor: pointer;
+}
+.mfa-boton {
+  width: 100%;
+  padding: 12px;
+}
+.mfa-boton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Los códigos de rescate se copian a mano: monoespaciado y bien separados. */
+.mfa-rescate {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 16px;
+  list-style: none;
+  background: #f6f7fb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-dark);
+}
+.mfa-error {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #b42318;
+}

@@ -226,9 +226,9 @@ o con uno inventado) tiene que devolver 401.
 Las capas 1 y 2 prueban de dónde viene el pedido y quién lo firma. Esta prueba que la persona tiene
 su teléfono, y es la única que sobrevive a que a alguien le roben la sesión de Monday.
 
-**Estado: escrita, testeada y APAGADA.** Con `MFA_REQUERIDO` sin encender, el guardián no la exige.
-Encenderla antes de que existan las pantallas de enrolamiento dejaría a todos afuera sin manera de
-entrar — nadie puede enrolarse desde una app a la que no puede entrar. Ver "Lo que falta".
+**Estado: completa (backend + muro visual) y APAGADA hasta cargar sus variables.** Con
+`MFA_REQUERIDO` sin encender, el guardián no la exige y la app funciona como hasta ahora.
+Ver "Encender la capa".
 
 ## Piezas
 
@@ -244,6 +244,7 @@ entrar — nadie puede enrolarse desde una app a la que no puede entrar. Ver "Lo
 | [api/mfa/status.ts](api/mfa/status.ts) | `POST` · qué pantalla mostrar |
 | [src/lib/deviceToken.ts](src/lib/deviceToken.ts) | El token en `localStorage`, con respaldo en memoria |
 | [src/services/mfa.ts](src/services/mfa.ts) | Cliente de los cuatro endpoints |
+| [src/components/ui/MfaGuard.tsx](src/components/ui/MfaGuard.tsx) | El muro: QR, códigos de rescate y verificación diaria |
 | [tests/mfa.test.ts](tests/mfa.test.ts) | `npm run test:mfa` |
 
 ## Decisiones que conviene conocer
@@ -279,48 +280,57 @@ entrar — nadie puede enrolarse desde una app a la que no puede entrar. Ver "Lo
   `/api/monday`. Los `/api/mfa/*` son la excepción necesaria: piden firma y lista blanca, pero no
   segundo factor.
 
-## Puesta en marcha
+## La secuencia, en tres pasos
 
-### 1. Base de datos
+`App.tsx` es una máquina de estados y no dibuja nada de la operación hasta superar los tres:
 
-Neon o Supabase, cualquiera. Copiar la cadena **con pooler** (Supabase: puerto 6543; Neon: el host
-`-pooler`) — contra el puerto directo, un pico de tráfico agota las conexiones. Después:
+1. **Lista blanca.** Se pide el `sessionToken` a Monday y se consulta `/api/vendedores`, que verifica
+   la firma y busca al usuario en el tablero privado. Este endpoint **no** exige segundo factor, y es
+   a propósito: es el paso 1, y exigir el paso 3 acá haría imposible llegar al muro.
+2. **Caché del usuario.** El usuario habilitado queda en el estado global con sus equipos de Monday,
+   de los que sale el rol —Administrador o Vendedor, ver [src/lib/permisos.ts](src/lib/permisos.ts)—.
+   Tiene que pasar antes de dibujar: media app pregunta si puede editar tal cosa.
+3. **Muro del segundo factor.** Se renderiza únicamente [MfaGuard](src/components/ui/MfaGuard.tsx).
+   La app se libera sólo cuando el backend confirma el código y emite el `deviceToken`.
 
-```bash
-psql "$DATABASE_URL" -f db/mfa.sql
-```
+Con un dispositivo confiable vigente el paso 3 no pregunta nada. Si `MFA_REQUERIDO` está apagado, se
+pasa de largo y la capa queda inerte.
 
-### 2. Clave de cifrado
+## El muro (MfaGuard)
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
+- **Primera vez:** llama a `/api/mfa/setup`, muestra el QR (y el secreto en texto por si la cámara no
+  coopera), pide el primer código contra `/api/mfa/confirm` y entrega los **diez códigos de rescate**.
+  Se ven una sola vez —en la base sólo queda su hash— y hay que tildar "ya los guardé" para seguir.
+- **Uso regular:** input de seis dígitos y la casilla *"Confiar en este dispositivo por 30 días"*,
+  contra `/api/mfa/verify`. El mismo campo acepta un código de rescate: quien perdió el teléfono no
+  tiene que buscar otra pantalla.
+- Ante el límite de intentos el formulario queda cerrado: reintentar antes de los 15 minutos da el
+  mismo rechazo, y un botón habilitado invita a gastar intentos al pedo.
 
-Esa clave cifra los secretos TOTP. **Si se pierde, todos los enrolamientos se pierden con ella** y
-hay que volver a enrolar a todo el mundo; si se filtra, hay que rotarla y re-enrolar igual.
+**Confirmar el alta ya deja entrar.** El servidor emite ahí mismo un dispositivo de la jornada (12 h);
+sin eso, quien termina de enrolarse chocaría contra el muro un segundo después. La casilla de los 30
+días aparece la próxima vez, cuando ya sabe de qué se trata.
 
-### 3. Variables en Vercel
+## Base de datos (Neon desde Vercel)
+
+1. Vercel → tu proyecto → **Storage** → **Create Database** → **Neon**. Nombre:
+   **`La Batea Authenticated Users`**. Conectala al proyecto: la integración inyecta sola la cadena
+   de conexión (`DATABASE_URL` / `POSTGRES_URL`), y el código acepta cualquiera de las dos.
+2. Abrí el **SQL Editor** de Neon, pegá [db/mfa.sql](db/mfa.sql) y ejecutalo. También sirve
+   `psql "$DATABASE_URL" -f db/mfa.sql`. Es idempotente: correrlo de nuevo no borra nada.
+3. Crea cuatro tablas: `mfa_usuarios` (secreto TOTP cifrado), `mfa_recuperacion` (códigos hasheados),
+   `mfa_dispositivos` (tokens hasheados con vencimiento) y `mfa_intentos` (el límite de velocidad).
+
+## Encender la capa
 
 | Variable | Valor |
 | --- | --- |
-| `DATABASE_URL` | la cadena con pooler |
-| `MFA_ENCRYPTION_KEY` | los 32 bytes del paso anterior |
-| `MFA_EMISOR` | opcional; el nombre que muestra la app de autenticación (por defecto `La Batea`) |
-| `MFA_REQUERIDO` | `1` para exigirlo. **Dejarlo apagado hasta tener las pantallas** |
+| `DATABASE_URL` | la inyecta la integración de Neon |
+| `MFA_ENCRYPTION_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `MFA_EMISOR` | opcional; el nombre que muestra la app de verificación (por defecto `La Batea`) |
+| `MFA_REQUERIDO` | `1` para exigirlo |
 
-### 4. Verificación
-
-```bash
-npm run test:mfa   # reutilización, tolerancia, límite de intentos, recuperación, dispositivos
-```
-
-## Lo que falta
-
-El backend está entero; faltan las **pantallas**: mostrar el QR, pedir el primer código, mostrar los
-diez códigos de recuperación una única vez, y la pantalla diaria con el campo del código y la
-casilla "confiar en este dispositivo por 30 días". El cliente ya está resuelto en
-[src/services/mfa.ts](src/services/mfa.ts) — las vistas sólo tienen que llamarlo y decidir qué
-mostrar según `estadoSegundoFactor()`.
-
-El orden para encenderla, cuando llegue el momento: pantallas → deploy → enrolarse uno mismo →
-recién ahí `MFA_REQUERIDO=1`. Al revés, el primero que queda afuera es quien tenía que arreglarlo.
+**El orden importa:** base creada → SQL aplicado → `DATABASE_URL` y `MFA_ENCRYPTION_KEY` cargadas →
+**redeploy** → recién ahí `MFA_REQUERIDO=1` y otro redeploy. Al revés, el primero que queda afuera
+sos vos. Y si perdés `MFA_ENCRYPTION_KEY` se pierden todos los enrolamientos: hay que volver a
+enrolar a todo el mundo.

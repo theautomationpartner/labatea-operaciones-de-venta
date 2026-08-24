@@ -1,7 +1,12 @@
 -- Capa 3 · esquema del segundo factor (TOTP) y de los dispositivos confiables.
 --
--- Corre tal cual en Neon y en Supabase (los dos son Postgres). Aplicarlo:
+-- Base: Neon, creada desde Vercel -> Storage. Nombre: "La Batea Authenticated Users".
+-- La integración deja la cadena de conexión en DATABASE_URL / POSTGRES_URL del proyecto.
+--
+-- Aplicarlo, desde el SQL Editor de Neon (pegar este archivo) o por consola:
 --   psql "$DATABASE_URL" -f db/mfa.sql
+--
+-- Es idempotente (todo va con IF NOT EXISTS): correrlo de nuevo no rompe ni borra nada.
 --
 -- Un usuario se identifica SIEMPRE por el par (account_id, user_id): dos cuentas de Monday pueden
 -- tener ids de usuario iguales, y ninguna hereda el segundo factor de la otra.

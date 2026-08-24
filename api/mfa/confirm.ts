@@ -17,7 +17,6 @@ interface Cuerpo {
 
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   await endpointMfa<Cuerpo>(req, res, async ({ sesion, cuerpo }) => {
-    const codigos = await confirmarEnrolamiento(sesion, cuerpo.codigo ?? '')
-    return { codigosRecuperacion: codigos }
+    return confirmarEnrolamiento(sesion, cuerpo.codigo ?? '')
   })
 }

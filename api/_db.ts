@@ -16,8 +16,16 @@ let pool: Pool | null = null
 function conexion(): Pool {
   if (pool) return pool
 
-  const url = process.env.DATABASE_URL?.trim()
-  if (!url) throw new Error('DATABASE_URL no está configurada en el servidor')
+  /* La integración de Neon en Vercel inyecta varias variables con la misma cadena; se aceptan las
+     tres para no depender de cuál nombre usó la plantilla del día. La que interesa es la del
+     POOLER: contra el puerto directo, un pico de tráfico agota las conexiones de la base. */
+  const url =
+    process.env.DATABASE_URL?.trim() ||
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.POSTGRES_PRISMA_URL?.trim()
+  if (!url) {
+    throw new Error('falta DATABASE_URL (o POSTGRES_URL) en el servidor')
+  }
 
   pool = new Pool({
     connectionString: url,

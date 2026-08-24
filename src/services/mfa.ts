@@ -31,6 +31,8 @@ export interface Enrolamiento {
 
 export interface ResultadoVerificacion {
   conRecuperacion: boolean
+  /** true si el dispositivo quedó recordado 30 días; false si dura sólo la jornada. */
+  recordado?: boolean
   codigosRestantes?: number
   expiraEn?: string
 }
@@ -92,7 +94,14 @@ export async function iniciarEnrolamiento(): Promise<Enrolamiento> {
  * que dejarlos copiar antes de seguir.
  */
 export async function confirmarEnrolamiento(codigo: string): Promise<string[]> {
-  const res = await pedir<{ codigosRecuperacion: string[] }>('confirm', { codigo })
+  const res = await pedir<{
+    codigosRecuperacion: string[]
+    deviceToken?: string
+  }>('confirm', { codigo })
+
+  /* Confirmar YA deja entrar: el servidor emite el dispositivo de la jornada. Sin esto, quien
+     termina de enrolarse volvería a chocar contra el muro un segundo después. */
+  if (res.deviceToken) guardarDeviceToken(res.deviceToken)
   return res.codigosRecuperacion
 }
 

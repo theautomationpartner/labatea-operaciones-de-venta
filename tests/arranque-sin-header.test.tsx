@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { App } from '@/App'
+import { MfaGuard } from '@/components/ui/MfaGuard'
 import { InicioView } from '@/features/inicio/InicioView'
 import { initialState } from '@/state/appState'
 import { DispatchContext, StateContext } from '@/state/context'
@@ -47,5 +48,14 @@ for (const sena of SENAS) {
   )
 }
 assert.ok(!primerPintado.includes('Confirmar'), 'tampoco el botón de confirmar')
+
+/* El muro del segundo factor (paso 3) tampoco deja ver nada de la operación: mientras está, es lo
+   ÚNICO en pantalla. Se verifica sobre el componente porque el paso 3 sólo se alcanza después de
+   dos viajes al servidor, y eso no ocurre en un render estático. */
+const muro = renderToStaticMarkup(createElement(MfaGuard, { onListo: () => {} }))
+assert.ok(muro.includes('mfa-muro'), 'el muro tiene que ocupar la pantalla')
+for (const sena of SENAS) {
+  assert.ok(!muro.includes(sena), `el muro deja ver el header: apareció "${sena}"`)
+}
 
 console.log('arranque-sin-header: OK')

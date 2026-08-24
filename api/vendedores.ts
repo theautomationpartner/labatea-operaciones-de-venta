@@ -15,7 +15,7 @@
  * creía que todos eran esa persona —y el rol de esa persona—.
  */
 import type { ServerResponse } from 'node:http'
-import { endpointDatos, type Pedido } from './_http.js'
+import { endpointMfa, type Pedido } from './_http.js'
 import { listarHabilitados } from './_whitelist.js'
 import { mondayServidor } from './_mondayApi.js'
 
@@ -36,7 +36,12 @@ const QUERY_USUARIO = `
 `
 
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
-  await endpointDatos(req, res, async ({ sesion }) => {
+  /* Firma + lista blanca, SIN exigir el segundo factor, y es a propósito: éste es el pedido del
+     PASO 1 —saber si el usuario está habilitado y quién es—, y el segundo factor es el paso 3.
+     Exigirlo acá invertiría el orden y haría imposible llegar al muro de MFA.
+     Lo que se expone es la lista de habilitados a alguien que YA está en esa lista; los datos de
+     verdad viven detrás de /api/monday, que sí exige el segundo factor. */
+  await endpointMfa(req, res, async ({ sesion }) => {
     const vendedores = await listarHabilitados()
 
     /* El nombre y los equipos del usuario REAL (el de la sesión, no el del token del servidor).

@@ -13,7 +13,9 @@ import {
 } from '@/services/monday'
 import { ModalCargando } from '@/components/ui/ModalCargando'
 import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
+import { MfaGuard } from '@/components/ui/MfaGuard'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
+import { estadoSegundoFactor } from '@/services/mfa'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
 import { bloqueaLaApp, notificarErrorSeguridad } from '@/lib/errorSeguridad'
 import { enMonday, getSessionToken, resumenSessionToken } from '@/lib/mondayAuth'
@@ -69,7 +71,7 @@ export function App() {
    * Estar fuera del iframe se sabe en el acto y sin preguntarle a nadie; lo demás —firma y lista
    * blanca— sólo lo puede contestar el servidor, y hasta que conteste no se dibuja la operación.
    */
-  const [acceso, setAcceso] = useState<'verificando' | 'permitido' | 'rechazado'>(() =>
+  const [acceso, setAcceso] = useState<'verificando' | 'mfa' | 'permitido' | 'rechazado'>(() =>
     import.meta.env.DEV || enMonday() ? 'verificando' : 'rechazado',
   )
 
@@ -102,10 +104,21 @@ export function App() {
       /* Una sola consulta contesta las dos preguntas: si el borde deja pasar y quién es el usuario.
          Su resultado queda cacheado, así que la carga de configuración no lo vuelve a pedir. */
       getUsuarioActual()
-        .then((usuario) => {
+        .then(async (usuario) => {
           if (!vivo) return
+          /* PASO 2 · el usuario habilitado queda cacheado en el estado global. De sus equipos de
+             Monday sale el rol (ver `lib/permisos`), así que esto tiene que pasar ANTES de dibujar
+             nada: media app pregunta si puede editar tal cosa. */
           dispatch({ type: 'setUsuarioActual', usuario })
-          setAcceso('permitido')
+
+          /* PASO 3 · el segundo factor. Con un dispositivo confiable vigente no se le pregunta
+             nada; si el backend no lo exige todavía, la capa está apagada y se pasa de largo. */
+          const mfa = await estadoSegundoFactor().catch(() => null)
+          if (!vivo) return
+          /* Si el estado no se pudo leer se muestra el muro igual: ante la duda, se pregunta.
+             El propio muro avisa si tampoco él puede hablar con el servidor. */
+          const haceFalta = mfa === null || (mfa.exigido && !mfa.dispositivoConfiable)
+          setAcceso(haceFalta ? 'mfa' : 'permitido')
         })
         /* En desarrollo no hay borde que consultar —ni funciones serverless ni iframe—, así que un
            fallo acá no significa "no autorizado": significa que ese control no existe en localhost. */
@@ -204,6 +217,9 @@ export function App() {
       {acceso === 'verificando' && (
         <ModalCargando titulo="Verificando acceso" detalle="Un momento, por favor." />
       )}
+      {/* PASO 3 · hasta que el backend confirme el código y emita el token del dispositivo, esto
+          es lo único que se dibuja. */}
+      {acceso === 'mfa' && <MfaGuard onListo={() => setAcceso('permitido')} />}
       {/* Un solo aviso a la vez, y el de seguridad manda: el otro invita a reintentar, y un
           rechazo del borde no se arregla reintentando. */}
       {errorSeguridad && avisoVisible ? (

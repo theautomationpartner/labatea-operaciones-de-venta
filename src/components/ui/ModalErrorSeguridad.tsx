@@ -131,10 +131,7 @@ const TEXTOS: Record<
         <p>
           Tu usuario de Monday <strong>no tiene permisos para utilizar la aplicación</strong>.
         </p>
-        <p>
-          Comunicate con el soporte de TAP para que den de alta tu usuario. El alta tarda menos de
-          un minuto en hacer efecto.
-        </p>
+        <p>Comunicate con el soporte de TAP para que den de alta tu usuario.</p>
       </>
     ),
   },
