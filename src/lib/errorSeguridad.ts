@@ -29,35 +29,71 @@ export interface ErrorSeguridad {
   status: number
 }
 
-let actual: ErrorSeguridad | null = null
-const oyentes = new Set<(e: ErrorSeguridad | null) => void>()
+/**
+ * ¿Este rechazo deja la app inservible?
+ *
+ * Cuando la respuesta es sí, la pantalla no se dibuja: el header con los selectores de operación y
+ * vendedor sólo aparece si el pedido pasó el borde. Mostrar la app a alguien que abrió el enlace
+ * fuera de Monday es enseñarle qué hay del otro lado de una puerta que está cerrada, y para el
+ * usuario legítimo es peor todavía: una pantalla que se ve entera pero donde nada funciona.
+ *
+ * Los otros dos NO bloquean, y es a propósito. Un 5xx o un límite de intentos pueden ser pasajeros,
+ * y desmontar la vista en medio de una carga de venta tiraría el trabajo hecho por un fallo que
+ * quizá se resuelve solo en el próximo pedido.
+ */
+export function bloqueaLaApp(clase: ClaseErrorSeguridad): boolean {
+  return clase === 'sesion' || clase === 'sinPermiso' || clase === 'segundoFactor'
+}
+
+/**
+ * El estado del canal.
+ *
+ * Son DOS cosas distintas y conviene no confundirlas: `error` es que el borde rechazó —y mientras
+ * eso sea cierto la app queda tapada—, `visible` es si la ventana está abierta. Cerrar el aviso
+ * baja la ventana y nada más: el "Entendido" cierra el cartel, no abre la puerta.
+ */
+export interface EstadoSeguridad {
+  error: ErrorSeguridad | null
+  visible: boolean
+}
+
+let estado: EstadoSeguridad = { error: null, visible: false }
+const oyentes = new Set<() => void>()
+
+function publicar(nuevo: EstadoSeguridad): void {
+  estado = nuevo
+  for (const oyente of oyentes) oyente()
+}
 
 /**
  * Avisa que el borde rechazó un pedido.
  *
- * El PRIMERO gana y los demás se ignoran hasta que alguien cierre el aviso: una pantalla dispara
- * diez consultas en paralelo y las diez fallan igual, pero mostrar la ventana diez veces —o peor,
- * cambiarle el texto mientras se lee— no informa más, molesta.
+ * El PRIMERO gana y los demás se ignoran hasta que se reinicie: una pantalla dispara diez consultas
+ * en paralelo y las diez fallan igual, pero mostrar la ventana diez veces —o peor, cambiarle el
+ * texto mientras se lee— no informa más, molesta.
  */
 export function notificarErrorSeguridad(clase: ClaseErrorSeguridad, status: number): void {
-  if (actual) return
-  actual = { clase, status }
-  for (const oyente of oyentes) oyente(actual)
+  if (estado.error) return
+  publicar({ error: { clase, status }, visible: true })
 }
 
-export function limpiarErrorSeguridad(): void {
-  actual = null
-  for (const oyente of oyentes) oyente(null)
+/** Baja la ventana. El rechazo sigue en pie: si tapaba la app, la app sigue tapada. */
+export function cerrarAvisoSeguridad(): void {
+  if (estado.visible) publicar({ ...estado, visible: false })
 }
 
-/** Devuelve la función para desuscribirse. */
-export function suscribirErrorSeguridad(oyente: (e: ErrorSeguridad | null) => void): () => void {
+/** Borra todo. Sólo para los tests: en la app, de un rechazo se sale recargando. */
+export function reiniciarErrorSeguridad(): void {
+  publicar({ error: null, visible: false })
+}
+
+export function suscribirErrorSeguridad(oyente: () => void): () => void {
   oyentes.add(oyente)
   return () => {
     oyentes.delete(oyente)
   }
 }
 
-export function errorSeguridadActual(): ErrorSeguridad | null {
-  return actual
+export function estadoSeguridadActual(): EstadoSeguridad {
+  return estado
 }

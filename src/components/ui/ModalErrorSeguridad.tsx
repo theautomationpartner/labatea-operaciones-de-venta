@@ -1,22 +1,26 @@
 import { Modal } from './Modal'
-import { limpiarErrorSeguridad, type ErrorSeguridad } from '@/lib/errorSeguridad'
+import { cerrarAvisoSeguridad, type ErrorSeguridad } from '@/lib/errorSeguridad'
 
 /**
  * ÚNICA forma en que la app comunica que el borde rechazó el pedido.
  *
  * Es distinta de `ModalErrorMonday` a propósito. Ese avisa que Monday no contestó: se espera y se
- * reintenta. Esto no se arregla reintentando —la sesión no vale, el usuario no está habilitado,
- * falta el segundo factor— y decir "probá de nuevo" mandaría a la persona a golpear una puerta que
- * no se va a abrir. Cada caso dice qué pasó y qué hacer al respecto.
+ * reintenta. Esto no se arregla reintentando —el dominio no está autorizado, el usuario no está
+ * habilitado, falta el segundo factor— y decir "probá de nuevo" mandaría a la persona a golpear una
+ * puerta que no se va a abrir.
+ *
+ * Por eso cada caso ofrece SÓLO lo que sirve. El rechazo por dominio no lleva "Recargar": recargar
+ * desde afuera de Monday da exactamente el mismo rechazo, y ese botón sería una invitación a
+ * insistir con algo que no depende de quien lo aprieta.
  */
 export function ModalErrorSeguridad({ error }: { error: ErrorSeguridad }) {
-  const { titulo, cuerpo, recargar } = TEXTOS[error.clase]
+  const { titulo, cuerpo, recargar, mostrarCodigo } = TEXTOS[error.clase]
 
   return (
     <Modal
       title={titulo}
       icon={<i className="fas fa-shield-halved modal-icon--warn" />}
-      onClose={limpiarErrorSeguridad}
+      onClose={cerrarAvisoSeguridad}
       actions={
         <>
           {recargar && (
@@ -28,43 +32,42 @@ export function ModalErrorSeguridad({ error }: { error: ErrorSeguridad }) {
               Recargar
             </button>
           )}
-          <button type="button" className="btn btn-secundario" onClick={limpiarErrorSeguridad}>
+          <button
+            type="button"
+            className={recargar ? 'btn btn-secundario' : 'btn btn-primary'}
+            onClick={cerrarAvisoSeguridad}
+          >
             Entendido
           </button>
         </>
       }
     >
       {cuerpo}
-      <p className="modal-detalle">
-        Código {error.status}. Si tenés que reportarlo, mencioná este número.
-      </p>
+      {mostrarCodigo && (
+        <p className="modal-detalle">
+          Código {error.status}. Si tenés que reportarlo, mencioná este número.
+        </p>
+      )}
     </Modal>
   )
 }
 
 const TEXTOS: Record<
   ErrorSeguridad['clase'],
-  { titulo: string; cuerpo: JSX.Element; recargar: boolean }
+  { titulo: string; cuerpo: JSX.Element; recargar: boolean; mostrarCodigo: boolean }
 > = {
+  /* El caso de alguien que consiguió el enlace y lo abre fuera de Monday. El código va en el título
+     y el mensaje es una sola línea: no hay nada que explicar ni ninguna acción que ofrecer. */
   sesion: {
-    titulo: 'No se pudo confirmar tu sesión',
-    recargar: true,
-    cuerpo: (
-      <>
-        <p>
-          El servidor <strong>no pudo verificar quién sos</strong>. Suele pasar cuando la app quedó
-          abierta mucho tiempo y la sesión de Monday venció.
-        </p>
-        <p>
-          Recargá para que Monday emita una sesión nueva. Si el error vuelve enseguida, la app no
-          está recibiendo la sesión del contenedor: avisale a soporte de TAP.
-        </p>
-      </>
-    ),
+    titulo: 'ERROR 401 NO Autorizado',
+    recargar: false,
+    mostrarCodigo: false,
+    cuerpo: <p>Su dominio no está autorizado a utilizar la aplicación.</p>,
   },
   sinPermiso: {
     titulo: 'Tu usuario no está habilitado',
     recargar: false,
+    mostrarCodigo: true,
     cuerpo: (
       <>
         <p>
@@ -81,6 +84,7 @@ const TEXTOS: Record<
   segundoFactor: {
     titulo: 'Falta verificar el segundo factor',
     recargar: true,
+    mostrarCodigo: true,
     cuerpo: (
       <>
         <p>
@@ -94,6 +98,7 @@ const TEXTOS: Record<
   demasiadosIntentos: {
     titulo: 'Demasiados intentos',
     recargar: false,
+    mostrarCodigo: true,
     cuerpo: (
       <p>
         Se superó el límite de intentos fallidos. Por seguridad, la verificación queda bloqueada{' '}
@@ -104,6 +109,7 @@ const TEXTOS: Record<
   servidor: {
     titulo: 'El servicio no está respondiendo',
     recargar: true,
+    mostrarCodigo: true,
     cuerpo: (
       <>
         <p>

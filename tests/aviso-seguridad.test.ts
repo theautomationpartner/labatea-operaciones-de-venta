@@ -12,7 +12,7 @@
  * Se corre con esbuild + node (`npm run test:aviso-seguridad`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { errorSeguridadActual, limpiarErrorSeguridad } from '@/lib/errorSeguridad'
+import { estadoSeguridadActual, reiniciarErrorSeguridad } from '@/lib/errorSeguridad'
 import { mondayApi } from '@/services/monday/sdk'
 
 /** Deja a `fetch` respondiendo con ese status y ese cuerpo. */
@@ -26,10 +26,10 @@ function responderCon(status: number, cuerpo: unknown = {}): void {
 
 /** Corre una consulta que va a fallar y devuelve la clase de aviso que quedó publicada. */
 async function claseTrasFallar(status: number, cuerpo: unknown = {}): Promise<string | undefined> {
-  limpiarErrorSeguridad()
+  reiniciarErrorSeguridad()
   responderCon(status, cuerpo)
   await mondayApi('{ me { id } }').catch(() => null)
-  return errorSeguridadActual()?.clase
+  return estadoSeguridadActual().error?.clase
 }
 
 assert.equal(await claseTrasFallar(401), 'sesion', '401 · no se pudo confirmar quién sos')
@@ -44,28 +44,28 @@ assert.equal(await claseTrasFallar(500), 'servidor', '500 · el backend no puede
 assert.equal(await claseTrasFallar(502), 'servidor', '502 también')
 
 // Un 200 no publica nada.
-limpiarErrorSeguridad()
+reiniciarErrorSeguridad()
 globalThis.fetch = (async () => ({
   ok: true,
   status: 200,
   json: async () => ({ data: { me: { id: '1' } } }),
 })) as unknown as typeof fetch
 await mondayApi('{ me { id } }')
-assert.equal(errorSeguridadActual(), null, 'lo que sale bien no avisa nada')
+assert.equal(estadoSeguridadActual().error, null, 'lo que sale bien no avisa nada')
 
 /* Diez consultas en paralelo fallan igual: el aviso es UNO. Cambiarle el texto mientras se lee, o
    apilar diez ventanas, no informa más. */
-limpiarErrorSeguridad()
+reiniciarErrorSeguridad()
 responderCon(403)
 await Promise.all(Array.from({ length: 10 }, () => mondayApi('{ me { id } }').catch(() => null)))
-assert.equal(errorSeguridadActual()?.clase, 'sinPermiso')
+assert.equal(estadoSeguridadActual().error?.clase, 'sinPermiso')
 
 // Y el primero es el que queda: un 500 posterior no pisa el rechazo que ya se está mostrando.
 responderCon(500)
 await mondayApi('{ me { id } }').catch(() => null)
-assert.equal(errorSeguridadActual()?.clase, 'sinPermiso', 'gana el primero hasta que se cierre')
+assert.equal(estadoSeguridadActual().error?.clase, 'sinPermiso', 'gana el primero hasta que se cierre')
 
-limpiarErrorSeguridad()
-assert.equal(errorSeguridadActual(), null, 'al cerrarlo, el canal queda libre')
+reiniciarErrorSeguridad()
+assert.equal(estadoSeguridadActual().error, null, 'al cerrarlo, el canal queda libre')
 
 console.log('aviso-seguridad: OK')

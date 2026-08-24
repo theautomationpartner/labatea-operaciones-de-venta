@@ -1,16 +1,17 @@
 /**
- * El rechazo de seguridad vigente, para que React lo pueda mostrar.
+ * El estado de seguridad vigente, para que React lo pueda mostrar.
  *
- * Se suscribe al canal de `lib/errorSeguridad`, que es donde el sdk publica cuando el borde
- * rechaza un pedido.
+ * Se suscribe al canal de `lib/errorSeguridad`, donde el sdk publica cuando el borde rechaza.
  */
 import { useSyncExternalStore } from 'react'
 import {
-  errorSeguridadActual,
+  estadoSeguridadActual,
   suscribirErrorSeguridad,
-  type ErrorSeguridad,
+  type EstadoSeguridad,
 } from '@/lib/errorSeguridad'
 
-export function useErrorSeguridad(): ErrorSeguridad | null {
-  return useSyncExternalStore(suscribirErrorSeguridad, errorSeguridadActual, () => null)
+const SIN_ERROR: EstadoSeguridad = { error: null, visible: false }
+
+export function useErrorSeguridad(): EstadoSeguridad {
+  return useSyncExternalStore(suscribirErrorSeguridad, estadoSeguridadActual, () => SIN_ERROR)
 }

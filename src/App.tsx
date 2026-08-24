@@ -14,6 +14,7 @@ import {
 import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
+import { bloqueaLaApp } from '@/lib/errorSeguridad'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -50,7 +51,10 @@ export function App() {
   const { paso, operacion } = useApp()
   const dispatch = useDispatch()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const errorSeguridad = useErrorSeguridad()
+  const { error: errorSeguridad, visible: avisoVisible } = useErrorSeguridad()
+  /* Tapada mientras el rechazo siga en pie, aunque se cierre el aviso: el "Entendido" baja el
+     cartel, no abre la puerta. De un rechazo del borde se sale recargando, no insistiendo. */
+  const bloqueada = errorSeguridad !== null && bloqueaLaApp(errorSeguridad.clase)
   const Vista = VISTAS[paso]
 
   /* Al cambiar de operación (y al resetear) se vacían las cachés de consultas: cada operación
@@ -123,10 +127,12 @@ export function App() {
 
   return (
     <div className="scroll" ref={scrollRef}>
-      <Vista />
+      {/* El header con los selectores y el resto de la operación sólo se dibujan si el pedido
+          pasó el borde. Ver `bloqueaLaApp`. */}
+      {!bloqueada && <Vista />}
       {/* Un solo aviso a la vez, y el de seguridad manda: el otro invita a reintentar, y un
           rechazo del borde no se arregla reintentando. */}
-      {errorSeguridad ? (
+      {errorSeguridad && avisoVisible ? (
         <ModalErrorSeguridad error={errorSeguridad} />
       ) : (
         <ModalErrorMonday />
