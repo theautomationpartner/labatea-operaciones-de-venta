@@ -65,7 +65,13 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     res.end(texto)
   } catch (e) {
     const { status, cuerpo } = respuestaDeError(e)
-    return responder(res, status, { errors: [{ message: cuerpo.error }] })
+    /* El `codigo` viaja junto al mensaje: es lo que le permite a la pantalla distinguir "no
+       estás habilitado" de "tu sesión no vale" de "al servidor le falta una variable". Sin él, los
+       tres se ven como el mismo 401 mudo. */
+    return responder(res, status, {
+      errors: [{ message: cuerpo.error }],
+      ...(cuerpo.codigo ? { codigo: cuerpo.codigo } : {}),
+    })
   }
 }
 

@@ -16,7 +16,7 @@ import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
 import { bloqueaLaApp, notificarErrorSeguridad } from '@/lib/errorSeguridad'
-import { enMonday } from '@/lib/mondayAuth'
+import { enMonday, getSessionToken } from '@/lib/mondayAuth'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -73,27 +73,44 @@ export function App() {
     import.meta.env.DEV || enMonday() ? 'verificando' : 'rechazado',
   )
 
+  /* Fuera del iframe no hay a quién preguntarle: el rechazo ya es la respuesta. Se avisa una sola
+     vez, al montar, y no dentro del efecto de abajo: ahí se volvería a disparar cada vez que el
+     acceso cambie, y el aviso terminaría dependiendo de en qué orden llegan las cosas. */
   useEffect(() => {
-    if (acceso === 'rechazado') {
-      /* Afuera del iframe no hay a quién preguntarle: el rechazo es la respuesta. Se publica acá
-         —y no durante el render— porque avisar es un efecto, no parte de dibujar. */
-      notificarErrorSeguridad('fueraDeMonday', 401)
-      return
-    }
+    if (!import.meta.env.DEV && !enMonday()) notificarErrorSeguridad('fueraDeMonday', 401)
+  }, [])
+
+  useEffect(() => {
     if (acceso !== 'verificando') return
 
     let vivo = true
-    /* Una sola consulta contesta las dos preguntas: si el borde deja pasar y quién es el usuario.
-       Su resultado queda cacheado, así que la carga de configuración de abajo no lo vuelve a pedir. */
-    getUsuarioActual()
-      .then((usuario) => {
-        if (!vivo) return
-        dispatch({ type: 'setUsuarioActual', usuario })
-        setAcceso('permitido')
-      })
-      /* En desarrollo no hay borde que consultar —ni funciones serverless ni iframe—, así que un
-         fallo acá no significa "no autorizado": significa que ese control no existe en localhost. */
-      .catch(() => vivo && setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado'))
+    /* Antes de salir a la red: ¿Monday entregó una sesión? Si no, no hay nada que el servidor
+       pueda verificar, y el problema es la instalación de la app y no el usuario. Distinguirlo acá
+       evita mandar a pedir un alta que no va a resolver nada. */
+    void (async () => {
+      const sesion = await getSessionToken()
+      if (!vivo) return
+      if (!sesion && !import.meta.env.DEV) {
+        notificarErrorSeguridad('sinSesionDeMonday', 401)
+        setAcceso('rechazado')
+        return
+      }
+      verificarConElServidor()
+    })()
+
+    function verificarConElServidor() {
+      /* Una sola consulta contesta las dos preguntas: si el borde deja pasar y quién es el usuario.
+         Su resultado queda cacheado, así que la carga de configuración no lo vuelve a pedir. */
+      getUsuarioActual()
+        .then((usuario) => {
+          if (!vivo) return
+          dispatch({ type: 'setUsuarioActual', usuario })
+          setAcceso('permitido')
+        })
+        /* En desarrollo no hay borde que consultar —ni funciones serverless ni iframe—, así que un
+           fallo acá no significa "no autorizado": significa que ese control no existe en localhost. */
+        .catch(() => vivo && setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado'))
+    }
     return () => {
       vivo = false
     }

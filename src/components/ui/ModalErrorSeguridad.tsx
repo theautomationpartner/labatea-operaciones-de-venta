@@ -66,6 +66,27 @@ const TEXTOS: Record<
     cuerpo: <p>Su dominio no está autorizado a utilizar la aplicación.</p>,
   },
 
+  /* Estamos dentro de Monday pero el contenedor no entregó ninguna sesión. No es que la sesión no
+     valga: no llegó ninguna. Casi siempre es la instalación de la app en la cuenta, así que lo
+     único útil para quien lo ve es saber a quién avisarle. */
+  sinSesionDeMonday: {
+    titulo: 'No se pudo obtener tu sesión de Monday',
+    recargar: true,
+    mostrarCodigo: false,
+    cuerpo: (
+      <>
+        <p>
+          Monday <strong>no entregó una sesión</strong> para esta app. Tu usuario y tus permisos no
+          tienen nada que ver.
+        </p>
+        <p>
+          Probá recargar. Si sigue igual, comunicate con el soporte de TAP: hay que revisar cómo
+          está instalada la app en la cuenta.
+        </p>
+      </>
+    ),
+  },
+
   /* Está DENTRO de Monday, pero el servidor no pudo verificar la credencial. Es distinto del
      anterior y decirle "su dominio no está autorizado" sería falso: el dominio está bien, lo que
      falló es la sesión. */

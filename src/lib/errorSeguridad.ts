@@ -15,7 +15,13 @@
 export type ClaseErrorSeguridad =
   /** La app se abrió fuera del iframe de Monday. Lo sabe el navegador, sin preguntar a nadie. */
   | 'fueraDeMonday'
-  /** 401 · el servidor no pudo verificar la credencial: falta, venció o no valida. */
+  /**
+   * Estamos dentro de Monday pero el contenedor no entregó ninguna sesión. Lo sabe el navegador
+   * antes de salir a la red, y es un problema distinto de que la sesión no valide: acá no hay
+   * nada que verificar porque no llegó nada.
+   */
+  | 'sinSesionDeMonday'
+  /** 401 · el servidor no pudo verificar la credencial: venció o no valida. */
   | 'sesion'
   /** 401/403 · al servidor le falta configuración. No es culpa de quien lo está usando. */
   | 'configuracion'
@@ -48,6 +54,7 @@ export interface ErrorSeguridad {
 export function bloqueaLaApp(clase: ClaseErrorSeguridad): boolean {
   return (
     clase === 'fueraDeMonday' ||
+    clase === 'sinSesionDeMonday' ||
     clase === 'sesion' ||
     clase === 'configuracion' ||
     clase === 'sinPermiso' ||

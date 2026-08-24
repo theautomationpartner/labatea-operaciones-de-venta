@@ -54,6 +54,7 @@ assert.ok(render('servidor', 500).includes('Recargar'), 'un 5xx puede ser pasaje
 
 // ── Qué rechazo tapa la app ─────────────────────────────────────────────────────────────────────
 assert.equal(bloqueaLaApp('fueraDeMonday'), true, 'dominio no autorizado: no ve nada')
+assert.equal(bloqueaLaApp('sinSesionDeMonday'), true, 'sin sesión no se puede trabajar')
 assert.equal(bloqueaLaApp('sesion'), true, 'sesión que no valida: tampoco')
 assert.equal(bloqueaLaApp('configuracion'), true, 'servidor sin configurar: no hay nada que hacer')
 assert.equal(bloqueaLaApp('sinPermiso'), true, 'sin alta en la lista blanca: no ve nada')
@@ -105,5 +106,18 @@ assert.ok(
     ' alta que no va a resolver nada',
 )
 assert.ok(/soporte de TAP/.test(config), 'lo único útil es a quién avisarle')
+
+/* "Monday no entregó sesión" y "tu sesión no valida" son problemas distintos con dueños distintos:
+   el primero es de la instalación de la app, el segundo puede ser del propio usuario. Confundirlos
+   manda a la persona equivocada a resolverlo. */
+const sinSesion = render('sinSesionDeMonday', 401)
+assert.ok(sinSesion.includes('no entregó una sesión'), 'falta el motivo real')
+/* La confusión que importa no es que aparezca la palabra "permisos" —el texto justamente aclara
+   que no tienen nada que ver— sino que mande a pedir un alta que no resolvería nada. */
+assert.ok(
+  !/den de alta|no tiene permisos para utilizar/i.test(sinSesion),
+  'no puede mandar a pedir un alta: el alta no arregla una sesión que nunca llegó',
+)
+assert.ok(!sinSesion.includes('dominio'), 'el dominio está bien: está adentro de Monday')
 
 console.log('bloqueo-seguridad: OK')

@@ -66,7 +66,13 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     /* Un solo lugar para todos los rechazos: 401 si la firma no cerró, 403 si el usuario no está
        habilitado, 500 para lo inesperado. El detalle queda en el log del servidor. */
     const { status, cuerpo } = respuestaDeError(e)
-    return responder(res, status, { errors: [{ message: cuerpo.error }] })
+    /* El `codigo` viaja junto al mensaje: es lo que le permite a la pantalla distinguir "no
+       estás habilitado" de "tu sesión no vale" de "al servidor le falta una variable". Sin él, los
+       tres se ven como el mismo 401 mudo. */
+    return responder(res, status, {
+      errors: [{ message: cuerpo.error }],
+      ...(cuerpo.codigo ? { codigo: cuerpo.codigo } : {}),
+    })
   }
 }
 
