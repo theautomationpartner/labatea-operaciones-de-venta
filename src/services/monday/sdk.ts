@@ -147,7 +147,7 @@ async function pedir(url: string, init: (auth: string) => RequestInit): Promise<
  * caso se tira el dispositivo confiable guardado —seguir mandando uno muerto en cada pedido no
  * lleva a ningún lado— y se lanza el error que la UI sabe interpretar.
  */
-async function verificarRespuesta(res: Response, contexto: string): Promise<void> {
+export async function verificarRespuesta(res: Response, contexto: string): Promise<void> {
   if (res.status === 401 || res.status === 403 || res.status === 429) {
     const cuerpo = (await res.json().catch(() => ({}))) as { mfa?: string }
 

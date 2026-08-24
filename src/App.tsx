@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getComisionesVenta,
   getDescuentosPago,
@@ -11,10 +11,12 @@ import {
   getVendedores,
   limpiarCachesConsultas,
 } from '@/services/monday'
+import { ModalCargando } from '@/components/ui/ModalCargando'
 import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
-import { bloqueaLaApp } from '@/lib/errorSeguridad'
+import { bloqueaLaApp, notificarErrorSeguridad } from '@/lib/errorSeguridad'
+import { enMonday } from '@/lib/mondayAuth'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -55,6 +57,47 @@ export function App() {
   /* Tapada mientras el rechazo siga en pie, aunque se cierre el aviso: el "Entendido" baja el
      cartel, no abre la puerta. De un rechazo del borde se sale recargando, no insistiendo. */
   const bloqueada = errorSeguridad !== null && bloqueaLaApp(errorSeguridad.clase)
+
+  /*
+   * Lo PRIMERO es de dónde viene el pedido; recién después se dibuja algo.
+   *
+   * El estado arranca resuelto —no en un `useEffect`— para que el primer pintado ya sepa la
+   * respuesta. Con un efecto habría un cuadro con el header a la vista antes de que el rechazo
+   * llegue, y ese destello es justamente lo que no puede pasar: a alguien que abrió el enlace
+   * fuera de Monday no se le muestra ni por un instante lo que hay del otro lado.
+   *
+   * Estar fuera del iframe se sabe en el acto y sin preguntarle a nadie; lo demás —firma y lista
+   * blanca— sólo lo puede contestar el servidor, y hasta que conteste no se dibuja la operación.
+   */
+  const [acceso, setAcceso] = useState<'verificando' | 'permitido' | 'rechazado'>(() =>
+    import.meta.env.DEV || enMonday() ? 'verificando' : 'rechazado',
+  )
+
+  useEffect(() => {
+    if (acceso === 'rechazado') {
+      /* Afuera del iframe no hay a quién preguntarle: el rechazo es la respuesta. Se publica acá
+         —y no durante el render— porque avisar es un efecto, no parte de dibujar. */
+      notificarErrorSeguridad('sesion', 401)
+      return
+    }
+    if (acceso !== 'verificando') return
+
+    let vivo = true
+    /* Una sola consulta contesta las dos preguntas: si el borde deja pasar y quién es el usuario.
+       Su resultado queda cacheado, así que la carga de configuración de abajo no lo vuelve a pedir. */
+    getUsuarioActual()
+      .then((usuario) => {
+        if (!vivo) return
+        dispatch({ type: 'setUsuarioActual', usuario })
+        setAcceso('permitido')
+      })
+      /* En desarrollo no hay borde que consultar —ni funciones serverless ni iframe—, así que un
+         fallo acá no significa "no autorizado": significa que ese control no existe en localhost. */
+      .catch(() => vivo && setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado'))
+    return () => {
+      vivo = false
+    }
+  }, [acceso, dispatch])
   const Vista = VISTAS[paso]
 
   /* Al cambiar de operación (y al resetear) se vacían las cachés de consultas: cada operación
@@ -72,6 +115,8 @@ export function App() {
 
   // Configuración del sistema (vigencia y topes de descuento): se lee una vez, al arrancar.
   useEffect(() => {
+    // Nada de esto sale a la red antes de saber si el pedido tiene derecho a estar acá.
+    if (acceso !== 'permitido') return
     let vivo = true
     getDiasVigencia()
       .then((dias) => vivo && dispatch({ type: 'setDiasVigencia', value: dias }))
@@ -109,11 +154,6 @@ export function App() {
     getVendedores()
       .then((vs) => vivo && dispatch({ type: 'setVendedores', vendedores: vs }))
       .catch(() => vivo && dispatch({ type: 'setVendedores', vendedores: [] }))
-    /* Usuario logueado en Monday (query `me`): define el vendedor por defecto y los permisos del
-       selector (RBAC). Ante un error queda sin sesión (no bloquea el selector). */
-    getUsuarioActual()
-      .then((u) => vivo && dispatch({ type: 'setUsuarioActual', usuario: u }))
-      .catch(() => vivo && dispatch({ type: 'setUsuarioActual', usuario: null }))
     /* Tasa de cambio del dólar de HOY: se lee del board de Cotizaciones al iniciar y se guarda en
        el estado global. Es el valor que se usa para convertir precios en dólares y como auditoría
        en la venta. Ante un error queda en null (la UI lo refleja). */
@@ -123,13 +163,16 @@ export function App() {
     return () => {
       vivo = false
     }
-  }, [dispatch])
+  }, [acceso, dispatch])
 
   return (
     <div className="scroll" ref={scrollRef}>
-      {/* El header con los selectores y el resto de la operación sólo se dibujan si el pedido
-          pasó el borde. Ver `bloqueaLaApp`. */}
-      {!bloqueada && <Vista />}
+      {/* El header con los selectores y el resto de la operación se dibujan SÓLO con el acceso
+          ya confirmado. Ver el estado `acceso` y `bloqueaLaApp`. */}
+      {acceso === 'permitido' && !bloqueada && <Vista />}
+      {acceso === 'verificando' && (
+        <ModalCargando titulo="Verificando acceso" detalle="Un momento, por favor." />
+      )}
       {/* Un solo aviso a la vez, y el de seguridad manda: el otro invita a reintentar, y un
           rechazo del borde no se arregla reintentando. */}
       {errorSeguridad && avisoVisible ? (

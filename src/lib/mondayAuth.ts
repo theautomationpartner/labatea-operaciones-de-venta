@@ -35,7 +35,7 @@ function cliente(): ReturnType<typeof mondaySdk> {
  * preguntarle: el postMessage se manda y no contesta nadie. Se responde `null` en el acto en vez
  * de esperar el tope; el tope queda como red para el caso raro de un contenedor que no responde.
  */
-function enMonday(): boolean {
+export function enMonday(): boolean {
   try {
     return typeof window !== 'undefined' && window.parent !== window
   } catch {

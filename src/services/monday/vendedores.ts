@@ -18,7 +18,7 @@
  */
 import { VENDEDORES } from '@/data/mock'
 import type { UsuarioActual, Vendedor } from '@/types'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { mondayApi, mondayHabilitado, verificarRespuesta } from './sdk'
 
 /** Paleta de colores para el avatar del vendedor, asignada por posición. */
 const COLORES_VENDEDOR = [
@@ -77,7 +77,9 @@ async function leerDelServidor(): Promise<RespuestaEquipo> {
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
   })
-  if (!res.ok) throw new Error(`Vendedores HTTP ${res.status}`)
+  /* Misma lectura del rechazo que el resto de los pedidos: un 401 o un 403 acá tienen que
+     levantar la ventana y tapar la app igual que en cualquier otra consulta. */
+  await verificarRespuesta(res, 'Vendedores')
   return (await res.json()) as RespuestaEquipo
 }
 
