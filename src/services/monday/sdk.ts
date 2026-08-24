@@ -16,7 +16,7 @@
  * el token personal de `.env.local`.
  */
 import { leerDeviceToken, olvidarDeviceToken } from '@/lib/deviceToken'
-import { notificarErrorSeguridad } from '@/lib/errorSeguridad'
+import { notificarErrorSeguridad, type ClaseErrorSeguridad } from '@/lib/errorSeguridad'
 import { getSessionToken, invalidarSessionToken, sessionTokenEnCache } from '@/lib/mondayAuth'
 
 const TOKEN = (import.meta.env.VITE_MONDAY_TOKEN as string | undefined)?.trim() || undefined
@@ -149,18 +149,13 @@ async function pedir(url: string, init: (auth: string) => RequestInit): Promise<
  */
 export async function verificarRespuesta(res: Response, contexto: string): Promise<void> {
   if (res.status === 401 || res.status === 403 || res.status === 429) {
-    const cuerpo = (await res.json().catch(() => ({}))) as { mfa?: string }
+    const cuerpo = (await res.json().catch(() => ({}))) as { codigo?: string }
+    const clase = claseDeRechazo(res.status, cuerpo.codigo)
 
-    if (cuerpo.mfa) {
-      olvidarDeviceToken()
-      notificarErrorSeguridad('segundoFactor', res.status)
-      throw new SegundoFactorRequerido()
-    }
+    if (clase === 'segundoFactor') olvidarDeviceToken()
+    notificarErrorSeguridad(clase, res.status)
 
-    notificarErrorSeguridad(
-      res.status === 401 ? 'sesion' : res.status === 429 ? 'demasiadosIntentos' : 'sinPermiso',
-      res.status,
-    )
+    if (clase === 'segundoFactor') throw new SegundoFactorRequerido()
     throw new AccesoDenegado(res.status)
   }
 
@@ -173,6 +168,22 @@ export async function verificarRespuesta(res: Response, contexto: string): Promi
   }
 
   if (!res.ok) throw new Error(`${contexto} HTTP ${res.status}`)
+}
+
+/**
+ * Qué pantalla corresponde, según lo que el servidor dice que falló.
+ *
+ * El `codigo` lo manda el guardián y es lo que permite distinguir tres cosas que antes se veían
+ * como el mismo 401 mudo: que al servidor le falte configuración, que la credencial no valga, o
+ * que el usuario no esté dado de alta. Sin ese dato la app le decía a un usuario legítimo que su
+ * dominio no estaba autorizado, que era falso y no lo llevaba a ningún lado.
+ */
+function claseDeRechazo(status: number, codigo: string | undefined): ClaseErrorSeguridad {
+  if (codigo === 'mfa') return 'segundoFactor'
+  if (codigo === 'no_habilitado') return 'sinPermiso'
+  if (codigo === 'config') return 'configuracion'
+  if (status === 429) return 'demasiadosIntentos'
+  return status === 401 ? 'sesion' : 'sinPermiso'
 }
 
 /** Ejecuta una query/mutation GraphQL contra la API de Monday y devuelve `data`; lanza si falla. */

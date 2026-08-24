@@ -36,9 +36,21 @@ assert.equal(await claseTrasFallar(401), 'sesion', '401 · no se pudo confirmar 
 assert.equal(await claseTrasFallar(403), 'sinPermiso', '403 · sos vos, pero no estás habilitado')
 assert.equal(await claseTrasFallar(429), 'demasiadosIntentos', '429 · límite de intentos')
 assert.equal(
-  await claseTrasFallar(403, { mfa: 'requerido' }),
+  await claseTrasFallar(403, { codigo: 'mfa' }),
   'segundoFactor',
-  '403 con la pista mfa · es otra pantalla',
+  '403 con código mfa · es otra pantalla',
+)
+assert.equal(
+  await claseTrasFallar(403, { codigo: 'no_habilitado' }),
+  'sinPermiso',
+  '403 no_habilitado · el usuario no está dado de alta',
+)
+/* Un 401 por falta de configuración NO es culpa del usuario: es la diferencia entre "pedile el
+   alta a un administrador" y "avisale a soporte que falta una variable". */
+assert.equal(
+  await claseTrasFallar(401, { codigo: 'config' }),
+  'configuracion',
+  '401 config · al servidor le falta una variable',
 )
 assert.equal(await claseTrasFallar(500), 'servidor', '500 · el backend no puede trabajar')
 assert.equal(await claseTrasFallar(502), 'servidor', '502 también')

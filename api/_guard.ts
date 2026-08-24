@@ -19,7 +19,7 @@
  * revocado o si la firma no cerró es regalarle al que prueba un mapa de por dónde seguir.
  */
 import jwt from 'jsonwebtoken'
-import { ErrorAuth, type Sesion } from './_errores.js'
+import { ErrorAuth, type CodigoRechazo, type Sesion } from './_errores.js'
 import { exigirMfa } from './_mfa.js'
 import { exigirListaBlanca } from './_whitelist.js'
 
@@ -62,11 +62,15 @@ export function verificarSesion(authorization: string | undefined): Sesion {
   if (claves.length === 0) {
     /* Sin secreto no se puede verificar NADA. Se corta con 401 en vez de dejar pasar: una app mal
        configurada tiene que quedar cerrada, no abierta. */
-    throw new ErrorAuth(401, 'ni MONDAY_SIGNING_SECRET ni MONDAY_CLIENT_SECRET están configurados')
+    throw new ErrorAuth(
+      401,
+      'ni MONDAY_SIGNING_SECRET ni MONDAY_CLIENT_SECRET están configurados',
+      'config',
+    )
   }
 
   const token = authorization?.replace(/^Bearer\s+/i, '').trim()
-  if (!token) throw new ErrorAuth(401, 'sin Authorization')
+  if (!token) throw new ErrorAuth(401, 'sin Authorization', 'sesion')
 
   const payload = verificarConAlguna(token, claves)
 
@@ -78,14 +82,14 @@ export function verificarSesion(authorization: string | undefined): Sesion {
      que no se puede falsear ni confundir con el del token del servidor. */
   const isAdmin = Boolean(dat.is_admin ?? payload.is_admin)
 
-  if (!userId || !accountId) throw new ErrorAuth(401, 'el token no trae user_id / account_id')
+  if (!userId || !accountId) throw new ErrorAuth(401, 'el token no trae user_id / account_id', 'sesion')
 
   // Invitado externo: firma válida, pero no es gente de la organización.
-  if (isGuest) throw new ErrorAuth(403, `invitado externo (user ${userId})`)
+  if (isGuest) throw new ErrorAuth(403, `invitado externo (user ${userId})`, 'no_habilitado')
 
   const cuentaEsperada = process.env.MONDAY_ACCOUNT_ID?.trim()
   if (cuentaEsperada && accountId !== cuentaEsperada) {
-    throw new ErrorAuth(403, `cuenta ajena (${accountId})`)
+    throw new ErrorAuth(403, `cuenta ajena (${accountId})`, 'no_habilitado')
   }
 
   return { userId, accountId, isGuest, isAdmin }
@@ -126,7 +130,7 @@ export async function autorizarSinMfa(authorization: string | undefined): Promis
 /** Lo único que sale a la red. `mfa` aparece sólo cuando lo que falta es el segundo factor. */
 export interface CuerpoDeError {
   error: string
-  mfa?: 'mfa'
+  codigo?: CodigoRechazo
 }
 
 /**
@@ -136,7 +140,7 @@ export interface CuerpoDeError {
 export function respuestaDeError(e: unknown): { status: number; cuerpo: CuerpoDeError } {
   if (e instanceof ErrorAuth) {
     console.warn(`[guard] ${e.status} · ${e.motivo}`)
-    return { status: e.status, cuerpo: { error: e.message, ...(e.pista ? { mfa: e.pista } : {}) } }
+    return { status: e.status, cuerpo: { error: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) } }
   }
   console.error('[guard] error inesperado', e)
   return { status: 500, cuerpo: { error: 'Internal Server Error' } }
@@ -193,7 +197,7 @@ function verificarConAlguna(token: string, claves: ClaveDeFirma[]): PayloadMonda
     }
   }
 
-  throw new ErrorAuth(401, `token inválido · ${fallos.join(' | ')}`)
+  throw new ErrorAuth(401, `token inválido · ${fallos.join(' | ')}`, 'sesion')
 }
 
 /** Los ids de Monday llegan como número o como texto según el token; adentro se usan como texto. */

@@ -6,6 +6,16 @@
  * pero es el tipo de fragilidad que rompe el día que un bundler cambia el orden de evaluación—.
  */
 
+/**
+ * Qué falló, en una palabra que la interfaz sabe traducir.
+ *
+ *  · `config`        el servidor no tiene con qué verificar (falta un secreto). Lo arregla soporte.
+ *  · `sesion`        la credencial falta, venció o no valida. Lo arregla recargar, o soporte.
+ *  · `no_habilitado` el usuario no está dado de alta. Lo arregla un administrador.
+ *  · `mfa`           falta el segundo factor. Lo arregla el propio usuario.
+ */
+export type CodigoRechazo = 'config' | 'sesion' | 'no_habilitado' | 'mfa'
+
 /** Quién es el usuario, según lo que la firma de Monday deja probar. */
 export interface Sesion {
   userId: string
@@ -23,32 +33,26 @@ export class ErrorAuth extends Error {
   readonly status: 401 | 403 | 429
   readonly motivo: string
   /**
-   * Pista PÚBLICA, la única excepción al mensaje mudo.
+   * Qué control cortó. Es la única excepción al mensaje mudo, y existe porque sin ella la pantalla
+   * no puede decir qué hacer: "no estás habilitado", "tu sesión no vale" y "al servidor le falta
+   * configuración" son tres problemas con tres soluciones distintas, y los tres se veían como el
+   * mismo 401 mudo.
    *
-   * `mfa` significa que falta el segundo factor. No revela nada: para recibirla hay que haber
-   * pasado la firma y la lista blanca, o sea ya ser ese usuario. Y sin ella el frontend no puede
-   * distinguir "enrolate" de "no tenés permiso", que son dos pantallas distintas.
+   * No filtra nada aprovechable: para recibirlo hay que haber pasado la Capa 1, y ningún código
+   * dice si un usuario existe ni entrega credenciales.
    */
-  readonly pista?: 'mfa'
+  readonly codigo?: CodigoRechazo
 
   /*
    * Los campos se declaran y se asignan a mano en vez de usar propiedades de constructor
-   * (`constructor(readonly status: ...)`), que es lo natural en TypeScript.
-   *
-   * El motivo es el runtime: Vercel ejecuta estos `.ts` en modo STRIP-ONLY, que borra tipos pero no
-   * transforma sintaxis. Una propiedad de constructor necesita que alguien genere el
-   * `this.status = status`, y en ese modo no lo genera nadie: el módulo ni siquiera parsea y la
-   * función devuelve 500 antes de correr una línea.
-   *
-   * Es una trampa silenciosa: `tsc` y esbuild lo aceptan porque los dos transforman, así que el
-   * typecheck y los tests pasan en verde y el fallo aparece recién en producción. Lo cubre
-   * `npm run test:funciones`, que carga cada endpoint con el mismo modo que usa el deploy.
+   * (`constructor(readonly status: ...)`). Es equivalente y funciona en cualquier runtime, sin
+   * depender de que quien compile sepa transformar esa forma abreviada.
    */
-  constructor(status: 401 | 403 | 429, motivo: string, pista?: 'mfa') {
+  constructor(status: 401 | 403 | 429, motivo: string, codigo?: CodigoRechazo) {
     super(MENSAJES[status])
     this.status = status
     this.motivo = motivo
-    this.pista = pista
+    this.codigo = codigo
     this.name = 'ErrorAuth'
   }
 }

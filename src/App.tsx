@@ -77,7 +77,7 @@ export function App() {
     if (acceso === 'rechazado') {
       /* Afuera del iframe no hay a quién preguntarle: el rechazo es la respuesta. Se publica acá
          —y no durante el render— porque avisar es un efecto, no parte de dibujar. */
-      notificarErrorSeguridad('sesion', 401)
+      notificarErrorSeguridad('fueraDeMonday', 401)
       return
     }
     if (acceso !== 'verificando') return

@@ -86,7 +86,7 @@ export async function exigirListaBlanca(sesion: Sesion): Promise<void> {
 
   const guardado = cache.get(clave)
   if (guardado && Date.now() < guardado.hasta) {
-    if (!guardado.permitido) throw new ErrorAuth(403, `fuera de la lista blanca (caché) ${clave}`)
+    if (!guardado.permitido) throw new ErrorAuth(403, `fuera de la lista blanca (caché) ${clave}`, 'no_habilitado')
     return
   }
 
@@ -96,7 +96,7 @@ export async function exigirListaBlanca(sesion: Sesion): Promise<void> {
     hasta: Date.now() + (permitido ? TTL_PERMITIDO_MS : TTL_DENEGADO_MS),
   })
 
-  if (!permitido) throw new ErrorAuth(403, `fuera de la lista blanca ${clave}`)
+  if (!permitido) throw new ErrorAuth(403, `fuera de la lista blanca ${clave}`, 'no_habilitado')
 }
 
 /** Vacía la caché. Existe para los tests; en producción los TTL alcanzan. */
@@ -108,7 +108,11 @@ async function consultarTablero(userId: string): Promise<boolean> {
   const token = (process.env.MONDAY_API_TOKEN ?? process.env.MONDAY_TOKEN)?.trim()
   const board = process.env.WHITELIST_BOARD_ID?.trim()
   if (!token || !board) {
-    throw new ErrorAuth(403, 'lista blanca sin configurar (MONDAY_API_TOKEN / WHITELIST_BOARD_ID)')
+    throw new ErrorAuth(
+      403,
+      'lista blanca sin configurar (MONDAY_API_TOKEN / WHITELIST_BOARD_ID)',
+      'config',
+    )
   }
 
   let res: Response

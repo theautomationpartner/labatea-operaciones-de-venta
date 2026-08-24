@@ -13,15 +13,19 @@
 
 /** Qué fue lo que pasó. De esto depende el texto y qué puede hacer la persona al respecto. */
 export type ClaseErrorSeguridad =
-  /** 401 · el servidor no pudo confirmar quién sos. */
+  /** La app se abrió fuera del iframe de Monday. Lo sabe el navegador, sin preguntar a nadie. */
+  | 'fueraDeMonday'
+  /** 401 · el servidor no pudo verificar la credencial: falta, venció o no valida. */
   | 'sesion'
-  /** 403 · sos vos, pero no estás habilitado. */
+  /** 401/403 · al servidor le falta configuración. No es culpa de quien lo está usando. */
+  | 'configuracion'
+  /** 403 · es quien dice ser, pero no está dado de alta. */
   | 'sinPermiso'
-  /** 403 + pista `mfa` · falta el segundo factor. */
+  /** 403 · falta el segundo factor. */
   | 'segundoFactor'
   /** 429 · demasiados intentos fallidos. */
   | 'demasiadosIntentos'
-  /** 5xx · el servicio no responde; casi siempre, falta configuración del lado del servidor. */
+  /** 5xx · el servicio no responde. */
   | 'servidor'
 
 export interface ErrorSeguridad {
@@ -42,7 +46,13 @@ export interface ErrorSeguridad {
  * quizá se resuelve solo en el próximo pedido.
  */
 export function bloqueaLaApp(clase: ClaseErrorSeguridad): boolean {
-  return clase === 'sesion' || clase === 'sinPermiso' || clase === 'segundoFactor'
+  return (
+    clase === 'fueraDeMonday' ||
+    clase === 'sesion' ||
+    clase === 'configuracion' ||
+    clase === 'sinPermiso' ||
+    clase === 'segundoFactor'
+  )
 }
 
 /**

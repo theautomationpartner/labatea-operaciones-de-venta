@@ -56,27 +56,66 @@ const TEXTOS: Record<
   ErrorSeguridad['clase'],
   { titulo: string; cuerpo: JSX.Element; recargar: boolean; mostrarCodigo: boolean }
 > = {
-  /* El caso de alguien que consiguió el enlace y lo abre fuera de Monday. El código va en el título
-     y el mensaje es una sola línea: no hay nada que explicar ni ninguna acción que ofrecer. */
-  sesion: {
+  /* Alguien consiguió el enlace y lo abre fuera de Monday. Lo sabe el propio navegador, sin
+     preguntarle a nadie: el código va en el título y el mensaje es una sola línea. No hay nada que
+     explicar ni ninguna acción que ofrecer. */
+  fueraDeMonday: {
     titulo: 'ERROR 401 NO Autorizado',
     recargar: false,
     mostrarCodigo: false,
     cuerpo: <p>Su dominio no está autorizado a utilizar la aplicación.</p>,
   },
-  sinPermiso: {
-    titulo: 'Tu usuario no está habilitado',
+
+  /* Está DENTRO de Monday, pero el servidor no pudo verificar la credencial. Es distinto del
+     anterior y decirle "su dominio no está autorizado" sería falso: el dominio está bien, lo que
+     falló es la sesión. */
+  sesion: {
+    titulo: 'ERROR 401 · No se pudo validar tu sesión',
+    recargar: true,
+    mostrarCodigo: true,
+    cuerpo: (
+      <>
+        <p>
+          Monday no entregó una sesión válida para esta app, o el servidor no pudo verificarla.
+        </p>
+        <p>
+          Recargá para que Monday emita una sesión nueva. Si el error vuelve enseguida,
+          <strong> comunicate con el soporte de TAP</strong>: no es algo que puedas resolver desde
+          acá.
+        </p>
+      </>
+    ),
+  },
+
+  /* Al servidor le falta una variable de entorno. No es culpa de quien está usando la app y no lo
+     puede arreglar; lo único útil es que sepa a quién avisarle. */
+  configuracion: {
+    titulo: 'El servicio no está configurado',
     recargar: false,
     mostrarCodigo: true,
     cuerpo: (
       <>
         <p>
-          Tu sesión es válida, pero <strong>tu usuario no figura como habilitado</strong> para usar
-          esta app.
+          Falta configuración <strong>del lado del servidor</strong>. No es un problema de tu
+          usuario ni de tu sesión, y no se arregla reintentando.
+        </p>
+        <p>Avisale al soporte de TAP con el código de abajo.</p>
+      </>
+    ),
+  },
+
+  sinPermiso: {
+    titulo: 'ERROR 403 · Usuario sin permisos',
+    recargar: false,
+    mostrarCodigo: true,
+    cuerpo: (
+      <>
+        <p>
+          Tu usuario de Monday <strong>no tiene permisos para utilizar la aplicación</strong>.
         </p>
         <p>
-          El alta la da un administrador desde Monday y tarda menos de un minuto en hacer efecto.
-          Pedísela y volvé a intentar.
+          Comunicate con el soporte de TAP para que den de alta tu usuario. El alta tarda menos de
+          un minuto en hacer efecto.
         </p>
       </>
     ),

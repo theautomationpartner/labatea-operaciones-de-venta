@@ -32,7 +32,7 @@ const render = (clase: ClaseErrorSeguridad, status: number) =>
   renderToStaticMarkup(createElement(ModalErrorSeguridad, { error: { clase, status } }))
 
 // ── El aviso de quien no pasó la Capa 1 ─────────────────────────────────────────────────────────
-const html = render('sesion', 401)
+const html = render('fueraDeMonday', 401)
 
 assert.ok(html.includes('ERROR 401 NO Autorizado'), 'el título tiene que declarar el código')
 assert.ok(
@@ -53,7 +53,9 @@ assert.ok(render('servidor', 500).includes('Código 500'), 'el 5xx sí lleva el 
 assert.ok(render('servidor', 500).includes('Recargar'), 'un 5xx puede ser pasajero: reintentar sirve')
 
 // ── Qué rechazo tapa la app ─────────────────────────────────────────────────────────────────────
-assert.equal(bloqueaLaApp('sesion'), true, 'dominio no autorizado: no ve nada')
+assert.equal(bloqueaLaApp('fueraDeMonday'), true, 'dominio no autorizado: no ve nada')
+assert.equal(bloqueaLaApp('sesion'), true, 'sesión que no valida: tampoco')
+assert.equal(bloqueaLaApp('configuracion'), true, 'servidor sin configurar: no hay nada que hacer')
 assert.equal(bloqueaLaApp('sinPermiso'), true, 'sin alta en la lista blanca: no ve nada')
 assert.equal(bloqueaLaApp('segundoFactor'), true, 'sin segundo factor: no ve nada')
 assert.equal(bloqueaLaApp('servidor'), false, 'un 5xx puede ser pasajero; no se tira la pantalla')
@@ -63,7 +65,7 @@ assert.equal(bloqueaLaApp('demasiadosIntentos'), false, 'el límite se pasa solo
 reiniciarErrorSeguridad()
 assert.equal(estadoSeguridadActual().error, null, 'arranca sin rechazos')
 
-notificarErrorSeguridad('sesion', 401)
+notificarErrorSeguridad('fueraDeMonday', 401)
 assert.equal(estadoSeguridadActual().visible, true, 'el aviso aparece')
 assert.equal(bloqueaLaApp(estadoSeguridadActual().error!.clase), true, 'y la app queda tapada')
 
@@ -77,5 +79,31 @@ assert.equal(
 )
 
 reiniciarErrorSeguridad()
+
+// ── Cada rechazo dice lo que de verdad pasó ─────────────────────────────────────────────────────
+/* El caso que lo motivó: un usuario DENTRO de Monday recibía "su dominio no está autorizado", que
+   era falso —el dominio estaba bien— y no lo llevaba a ningún lado. */
+const sesion = render('sesion', 401)
+assert.ok(!sesion.includes('dominio'), 'adentro de Monday el dominio NO es el problema')
+assert.ok(/soporte de TAP/.test(sesion), 'tiene que decir a quién avisarle')
+assert.ok(sesion.includes('Recargar'), 'una sesión vencida sí se arregla recargando')
+
+const sinPermiso = render('sinPermiso', 403)
+assert.ok(sinPermiso.includes('ERROR 403'), 'el 403 se declara como 403, no como 401')
+assert.ok(
+  sinPermiso.includes('no tiene permisos para utilizar la aplicación'),
+  'falta el motivo real: el usuario no está dado de alta',
+)
+assert.ok(/soporte de TAP/.test(sinPermiso), 'y a quién pedirle el alta')
+assert.ok(!sinPermiso.includes('Recargar'), 'recargar no da de alta a nadie')
+
+const config = render('configuracion', 401)
+assert.ok(config.includes('del lado del servidor'), 'tiene que decir dónde está el problema')
+assert.ok(
+  !config.includes('no tiene permisos'),
+  'una variable faltante no es lo mismo que un usuario sin alta: confundirlos manda a pedir un' +
+    ' alta que no va a resolver nada',
+)
+assert.ok(/soporte de TAP/.test(config), 'lo único útil es a quién avisarle')
 
 console.log('bloqueo-seguridad: OK')
