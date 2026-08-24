@@ -10,8 +10,8 @@
  * un proxy.
  */
 import type { ServerResponse } from 'node:http'
-import { estadoMfa } from '../_mfa.ts'
-import { endpointMfa, type Pedido } from '../_http.ts'
+import { estadoMfa } from '../_mfa.js'
+import { endpointMfa, type Pedido } from '../_http.js'
 
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   await endpointMfa(req, res, async ({ sesion, deviceToken }) => estadoMfa(sesion, deviceToken))

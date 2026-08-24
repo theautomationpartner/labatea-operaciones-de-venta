@@ -51,8 +51,7 @@
     "test:whitelist": "esbuild tests/lista-blanca.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/whitelist.test.mjs && node node_modules/.cache/whitelist.test.mjs",
     "test:mfa": "esbuild tests/mfa.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/mfa.test.mjs && node node_modules/.cache/mfa.test.mjs",
     "test:aviso-seguridad": "esbuild tests/aviso-seguridad.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/aviso-seguridad.test.mjs && node node_modules/.cache/aviso-seguridad.test.mjs",
-    "test:funciones": "node scripts/verificar-funciones.mjs",
-    "typecheck:api": "tsc --noEmit -p tsconfig.api.json"
+    "test:funciones": "node scripts/verificar-funciones.mjs"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.3",

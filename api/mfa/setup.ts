@@ -10,8 +10,8 @@
  * blanca, o sea ser ya ese usuario.
  */
 import type { ServerResponse } from 'node:http'
-import { iniciarEnrolamiento } from '../_mfa.ts'
-import { endpointMfa, type Pedido } from '../_http.ts'
+import { iniciarEnrolamiento } from '../_mfa.js'
+import { endpointMfa, type Pedido } from '../_http.js'
 
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   await endpointMfa(req, res, async ({ sesion }) => {

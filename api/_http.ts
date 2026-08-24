@@ -6,8 +6,8 @@
  * de lo que realmente decide.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autorizarSinMfa, respuestaDeError } from './_guard.ts'
-import type { Sesion } from './_errores.ts'
+import { autorizarSinMfa, respuestaDeError } from './_guard.js'
+import type { Sesion } from './_errores.js'
 
 /** El cuerpo puede venir ya parseado por el runtime: con `application/json`, siempre lo está. */
 export type Pedido = IncomingMessage & { body?: unknown }

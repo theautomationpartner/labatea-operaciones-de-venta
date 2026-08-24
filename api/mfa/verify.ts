@@ -12,8 +12,8 @@
  * contador en memoria no limita nada, porque cada instancia arranca con el suyo en cero.
  */
 import type { ServerResponse } from 'node:http'
-import { verificar } from '../_mfa.ts'
-import { endpointMfa, type Pedido } from '../_http.ts'
+import { verificar } from '../_mfa.js'
+import { endpointMfa, type Pedido } from '../_http.js'
 
 interface Cuerpo {
   codigo?: string

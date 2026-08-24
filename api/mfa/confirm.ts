@@ -8,8 +8,8 @@
  * mostrarlos y obligar a guardarlos antes de seguir.
  */
 import type { ServerResponse } from 'node:http'
-import { confirmarEnrolamiento } from '../_mfa.ts'
-import { endpointMfa, type Pedido } from '../_http.ts'
+import { confirmarEnrolamiento } from '../_mfa.js'
+import { endpointMfa, type Pedido } from '../_http.js'
 
 interface Cuerpo {
   codigo?: string

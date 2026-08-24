@@ -1,46 +1,65 @@
 /**
- * Carga cada función serverless con el MISMO modo que usa el deploy.
+ * Compila las funciones serverless COMO LO HACE VERCEL y comprueba que cada una cargue.
  *
- * Existe por dos fallos que llegaron a producción sin que nada los frenara antes:
- *  1. imports relativos sin extensión (`./_guard`), que en ESM no resuelven;
- *  2. propiedades de constructor (`constructor(readonly x: T)`), que el modo strip-only de Node
- *     no puede transformar.
+ * Existe por un fallo que llegó a producción y costó tres intentos entender: los imports relativos
+ * de `api/` no resolvían y todas las funciones devolvían 500 antes de correr una línea.
  *
- * Los dos pasaban `npm run typecheck` y `npm run build` en verde. No es casualidad: `tsc` resuelve
- * con sus propias reglas y esbuild TRANSFORMA la sintaxis, así que ninguno de los dos ve el mundo
- * como lo ve el runtime. Vercel corre los `.ts` tal cual, borrando tipos y nada más.
+ * Lo que hace falta saber para que esto tenga sentido: **Vercel compila los `.ts` a `.js`** (en el
+ * servidor quedan `monday.js` y su sourcemap, no `monday.ts`). O sea que en ESM el import tiene que
+ * escribirse con la extensión del ARCHIVO EMITIDO —`./_guard.js`, aunque el fuente sea `_guard.ts`—,
+ * que es la forma canónica de TypeScript. Sin extensión no resuelve; con `.ts` tampoco, porque ese
+ * archivo no existe en el servidor.
  *
- * Por eso este chequeo no bundlea ni compila: importa los archivos como los va a importar Vercel.
- * Si un endpoint no puede ni cargarse, acá se ve; en producción se ve como un 500 sin explicación.
+ * Y por qué no alcanzaba con lo que ya había:
+ *  · `npm run typecheck` usa `moduleResolution: bundler`, que perdona los imports sin extensión;
+ *  · `npm run build` (Vite) ni mira `api/`;
+ *  · los tests pasan por esbuild, que resuelve con sus propias reglas.
+ * Ninguno de los tres ve lo que ve el deploy. Este sí: compila con `tsconfig.api.json`
+ * (`module: nodenext`, que EXIGE la extensión) y después importa lo emitido.
  *
  * Se corre con `npm run test:funciones`.
  */
-import { readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { readdirSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { join } from 'node:path'
 
-/** Los archivos que Vercel publica como ruta: todo `api/**` menos los que empiezan con `_`. */
-function entradas(dir) {
+const SALIDA = 'node_modules/.cache/api-build'
+
+console.log('Compilando api/ como lo hace Vercel…')
+rmSync(SALIDA, { recursive: true, force: true })
+try {
+  // Se invoca el tsc local por ruta, sin shell: no hay nada que escapar ni que interpretar.
+  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.api.json'], {
+    stdio: 'inherit',
+  })
+} catch {
+  console.error('\nfunciones: la compilación falló. En producción son 500.')
+  process.exit(1)
+}
+
+/** Lo que Vercel publica como ruta: todo `api/**` menos los que empiezan con `_`. */
+function entradas(dir, base = dir) {
   const encontradas = []
   for (const entrada of readdirSync(dir, { withFileTypes: true })) {
     const ruta = join(dir, entrada.name)
-    if (entrada.isDirectory()) encontradas.push(...entradas(ruta))
-    else if (entrada.name.endsWith('.ts') && !entrada.name.startsWith('_')) encontradas.push(ruta)
+    if (entrada.isDirectory()) encontradas.push(...entradas(ruta, base))
+    else if (entrada.name.endsWith('.js') && !entrada.name.startsWith('_')) encontradas.push(ruta)
   }
   return encontradas
 }
 
-const archivos = entradas('api')
+const archivos = entradas(SALIDA)
 let fallas = 0
 
 for (const archivo of archivos) {
   try {
-    await import(pathToFileURL(archivo).href)
+    await import(pathToFileURL(resolve(archivo)).href)
     console.log(`  OK    ${archivo}`)
   } catch (e) {
     fallas++
     console.log(`  FALLA ${archivo}`)
-    console.log(`        ${e.name}: ${e.message.split('\n')[0]}`)
+    console.log(`        ${e.name}: ${String(e.message).split('\n')[0]}`)
   }
 }
 
@@ -49,4 +68,4 @@ if (fallas > 0) {
   process.exit(1)
 }
 
-console.log(`\nfunciones: OK · ${archivos.length} endpoints cargan con el modo del deploy`)
+console.log(`\nfunciones: OK · ${archivos.length} endpoints compilan y cargan como en el deploy`)

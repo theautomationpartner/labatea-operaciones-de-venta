@@ -21,8 +21,8 @@
  * `FUNCTION_INVOCATION_FAILED`. Mismo criterio que `make-comprobantes.ts`.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { autorizarPedido, respuestaDeError } from './_guard.ts'
-import { deviceTokenDe } from './_http.ts'
+import { autorizarPedido, respuestaDeError } from './_guard.js'
+import { deviceTokenDe } from './_http.js'
 
 const API_VERSION = '2024-10'
 
