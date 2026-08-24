@@ -82,7 +82,9 @@ export function verificarSesion(authorization: string | undefined): Sesion {
      que no se puede falsear ni confundir con el del token del servidor. */
   const isAdmin = Boolean(dat.is_admin ?? payload.is_admin)
 
-  if (!userId || !accountId) throw new ErrorAuth(401, 'el token no trae user_id / account_id', 'sesion')
+  if (!userId || !accountId) /* La firma cerró: el token es de Monday. Lo que falla es su CONTENIDO, y eso apunta a otro
+       lado que una firma inválida —a la forma del token, no al secreto—. */
+    throw new ErrorAuth(401, 'el token no trae user_id / account_id', 'token_incompleto')
 
   // Invitado externo: firma válida, pero no es gente de la organización.
   if (isGuest) throw new ErrorAuth(403, `invitado externo (user ${userId})`, 'no_habilitado')

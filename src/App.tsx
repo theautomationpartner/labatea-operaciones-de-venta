@@ -16,7 +16,7 @@ import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
 import { bloqueaLaApp, notificarErrorSeguridad } from '@/lib/errorSeguridad'
-import { enMonday, getSessionToken } from '@/lib/mondayAuth'
+import { enMonday, getSessionToken, resumenSessionToken } from '@/lib/mondayAuth'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -95,10 +95,10 @@ export function App() {
         setAcceso('rechazado')
         return
       }
-      verificarConElServidor()
+      verificarConElServidor(sesion)
     })()
 
-    function verificarConElServidor() {
+    function verificarConElServidor(sesion: string | null) {
       /* Una sola consulta contesta las dos preguntas: si el borde deja pasar y quién es el usuario.
          Su resultado queda cacheado, así que la carga de configuración no lo vuelve a pedir. */
       getUsuarioActual()
@@ -109,7 +109,16 @@ export function App() {
         })
         /* En desarrollo no hay borde que consultar —ni funciones serverless ni iframe—, así que un
            fallo acá no significa "no autorizado": significa que ese control no existe en localhost. */
-        .catch(() => vivo && setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado'))
+        .catch(() => {
+          if (!vivo) return
+          /* La sesión llegó y el servidor la rechazó igual. Sin acceso a los logs del servidor,
+             esto es lo único que permite distinguir un secreto que no corresponde de un token con
+             otra forma. No se imprime el token ni su firma: sólo su forma. */
+          if (sesion) {
+            console.warn('[seguridad] el servidor rechazó la sesión', resumenSessionToken(sesion))
+          }
+          setAcceso(import.meta.env.DEV ? 'permitido' : 'rechazado')
+        })
     }
     return () => {
       vivo = false

@@ -131,6 +131,42 @@ async function pedirToken(): Promise<string | null> {
  * Esto es un `decode`, NO una validación: acá no se decide nada, sólo se programa el refresco. La
  * firma la verifica el servidor. Si el payload no se puede leer, se usa una vida corta y listo.
  */
+/**
+ * Qué forma tiene el token que nos dio Monday, sin verificar nada.
+ *
+ * Sirve para diagnosticar un rechazo del servidor sin acceso a sus logs: dice con qué algoritmo
+ * viene firmado y si trae los datos que el backend busca. Decodificar es leer el papel sin mirar
+ * el sello —no prueba nada— pero acá no se decide nada con esto: sólo se escribe en la consola.
+ *
+ * NO incluye el token ni la firma: sólo la forma.
+ */
+export function resumenSessionToken(token: string): Record<string, unknown> {
+  const parte = (i: number): Record<string, unknown> => {
+    try {
+      const trozo = token.split('.')[i]
+      if (!trozo) return {}
+      return JSON.parse(atob(trozo.replace(/-/g, '+').replace(/_/g, '/'))) as Record<string, unknown>
+    } catch {
+      return {}
+    }
+  }
+
+  const cabecera = parte(0)
+  const cuerpo = parte(1)
+  const dat = (cuerpo.dat ?? {}) as Record<string, unknown>
+  const exp = typeof cuerpo.exp === 'number' ? cuerpo.exp : null
+
+  return {
+    alg: cabecera.alg ?? '(sin alg)',
+    partes: token.split('.').length,
+    claves: Object.keys(cuerpo),
+    tieneDat: Boolean(cuerpo.dat),
+    userId: dat.user_id ?? cuerpo.user_id ?? cuerpo.userId ?? '(falta)',
+    accountId: dat.account_id ?? cuerpo.account_id ?? cuerpo.accountId ?? '(falta)',
+    vencido: exp === null ? '(sin exp)' : exp * 1000 < Date.now(),
+  }
+}
+
 function vencimiento(token: string): number {
   try {
     const payload = token.split('.')[1]

@@ -182,6 +182,8 @@ function claseDeRechazo(status: number, codigo: string | undefined): ClaseErrorS
   if (codigo === 'mfa') return 'segundoFactor'
   if (codigo === 'no_habilitado') return 'sinPermiso'
   if (codigo === 'config') return 'configuracion'
+  /* `token_incompleto` comparte pantalla con `sesion`: para quien lo ve, la acción es la misma.
+     La distinción vive en el código de la respuesta, que es donde sirve para diagnosticar. */
   if (status === 429) return 'demasiadosIntentos'
   return status === 401 ? 'sesion' : 'sinPermiso'
 }

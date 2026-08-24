@@ -10,11 +10,17 @@
  * Qué falló, en una palabra que la interfaz sabe traducir.
  *
  *  · `config`        el servidor no tiene con qué verificar (falta un secreto). Lo arregla soporte.
- *  · `sesion`        la credencial falta, venció o no valida. Lo arregla recargar, o soporte.
+ *  · `sesion`        la credencial falta, venció o su firma no cierra.
+ *  · `token_incompleto` la firma cerró, pero el token no trae quién es el usuario.
  *  · `no_habilitado` el usuario no está dado de alta. Lo arregla un administrador.
  *  · `mfa`           falta el segundo factor. Lo arregla el propio usuario.
  */
-export type CodigoRechazo = 'config' | 'sesion' | 'no_habilitado' | 'mfa'
+export type CodigoRechazo =
+  | 'config'
+  | 'sesion'
+  | 'token_incompleto'
+  | 'no_habilitado'
+  | 'mfa'
 
 /** Quién es el usuario, según lo que la firma de Monday deja probar. */
 export interface Sesion {

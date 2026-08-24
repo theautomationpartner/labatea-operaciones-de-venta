@@ -96,13 +96,10 @@ const TEXTOS: Record<
     mostrarCodigo: true,
     cuerpo: (
       <>
+        <p>El servidor no pudo verificar la sesión de Monday.com cargada.</p>
         <p>
-          Monday no entregó una sesión válida para esta app, o el servidor no pudo verificarla.
-        </p>
-        <p>
-          Recargá para que Monday emita una sesión nueva. Si el error vuelve enseguida,
-          <strong> comunicate con el soporte de TAP</strong>: no es algo que puedas resolver desde
-          acá.
+          Recargá para que Monday emita una sesión nueva. Si el error persiste, comunicate con el
+          <strong> soporte de TAP</strong> para buscar una solución.
         </p>
       </>
     ),
