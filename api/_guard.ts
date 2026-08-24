@@ -199,7 +199,24 @@ function verificarConAlguna(token: string, claves: ClaveDeFirma[]): PayloadMonda
     }
   }
 
-  throw new ErrorAuth(401, `token inválido · ${fallos.join(' | ')}`, 'sesion')
+  /* Al log va DE QUÉ APP dice ser el token. Cuando la firma no cierra, el 99% de las veces es que
+     el secreto cargado pertenece a otra app, y sin este dato eso no se puede ver desde afuera:
+     costó una tarde entera de diagnóstico descubrirlo mirando la consola del navegador.
+     Se lee SIN verificar y sólo para escribirlo: con esto no se decide absolutamente nada. */
+  throw new ErrorAuth(401, `token inválido (app ${appDelToken(token)}) · ${fallos.join(' | ')}`, 'sesion')
+}
+
+/** De qué app dice ser el token, para el log. Sin verificar: no vale como prueba de nada. */
+function appDelToken(token: string): string {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return '?'
+    const json = Buffer.from(payload, 'base64url').toString('utf8')
+    const dat = (JSON.parse(json) as { dat?: { app_id?: unknown } }).dat
+    return String(dat?.app_id ?? '?')
+  } catch {
+    return '?'
+  }
 }
 
 /** Los ids de Monday llegan como número o como texto según el token; adentro se usan como texto. */

@@ -157,7 +157,13 @@ defecto es `Activo`, que es la que el tablero tiene hoy.
 
 ### 2. App de Monday
 
-monday.com → Developers → tu app → **Basic Information** → copiá el **Signing Secret**.
+monday.com → Developers → **la app que embebe esta vista** → **Basic Information** → copiá el
+**Client Secret** (y de paso el Signing Secret, que va como rescate).
+
+**Cuál app importa.** Si en la cuenta hay más de una, el secreto tiene que ser el de la que emite
+el token. El session token lleva su `app_id` adentro: con el secreto de otra app la firma no cierra
+nunca, y el síntoma es un 401 idéntico al de un usuario sin permisos. Ante la duda, el log del
+servidor dice `token inválido (app NNN)` y ese número tiene que ser el App ID del Developer Center.
 
 ### 3. Variables de entorno en Vercel
 
