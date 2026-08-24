@@ -95,7 +95,7 @@ export function CobroView() {
     if (
       cliente &&
       cobro.confirmado &&
-      cobroSimultaneoOperacion(formaPago) &&
+      cobroSimultaneoOperacion(formaPago, operacion) &&
       !mismoImporte(resumen.cancelado, resumen.totalACobrar)
     ) {
       dispatch({ type: 'desconfirmarCobro' })

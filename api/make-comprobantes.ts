@@ -23,6 +23,8 @@
  * leer un documento, y por eso esta función se quedó en Node con su `maxDuration`.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { autorizarPedido, respuestaDeError } from './_guard'
+import { deviceTokenDe } from './_http'
 
 /*
  * 60 s es el techo del plan Hobby. En Pro se puede subir hasta 300 s, más cerca del tope que espera
@@ -36,6 +38,16 @@ type Pedido = IncomingMessage & { body?: unknown }
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   if (req.method !== 'POST') {
     return responder(res, 405, { error: 'Method Not Allowed' })
+  }
+
+  /* Mismo guardián que los proxies de Monday (Capa 2). Acá no hay un token de escritura en
+     juego, pero sí las operaciones de la cuenta de Make: disparar el escenario cuesta plata y
+     tiene cupo, así que la puerta se abre para los mismos que el resto de la app. */
+  try {
+    await autorizarPedido(req.headers.authorization, deviceTokenDe(req))
+  } catch (e) {
+    const { status, cuerpo } = respuestaDeError(e)
+    return responder(res, status, cuerpo)
   }
 
   const webhook = process.env.MAKE_WEBHOOK_COMPROBANTES?.trim()
@@ -80,16 +92,22 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
  * consumir un stream vacío devolvería un cuerpo de cero bytes y Make recibiría un multipart sin
  * partes, que es más difícil de diagnosticar que un error.
  *
- * Devuelve un `Uint8Array` —del que `Buffer` es una especialización— porque es lo que acepta el
- * `body` de `fetch` sin pedirle al tipado que confíe en nadie.
+ * Devuelve un `ArrayBuffer`: es el único tipo de cuerpo binario que el `fetch` del estándar
+ * declara sin ambigüedad. Con `Uint8Array` el runtime también anda, pero el tipado de `BodyInit`
+ * no lo reconoce y el typecheck del directorio `api/` queda en rojo.
  */
-async function leerCuerpo(req: Pedido): Promise<Uint8Array> {
-  if (Buffer.isBuffer(req.body)) return req.body
-  if (typeof req.body === 'string') return Buffer.from(req.body)
+async function leerCuerpo(req: Pedido): Promise<ArrayBuffer> {
+  if (Buffer.isBuffer(req.body)) return bytes(req.body)
+  if (typeof req.body === 'string') return bytes(Buffer.from(req.body))
 
   const partes: Buffer[] = []
   for await (const trozo of req) partes.push(Buffer.from(trozo))
-  return Buffer.concat(partes)
+  return bytes(Buffer.concat(partes))
+}
+
+/** La ventana exacta del Buffer, sin arrastrar el resto del pool que Node reutiliza por debajo. */
+function bytes(b: Buffer): ArrayBuffer {
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
 }
 
 function responder(res: ServerResponse, status: number, data: unknown): void {

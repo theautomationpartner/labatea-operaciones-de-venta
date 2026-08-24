@@ -84,17 +84,35 @@ ok(
   tipoPagoOperacion('CUENTA CORRIENTE') === 'POSTERIOR',
 )
 
-console.log('Caso 5 · Sin forma de pago elegida no se puede afirmar que se cobró:')
+/* ---------- La VENTA PROFORMA se cobra SIEMPRE en el acto ----------
+   Su recorrido es cliente → proforma → cobro → factura: NO pasa por la selección de productos, que
+   es donde se elige la forma de pago. Así que `formaPago` queda en null y, mirando sólo la forma,
+   caía en POSTERIOR: la venta se marcaba como no cobrada y el recibo del tablero de Cobros no se
+   creaba nunca, aunque el usuario hubiera cargado los movimientos. */
+console.log('Caso 5 · La VENTA PROFORMA es SIMULTÁNEA aunque no elija forma de pago:')
+ok('sin forma de pago → SIMULTANEO', tipoPagoOperacion(null, 'VENTA PROFORMA') === 'SIMULTANEO')
+ok('se crea su recibo', cobroSimultaneoOperacion(null, 'VENTA PROFORMA'))
+ok('y NO deja deuda', requiereRegistroDeuda(null, 'VENTA PROFORMA') === false)
+assert.deepEqual(
+  datosCobroVenta(null, 'VENTA PROFORMA'),
+  { tipoPago: 'SIMULTANEO' },
+  'la venta se marca como cobrada en el acto',
+)
+/* La excepción es de la OPERACIÓN, no de la ausencia de forma de pago: una VENTA sin forma elegida
+   sigue cayendo en POSTERIOR, que es lo prudente —no se puede afirmar que ya se cobró—. */
+ok('una VENTA sin forma de pago sigue siendo POSTERIOR', tipoPagoOperacion(null, 'VENTA') === 'POSTERIOR')
+
+console.log('Caso 6 · Sin forma de pago elegida no se puede afirmar que se cobró:')
 ok('null → POSTERIOR', tipoPagoOperacion(null) === 'POSTERIOR')
 ok('null no es simultáneo', !cobroSimultaneoOperacion(null))
 
-console.log('Caso 6 · El impacto en cuenta corriente es de la cuenta corriente:')
+console.log('Caso 7 · El impacto en cuenta corriente es de la cuenta corriente:')
 ok('CUENTA CORRIENTE lo muestra', mostrarImpactoCtaCte('CUENTA CORRIENTE') === true)
 for (const forma of ['CONTADO', 'TARJETA DE DEBITO', 'TARJETA DE CREDITO'] as FormaPagoVenta[]) {
   ok(`${forma} no lo muestra`, mostrarImpactoCtaCte(forma) === false)
 }
 
-console.log('Caso 7 · El CRM sólo filtra QUÉ formas se ofrecen, no cómo se clasifican:')
+console.log('Caso 8 · El CRM sólo filtra QUÉ formas se ofrecen, no cómo se clasifican:')
 assert.deepEqual(
   formasPagoDeCliente('CUENTA CORRIENTE'),
   FORMAS_PAGO_VENTA,

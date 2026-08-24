@@ -39,7 +39,6 @@ await registrarCobro({
   nombreCliente: 'AGRO LUCIA S.A.',
   vendedorId: null,
   totalVenta: 300000,
-  totalCobrado: 300000,
   // División de mercadería: la venta emitió DOS comprobantes.
   facturas: [
     { facturaId: '5001', importe: 200000 },
@@ -127,7 +126,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 1000,
-  totalCobrado: 1000,
   balances: balancePagos([movimiento('Efectivo', 1000)], SIN_DESCUENTOS_PAGO),
 })
 assert.equal(

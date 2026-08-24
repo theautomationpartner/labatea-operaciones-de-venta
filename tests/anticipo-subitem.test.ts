@@ -54,7 +54,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 10000,
-  totalCobrado: 12500,
   facturas: FACTURAS,
   balances: movs(['Efectivo', 12500], ['Anticipo', 2500]),
 })
@@ -87,7 +86,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 10000,
-  totalCobrado: 10000,
   facturas: FACTURAS,
   balances: movs(['Efectivo', 10000]),
 })
@@ -106,7 +104,6 @@ await assert.rejects(
     clienteId: '111',
     nombreCliente: 'AGRO LUCIA S.A.',
     totalVenta: 10000,
-    totalCobrado: 12500,
     facturas: FACTURAS,
     // 2.000 no alcanza: 10.000 + 2.000 ≠ 12.500.
     balances: movs(['Efectivo', 12500], ['Anticipo', 2000]),

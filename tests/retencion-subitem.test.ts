@@ -57,7 +57,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 20000,
-  totalCobrado: 20000,
   balances: balancePagos(FORMAS.map(retencion), SIN_DESCUENTOS_PAGO),
 })
 
@@ -88,7 +87,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 2000,
-  totalCobrado: 2000,
   balances: balancePagos(
     [
       { formaPago: 'Retencion IVA', importe: 1000 } as MovimientoPago,
@@ -114,7 +112,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 13500,
-  totalCobrado: 13500,
   balances: balancePagos(
     [
       { formaPago: 'Cheque', importe: 10000, numeroCheque: '00123456' } as MovimientoPago,

@@ -77,7 +77,7 @@ export function useCrearVenta() {
         tipoVenta: tipoVenta ?? 'DIRECTA',
         tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
         // El tipo de cobro sale de la forma de pago elegida, no de la condición del cliente.
-        ...datosCobroVenta(state.formaPago),
+        ...datosCobroVenta(state.formaPago, state.operacion),
         rentabilidad: rentabilidadVenta,
         descFormaPago,
         tasaCambio: state.tasaCambio,

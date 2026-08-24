@@ -50,7 +50,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 10000,
-  totalCobrado: 10000,
   facturas: [{ facturaId: '501', importe: 10000 }],
   balances: cobro(10000),
 })
@@ -86,7 +85,6 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 10000,
-  totalCobrado: 0,
   facturas: [{ facturaId: '501', importe: 10000 }],
   balances: [],
 })

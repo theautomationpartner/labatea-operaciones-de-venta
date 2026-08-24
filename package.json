@@ -32,6 +32,7 @@
     "test:factura-venta-vinculo": "esbuild tests/factura-venta-vinculo.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/factura-venta-vinculo.test.mjs && node node_modules/.cache/factura-venta-vinculo.test.mjs",
     "test:retencion-subitem": "esbuild tests/retencion-subitem.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/retencion-subitem.test.mjs && node node_modules/.cache/retencion-subitem.test.mjs",
     "test:deuda-fechas": "esbuild tests/deuda-fechas.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/deuda-fechas.test.mjs && node node_modules/.cache/deuda-fechas.test.mjs",
+    "test:recibo-totales": "esbuild tests/recibo-totales.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/recibo-totales.test.mjs && node node_modules/.cache/recibo-totales.test.mjs",
     "test:recibo-facturas": "esbuild tests/recibo-facturas.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/recibo-facturas.test.mjs && node node_modules/.cache/recibo-facturas.test.mjs",
     "test:cuit-veredicto": "esbuild tests/cuit-veredicto-color.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/cuit-veredicto.test.mjs && node node_modules/.cache/cuit-veredicto.test.mjs",
     "test:cobro-cubierto": "esbuild tests/cobro-cubierto.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/cobro-cubierto.test.mjs && node node_modules/.cache/cobro-cubierto.test.mjs",
@@ -44,14 +45,26 @@
     "test:comprobante-make": "esbuild tests/comprobante-make.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --outfile=node_modules/.cache/comprobante-make.test.mjs && node node_modules/.cache/comprobante-make.test.mjs",
     "test:registro-cobro": "esbuild tests/registro-cobro.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/registro-cobro.test.mjs && node node_modules/.cache/registro-cobro.test.mjs",
     "test:anticipo-subitem": "esbuild tests/anticipo-subitem.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/anticipo-subitem.test.mjs && node node_modules/.cache/anticipo-subitem.test.mjs",
-    "test:impacto-cta-cte": "esbuild tests/impacto-cta-cte.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/impacto-cta-cte.test.cjs && node node_modules/.cache/impacto-cta-cte.test.cjs"
+    "test:impacto-cta-cte": "esbuild tests/impacto-cta-cte.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/impacto-cta-cte.test.cjs && node node_modules/.cache/impacto-cta-cte.test.cjs",
+    "test:portero": "esbuild tests/portero-referer.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/portero.test.mjs && node node_modules/.cache/portero.test.mjs",
+    "test:guard": "esbuild tests/guard-sesion.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/guard.test.mjs && node node_modules/.cache/guard.test.mjs",
+    "test:whitelist": "esbuild tests/lista-blanca.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/whitelist.test.mjs && node node_modules/.cache/whitelist.test.mjs",
+    "test:mfa": "esbuild tests/mfa.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/mfa.test.mjs && node node_modules/.cache/mfa.test.mjs"
   },
   "dependencies": {
+    "jsonwebtoken": "^9.0.3",
+    "monday-sdk-js": "^1.0.0-beta",
+    "otplib": "^13.5.0",
+    "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.0",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

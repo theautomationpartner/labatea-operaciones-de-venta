@@ -231,9 +231,15 @@ export interface DatosCobro {
   nombreCliente: string
   /** Vendedor de la operación (usuario de Monday), para la columna Person. */
   vendedorId?: string | null
-  /** Total de la venta y lo efectivamente cobrado. La diferencia se deriva. */
+  /**
+   * Total de la venta: lo que se está cancelando ANTES de sumarle lo que quede a favor del cliente.
+   *
+   * Lo RECIBIDO no se pasa: se deriva de `balances`, que son los movimientos que efectivamente se
+   * escriben como subelementos. Recibirlo hecho abría la puerta a que la cabecera dijera una cosa y
+   * sus subelementos otra, que es exactamente como la diferencia terminó asentada en negativo con
+   * la pantalla mostrando cero.
+   */
   totalVenta?: number
-  totalCobrado?: number
   /**
    * Un subelemento por factura emitida en la venta. Van ANTES que los movimientos de pago: primero
    * se declara QUÉ se cancela y después CON QUÉ se pagó. La división de mercadería puede emitir
@@ -274,7 +280,6 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
     nombreCliente,
     vendedorId,
     totalVenta = 0,
-    totalCobrado = 0,
     facturas = [],
     balances = [],
   } = datos
@@ -286,24 +291,34 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
   const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
   const anticipo = round2(anticipos.reduce((acc, b) => acc + b.movimiento.importe, 0))
 
-  /* Con ANTICIPO se exige que el recibo cierre EXACTO: lo imputado —las facturas canceladas más el
-     excedente que queda a favor— tiene que igualar lo recibido por los medios de cobro. El anticipo
-     existe justamente para absorber esa diferencia, así que si después de sumarlo el recibo sigue
-     sin cerrar, el importe del anticipo está mal y asentarlo dejaría descuadrado el saldo del
-     cliente. Se compara al centavo, que es la precisión con la que se escribe. */
-  if (anticipo > 0) {
-    const cancelado = round2(facturas.reduce((acc, f) => acc + f.importe, 0) + anticipo)
-    const recibido = round2(cobros.reduce((acc, b) => acc + b.movimiento.importe, 0))
-    if (cancelado !== recibido) throw new ReciboDesbalanceado(cancelado, recibido)
-  }
+  /* Los TRES totales de la cabecera se derivan de lo mismo que declaran los subelementos, para que
+     no puedan contradecirse entre sí ni contradecir a la pantalla:
+
+       Cancelado = lo que la venta imputa MÁS lo que queda a favor del cliente
+       Recibido  = lo que entró por los medios de cobro (el anticipo NO entra: no es plata que entra)
+       Diferencia = Cancelado − Recibido
+
+     La diferencia se CALCULA acá y no se recibe hecha. Antes salía de `totalVenta - totalCobrado`,
+     que ignoraba el anticipo: con la pantalla mostrando $ 0,00 el recibo asentaba el excedente
+     entero en negativo, y el tablero quedaba diciendo que faltaba cobrar una plata que ya estaba
+     cobrada y asignada. */
+  const recibido = round2(cobros.reduce((acc, b) => acc + b.movimiento.importe, 0))
+  const cancelado = round2(totalVenta + anticipo)
+  const diferencia = round2(cancelado - recibido)
+
+  /* Con ANTICIPO se exige que el recibo cierre EXACTO: el anticipo existe justamente para absorber
+     la diferencia, así que si después de sumarlo sigue sin cerrar, su importe está mal y asentarlo
+     dejaría descuadrado el saldo del cliente. Se compara al centavo, que es la precisión con la que
+     se escribe. */
+  if (anticipo > 0 && diferencia !== 0) throw new ReciboDesbalanceado(cancelado, recibido)
 
   if (!mondayHabilitado()) return { id: `mock-cobro-${Date.now()}` }
 
   const cabecera: Record<string, unknown> = {
     [COL.cobro.tipoCobro]: { label: TIPO_COBRO_LABEL.SIMULTANEO },
-    [COL.cobro.totalVenta]: String(round2(totalVenta)),
-    [COL.cobro.totalCobrado]: String(round2(totalCobrado)),
-    [COL.cobro.diferencia]: String(round2(totalVenta - totalCobrado)),
+    [COL.cobro.totalVenta]: String(cancelado),
+    [COL.cobro.totalCobrado]: String(recibido),
+    [COL.cobro.diferencia]: String(diferencia),
   }
   const persona = relacion(clienteId)
   if (persona) cabecera[COL.cobro.cliente] = persona

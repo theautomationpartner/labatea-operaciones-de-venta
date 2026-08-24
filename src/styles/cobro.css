@@ -925,12 +925,6 @@
   margin-top: 20px;
   padding-top: 25px;
 }
-/* Cobro CUBIERTO: el formulario se cierra porque el trabajo TERMINÓ, no porque algo esté mal. En
-   verde y con tilde, para que el gris del formulario no se lea como una falla. */
-.cobro-v2 .cobro-bloqueo-inline--ok,
-.cobro-v2 .cobro-bloqueo-inline--ok i {
-  color: var(--c-success);
-}
 /* Motivo de bloqueo del cobro, a la derecha del botón: texto en rojo, SIN fondo ni borde.
    El renglón RESERVA su alto siempre, tenga mensaje o no: el aviso aparece y desaparece solo
    —según cómo vaya quedando la diferencia— y sin la reserva la card se encogía de golpe cada vez
@@ -947,6 +941,15 @@
   color: var(--c-danger);
   font-size: 13px;
   font-weight: 600;
+}
+/* Cobro CUBIERTO: el formulario se cierra porque el trabajo TERMINÓ, no porque algo esté mal. En
+   verde y con tilde, para que el gris del formulario no se lea como una falla.
+   VA DESPUÉS de la regla de arriba a propósito: las dos pesan lo mismo (dos clases), así que la
+   última es la que manda. Declarado antes, el rojo del caso general le ganaba al verde y el aviso
+   de éxito salía en rojo. */
+.cobro-v2 .cobro-bloqueo-inline--ok,
+.cobro-v2 .cobro-bloqueo-inline--ok i {
+  color: var(--c-success);
 }
 .cobro-v2 .cobro-err {
   font-size: 13px;

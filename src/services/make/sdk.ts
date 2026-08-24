@@ -12,7 +12,24 @@
  * meterlos en un JSON obligaría a pasarlos por base64, que los infla un tercio y obliga a Make a
  * reconstruirlos antes de leerlos.
  */
+import { leerDeviceToken } from '@/lib/deviceToken'
+import { getSessionToken } from '@/lib/mondayAuth'
+
 const ENDPOINT = import.meta.env.DEV ? '/make-comprobantes' : '/api/make-comprobantes'
+
+/**
+ * El proxy de Make también está detrás del guardián (Capa 2): sin session token no se dispara el
+ * escenario, que gasta operaciones de la cuenta. En desarrollo no hay iframe ni sesión, y el proxy
+ * de Vite pega derecho al webhook, así que la cabecera simplemente no viaja.
+ */
+async function cabeceraSesion(): Promise<Record<string, string>> {
+  const sesion = await getSessionToken()
+  const device = leerDeviceToken()
+  return {
+    ...(sesion ? { Authorization: `Bearer ${sesion}` } : {}),
+    ...(device ? { 'X-Device-Token': device } : {}),
+  }
+}
 
 /**
  * Cuánto se espera la respuesta del escenario. Es un techo generoso a propósito: del otro lado hay
@@ -163,9 +180,20 @@ async function unIntento(form: FormData, signal?: AbortSignal): Promise<Respuest
   signal?.addEventListener('abort', cancelar)
 
   try {
-    const res = await fetch(ENDPOINT, { method: 'POST', body: form, signal: ctrl.signal })
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      body: form,
+      headers: await cabeceraSesion(),
+      signal: ctrl.signal,
+    })
     const texto = await res.text()
     if (!res.ok) {
+      /* El guardián rechazó al usuario: la firma no cerró (401) o no está en la lista blanca
+         (403). No es transitorio ni es del archivo —insistir da lo mismo—, así que va como error
+         común con el mensaje que corresponde. */
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('No tenés acceso habilitado a esta app. Pedile el alta al administrador.')
+      }
       /* 410 es el caso típico y merece su propio mensaje: el escenario existe pero no está
          escuchando —quedó apagado, o Make lo puso en pausa después de capturar la estructura—.
          Nada corrió del otro lado, así que se reintenta: activarlo alcanza para que la carga siga. */

@@ -10,6 +10,7 @@ import type {
   FormaPago,
   FormaPagoVenta,
   MovimientoPago,
+  Operacion,
   TipoPago,
   TipoTarjetaCobro,
 } from '@/types'
@@ -425,12 +426,23 @@ export const FORMAS_PAGO_POSTERIOR: readonly FormaPagoVenta[] = ['CUENTA CORRIEN
  *
  * Sin forma de pago elegida se asume POSTERIOR: no se puede afirmar que la venta ya se cobró.
  */
-export const tipoPagoOperacion = (forma: FormaPagoVenta | null): TipoPago =>
-  forma === 'CONTADO' || esPagoConTarjeta(forma) ? 'SIMULTANEO' : 'POSTERIOR'
+export const tipoPagoOperacion = (
+  forma: FormaPagoVenta | null,
+  operacion: Operacion | null = null,
+): TipoPago => {
+  /* La VENTA PROFORMA se cobra SIEMPRE en el acto: todo su recorrido es cobrar la proforma. No pasa
+     por la selección de productos —que es donde se elige la forma de pago—, así que `formaPago`
+     queda en null y sin esta línea caía en POSTERIOR: la venta se marcaba como no cobrada y el
+     recibo del tablero de Cobros no se creaba nunca. */
+  if (operacion === 'VENTA PROFORMA') return 'SIMULTANEO'
+  return forma === 'CONTADO' || esPagoConTarjeta(forma) ? 'SIMULTANEO' : 'POSTERIOR'
+}
 
 /** La operación se cobra en el acto: recibo con sus movimientos y exigencia del 100%. */
-export const cobroSimultaneoOperacion = (forma: FormaPagoVenta | null): boolean =>
-  tipoPagoOperacion(forma) === 'SIMULTANEO'
+export const cobroSimultaneoOperacion = (
+  forma: FormaPagoVenta | null,
+  operacion: Operacion | null = null,
+): boolean => tipoPagoOperacion(forma, operacion) === 'SIMULTANEO'
 
 /**
  * Se muestra el "Impacto en cuenta corriente" del cierre. Sólo tiene sentido cuando la venta se
@@ -443,8 +455,11 @@ export const mostrarImpactoCtaCte = (forma: FormaPagoVenta | null): boolean =>
  * Datos de cobro que viajan al payload de la venta. Es el único constructor del tipo de cobro que
  * se escribe en "✋Tipo de Cobro" del board: la vista no lo arma a mano ni lo deduce de otro flag.
  */
-export const datosCobroVenta = (forma: FormaPagoVenta | null): { tipoPago: TipoPago } => ({
-  tipoPago: tipoPagoOperacion(forma),
+export const datosCobroVenta = (
+  forma: FormaPagoVenta | null,
+  operacion: Operacion | null = null,
+): { tipoPago: TipoPago } => ({
+  tipoPago: tipoPagoOperacion(forma, operacion),
 })
 
 /**
@@ -454,8 +469,10 @@ export const datosCobroVenta = (forma: FormaPagoVenta | null): { tipoPago: TipoP
  * No mira el estado del cobro. Antes exigía además `!cobro.deudaId` para no duplicar, pero ese id
  * NUNCA se guardaba, así que la condición era inerte y aparentaba una protección que no existía.
  */
-export const requiereRegistroDeuda = (forma: FormaPagoVenta | null): boolean =>
-  tipoPagoOperacion(forma) === 'POSTERIOR'
+export const requiereRegistroDeuda = (
+  forma: FormaPagoVenta | null,
+  operacion: Operacion | null = null,
+): boolean => tipoPagoOperacion(forma, operacion) === 'POSTERIOR'
 
 /**
  * El cobro simultáneo exige el 100%: lo que entra a caja más los descuentos otorgados tiene

@@ -1,4 +1,4 @@
-import type { ResumenCobro } from '@/lib/cobros'
+import { diferenciaCobro, diferenciaEnCero, type ResumenCobro } from '@/lib/cobros'
 import { money } from '@/lib/format'
 import type { Cliente } from '@/types'
 import { MetricaCobro } from './MetricaCobro'
@@ -26,7 +26,11 @@ export function CabeceraCobro({
 }: CabeceraCobroProps) {
   /* Sin recortar en cero: si lo cargado se pasa del total, el número tiene que decirlo.
      `resumen.pendiente` sí está recortado, porque es lo que le queda a deber el cliente. */
-  const restante = resumen.totalACobrar - resumen.cancelado
+  const restante = diferenciaCobro(resumen)
+  /* Diferencia saldada: la métrica pasa de rojo a verde. Se pregunta con el helper compartido —el
+     mismo que habilita el avance— y no con `restante === 0`, para que el color no dependa de un
+     resto de coma flotante que la cifra ya muestra como "$ 0,00". */
+  const saldada = diferenciaEnCero(resumen)
 
   return (
     <div className="cobro-cab">
@@ -66,9 +70,11 @@ export function CabeceraCobro({
             explica el aviso que frena el "Continuar" ("el total cobrado supera el total de la
             venta"). Un texto acá repetía el mismo mensaje dos veces y movía la altura de la
             métrica según el resultado. */}
+        {/* En rojo mientras quede algo por cobrar (o se haya cobrado de más) y en VERDE cuando la
+            diferencia queda saldada: el cierre del cobro se ve en la misma métrica que lo mide. */}
         <MetricaCobro
           icono="fa-receipt"
-          tono="rojo"
+          tono={saldada ? 'verde' : 'rojo'}
           rotulo="DIFERENCIA"
           valor={restante < 0 ? `- ${money(-restante)}` : money(restante)}
         />

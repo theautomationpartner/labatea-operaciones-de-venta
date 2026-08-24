@@ -15,7 +15,6 @@ import {
   descuentoDeFormaPago,
   esPagoConTarjeta,
   requiereRegistroDeuda,
-  resumenCobro,
 } from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
 import { comprobantesDeVenta, precioNetoUnitario, totalesComprobantes } from '@/lib/facturacion'
@@ -199,7 +198,6 @@ export function FacturaView() {
       ),
     [cobro.movimientos, state.descuentosPago, formaPago],
   )
-  const resumenC = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
 
   if (!cliente) return null
@@ -273,7 +271,7 @@ export function FacturaView() {
       tipoVenta: tipoVenta ?? 'DIRECTA',
       /* Tipo de cobro de la operación e importe total (con IVA): definen el monto pendiente de
          cobro. Va el total REAL de la venta, que es lo que efectivamente se le cobra al cliente. */
-      tipoPago: datosCobroVenta(formaPago).tipoPago,
+      tipoPago: datosCobroVenta(formaPago, operacion).tipoPago,
       importeTotalVenta: totalVenta,
       fecha: aIso(fechaEmision),
       pendienteCobroId,
@@ -365,7 +363,7 @@ export function FacturaView() {
        en "Registrar", que es lo que asienta el cobro en el sistema (ver `registrarCobro`). Ese
        encadenamiento vive del lado del servicio, así que acá se sigue sin esperar y el cierre no se
        congela. */
-    if (cobroSimultaneoOperacion(formaPago)) {
+    if (cobroSimultaneoOperacion(formaPago, operacion)) {
       /* SIMULTÁNEO: el recibo nace con las facturas que cancela y con sus movimientos de pago.
          Las facturas salen de los comprobantes efectivamente EMITIDOS —la división de mercadería
          puede dejar más de uno— con el total de cada uno como importe cancelado. */
@@ -374,7 +372,6 @@ export function FacturaView() {
         nombreCliente: cliente.name,
         vendedorId: state.vendedor?.id ?? null,
         totalVenta,
-        totalCobrado: resumenC.cancelado,
         facturas: facturasCanceladas,
         balances,
       }).catch(() => {
@@ -395,7 +392,7 @@ export function FacturaView() {
         try {
           /* Ya no se exige que el cliente tenga cuenta corriente: la deuda cuelga de la VENTA
              (board_relation_mm4d3nn0) y el tablero resuelve desde ahí la imputación a la cuenta. */
-          if (requiereRegistroDeuda(formaPago)) {
+          if (requiereRegistroDeuda(formaPago, operacion)) {
             deudaId = (
               await registrarDeudaPosterior({
                 ventaId: vId,
@@ -480,7 +477,7 @@ export function FacturaView() {
           tipoVenta: tipoVenta ?? 'DIRECTA',
           tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
           // El tipo de cobro sale de la forma de pago elegida, no de la condición del cliente.
-          ...datosCobroVenta(formaPago),
+          ...datosCobroVenta(formaPago, operacion),
           rentabilidad: rentabilidadVenta,
           descFormaPago,
           tasaCambio: state.tasaCambio,
