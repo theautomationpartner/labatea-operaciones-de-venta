@@ -19,15 +19,35 @@ import { endpointMfa, type Pedido } from './_http.js'
 import { listarHabilitados } from './_whitelist.js'
 import { mondayServidor } from './_mondayApi.js'
 
-interface RespuestaUsuarios {
-  users?: { id: string; name: string; teams?: { id: string }[] }[]
+/** Un usuario tal como lo devuelve la consulta de abajo. */
+interface UsuarioMonday {
+  id: string
+  name: string
+  /** `admin` = admin de la CUENTA, que manda aunque no esté en el equipo de administradores. */
+  kind?: string
+  teams?: { id: string }[]
 }
 
-const QUERY_USUARIO = `
+interface RespuestaUsuarios {
+  users?: UsuarioMonday[]
+}
+
+/**
+ * Los equipos de TODOS los habilitados, no sólo los del usuario de la sesión.
+ *
+ * Hacen falta porque el permiso de la operación lo decide el VENDEDOR ASIGNADO y no quien está
+ * logueado: un administrador puede emitir a nombre de otra persona, y en ese caso rigen los topes
+ * de esa persona. Sin esto, la app dejaba que un admin aplicara un descuento del 20% a nombre de
+ * un vendedor que sólo puede llegar al 5%.
+ *
+ * `kind` distingue al admin de la cuenta, que manda aunque no esté en el equipo de administradores.
+ */
+const QUERY_USUARIOS = `
   query ($ids: [ID!]) {
     users(ids: $ids) {
       id
       name
+      kind
       teams {
         id
       }
@@ -51,21 +71,31 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
        rol más restrictivo. Un problema para leer equipos no tiene por qué frenar una venta. */
     let nombre = vendedores.find((v) => v.id === sesion.userId)?.nombre ?? ''
     let equiposIds: string[] = []
+    let porId = new Map<string, UsuarioMonday>()
 
     try {
-      const data = await mondayServidor<RespuestaUsuarios>(QUERY_USUARIO, { ids: [sesion.userId] })
-      const usuario = data.users?.[0]
+      /* Una sola consulta para todos: el de la sesión y cada habilitado del tablero. */
+      const ids = [...new Set([sesion.userId, ...vendedores.map((v) => v.id)])]
+      const data = await mondayServidor<RespuestaUsuarios>(QUERY_USUARIOS, { ids })
+      porId = new Map((data.users ?? []).map((u) => [String(u.id), u]))
+
+      const usuario = porId.get(sesion.userId)
       if (usuario) {
         nombre = usuario.name || nombre
         equiposIds = (usuario.teams ?? []).map((t) => String(t.id))
       }
     } catch {
       /* Silencio a propósito: es un dato de presentación y de rol, no de autorización. Quién puede
-         entrar ya se decidió en el guardián, contra el tablero. */
+         entrar ya se decidió en el guardián, contra el tablero. Sin equipos, todos quedan con el rol
+         más restrictivo, que es el lado seguro para fallar. */
     }
 
     return {
-      vendedores,
+      vendedores: vendedores.map((v) => ({
+        ...v,
+        equiposIds: (porId.get(v.id)?.teams ?? []).map((t) => String(t.id)),
+        esAdminDeCuenta: porId.get(v.id)?.kind === 'admin',
+      })),
       usuario: {
         id: sesion.userId,
         nombre,

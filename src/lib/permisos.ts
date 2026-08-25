@@ -11,7 +11,7 @@
  * la tabla de productos, así los dos no pueden discrepar sobre quién puede editar qué.
  */
 import { BONIFICACION_TOTAL, type TopesDescuento } from '@/lib/validaciones'
-import type { Operacion, Paso, UsuarioActual } from '@/types'
+import type { Operacion, Paso, UsuarioActual, Vendedor } from '@/types'
 
 /**
  * Equipos de Monday, POR ID.
@@ -55,6 +55,34 @@ export function rolUsuario(u: UsuarioActual | null): RolUsuario {
 
 export const esAdministrador = (u: UsuarioActual | null): boolean =>
   rolUsuario(u) === 'ADMINISTRADOR'
+
+/**
+ * Quién manda para los permisos de la OPERACIÓN: el VENDEDOR ASIGNADO, no quien está logueado.
+ *
+ * La operación se asienta a nombre del vendedor elegido, así que los topes que rigen son los
+ * suyos. Sin esta distinción, un administrador podía elegir a un vendedor y, con SUS propios
+ * privilegios, aplicar un descuento del 20% o forzar rentabilidad en una operación que queda
+ * firmada por alguien que no puede hacer ninguna de las dos cosas. El permiso no viaja con quien
+ * opera la pantalla: viaja con quien queda como responsable.
+ *
+ * Elegir el vendedor sigue siendo atributo de quien está logueado (`puedeElegirVendedor`), o el
+ * administrador quedaría encerrado apenas asigna a otro.
+ *
+ * Sin sesión (desarrollo local sin token) devuelve `null`, que es el caso permisivo de siempre:
+ * ahí no hay a quién consultarle y trabar la app no aporta nada.
+ */
+export const usuarioDeLaOperacion = (
+  logueado: UsuarioActual | null,
+  vendedor: Vendedor | null,
+): UsuarioActual | null => {
+  if (!logueado || !vendedor) return logueado
+  return {
+    id: vendedor.id,
+    name: vendedor.name,
+    isAdmin: vendedor.esAdminDeCuenta,
+    equiposIds: vendedor.equiposIds,
+  }
+}
 
 /**
  * Etapa de SELECCIÓN DE PRODUCTOS de una VENTA o un PRESUPUESTO: el único momento en que el

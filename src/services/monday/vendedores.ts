@@ -42,7 +42,7 @@ const iniciales = (nombre: string): string =>
 
 /** Lo que devuelve `/api/vendedores`: la lista habilitada y quién la está pidiendo. */
 interface RespuestaEquipo {
-  vendedores: { id: string; nombre: string }[]
+  vendedores: { id: string; nombre: string; equiposIds?: string[]; esAdminDeCuenta?: boolean }[]
   usuario: { id: string; nombre: string; isAdmin: boolean; equiposIds: string[] } | null
 }
 
@@ -65,7 +65,15 @@ function equipo(): Promise<RespuestaEquipo> {
 
 async function pedirEquipo(): Promise<RespuestaEquipo> {
   if (!mondayHabilitado()) {
-    return { vendedores: VENDEDORES.map((v) => ({ id: v.id, nombre: v.name })), usuario: null }
+    return {
+      vendedores: VENDEDORES.map((v) => ({
+        id: v.id,
+        nombre: v.name,
+        equiposIds: v.equiposIds,
+        esAdminDeCuenta: v.esAdminDeCuenta,
+      })),
+      usuario: null,
+    }
   }
   return import.meta.env.DEV ? leerEnDesarrollo() : leerDelServidor()
 }
@@ -98,6 +106,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
   const data = await mondayApi<{
     boards?: { items_page?: { items?: FilaTablero[] } }[]
     me?: { id: string; name: string; is_admin?: boolean | null; teams?: { id: string }[] } | null
+    users?: { id: string; kind?: string | null; teams?: { id: string }[] }[]
   }>(
     `query ($board: ID!, $cols: [String!]) {
       boards(ids: [$board]) {
@@ -109,14 +118,24 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
         }
       }
       me { id name is_admin teams { id } }
+      users(limit: 200) { id kind teams { id } }
     }`,
     { board: BOARD, cols: [COL_USUARIO, COL_ESTADO] },
   )
 
   const items = data.boards?.[0]?.items_page?.items ?? []
+  const porId = new Map((data.users ?? []).map((u) => [String(u.id), u]))
   const vendedores = items
     .filter((i) => (valorDe(i, COL_ESTADO) ?? '').trim().toLowerCase() === ACTIVO)
-    .map((i) => ({ id: (valorDe(i, COL_USUARIO) ?? '').trim(), nombre: i.name }))
+    .map((i) => {
+      const id = (valorDe(i, COL_USUARIO) ?? '').trim()
+      return {
+        id,
+        nombre: i.name,
+        equiposIds: (porId.get(id)?.teams ?? []).map((t) => String(t.id)),
+        esAdminDeCuenta: porId.get(id)?.kind === 'admin',
+      }
+    })
     .filter((v) => v.id !== '')
 
   const me = data.me
@@ -154,6 +173,10 @@ export async function getVendedores(): Promise<Vendedor[]> {
     name: v.nombre,
     ini: iniciales(v.nombre),
     color: COLORES_VENDEDOR[i % COLORES_VENDEDOR.length],
+    /* Sin equipos, el vendedor queda con el rol más restrictivo. Es el lado seguro para fallar:
+       ante un problema para leerlos, no se habilitan excepciones a nombre de nadie. */
+    equiposIds: v.equiposIds ?? [],
+    esAdminDeCuenta: v.esAdminDeCuenta ?? false,
   }))
 }
 

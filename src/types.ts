@@ -23,6 +23,13 @@ export interface Vendedor {
   ini: string
   name: string
   color: string
+  /**
+   * Equipos de ESTE vendedor. Con ellos se decide qué permite la operación cuando se la emite a su
+   * nombre: los topes que rigen son los suyos, no los de quien está usando la app.
+   */
+  equiposIds: string[]
+  /** Admin de la CUENTA de Monday: manda aunque no esté en el equipo de administradores. */
+  esAdminDeCuenta: boolean
 }
 
 /** Usuario logueado en Monday: define el vendedor por defecto y los permisos de la UI (RBAC). */

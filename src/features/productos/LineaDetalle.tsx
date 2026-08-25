@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { topesDescuentoDe } from '@/lib/permisos'
+import { topesDescuentoDe, usuarioDeLaOperacion } from '@/lib/permisos'
 import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import { DetalleDescuentos } from './DetalleDescuentos'
@@ -17,11 +17,17 @@ function InputDescuento({
   fila: FilaProducto
   onDescuento: (id: string, descuento: number) => void
 }) {
-  const { topesDescuento: topesTablero, usuarioActual, paso, operacion } = useApp()
+  const { topesDescuento: topesTablero, usuarioActual, vendedor, paso, operacion } = useApp()
   /* Mismo tope que el campo de la carga de producto: el administrador puede pasarse del máximo
      del tablero, el vendedor no. Si no, un descuento autorizado por un admin quedaría marcado
      como inválido al editarlo desde la fila. */
-  const topesDescuento = topesDescuentoDe(topesTablero, usuarioActual, paso, operacion)
+  // Los topes son los del vendedor asignado; ver `usuarioDeLaOperacion`.
+  const topesDescuento = topesDescuentoDe(
+    topesTablero,
+    usuarioDeLaOperacion(usuarioActual, vendedor),
+    paso,
+    operacion,
+  )
   const [texto, setTexto] = useState(String(fila.descuento))
   // Aviso de la tecla rechazada por pasarse del máximo.
   const [rechazado, setRechazado] = useState('')

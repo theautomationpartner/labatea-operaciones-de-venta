@@ -17,11 +17,11 @@ import type {
 } from '@/types'
 
 export const VENDEDORES: Vendedor[] = [
-  { id: '1001', ini: 'LT', name: 'Luciano Torres', color: 'var(--avatar-orange)' },
-  { id: '1002', ini: 'MS', name: 'María Silva', color: 'var(--red)' },
-  { id: '1003', ini: 'JG', name: 'Javier Gómez', color: 'var(--green)' },
-  { id: '1004', ini: 'PR', name: 'Paula Ríos', color: '#575ce5' },
-  { id: '1005', ini: 'DC', name: 'Diego Cabrera', color: 'var(--primary-blue)' },
+  { id: '1001', ini: 'LT', name: 'Luciano Torres', color: 'var(--avatar-orange)', equiposIds: [], esAdminDeCuenta: false },
+  { id: '1002', ini: 'MS', name: 'María Silva', color: 'var(--red)', equiposIds: [], esAdminDeCuenta: false },
+  { id: '1003', ini: 'JG', name: 'Javier Gómez', color: 'var(--green)', equiposIds: [], esAdminDeCuenta: false },
+  { id: '1004', ini: 'PR', name: 'Paula Ríos', color: '#575ce5', equiposIds: [], esAdminDeCuenta: false },
+  { id: '1005', ini: 'DC', name: 'Diego Cabrera', color: 'var(--primary-blue)', equiposIds: [], esAdminDeCuenta: false },
 ]
 
 export const CLIENTES: Cliente[] = [

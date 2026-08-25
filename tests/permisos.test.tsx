@@ -18,6 +18,7 @@ import {
   puedeEditarPrecio,
   puedeElegirVendedor,
   rolUsuario,
+  usuarioDeLaOperacion,
   topesDescuentoDe,
   TEAM_ADMINISTRADORES,
   TEAM_VENDEDORES,
@@ -27,7 +28,7 @@ import { costoDe, rentabilidadDe } from '@/lib/selectors'
 import { TOPES_DESCUENTO_DEFAULT } from '@/lib/validaciones'
 import { initialState, reducer, type AppState } from '@/state/appState'
 import { DispatchContext, StateContext } from '@/state/context'
-import type { Producto, UsuarioActual } from '@/types'
+import type { Producto, UsuarioActual, Vendedor } from '@/types'
 
 const usuario = (equiposIds: string[], isAdmin = false): UsuarioActual => ({
   id: '1001',
@@ -38,6 +39,15 @@ const usuario = (equiposIds: string[], isAdmin = false): UsuarioActual => ({
 
 const ADMIN = usuario([TEAM_ADMINISTRADORES, TEAM_VENDEDORES])
 const VENDEDOR = usuario([TEAM_VENDEDORES])
+
+const comoVendedor = (equiposIds: string[], esAdminDeCuenta = false): Vendedor => ({
+  id: '2002',
+  ini: 'DT',
+  name: 'Dev TAP',
+  color: 'var(--red)',
+  equiposIds,
+  esAdminDeCuenta,
+})
 
 // ---------- MÓDULO 1: clasificación por equipo ----------
 assert.equal(rolUsuario(ADMIN), 'ADMINISTRADOR', 'el equipo Administradores manda')
@@ -245,5 +255,43 @@ for (const [quien, html] of [
   const pct = html.slice(html.indexOf('id="pdesc"'), html.indexOf('id="pdesc"') + 300)
   assert.ok(!pct.includes('readonly'), `el descuento en % tiene que editarse (${quien})`)
 }
+
+// ---------- El permiso lo decide el VENDEDOR ASIGNADO, no quien opera ----------
+/* El caso real: TAP (administrador) emite un presupuesto a nombre de Dev TAP, que sólo está en el
+   equipo de Vendedores. Antes, la app aplicaba los privilegios de TAP y dejaba pasar un descuento
+   del 20% o una rentabilidad forzada en una operación que queda firmada por alguien que no puede
+   hacer ninguna de las dos cosas. El permiso no viaja con quien opera la pantalla: viaja con quien
+   queda como responsable. */
+const devTap = comoVendedor([TEAM_VENDEDORES])
+const responsable = usuarioDeLaOperacion(ADMIN, devTap)
+
+assert.equal(rolUsuario(responsable), 'VENDEDOR', 'manda el equipo del vendedor asignado')
+assert.ok(
+  !puedeEditarPrecio(responsable, 'productos', 'PRESUPUESTAR'),
+  'el admin no puede pisar precios a nombre de un vendedor',
+)
+assert.equal(
+  topesDescuentoDe(TOPES_DESCUENTO_DEFAULT, responsable, 'productos', 'PRESUPUESTAR').max,
+  TOPES_DESCUENTO_DEFAULT.max,
+  'rige el tope del tablero, no la bonificación total',
+)
+assert.ok(!esAdministrador(responsable), 'ni rentabilidad forzada a nombre ajeno')
+
+/* Pero elegir el vendedor sigue siendo atributo de quien está logueado: si dependiera del asignado,
+   el administrador quedaría encerrado apenas asigna a otro y no podría deshacerlo. */
+assert.ok(puedeElegirVendedor(ADMIN, 'productos', 'PRESUPUESTAR'), 'el admin sigue reasignando')
+
+// Si se asigna a sí mismo, o a otro administrador, recupera sus privilegios.
+const comoAdmin = usuarioDeLaOperacion(ADMIN, comoVendedor([TEAM_ADMINISTRADORES]))
+assert.ok(puedeEditarPrecio(comoAdmin, 'productos', 'VENTA'), 'a nombre de un admin, sí')
+
+/* El admin de la CUENTA manda aunque no esté en el equipo: ya puede editar los tableros a mano, así
+   que bloquearlo en la app no protegería nada. */
+const comoDuenio = usuarioDeLaOperacion(ADMIN, comoVendedor([], true))
+assert.ok(puedeEditarPrecio(comoDuenio, 'productos', 'VENTA'), 'el admin de la cuenta también')
+
+// Sin vendedor elegido rige quien está logueado; sin sesión (desarrollo) no se bloquea nada.
+assert.equal(usuarioDeLaOperacion(ADMIN, null), ADMIN, 'sin vendedor manda el logueado')
+assert.equal(usuarioDeLaOperacion(null, devTap), null, 'sin sesión, el caso permisivo de siempre')
 
 console.log('OK · RBAC por equipo, tope de descuento y override de precio')

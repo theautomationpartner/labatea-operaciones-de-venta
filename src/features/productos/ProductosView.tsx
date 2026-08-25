@@ -3,7 +3,7 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
-import { esAdministrador, puedeEditarPrecio } from '@/lib/permisos'
+import { esAdministrador, puedeEditarPrecio, usuarioDeLaOperacion } from '@/lib/permisos'
 import { clienteLlevaIva, productoConPrecio } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import {
@@ -50,7 +50,8 @@ export function ProductosView() {
   /* RBAC: el override del precio de lista es exclusivo del equipo "Administradores" y de esta
      etapa. El guardrail post-emisión manda por encima: emitido, no se toca nada. */
   const precioEditable =
-    !bloqueadoPorEmision && puedeEditarPrecio(state.usuarioActual, state.paso, operacion)
+    !bloqueadoPorEmision &&
+    puedeEditarPrecio(usuarioDeLaOperacion(state.usuarioActual, state.vendedor), state.paso, operacion)
   // Selección de producto con conversión bimonetaria (dólares → pesos con la cotización).
   const { seleccionado, setSeleccionado, elegir, convirtiendo } = useCotizacionProducto()
   // Aviso de la búsqueda, que se muestra en el lugar del producto elegido.
@@ -65,7 +66,9 @@ export function ProductosView() {
      accederla. Además se habilita sólo en PRESUPUESTO y en la VENTA DIRECTA, salvo cuando la entrega
      es ANTERIOR (la mercadería ya salió por remito y sus precios no se pisan acá). */
   const mostrarRentabForzada =
-    esAdministrador(state.usuarioActual) &&
+    /* La rentabilidad forzada la habilita el VENDEDOR asignado, no quien opera: es una excepción
+       que queda firmada a su nombre. */
+    esAdministrador(usuarioDeLaOperacion(state.usuarioActual, state.vendedor)) &&
     (operacion === 'PRESUPUESTAR' ||
       (esVenta && tipoVenta === 'DIRECTA' && tipoEntrega !== 'ANTERIOR'))
   /* Descuento por pronto pago de la forma de pago elegida. Se compone con el descuento manual de

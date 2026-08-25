@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
 import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
-import { puedeEditarPrecio, topesDescuentoDe } from '@/lib/permisos'
+import { puedeEditarPrecio, topesDescuentoDe, usuarioDeLaOperacion } from '@/lib/permisos'
 import { productoConPrecio } from '@/lib/precios'
 import {
   aceptaRentabForzada,
@@ -62,7 +62,7 @@ export function CargaLinea({
   convirtiendo = false,
   descFormaPago = 0,
 }: CargaLineaProps) {
-  const { topesDescuento: topesTablero, usuarioActual, paso, operacion, rentabForzadaActiva, rentabForzadaPctActiva } = useApp()
+  const { topesDescuento: topesTablero, usuarioActual, vendedor, paso, operacion, rentabForzadaActiva, rentabForzadaPctActiva } = useApp()
   const [cantidad, setCantidad] = useState(1)
   const [descuento, setDescuento] = useState('')
   // Aviso de la tecla rechazada por pasarse del máximo; se limpia al corregir.
@@ -80,8 +80,11 @@ export function CargaLinea({
 
   /* RBAC: el administrador puede pisar el precio de lista y pasarse del tope de descuento; el
      vendedor ve el precio como dato y tiene el máximo del tablero. */
-  const precioEditable = showFinancialData && puedeEditarPrecio(usuarioActual, paso, operacion)
-  const topesDescuento = topesDescuentoDe(topesTablero, usuarioActual, paso, operacion)
+  /* Manda el VENDEDOR de la operación, no quien está usando la app: lo que se emite queda a su
+     nombre y con sus topes. Ver `usuarioDeLaOperacion`. */
+  const responsable = usuarioDeLaOperacion(usuarioActual, vendedor)
+  const precioEditable = showFinancialData && puedeEditarPrecio(responsable, paso, operacion)
+  const topesDescuento = topesDescuentoDe(topesTablero, responsable, paso, operacion)
 
   const cambiarCantidad = (delta: number) => setCantidad((c) => Math.max(1, c + delta))
 
@@ -438,7 +441,7 @@ export function CargaLinea({
                 <div className="cl-metric">
                   <span className="cl-metric-l">Rentabilidad Final</span>
                   <span
-                    className="cl-metric-v"
+                    className="cl-metric-v cl-metric-v--pct"
                     style={{ color: rentabilidadPrevista < 0 ? 'var(--red)' : 'var(--green-dark)' }}
                   >
                     {enEspera ? '—' : pctDec(rentabilidadPrevista)}
