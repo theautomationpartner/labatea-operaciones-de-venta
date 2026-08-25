@@ -165,7 +165,8 @@ reiniciar()
   assert.ok(alta.deviceToken, 'confirmar tiene que emitir el dispositivo de la jornada')
   assert.equal(await status(() => exigirMfa(usuario, alta.deviceToken)), 'ok', 'y con eso se entra')
 
-  /* Pero dura la jornada, no 30 días: la casilla de confianza aparece la próxima vez. */
+  /* Dura la jornada. No hay forma de pedir más: la casilla de "confiar 30 días" se sacó a propósito
+     para que el segundo factor se pida todos los días. */
   const horas = (memoria.dispositivos[0].expira - Date.now()) / (60 * 60_000)
   assert.ok(horas > 11 && horas < 13, `el dispositivo del alta dura la jornada, no ${horas} horas`)
 }
@@ -177,14 +178,14 @@ reiniciar()
   const codigo = generateSync({ secret: secreto })
 
   // Ojo: `enrolar` ya consumió el paso actual al confirmar, así que ESE mismo código ya no entra.
-  assert.equal(await status(() => verificar(usuario, codigo, false)), 401, 'el código de la confirmación no se recicla')
+  assert.equal(await status(() => verificar(usuario, codigo)), 401, 'el código de la confirmación no se recicla')
 
   // Uno del período siguiente sí, y una sola vez.
   const epoch = Math.floor(Date.now() / 1000) + 30
   const siguiente = generateSync({ secret: secreto, epoch })
-  assert.equal(await status(() => verificar(usuario, siguiente, false)), 'ok', 'código nuevo entra')
+  assert.equal(await status(() => verificar(usuario, siguiente)), 'ok', 'código nuevo entra')
   assert.equal(
-    await status(() => verificar(usuario, siguiente, false)),
+    await status(() => verificar(usuario, siguiente)),
     401,
     'el MISMO código no entra dos veces, aunque le queden segundos de vida',
   )
@@ -214,19 +215,19 @@ reiniciar()
   const secreto = await enrolar()
 
   for (let i = 1; i <= 5; i++) {
-    assert.equal(await status(() => verificar(usuario, '000000', false)), 401, `fallo ${i}`)
+    assert.equal(await status(() => verificar(usuario, '000000')), 401, `fallo ${i}`)
   }
 
   /* El sexto intento se corta ANTES de mirar el código. Se prueba con uno CORRECTO a propósito: si
      un código bueno pasara igual, el límite no estaría frenando la fuerza bruta sino apenas
      contándola, y además le diría al atacante cuándo acertó. */
   const bueno = generateSync({ secret: secreto, epoch: Math.floor(Date.now() / 1000) + 30 })
-  assert.equal(await status(() => verificar(usuario, bueno, false)), 429, 'sexto intento: bloqueado')
+  assert.equal(await status(() => verificar(usuario, bueno)), 429, 'sexto intento: bloqueado')
 
   // El bloqueo es por usuario: otra persona no paga por los fallos ajenos.
   const secretoOtro = await enrolar(otro)
   const buenoOtro = generateSync({ secret: secretoOtro, epoch: Math.floor(Date.now() / 1000) + 30 })
-  assert.equal(await status(() => verificar(otro, buenoOtro, false)), 'ok', 'el límite es por usuario')
+  assert.equal(await status(() => verificar(otro, buenoOtro)), 'ok', 'el límite es por usuario')
 
   // Cuando la ventana pasa, la puerta se vuelve a abrir sola.
   for (const intento of memoria.intentos) intento.cuando -= 16 * 60_000
@@ -234,7 +235,7 @@ reiniciar()
      estaría fuera de rango y el test estaría probando otra cosa. Este nunca se consumió: el
      intento anterior murió en el límite, antes de mirar el código. */
   const otroBueno = generateSync({ secret: secreto, epoch: Math.floor(Date.now() / 1000) + 30 })
-  assert.equal(await status(() => verificar(usuario, otroBueno, false)), 'ok', 'a los 15 min se libera')
+  assert.equal(await status(() => verificar(usuario, otroBueno)), 'ok', 'a los 15 min se libera')
 }
 
 // ── Códigos de recuperación ─────────────────────────────────────────────────────────────────────
@@ -244,11 +245,11 @@ reiniciar()
   const { codigosRecuperacion: codigos } = await confirmarEnrolamiento(usuario, generateSync({ secret: secreto }))
 
   const primero = codigos[0]
-  const uso = await verificar(usuario, primero, false)
+  const uso = await verificar(usuario, primero)
   assert.equal(uso.conRecuperacion, true, 'entró con un código de recuperación')
   assert.equal(uso.codigosRestantes, 9, 'queda uno menos')
 
-  assert.equal(await status(() => verificar(usuario, primero, false)), 401, 'un código de recuperación es de UN solo uso')
+  assert.equal(await status(() => verificar(usuario, primero)), 401, 'un código de recuperación es de UN solo uso')
 
   // Se aceptan escritos como los muestra la pantalla o pegados sin guion ni mayúsculas.
   assert.equal(
@@ -268,14 +269,16 @@ reiniciar()
   assert.equal(await status(() => exigirMfa(usuario, 'inventado')), 403, 'un token cualquiera no sirve')
 
   const codigo = generateSync({ secret: secreto, epoch: Math.floor(Date.now() / 1000) + 30 })
-  const res = await verificar(usuario, codigo, true)
+  const res = await verificar(usuario, codigo)
   const token = res.deviceToken!
   /* Se captura ACÁ, apenas se emite: más abajo se enrola a otro usuario y eso agrega otro
      dispositivo a la lista, con lo que "el último" dejaría de ser éste. */
   const emitido = memoria.dispositivos[memoria.dispositivos.length - 1]
-  const dias = (new Date(res.expiraEn!).getTime() - Date.now()) / (24 * 60 * 60_000)
-  assert.ok(Math.abs(dias - 30) < 0.01, `con la casilla tildada dura 30 días, no ${dias}`)
-  assert.equal(res.recordado, true, 'y la respuesta lo declara')
+
+  /* SIEMPRE la jornada, nunca más. Es la regla que reemplazó a la casilla de los 30 días: quien usa
+     la app todos los días escribe el código todos los días. */
+  const horasVerif = (new Date(res.expiraEn!).getTime() - Date.now()) / (60 * 60_000)
+  assert.ok(horasVerif > 11 && horasVerif < 13, `verificar emite un dispositivo de jornada, no de ${horasVerif} horas`)
 
   assert.ok(token.length >= 40, 'el token es largo y aleatorio')
   assert.ok(
@@ -298,7 +301,7 @@ reiniciar()
 {
   const secreto = await enrolar()
   const codigo = generateSync({ secret: secreto, epoch: Math.floor(Date.now() / 1000) + 30 })
-  const token = (await verificar(usuario, codigo, true)).deviceToken!
+  const token = (await verificar(usuario, codigo)).deviceToken!
   assert.equal(await status(() => exigirMfa(usuario, token)), 'ok')
 
   /* Alguien perdió el teléfono y vuelve a enrolarse. Lo último que se quiere es que el equipo del

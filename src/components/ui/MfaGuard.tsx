@@ -18,10 +18,13 @@ import {
  * Resuelve los dos escenarios con la misma pantalla base:
  *  · la primera vez, muestra el QR para escanear, pide el primer código y entrega los diez códigos
  *    de rescate —que se ven una sola vez, porque en la base sólo queda su hash—;
- *  · después, pide el código de seis dígitos con la opción de recordar el dispositivo 30 días.
+ *  · después, pide el código de seis dígitos, una vez por jornada.
  *
  * El campo acepta tanto un código de la app como uno de rescate: quien perdió el teléfono no tiene
  * por qué buscar otra pantalla, y el backend ya sabe distinguirlos por su forma.
+ *
+ * No hay casilla de "confiar en este dispositivo": la verificación se pide todos los días. Es una
+ * decisión deliberada y no un olvido — el dispositivo dura una jornada y punto.
  */
 export function MfaGuard({ onListo }: { onListo: () => void }) {
   const [paso, setPaso] = useState<'cargando' | 'enrolar' | 'rescate' | 'verificar'>('cargando')
@@ -29,7 +32,6 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
   const [codigosRescate, setCodigosRescate] = useState<string[]>([])
   const [guardados, setGuardados] = useState(false)
   const [codigo, setCodigo] = useState('')
-  const [confiar, setConfiar] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bloqueado, setBloqueado] = useState(false)
@@ -71,7 +73,7 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
         setCodigo('')
         setPaso('rescate')
       } else {
-        await verificarCodigo(codigo, confiar)
+        await verificarCodigo(codigo)
         onListo()
       }
     } catch (e) {
@@ -185,18 +187,6 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
               autoFocus
               disabled={enviando || bloqueado}
             />
-
-            {paso === 'verificar' && (
-              <label className="mfa-confiar">
-                <input
-                  type="checkbox"
-                  checked={confiar}
-                  onChange={(e) => setConfiar(e.target.checked)}
-                  disabled={enviando || bloqueado}
-                />
-                Confiar en este dispositivo por 30 días
-              </label>
-            )}
 
             <button
               type="submit"

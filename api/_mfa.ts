@@ -44,15 +44,15 @@ const TOLERANCIA_S = 30
 const MAX_FALLOS = 5
 const VENTANA_LIMITE_MS = 15 * 60_000
 
-/** Cuánto dura un dispositivo en el que se eligió confiar. */
-const DIAS_CONFIANZA = 30
-
 /**
- * Cuánto dura el dispositivo cuando NO se eligió confiar.
+ * Cuánto dura el dispositivo. Una sola duración: la jornada.
  *
- * Tiene que existir: el token del dispositivo es la ÚNICA prueba de que se pasó el segundo factor.
- * Sin emitir ninguno, quien verificaba bien pero no tildaba la casilla quedaba afuera igual — hacía
- * el esfuerzo y no entraba—. Doce horas cubren una jornada de trabajo y no más.
+ * Hubo una casilla de "confiar en este dispositivo por 30 días" y se sacó a propósito. La decisión
+ * es que el segundo factor se pida TODOS los días: doce horas cubren un turno de trabajo completo
+ * —quien entra a la mañana no vuelve a escribir el código hasta el día siguiente— y no más que eso.
+ *
+ * El token del dispositivo sigue existiendo porque es la ÚNICA prueba de que se pasó el segundo
+ * factor; lo que cambió es cuánto vale.
  */
 const HORAS_SESION = 12
 
@@ -204,9 +204,8 @@ export async function confirmarEnrolamiento(
   await mfaStore().olvidarDispositivos(u)
 
   /* Y se emite el dispositivo de la jornada: acaba de probar que tiene la app, pedirle un segundo
-     código a los diez segundos sería puro trámite. La casilla de los 30 días aparece la próxima
-     vez, cuando ya sepa de qué se trata. */
-  const dispositivo = await emitirDispositivo(u, false)
+     código a los diez segundos sería puro trámite. */
+  const dispositivo = await emitirDispositivo(u)
 
   return {
     codigosRecuperacion: codigos,
@@ -224,8 +223,6 @@ export interface ResultadoVerificacion {
   codigosRestantes?: number
   /** true si entró con un código de recuperación y no con la app. */
   conRecuperacion: boolean
-  /** true si el dispositivo quedó recordado 30 días; false si dura sólo la jornada. */
-  recordado?: boolean
 }
 
 /**
@@ -234,11 +231,7 @@ export interface ResultadoVerificacion {
  * El orden importa: primero el límite de velocidad, que corta ANTES de mirar el código. Un límite
  * que sólo se aplica después de verificar no frena una fuerza bruta, apenas la registra.
  */
-export async function verificar(
-  u: Usuario,
-  codigo: string,
-  confiarEnDispositivo: boolean,
-): Promise<ResultadoVerificacion> {
+export async function verificar(u: Usuario, codigo: string): Promise<ResultadoVerificacion> {
   const almacen = mfaStore()
 
   const fallos = await almacen.contarFallos(u, new Date(Date.now() - VENTANA_LIMITE_MS))
@@ -278,24 +271,17 @@ export async function verificar(
   const salida: ResultadoVerificacion = { conRecuperacion }
   if (conRecuperacion) salida.codigosRestantes = await almacen.cuantosCodigosQuedan(u)
 
-  /* SIEMPRE se emite un dispositivo: la casilla decide cuánto dura, no si existe. */
-  const dispositivo = await emitirDispositivo(u, confiarEnDispositivo)
+  const dispositivo = await emitirDispositivo(u)
   salida.deviceToken = dispositivo.token
   salida.expiraEn = dispositivo.expiraEn
-  salida.recordado = confiarEnDispositivo
 
   return salida
 }
 
-/**
- * Emite el dispositivo y guarda su huella. `recordar` sólo cambia la duración.
- */
-async function emitirDispositivo(
-  u: Usuario,
-  recordar: boolean,
-): Promise<{ token: string; expiraEn: string }> {
+/** Emite el dispositivo de la jornada y guarda su huella. */
+async function emitirDispositivo(u: Usuario): Promise<{ token: string; expiraEn: string }> {
   const token = nuevoTokenDispositivo()
-  const ms = recordar ? DIAS_CONFIANZA * 24 * 60 * 60_000 : HORAS_SESION * 60 * 60_000
+  const ms = HORAS_SESION * 60 * 60_000
   const expira = new Date(Date.now() + ms)
   await mfaStore().guardarDispositivo(u, huella(token), expira)
   return { token, expiraEn: expira.toISOString() }

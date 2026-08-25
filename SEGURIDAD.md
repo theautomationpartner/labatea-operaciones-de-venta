@@ -304,15 +304,17 @@ pasa de largo y la capa queda inerte.
 - **Primera vez:** llama a `/api/mfa/setup`, muestra el QR (y el secreto en texto por si la cámara no
   coopera), pide el primer código contra `/api/mfa/confirm` y entrega los **diez códigos de rescate**.
   Se ven una sola vez —en la base sólo queda su hash— y hay que tildar "ya los guardé" para seguir.
-- **Uso regular:** input de seis dígitos y la casilla *"Confiar en este dispositivo por 30 días"*,
-  contra `/api/mfa/verify`. El mismo campo acepta un código de rescate: quien perdió el teléfono no
-  tiene que buscar otra pantalla.
+- **Uso regular:** input de seis dígitos contra `/api/mfa/verify`. El mismo campo acepta un código
+  de rescate: quien perdió el teléfono no tiene que buscar otra pantalla.
 - Ante el límite de intentos el formulario queda cerrado: reintentar antes de los 15 minutos da el
   mismo rechazo, y un botón habilitado invita a gastar intentos al pedo.
 
-**Confirmar el alta ya deja entrar.** El servidor emite ahí mismo un dispositivo de la jornada (12 h);
-sin eso, quien termina de enrolarse chocaría contra el muro un segundo después. La casilla de los 30
-días aparece la próxima vez, cuando ya sabe de qué se trata.
+**El segundo factor se pide todos los días.** No hay casilla de "confiar en este dispositivo": el
+token del dispositivo dura una jornada (12 h), que cubre un turno completo y no más. Quien entra a
+la mañana no vuelve a escribir el código hasta el día siguiente.
+
+**Confirmar el alta ya deja entrar.** El servidor emite ahí mismo el dispositivo de la jornada; sin
+eso, quien termina de enrolarse chocaría contra el muro un segundo después.
 
 ## Base de datos (Neon desde Vercel)
 

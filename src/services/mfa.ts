@@ -31,8 +31,6 @@ export interface Enrolamiento {
 
 export interface ResultadoVerificacion {
   conRecuperacion: boolean
-  /** true si el dispositivo quedó recordado 30 días; false si dura sólo la jornada. */
-  recordado?: boolean
   codigosRestantes?: number
   expiraEn?: string
 }
@@ -109,14 +107,8 @@ export async function confirmarEnrolamiento(codigo: string): Promise<string[]> {
  * Verificación diaria. Si el usuario marcó "confiar en este dispositivo", el token que devuelve el
  * servidor se guarda acá mismo y a partir de ahí viaja solo en cada pedido.
  */
-export async function verificarCodigo(
-  codigo: string,
-  confiarEnDispositivo: boolean,
-): Promise<ResultadoVerificacion> {
-  const res = await pedir<ResultadoVerificacion & { deviceToken?: string }>('verify', {
-    codigo,
-    confiarEnDispositivo,
-  })
+export async function verificarCodigo(codigo: string): Promise<ResultadoVerificacion> {
+  const res = await pedir<ResultadoVerificacion & { deviceToken?: string }>('verify', { codigo })
 
   if (res.deviceToken) guardarDeviceToken(res.deviceToken)
   return res

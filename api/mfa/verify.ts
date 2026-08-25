@@ -1,7 +1,7 @@
 /**
  * `POST /api/mfa/verify` — verificación diaria del segundo factor.
  *
- * Cuerpo: `{ "codigo": "123456", "confiarEnDispositivo": true }`.
+ * Cuerpo: `{ "codigo": "123456" }`.
  *
  * Acepta tanto un código de la app (seis dígitos) como uno de recuperación. Si el usuario pidió
  * confiar en el dispositivo, la respuesta trae un `deviceToken` que el frontend guarda en
@@ -17,11 +17,10 @@ import { endpointMfa, type Pedido } from '../_http.js'
 
 interface Cuerpo {
   codigo?: string
-  confiarEnDispositivo?: boolean
 }
 
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   await endpointMfa<Cuerpo>(req, res, async ({ sesion, cuerpo }) =>
-    verificar(sesion, cuerpo.codigo ?? '', cuerpo.confiarEnDispositivo === true),
+    verificar(sesion, cuerpo.codigo ?? ''),
   )
 }

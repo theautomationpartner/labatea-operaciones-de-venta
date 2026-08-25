@@ -44,7 +44,7 @@ create unique index if not exists mfa_recuperacion_hash on mfa_recuperacion (has
 create index if not exists mfa_recuperacion_pendientes
   on mfa_recuperacion (account_id, user_id) where usado_en is null;
 
--- ── Dispositivos confiables (30 días, sin cookies) ──────────────────────────────────────────────
+-- ── Dispositivos de la jornada (sin cookies) ────────────────────────────────────────────────────
 -- Del token sólo se guarda el hash: si la base se filtra, no sirve para entrar.
 create table if not exists mfa_dispositivos (
   id         bigserial   primary key,
