@@ -122,10 +122,13 @@ const TEXTOS: Record<
     ),
   },
 
+  /* El 403 ya dice todo lo que hay que saber: el usuario no está dado de alta y la salida es
+     avisarle al soporte. El código NO se repite abajo —está en el título— y agregar "mencioná este
+     número" invitaría a reportar algo que no es un incidente a diagnosticar, sino un alta pendiente. */
   sinPermiso: {
     titulo: 'ERROR 403 · Usuario sin permisos',
     recargar: false,
-    mostrarCodigo: true,
+    mostrarCodigo: false,
     cuerpo: (
       <>
         <p>

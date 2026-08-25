@@ -13,6 +13,12 @@
   align-items: center;
   gap: 10px;
 }
+/* Con la lista desplegada el botón se cuadra abajo para empalmar con ella. El estado sale del
+   `aria-expanded` que el propio Dropdown ya expone: no hace falta una clase aparte. */
+.selbox[aria-expanded='true'] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 .topsel {
   display: flex;
   align-items: flex-end;
@@ -553,6 +559,11 @@
 .vname {
   font-weight: 500;
 }
+/* Lista del desplegable. Cuelga del botón (`.dd` es el bloque contenedor), así que `top: 100%` cae
+   en su borde de abajo y lo único que puede separarlos es el margen.
+   Va PEGADA: el -1px solapa los dos bordes de 1px para no dibujar una línea doble, y sólo se
+   redondean las esquinas de abajo —las de arriba las cierra el botón—, así los dos se leen como un
+   solo panel en vez de como una caja flotando debajo de otra. */
 .ddmenu {
   position: absolute;
   top: 100%;
@@ -560,10 +571,10 @@
   width: 100%;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0 0 4px 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
-  margin-top: 4px;
+  margin-top: -1px;
   max-height: 250px;
   overflow-y: auto;
 }
