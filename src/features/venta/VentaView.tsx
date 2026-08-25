@@ -221,7 +221,10 @@ export function VentaView() {
                   ? ''
                   : 'Este cliente no tiene presupuestos vigentes con productos disponibles.'
             }
-            colReferencia="Presupuestada"
+            /* "Presup" y no "Presupuestada": los valores de esta columna son de uno o dos
+               dígitos, así que el ancho lo fijaba el rótulo, y el largo empujaba la tabla al
+               scroll horizontal. */
+            colReferencia="Presup"
             colResuelta="Vendida"
             colPend="Disponible"
             colAccion="A vender"
