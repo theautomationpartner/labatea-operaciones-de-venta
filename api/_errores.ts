@@ -29,6 +29,14 @@ export interface Sesion {
   isGuest: boolean
   /** Admin de la CUENTA de Monday, según el propio token firmado. Define el rol en la app. */
   isAdmin: boolean
+  /**
+   * De qué app de Monday es este token, según el propio token firmado.
+   *
+   * Es lo que permite que la lista blanca dé permiso POR APP: dos apps distintas comparten los
+   * usuarios y la base, pero cada token viene firmado con el secreto de la suya, así que este
+   * dato no se puede inventar desde afuera.
+   */
+  appId: string
 }
 
 /**

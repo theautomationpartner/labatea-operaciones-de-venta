@@ -42,7 +42,7 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
      Lo que se expone es la lista de habilitados a alguien que YA está en esa lista; los datos de
      verdad viven detrás de /api/monday, que sí exige el segundo factor. */
   await endpointMfa(req, res, async ({ sesion }) => {
-    const vendedores = await listarHabilitados()
+    const vendedores = await listarHabilitados(sesion)
 
     /* El nombre y los equipos del usuario REAL (el de la sesión, no el del token del servidor).
        Los equipos son los que deciden el rol en la app; ver `src/lib/permisos.ts`.

@@ -43,6 +43,36 @@ const cache = new Map<string, { permitido: boolean; hasta: number }>()
 /** Ids de columna del tablero de lista blanca. Configurables por si el tablero se rearma. */
 const columnaUsuario = (): string => process.env.WHITELIST_COLUMN_USER?.trim() || 'text_mm6hqsmt'
 const columnaEstado = (): string => process.env.WHITELIST_COLUMN_STATUS?.trim() || 'status'
+/**
+ * Columna con los IDs de las apps que ese usuario puede usar (un dropdown de varias etiquetas).
+ *
+ * Estar activo ya no alcanza: el permiso es POR APP y tiene que ser EXPLÍCITO. Una fila con esta
+ * celda vacía no entra a ningún lado, y es a propósito: si el vacío significara "todas las apps",
+ * dar de alta a alguien en una le abriría la puerta de todas las demás sin que nadie lo decida.
+ */
+const columnaApps = (): string => process.env.WHITELIST_COLUMN_APPS?.trim() || 'dropdown_mm6jamkm'
+
+/**
+ * Con qué ID se identifica ESTA app en esa columna.
+ *
+ * Por defecto, el `app_id` que viene FIRMADO adentro del session token: no hay que configurar
+ * nada y no se puede falsear, porque cada app de Monday firma con su propio secreto. `APP_ID` lo
+ * pisa para cuando se prefiere etiquetar con otra cosa —el Project ID de Vercel, por ejemplo—, a
+ * costa de tener que mantener esa variable en cada deploy.
+ */
+function idDeEstaApp(sesion: Sesion): string {
+  return process.env.APP_ID?.trim() || sesion.appId
+}
+
+/** ¿La celda del dropdown incluye este id? Monday la devuelve como texto separado por comas. */
+function habilitaLaApp(celda: string | null, id: string): boolean {
+  if (!id) return false
+  return (celda ?? '')
+    .split(',')
+    .map((etiqueta) => etiqueta.trim())
+    .includes(id)
+}
+
 /** La etiqueta que habilita. Cualquier otra —"Revocado", vacía, la que sea— deja afuera. */
 const etiquetaActiva = (): string => process.env.WHITELIST_STATUS_ACTIVO?.trim() || 'Activo'
 
@@ -82,7 +112,10 @@ interface RespuestaLista {
 export async function exigirListaBlanca(sesion: Sesion): Promise<void> {
   /* La clave incluye la cuenta: dos cuentas de Monday pueden tener ids de usuario iguales, y una no
      tiene por qué heredar el permiso de la otra. */
-  const clave = `${sesion.accountId}:${sesion.userId}`
+  /* La app entra en la clave: el mismo usuario puede estar habilitado en una y no en otra, y dos
+     apps que comparten esta base compartirían la respuesta cacheada si no se distinguieran. */
+  const app = idDeEstaApp(sesion)
+  const clave = `${sesion.accountId}:${sesion.userId}:${app}`
 
   const guardado = cache.get(clave)
   if (guardado && Date.now() < guardado.hasta) {
@@ -90,7 +123,7 @@ export async function exigirListaBlanca(sesion: Sesion): Promise<void> {
     return
   }
 
-  const permitido = await consultarTablero(sesion.userId)
+  const permitido = await consultarTablero(sesion.userId, app)
   cache.set(clave, {
     permitido,
     hasta: Date.now() + (permitido ? TTL_PERMITIDO_MS : TTL_DENEGADO_MS),
@@ -104,7 +137,7 @@ export function limpiarCacheListaBlanca(): void {
   cache.clear()
 }
 
-async function consultarTablero(userId: string): Promise<boolean> {
+async function consultarTablero(userId: string, app: string): Promise<boolean> {
   const token = (process.env.MONDAY_API_TOKEN ?? process.env.MONDAY_TOKEN)?.trim()
   const board = process.env.WHITELIST_BOARD_ID?.trim()
   if (!token || !board) {
@@ -130,7 +163,7 @@ async function consultarTablero(userId: string): Promise<boolean> {
           board,
           columna: columnaUsuario(),
           usuario: userId,
-          estado: [columnaEstado()],
+          estado: [columnaEstado(), columnaApps()],
         },
       }),
     })
@@ -152,7 +185,9 @@ async function consultarTablero(userId: string): Promise<boolean> {
      manda. Lo que no habilita es no tener ninguna. */
   return items.some((item) => {
     const estado = item.column_values?.find((c) => c.id === columnaEstado())?.text ?? ''
-    return estado.trim().toLowerCase() === activa
+    const apps = item.column_values?.find((c) => c.id === columnaApps())?.text ?? null
+    // Las DOS condiciones: activo Y con permiso explícito para esta app.
+    return estado.trim().toLowerCase() === activa && habilitaLaApp(apps, app)
   })
 }
 
@@ -199,7 +234,7 @@ interface RespuestaLista2 {
  * La consulta la arma el servidor con su token: el tablero es privado y su contenido —quiénes
  * están habilitados— no viaja como una consulta que el cliente pueda reescribir.
  */
-export async function listarHabilitados(): Promise<VendedorHabilitado[]> {
+export async function listarHabilitados(sesion: Sesion): Promise<VendedorHabilitado[]> {
   const board = process.env.WHITELIST_BOARD_ID?.trim()
   if (!board) throw new ErrorAuth(403, 'lista blanca sin configurar (WHITELIST_BOARD_ID)')
 
@@ -207,7 +242,7 @@ export async function listarHabilitados(): Promise<VendedorHabilitado[]> {
   try {
     data = await mondayServidor<RespuestaLista2>(QUERY_LISTA, {
       board,
-      cols: [columnaUsuario(), columnaEstado()],
+      cols: [columnaUsuario(), columnaEstado(), columnaApps()],
     })
   } catch (e) {
     throw new ErrorAuth(403, 'no se pudo leer la lista blanca: ' + (e as Error).message)
@@ -215,11 +250,15 @@ export async function listarHabilitados(): Promise<VendedorHabilitado[]> {
 
   const items = data.boards?.[0]?.items_page?.items ?? []
   const activa = etiquetaActiva().toLowerCase()
+  const app = idDeEstaApp(sesion)
 
   return items
     .filter((item) => {
       const estado = item.column_values?.find((c) => c.id === columnaEstado())?.text ?? ''
-      return estado.trim().toLowerCase() === activa
+      const apps = item.column_values?.find((c) => c.id === columnaApps())?.text ?? null
+      /* El selector ofrece exactamente a quienes pueden entrar A ESTA app: si listara a los
+         habilitados en otra, se podría asentar una venta a nombre de alguien que acá no existe. */
+      return estado.trim().toLowerCase() === activa && habilitaLaApp(apps, app)
     })
     .map((item) => ({
       id: (item.column_values?.find((c) => c.id === columnaUsuario())?.text ?? '').trim(),

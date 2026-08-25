@@ -142,11 +142,14 @@ Tablero **privado**, con tres columnas que importan:
 | Name | `name` | el nombre de la persona, para leerlo de un vistazo |
 | User ID | `text_mm6hqsmt` | **la que decide**: el id numérico del usuario en Monday |
 | Estado | `status` | `Activo` habilita; cualquier otra etiqueta (`Inactivo`) deja afuera |
+| ID APP | `dropdown_mm6jamkm` | **los IDs de las apps que esa persona puede usar**; sin el de esta app, no entra |
 
 Ya tiene cargada la primera fila: **The Automation Partner · `107870718` · Activo**.
 
-- **Dar de alta:** fila nueva con el nombre, el User ID en la columna de texto y el estado en
-  `Activo`. Entra en menos de 30 s (es lo que dura un "no" en caché).
+- **Dar de alta:** fila nueva con el nombre, el User ID en la columna de texto, el estado en
+  `Activo` **y el ID de esta app en "ID APP"**. Las dos condiciones se exigen juntas: estar activo
+  sin el ID declarado no habilita nada. Una celda vacía no significa "todas las apps" —si lo
+  significara, dar de alta a alguien en una le abriría la puerta de todas las demás—. Entra en menos de 30 s (es lo que dura un "no" en caché).
 - **Dar de baja:** cambiar el estado a `Inactivo`. Queda afuera en hasta 5 minutos, sin tocar código
   ni redeployar.
 - El User ID de cualquier persona sale de monday.com → su perfil → el número en la URL, o

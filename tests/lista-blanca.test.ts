@@ -17,13 +17,27 @@ import { exigirListaBlanca, limpiarCacheListaBlanca, listarHabilitados } from '.
 process.env.MONDAY_API_TOKEN = 'token-de-prueba'
 process.env.WHITELIST_BOARD_ID = '18427866249'
 
-const sesion = { userId: '107870718', accountId: '35883216', isGuest: false }
+const APP = '11968092'
+const sesion = {
+  userId: '107870718',
+  accountId: '35883216',
+  isGuest: false,
+  isAdmin: false,
+  appId: APP,
+}
 
 /** Lo que pidió cada llamada, para poder afirmar sobre la query y contar los viajes a la API. */
 let pedidos: { variables: Record<string, unknown> }[] = []
 
-/** Deja a `fetch` respondiendo con estos estados (uno por ítem del tablero). */
+/**
+ * Deja a `fetch` respondiendo con estas filas. Cada una es `estado` y, opcionalmente, las apps
+ * habilitadas; sin apps declaradas se usa la de esta sesión, que es el caso normal.
+ */
 function responderCon(...estados: (string | null)[]): void {
+  responderConApps(estados.map((estado) => ({ estado, apps: APP })))
+}
+
+function responderConApps(filas: { estado: string | null; apps: string | null }[]): void {
   pedidos = []
   globalThis.fetch = (async (_url: string, init: { body: string }) => {
     pedidos.push(JSON.parse(init.body) as { variables: Record<string, unknown> })
@@ -32,9 +46,12 @@ function responderCon(...estados: (string | null)[]): void {
       json: async () => ({
         data: {
           items_page_by_column_values: {
-            items: estados.map((text, i) => ({
+            items: filas.map((fila, i) => ({
               id: String(i),
-              column_values: [{ id: 'status', text }],
+              column_values: [
+                { id: 'status', text: fila.estado },
+                { id: 'dropdown_mm6jamkm', text: fila.apps },
+              ],
             })),
           },
         },
@@ -84,11 +101,12 @@ assert.equal(await intentar(), 'ok', 'duplicado con una fila activa')
 limpiarCacheListaBlanca()
 responderCon('Activo')
 await intentar()
+/* La consulta pide las DOS columnas que deciden: el estado y las apps habilitadas. */
 assert.deepEqual(pedidos[0].variables, {
   board: '18427866249',
   columna: 'text_mm6hqsmt',
   usuario: '107870718',
-  estado: ['status'],
+  estado: ['status', 'dropdown_mm6jamkm'],
 })
 
 // --- Caché ----------------------------------------------------------------------------------------
@@ -141,7 +159,9 @@ console.log('lista-blanca: OK')
    se podía ofrecer como vendedor a alguien que la app rechazaba, y al revés. */
 
 /** Deja a `fetch` devolviendo estas filas del tablero. */
-function tableroCon(...filas: { nombre: string; userId: string | null; estado: string | null }[]) {
+function tableroCon(
+  ...filas: { nombre: string; userId: string | null; estado: string | null; apps?: string | null }[]
+) {
   globalThis.fetch = (async () => ({
     ok: true,
     json: async () => ({
@@ -154,6 +174,8 @@ function tableroCon(...filas: { nombre: string; userId: string | null; estado: s
                 column_values: [
                   { id: 'text_mm6hqsmt', text: f.userId },
                   { id: 'status', text: f.estado },
+                  // Sin apps declaradas se asume la de esta sesión: es el caso normal.
+                  { id: 'dropdown_mm6jamkm', text: f.apps ?? APP },
                 ],
               })),
             },
@@ -171,7 +193,7 @@ tableroCon(
   { nombre: 'Fila sin estado', userId: '333', estado: null },
 )
 
-const habilitados = await listarHabilitados()
+const habilitados = await listarHabilitados(sesion)
 assert.deepEqual(
   habilitados,
   [{ id: '107870718', nombre: 'The Automation Partner' }],
@@ -180,7 +202,7 @@ assert.deepEqual(
 
 // Una fila activa sin User ID no sirve: no habilita a nadie ni se le puede asentar una venta.
 tableroCon({ nombre: 'Sin id', userId: '   ', estado: 'Activo' })
-assert.deepEqual(await listarHabilitados(), [], 'una fila sin User ID se descarta')
+assert.deepEqual(await listarHabilitados(sesion), [], 'una fila sin User ID se descarta')
 
 // Falla cerrada, igual que la validación de acceso.
 globalThis.fetch = (async () => {
@@ -193,11 +215,51 @@ assert.equal(
 )
 let statusListado: number | 'ok' = 'ok'
 try {
-  await listarHabilitados()
+  await listarHabilitados(sesion)
 } catch (e) {
   assert.ok(e instanceof ErrorAuth)
   statusListado = e.status
 }
 assert.equal(statusListado, 403, 'y tampoco se inventa una lista de vendedores')
 
-console.log('lista-blanca (vendedores): OK')
+// ── El permiso es POR APP y tiene que ser explícito ─────────────────────────────────────────────
+/* Estar activo ya no alcanza. Con dos apps compartiendo esta base, un alta en una abriría la
+   puerta de la otra si el vacío significara "todas": el permiso se declara o no existe. */
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Activo', apps: APP }])
+assert.equal(await intentar(), 'ok', 'activo y con esta app declarada')
+
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Activo', apps: null }])
+assert.equal(await intentar(), 403, 'activo pero sin ninguna app declarada: no entra')
+
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Activo', apps: '99999999' }])
+assert.equal(await intentar(), 403, 'activo pero habilitado en OTRA app')
+
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Activo', apps: `99999999, ${APP}` }])
+assert.equal(await intentar(), 'ok', 'varias apps en la misma celda')
+
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Inactivo', apps: APP }])
+assert.equal(await intentar(), 403, 'la app declarada no salva a un usuario inactivo')
+
+/* Un id que EMPIEZA igual no es el mismo: la celda se compara etiqueta por etiqueta y no por
+   "contiene", que dejaría entrar a `119680921` con el permiso de `11968092`. */
+limpiarCacheListaBlanca()
+responderConApps([{ estado: 'Activo', apps: `${APP}9` }])
+assert.equal(await intentar(), 403, 'un id que empieza igual no habilita')
+
+// El selector de vendedores ofrece sólo a los habilitados EN ESTA app.
+tableroCon(
+  { nombre: 'De esta app', userId: '1', estado: 'Activo', apps: APP },
+  { nombre: 'De la otra', userId: '2', estado: 'Activo', apps: '99999999' },
+)
+assert.deepEqual(
+  await listarHabilitados(sesion),
+  [{ id: '1', nombre: 'De esta app' }],
+  'el selector no puede ofrecer a alguien que en esta app no existe',
+)
+
+console.log('lista-blanca (permiso por app): OK')

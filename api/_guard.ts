@@ -37,6 +37,7 @@ interface PayloadMonday {
     account_id?: number | string
     is_guest?: boolean
     is_admin?: boolean
+    app_id?: number | string
     user_kind?: string
   }
   user_id?: number | string
@@ -81,6 +82,7 @@ export function verificarSesion(authorization: string | undefined): Sesion {
   /* Del token, no de una consulta: es un dato firmado por Monday sobre ESTE usuario, así
      que no se puede falsear ni confundir con el del token del servidor. */
   const isAdmin = Boolean(dat.is_admin ?? payload.is_admin)
+  const appId = texto(dat.app_id)
 
   if (!userId || !accountId) /* La firma cerró: el token es de Monday. Lo que falla es su CONTENIDO, y eso apunta a otro
        lado que una firma inválida —a la forma del token, no al secreto—. */
@@ -94,7 +96,7 @@ export function verificarSesion(authorization: string | undefined): Sesion {
     throw new ErrorAuth(403, `cuenta ajena (${accountId})`, 'no_habilitado')
   }
 
-  return { userId, accountId, isGuest, isAdmin }
+  return { userId, accountId, isGuest, isAdmin, appId }
 }
 
 /**

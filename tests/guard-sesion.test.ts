@@ -43,7 +43,16 @@ assert.deepEqual(sesion, {
   accountId: '35883216',
   isGuest: false,
   isAdmin: false,
+  appId: '',
 })
+
+/* De qué app es el token. Sale firmado, así que la lista blanca puede dar permiso POR APP sin que
+   nadie pueda decir que viene de otra: cada app de Monday firma con su propio secreto. */
+assert.equal(
+  verificarSesion(`Bearer ${firmar({ ...base, app_id: 11968092 })}`).appId,
+  '11968092',
+  'el token declara de qué app viene',
+)
 
 /* `is_admin` sale del token FIRMADO, no de una consulta. Es lo que define el rol en la app, y
    tomarlo de `me` a través del proxy daba el rol del dueño del token del servidor: con una sola
