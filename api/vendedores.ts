@@ -72,25 +72,32 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     let nombre = vendedores.find((v) => v.id === sesion.userId)?.nombre ?? ''
     let equiposIds: string[] = []
     let porId = new Map<string, UsuarioMonday>()
+    let rolesLeidos = false
 
     try {
       /* Una sola consulta para todos: el de la sesión y cada habilitado del tablero. */
       const ids = [...new Set([sesion.userId, ...vendedores.map((v) => v.id)])]
       const data = await mondayServidor<RespuestaUsuarios>(QUERY_USUARIOS, { ids })
       porId = new Map((data.users ?? []).map((u) => [String(u.id), u]))
+      rolesLeidos = true
 
       const usuario = porId.get(sesion.userId)
       if (usuario) {
         nombre = usuario.name || nombre
         equiposIds = (usuario.teams ?? []).map((t) => String(t.id))
       }
-    } catch {
-      /* Silencio a propósito: es un dato de presentación y de rol, no de autorización. Quién puede
-         entrar ya se decidió en el guardián, contra el tablero. Sin equipos, todos quedan con el rol
-         más restrictivo, que es el lado seguro para fallar. */
+    } catch (e) {
+      /* No frena la operación —quién puede entrar ya se decidió en el guardián— pero TAMPOCO se
+         traga: sin equipos, todos quedan con el rol más restrictivo, y un administrador que de golpe
+         no puede pisar un precio no tiene forma de saber por qué. Se avisa por las dos vías: al log
+         del servidor y al cliente, que lo escribe en la consola. */
+      console.warn('[vendedores] no se pudieron leer los equipos:', (e as Error).message)
     }
 
     return {
+      /* Si esto es `false`, los roles que van abajo son los más restrictivos por defecto y no los
+         reales. Distinguirlo evita confundir "no tenés permiso" con "no se pudo averiguar". */
+      rolesLeidos,
       vendedores: vendedores.map((v) => ({
         ...v,
         equiposIds: (porId.get(v.id)?.teams ?? []).map((t) => String(t.id)),

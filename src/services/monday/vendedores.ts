@@ -42,6 +42,8 @@ const iniciales = (nombre: string): string =>
 
 /** Lo que devuelve `/api/vendedores`: la lista habilitada y quién la está pidiendo. */
 interface RespuestaEquipo {
+  /** `false` = el servidor no pudo leer los equipos y todos vienen con el rol más restrictivo. */
+  rolesLeidos?: boolean
   vendedores: { id: string; nombre: string; equiposIds?: string[]; esAdminDeCuenta?: boolean }[]
   usuario: { id: string; nombre: string; isAdmin: boolean; equiposIds: string[] } | null
 }
@@ -88,7 +90,17 @@ async function leerDelServidor(): Promise<RespuestaEquipo> {
   /* Misma lectura del rechazo que el resto de los pedidos: un 401 o un 403 acá tienen que
      levantar la ventana y tapar la app igual que en cualquier otra consulta. */
   await verificarRespuesta(res, 'Vendedores')
-  return (await res.json()) as RespuestaEquipo
+  const equipo = (await res.json()) as RespuestaEquipo
+
+  /* Un administrador que de golpe no puede pisar un precio no tiene forma de saber por qué: el rol
+     se calcula con los equipos, y sin ellos todos quedan como vendedores. Se deja dicho. */
+  if (equipo.rolesLeidos === false) {
+    console.warn(
+      '[permisos] el servidor no pudo leer los equipos de Monday: todos quedan con el rol más ' +
+        'restrictivo (sin permisos de administrador).',
+    )
+  }
+  return equipo
 }
 
 /**
