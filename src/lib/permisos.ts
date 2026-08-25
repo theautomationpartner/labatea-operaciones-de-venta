@@ -92,8 +92,12 @@ export const usuarioDeLaOperacion = (
  * esto, un descuento del 20% puesto por un administrador quedaba firmado por alguien con tope 5.
  */
 export interface ExcesosDeLaOperacion {
-  /** Líneas cuyo descuento se pasa del tope del responsable, con lo que tienen hoy. */
-  lineas: { id: string; descuento: number }[]
+  /**
+   * Líneas cuyo descuento se pasa del tope del responsable, con lo que tienen hoy. Viaja el NOMBRE
+   * del producto y no sólo el id: el aviso tiene que decir CUÁL hay que ajustar, y "1 línea con
+   * descuento mayor" manda a buscarla entre todas las cargadas.
+   */
+  lineas: { id: string; descuento: number; producto: string }[]
   /** La rentabilidad forzada está activa y el responsable no puede autorizarla. */
   rentabForzada: boolean
   /** El máximo que rige para el responsable. Es a lo que hay que recortar. */
@@ -107,7 +111,7 @@ export interface ExcesosDeLaOperacion {
  * haber autorizado esto?". Sirve igual para avisar antes de cambiar de vendedor y antes de emitir.
  */
 export function excesosDeLaOperacion(
-  lineas: readonly { id: string; descuento: number }[],
+  lineas: readonly { id: string; descuento: number; producto: { nombre: string } }[],
   topes: TopesDescuento,
   responsable: UsuarioActual | null,
   rentabForzadaActiva: boolean,
@@ -120,7 +124,7 @@ export function excesosDeLaOperacion(
   return {
     lineas: lineas
       .filter((l) => l.descuento > topes.max)
-      .map((l) => ({ id: l.id, descuento: l.descuento })),
+      .map((l) => ({ id: l.id, descuento: l.descuento, producto: l.producto.nombre })),
     rentabForzada: rentabForzadaActiva,
     topeMax: topes.max,
   }

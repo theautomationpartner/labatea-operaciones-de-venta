@@ -271,14 +271,14 @@ function ConfirmarCambioDeVendedor({
         que se ajusta:
       </p>
       <ul className="modal-faltantes">
-        {excesos.lineas.length > 0 && (
-          <li>
+        {/* Un renglón POR PRODUCTO, con su nombre: contar líneas obligaba a salir del aviso a
+            buscar cuáles eran, que es justo lo que el aviso tendría que ahorrar. */}
+        {excesos.lineas.map((l) => (
+          <li key={l.id}>
             <i className="fas fa-circle-xmark" />
-            {excesos.lineas.length === 1
-              ? `1 línea con descuento mayor pasa a ${excesos.topeMax}%`
-              : `${excesos.lineas.length} líneas con descuento mayor pasan a ${excesos.topeMax}%`}
+            <strong>{l.producto}</strong> tiene desc mayor al {excesos.topeMax}%
           </li>
-        )}
+        ))}
         {excesos.rentabForzada && (
           <li>
             <i className="fas fa-circle-xmark" />

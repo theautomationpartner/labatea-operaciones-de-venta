@@ -301,17 +301,22 @@ assert.equal(usuarioDeLaOperacion(null, devTap), null, 'sin sesión, el caso per
    lo que ya está cargado: el vendedor se puede cambiar después de armar la operación. Sin esto, un
    descuento del 20% puesto por un administrador quedaba firmado por alguien con tope 5. */
 const cargadas = [
-  { id: 'a', descuento: 20 },
-  { id: 'b', descuento: 5 },
-  { id: 'c', descuento: 7.5 },
+  { id: 'a', descuento: 20, producto: { nombre: 'AGUA OXIGENADA 250 VOL. X 25 Kgs.' } },
+  { id: 'b', descuento: 5, producto: { nombre: 'BOOSTER STARTER X 20 KG' } },
+  { id: 'c', descuento: 7.5, producto: { nombre: 'AGUJA DE SUTURA MEDIANA' } },
 ]
 const topes = { ...TOPES_DESCUENTO_DEFAULT, max: 5 }
 
 const paraVendedor = excesosDeLaOperacion(cargadas, topes, VENDEDOR, true)
+/* Viaja el NOMBRE del producto y no sólo el id: el aviso del cambio de vendedor nombra cuál hay
+   que ajustar, en vez de contar "1 línea con descuento mayor" y mandar a buscarla. */
 assert.deepEqual(
   paraVendedor.lineas,
-  [{ id: 'a', descuento: 20 }, { id: 'c', descuento: 7.5 }],
-  'sólo las que se pasan del tope; la que está justo en el tope no se toca',
+  [
+    { id: 'a', descuento: 20, producto: 'AGUA OXIGENADA 250 VOL. X 25 Kgs.' },
+    { id: 'c', descuento: 7.5, producto: 'AGUJA DE SUTURA MEDIANA' },
+  ],
+  'sólo las que se pasan del tope, con su producto; la que está justo en el tope no se toca',
 )
 assert.equal(paraVendedor.topeMax, 5, 'y se informa a cuánto hay que recortarlas')
 assert.equal(paraVendedor.rentabForzada, true, 'la rentabilidad forzada tampoco es suya')
@@ -325,7 +330,12 @@ assert.ok(!hayExcesos(paraAdmin))
 
 /* Sin nada cargado por encima del tope no se molesta con una pregunta sin contenido: el cambio de
    vendedor tiene que ser directo en el caso normal. */
-const sinExcesos = excesosDeLaOperacion([{ id: 'a', descuento: 3 }], topes, VENDEDOR, false)
+const sinExcesos = excesosDeLaOperacion(
+  [{ id: 'a', descuento: 3, producto: { nombre: 'AGUA OXIGENADA' } }],
+  topes,
+  VENDEDOR,
+  false,
+)
 assert.ok(!hayExcesos(sinExcesos), 'nada que ajustar, nada que preguntar')
 
 console.log('OK · RBAC por equipo, tope de descuento y override de precio')

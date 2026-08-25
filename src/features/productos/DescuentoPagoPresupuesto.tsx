@@ -98,10 +98,15 @@ export function DescuentoPagoPresupuesto({ bloqueado = false }: { bloqueado?: bo
         <span className="forma-pago-desc-val">{hayDescuento ? `${descuento}%` : '—'}</span>
       </div>
 
-      {/* Aclaración de texto plano (sin fondo) con ícono de info. */}
-      <p className="forma-pago-nota">
-        <i className="fas fa-circle-info" /> El descuento se aplicara al precio unitario por producto
-      </p>
+      {/* La aclaración sólo tiene sentido con la pregunta contestada que SÍ: con el check apagado
+          no hay ningún descuento que se vaya a aplicar, y anunciarlo hace dudar de si el
+          presupuesto sale a precios de lista o no. */}
+      {descuentoPagoActivo && (
+        <p className="forma-pago-nota">
+          <i className="fas fa-circle-info" /> El descuento se aplicara al precio unitario por
+          producto
+        </p>
+      )}
     </div>
   )
 }
