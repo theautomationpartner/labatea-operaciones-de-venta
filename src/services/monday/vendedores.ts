@@ -43,7 +43,7 @@ const iniciales = (nombre: string): string =>
 /** Lo que devuelve `/api/vendedores`: la lista habilitada y quién la está pidiendo. */
 interface RespuestaEquipo {
   vendedores: { id: string; nombre: string }[]
-  usuario: { id: string; nombre: string; isAdmin: boolean; equipos: string[] } | null
+  usuario: { id: string; nombre: string; isAdmin: boolean; equiposIds: string[] } | null
 }
 
 /**
@@ -97,7 +97,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
 
   const data = await mondayApi<{
     boards?: { items_page?: { items?: FilaTablero[] } }[]
-    me?: { id: string; name: string; is_admin?: boolean | null; teams?: { name: string }[] } | null
+    me?: { id: string; name: string; is_admin?: boolean | null; teams?: { id: string }[] } | null
   }>(
     `query ($board: ID!, $cols: [String!]) {
       boards(ids: [$board]) {
@@ -108,7 +108,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
           }
         }
       }
-      me { id name is_admin teams { name } }
+      me { id name is_admin teams { id } }
     }`,
     { board: BOARD, cols: [COL_USUARIO, COL_ESTADO] },
   )
@@ -127,7 +127,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
           id: String(me.id),
           nombre: me.name,
           isAdmin: Boolean(me.is_admin),
-          equipos: (me.teams ?? []).map((t) => (t.name ?? '').trim()).filter(Boolean),
+          equiposIds: (me.teams ?? []).map((t) => String(t.id)).filter(Boolean),
         }
       : null,
   }
@@ -172,6 +172,6 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
     id: usuario.id,
     name: usuario.nombre,
     isAdmin: usuario.isAdmin,
-    equipos: usuario.equipos,
+    equiposIds: usuario.equiposIds,
   }
 }

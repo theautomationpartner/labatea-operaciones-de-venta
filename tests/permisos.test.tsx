@@ -19,6 +19,8 @@ import {
   puedeElegirVendedor,
   rolUsuario,
   topesDescuentoDe,
+  TEAM_ADMINISTRADORES,
+  TEAM_VENDEDORES,
 } from '@/lib/permisos'
 import { round2 } from '@/lib/format'
 import { costoDe, rentabilidadDe } from '@/lib/selectors'
@@ -27,15 +29,15 @@ import { initialState, reducer, type AppState } from '@/state/appState'
 import { DispatchContext, StateContext } from '@/state/context'
 import type { Producto, UsuarioActual } from '@/types'
 
-const usuario = (equipos: string[], isAdmin = false): UsuarioActual => ({
+const usuario = (equiposIds: string[], isAdmin = false): UsuarioActual => ({
   id: '1001',
   name: 'Test',
   isAdmin,
-  equipos,
+  equiposIds,
 })
 
-const ADMIN = usuario(['Administradores', 'Vendedores'])
-const VENDEDOR = usuario(['Vendedores'])
+const ADMIN = usuario([TEAM_ADMINISTRADORES, TEAM_VENDEDORES])
+const VENDEDOR = usuario([TEAM_VENDEDORES])
 
 // ---------- MÓDULO 1: clasificación por equipo ----------
 assert.equal(rolUsuario(ADMIN), 'ADMINISTRADOR', 'el equipo Administradores manda')
@@ -43,9 +45,12 @@ assert.equal(rolUsuario(VENDEDOR), 'VENDEDOR', 'sólo Vendedores → grupo está
 assert.equal(rolUsuario(usuario([])), 'VENDEDOR', 'sin equipos no hay privilegio')
 assert.equal(rolUsuario(usuario([], true)), 'ADMINISTRADOR', 'el admin de la cuenta es privilegiado')
 assert.equal(rolUsuario(null), 'ADMINISTRADOR', 'sin sesión (modo local) no se bloquea')
-// El nombre del equipo se compara sin distinguir mayúsculas ni espacios sobrantes.
-assert.ok(esAdministrador(usuario([' administradores '])), 'nombre de equipo normalizado')
-assert.ok(!esAdministrador(usuario(['Administración'])), 'otro equipo parecido NO alcanza')
+/* El equipo se identifica por ID y no por nombre. Es la diferencia entre un permiso estable y uno
+   que se cae solo: renombrar el equipo en Monday son dos clics, y con nombres eso dejaba a toda
+   su gente sin privilegios sin que nadie tocara el código. */
+assert.ok(!esAdministrador(usuario(['Administradores'])), 'el NOMBRE del equipo ya no habilita')
+assert.ok(esAdministrador(usuario([TEAM_ADMINISTRADORES])), 'el ID sí')
+assert.ok(!esAdministrador(usuario([TEAM_ADMINISTRADORES + '9'])), 'un ID parecido NO alcanza')
 
 // ---------- MÓDULO 2: desbloqueo del administrador ----------
 for (const op of ['VENTA', 'PRESUPUESTAR'] as const) {

@@ -32,8 +32,14 @@ export interface UsuarioActual {
   name: string
   /** Admin de la CUENTA de Monday (`is_admin`), distinto del equipo "Administradores". */
   isAdmin: boolean
-  /** Nombres de los equipos a los que pertenece. De acá sale el rol: ver `lib/permisos`. */
-  equipos: string[]
+  /**
+   * IDs de los equipos de Monday a los que pertenece. De acá sale el rol: ver `lib/permisos`.
+   *
+   * Por ID y no por nombre: un equipo se renombra en dos clics y el ID no cambia nunca. Cuando
+   * esto miraba nombres, renombrar "Vendedores" habría dejado a todo el equipo sin permisos sin
+   * que nadie tocara una línea de código.
+   */
+  equiposIds: string[]
 }
 
 export type ActividadCliente = 'Activo' | 'Inactivo'

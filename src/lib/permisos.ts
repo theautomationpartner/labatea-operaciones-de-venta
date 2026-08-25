@@ -13,10 +13,15 @@
 import { BONIFICACION_TOTAL, type TopesDescuento } from '@/lib/validaciones'
 import type { Operacion, Paso, UsuarioActual } from '@/types'
 
-/** Equipo de Monday cuyos miembros son administradores de la app (grupo privilegiado). */
-export const EQUIPO_ADMINISTRADORES = 'Administradores'
-/** Equipo de Monday cuyos miembros son vendedores (grupo estándar) y pueblan el selector. */
-export const EQUIPO_VENDEDORES = 'Vendedores'
+/**
+ * Equipos de Monday, POR ID.
+ *
+ * Los IDs y no los nombres: un equipo se renombra en dos clics y el ID no cambia nunca. Cuando
+ * esto miraba nombres, renombrar el equipo dejaba a toda su gente sin permisos sin que nadie
+ * tocara una línea de código —y el síntoma, campos que dejan de poder editarse, no delata la causa.
+ */
+export const TEAM_ADMINISTRADORES = '1480182'
+export const TEAM_VENDEDORES = '1487023'
 
 /**
  * IDs de usuarios de Monday que cuentan como administradores aunque no estén en el equipo
@@ -26,9 +31,9 @@ export const IDS_ADMINISTRADOR: readonly string[] = []
 
 export type RolUsuario = 'ADMINISTRADOR' | 'VENDEDOR'
 
-/** ¿El usuario pertenece a este equipo? Por nombre, sin distinguir mayúsculas ni espacios. */
+/** ¿El usuario pertenece a este equipo? Comparación exacta por ID. */
 export const perteneceAEquipo = (u: UsuarioActual | null, equipo: string): boolean =>
-  (u?.equipos ?? []).some((e) => e.trim().toLowerCase() === equipo.trim().toLowerCase())
+  (u?.equiposIds ?? []).includes(equipo)
 
 /**
  * Rol del usuario de la sesión.
@@ -45,7 +50,7 @@ export function rolUsuario(u: UsuarioActual | null): RolUsuario {
   if (!u) return 'ADMINISTRADOR'
   if (u.isAdmin) return 'ADMINISTRADOR'
   if (IDS_ADMINISTRADOR.includes(u.id)) return 'ADMINISTRADOR'
-  return perteneceAEquipo(u, EQUIPO_ADMINISTRADORES) ? 'ADMINISTRADOR' : 'VENDEDOR'
+  return perteneceAEquipo(u, TEAM_ADMINISTRADORES) ? 'ADMINISTRADOR' : 'VENDEDOR'
 }
 
 export const esAdministrador = (u: UsuarioActual | null): boolean =>

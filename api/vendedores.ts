@@ -20,7 +20,7 @@ import { listarHabilitados } from './_whitelist.js'
 import { mondayServidor } from './_mondayApi.js'
 
 interface RespuestaUsuarios {
-  users?: { id: string; name: string; teams?: { name: string }[] }[]
+  users?: { id: string; name: string; teams?: { id: string }[] }[]
 }
 
 const QUERY_USUARIO = `
@@ -29,7 +29,7 @@ const QUERY_USUARIO = `
       id
       name
       teams {
-        name
+        id
       }
     }
   }
@@ -45,18 +45,19 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     const vendedores = await listarHabilitados(sesion)
 
     /* El nombre y los equipos del usuario REAL (el de la sesión, no el del token del servidor).
-       Los equipos son los que deciden el rol en la app; ver `src/lib/permisos.ts`.
+       Los equipos son los que deciden el rol en la app; ver `src/lib/permisos.ts`. Van por ID:
+       un equipo se renombra en dos clics y el ID no cambia nunca.
        Si la consulta falla, la app sigue: se usa el nombre del tablero y ningún equipo, que es el
        rol más restrictivo. Un problema para leer equipos no tiene por qué frenar una venta. */
     let nombre = vendedores.find((v) => v.id === sesion.userId)?.nombre ?? ''
-    let equipos: string[] = []
+    let equiposIds: string[] = []
 
     try {
       const data = await mondayServidor<RespuestaUsuarios>(QUERY_USUARIO, { ids: [sesion.userId] })
       const usuario = data.users?.[0]
       if (usuario) {
         nombre = usuario.name || nombre
-        equipos = (usuario.teams ?? []).map((t) => t.name)
+        equiposIds = (usuario.teams ?? []).map((t) => String(t.id))
       }
     } catch {
       /* Silencio a propósito: es un dato de presentación y de rol, no de autorización. Quién puede
@@ -70,7 +71,7 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
         nombre,
         /* Del token firmado, no de una consulta: es lo que Monday declara de ESTE usuario. */
         isAdmin: sesion.isAdmin,
-        equipos,
+        equiposIds,
       },
     }
   })
