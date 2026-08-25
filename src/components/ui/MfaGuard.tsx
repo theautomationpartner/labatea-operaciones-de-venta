@@ -206,10 +206,22 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
               {enviando && <i className="fas fa-circle-notch spin" />}
               {enviando ? 'Verificando…' : paso === 'enrolar' ? 'Confirmar' : 'Verificar'}
             </button>
+
+            {/* El hueco del mensaje existe SIEMPRE, aunque esté vacío: si apareciera recién con el
+                error, el panel crecería de golpe y todo lo de arriba saltaría justo cuando la
+                persona está mirando el campo. Reservarlo deja el error entrando en su lugar.
+                Además el `role="alert"` presente desde el principio hace que los lectores de
+                pantalla anuncien el cambio de forma confiable. */}
+            <p
+              className={`mfa-error${error ? '' : ' mfa-error--vacio'}`}
+              role="alert"
+            >
+              {error ?? ''}
+            </p>
           </form>
         )}
 
-        {error && (
+        {error && paso !== 'enrolar' && paso !== 'verificar' && (
           <p className="mfa-error" role="alert">
             {error}
           </p>

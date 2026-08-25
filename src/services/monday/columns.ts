@@ -642,7 +642,7 @@ export const COL = {
     /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */
     cuit: 'text_mm5ydwp2',
     fechaEmisionCheque: 'date_mm5rxdpk',
-    /** "🤖Origen" del cheque (dropdown): "Papel" o "eCheq". */
+    /** "🤖Origen Cheque" (dropdown): "Cheque" o "eCheq", las dos etiquetas del tablero. */
     origenCheque: 'dropdown_mm5yveka',
     /** "🤖Banco Emisor" del cheque (dropdown de texto libre). */
     bancoEmisorCheque: 'dropdown_mm5yfd8n',
@@ -1190,11 +1190,6 @@ export const TIPO_COBRO_LABEL: Record<'SIMULTANEO' | 'POSTERIOR', string> = {
   POSTERIOR: 'Posterior',
 }
 
-/** Formato del cheque en la app → etiqueta de "🤖Origen" (dropdown_mm5yveka) del subelemento. */
-export const CHEQUE_ORIGEN_LABEL: Record<'FISICO' | 'eCheq', string> = {
-  FISICO: 'Papel',
-  eCheq: 'eCheq',
-}
 
 /* ===== Labels del tablero de Facturación (18422405731) =====
    Todas las columnas del comprobante son `dropdown`, así que se escriben por LABEL y el texto

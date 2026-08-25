@@ -12,6 +12,7 @@
  * Se corre con esbuild + node (`npm run test:arranque`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { App } from '@/App'
@@ -67,5 +68,25 @@ assert.ok(!muro.includes('mfa-panel'), 'la espera NO se dibuja dentro de una car
 const carga = renderToStaticMarkup(createElement(Cargando, { mensaje: 'Verificando acceso' }))
 assert.ok(carga.includes('Verificando acceso'), 'el mensaje va debajo de la animación')
 assert.ok(!carga.includes('modal-'), 'sin ventana: nada de clases de modal')
+
+/* El hueco del mensaje de error mide lo mismo esté vacío o lleno, para que el panel no cambie de
+   altura cuando el error aparece. La regla es de CSS, así que se verifica ahí: alguien podría
+   "simplificar" el vacío a `display: none` y el salto volvería sin que nada más se entere. */
+const css = readFileSync('src/styles/views.css', 'utf8')
+const desde = css.indexOf('.mfa-error {')
+const inicioVacio = css.indexOf('.mfa-error--vacio')
+// Hasta el cierre de la regla del vacío y ni un carácter más: si no, se cuela CSS de al lado.
+/* Sin comentarios: lo que se verifica son las REGLAS. El comentario del propio CSS menciona
+   `display: none` para explicar por qué NO se usa, y eso hacía fallar al test por leer prosa. */
+const sinComentarios = (texto: string): string =>
+  texto
+    .split('/*')
+    .map((parte, i) => (i === 0 ? parte : parte.slice(parte.indexOf('*/') + 2)))
+    .join('')
+
+const hueco = sinComentarios(css.slice(desde, css.indexOf('}', inicioVacio) + 1))
+assert.match(hueco, /min-height/, 'el hueco del error tiene que reservar su altura')
+assert.match(hueco, /visibility: hidden/, 'vacío se OCULTA, no se quita del flujo')
+assert.doesNotMatch(hueco, /display: none/, 'display:none devolvería el salto de altura')
 
 console.log('arranque-sin-header: OK')

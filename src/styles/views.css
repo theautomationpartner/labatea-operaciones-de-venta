@@ -2939,11 +2939,20 @@
   letter-spacing: 1px;
   color: var(--text-dark);
 }
+/* La altura está RESERVADA desde el arranque: el mensaje más largo ocupa dos líneas a este ancho,
+   así que el hueco mide dos líneas aunque esté vacío. Si el espacio apareciera recién con el error,
+   el panel crecería de golpe y todo lo de arriba saltaría justo cuando se está mirando el campo. */
 .mfa-error {
+  min-height: 2.8em;
   margin: 0;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.4;
   color: #b42318;
+}
+/* `visibility` y NO `display: none`: la diferencia es justamente que esto sigue ocupando su lugar. */
+.mfa-error--vacio {
+  visibility: hidden;
 }
 
 /* ── Carga de las pantallas de autenticación ──────────────────────────────────────────────────── */

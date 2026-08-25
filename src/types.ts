@@ -71,7 +71,16 @@ export type MedioTransferencia = 'CBU' | 'ALIAS'
 export type TarjetaTipo = string
 
 /** Formato de un cheque: papel (físico) o electrónico. */
-export type FormatoCheque = 'FISICO' | 'eCheq'
+/**
+  * Formato del cheque. Los valores SON las etiquetas de "🤖Origen Cheque" (dropdown_mm5yveka),
+  * verificadas contra el board: así lo que se elige en pantalla es exactamente lo que se escribe,
+  * sin una tabla de traducción en el medio que pueda quedar desfasada.
+  *
+  * Antes el papel se llamaba 'FISICO' acá y se mandaba como "Papel", una etiqueta que NO existe en
+  * la columna: como el bulk crea las que faltan, cada cheque de papel iba sumando una "Papel"
+  * paralela a la "Cheque" del tablero.
+  */
+export type FormatoCheque = 'Cheque' | 'eCheq'
 
 /**
  * Forma de pago elegida en la selección de productos de una VENTA: define el ramal del cobro.

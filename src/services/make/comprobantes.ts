@@ -485,6 +485,6 @@ function aFormatoCheque(v: unknown): FormatoCheque | undefined {
   const s = crudo(v).trim()
   if (!s) return undefined
   if (/e-?cheq|electr/i.test(s)) return 'eCheq'
-  if (/fisic|papel|f[ií]sico/i.test(s)) return 'FISICO'
+  if (/fisic|papel|f[ií]sico|cheque/i.test(s)) return 'Cheque'
   return undefined
 }

@@ -42,7 +42,7 @@ const BORRADOR_VACIO: Borrador = {
   fechaEmisionCheque: '',
   bancoEmisor: '',
   cuitEmisor: '',
-  formatoCheque: 'FISICO',
+  formatoCheque: 'Cheque',
   cuentaPropia: null,
   cuentaPropiaId: null,
   comprobanteNombre: '',
@@ -55,11 +55,9 @@ const BORRADOR_VACIO: Borrador = {
   numeroCupon: '',
 }
 
-/** Formato del cheque: el valor es el del sistema, el rótulo es el que ve el usuario. */
-const FORMATOS_CHEQUE: { valor: FormatoCheque; rotulo: string }[] = [
-  { valor: 'FISICO', rotulo: 'Papel' },
-  { valor: 'eCheq', rotulo: 'eCheq' },
-]
+/* Las dos opciones del "Tipo" de un cheque. El rótulo ES el valor: son las etiquetas del tablero,
+   así que lo que se lee en el selector es lo que queda asentado. */
+const FORMATOS_CHEQUE: readonly FormatoCheque[] = ['Cheque', 'eCheq']
 
 /** En qué quedó la validación del CUIT del emisor: sin validar, validado o rechazado. */
 type EstadoCuit = 'pendiente' | 'ok' | 'error'
@@ -826,7 +824,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                 <select
                   id="cobro-cheque-formato"
                   className="cobro-in"
-                  value={borrador.formatoCheque ?? 'FISICO'}
+                  value={borrador.formatoCheque ?? 'Cheque'}
                   onChange={(e) =>
                     setBorrador({
                       ...borrador,
@@ -835,8 +833,8 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                   }
                 >
                   {FORMATOS_CHEQUE.map((f) => (
-                    <option key={f.valor} value={f.valor}>
-                      {f.rotulo}
+                    <option key={f} value={f}>
+                      {f}
                     </option>
                   ))}
                 </select>

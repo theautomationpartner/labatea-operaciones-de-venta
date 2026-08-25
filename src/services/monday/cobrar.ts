@@ -26,7 +26,6 @@ import {
   COBRO_REGISTRO_INDEX,
   COL,
   personCol,
-  CHEQUE_ORIGEN_LABEL,
   FACT_PENDIENTE_ESTADO_INDEX,
   FORMA_PAGO_LABEL,
   TIPO_COBRO_LABEL,
@@ -107,7 +106,9 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento de la tarjeta.
     const vencimiento = fechaCol(m.chequeVencimiento)
     if (vencimiento) cv[COL.cobroSub.vencimiento] = vencimiento
-    const origen = dropdown(m.formatoCheque ? CHEQUE_ORIGEN_LABEL[m.formatoCheque] : null)
+    /* El formato viaja TAL CUAL: los valores de `FormatoCheque` son las etiquetas de la columna
+       ("Cheque" / "eCheq"), verificadas contra el board, así que no hay nada que traducir. */
+    const origen = dropdown(m.formatoCheque ?? null)
     if (origen) cv[COL.cobroSub.origenCheque] = origen
     const banco = dropdown(m.bancoEmisor)
     if (banco) cv[COL.cobroSub.bancoEmisorCheque] = banco
