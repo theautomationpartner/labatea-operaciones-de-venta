@@ -290,7 +290,7 @@ export function CobroProforma() {
             </CompBody>
           </div>
 
-          <EnviarDocumento documento="proforma" numero="Factura Proforma" />
+          <EnviarDocumento documento="proforma" />
         </div>
       </div>
     </div>

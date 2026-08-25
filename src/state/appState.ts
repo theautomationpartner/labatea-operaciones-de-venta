@@ -330,7 +330,8 @@ export type Action =
   | { type: 'addContacto'; contacto: Contacto }
   | { type: 'setContactos'; contactos: Contacto[] }
   | { type: 'removeContacto'; id: string }
-  | { type: 'setLog'; entries: LogEntry[] }
+  /** `null` limpia el log: es como se borra el aviso de un intento que ya no aplica. */
+  | { type: 'setLog'; entries: LogEntry[] | null }
   | { type: 'agregarVentaSeleccion'; seleccion: SeleccionVenta[] }
   | { type: 'setVentaSeleccion'; seleccion: SeleccionVenta[] }
   | { type: 'setVentaCantidad'; uid: string; cantidad: number }

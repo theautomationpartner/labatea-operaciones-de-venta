@@ -37,8 +37,6 @@ import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
 import { ResumenVenta } from './ResumenVenta'
 
-/** Número de comprobante que asignaría AFIP al emitirla. */
-const NRO_FACTURA = 'FC-0001-00001234'
 
 /**
  * Paso 4 de VENTA: resumen de la venta y los comprobantes en los que se parte.
@@ -556,7 +554,7 @@ export function FacturaView() {
 
           {/* El estado del envío se muestra dentro de la propia card. No condiciona el cierre:
               la venta puede finalizarse con la factura emitida y el envío pendiente. */}
-          <EnviarDocumento documento="factura" numero={NRO_FACTURA} />
+          <EnviarDocumento documento="factura" />
         </div>
       </div>
 

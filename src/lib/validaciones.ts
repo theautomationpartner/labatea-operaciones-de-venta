@@ -225,3 +225,59 @@ export function faltantesPresupuesto(
 
   return faltan
 }
+
+/**
+ * Contactos que NO pueden recibir el documento por el medio elegido: les falta justamente el dato
+ * que ese medio usa.
+ *
+ * Con "Ambos" devuelve SIEMPRE vacío, y no es un olvido: ahí el envío se reparte por contacto —a
+ * quien tiene email le llega por email, a quien tiene teléfono por WhatsApp—, así que un dato
+ * ausente no impide que el documento salga. Frenar la operación entera por eso obligaría a depurar
+ * la lista para conseguir algo que ya iba a pasar solo.
+ */
+export function contactosSinVia<T extends { phone: string; email: string }>(
+  contactos: readonly T[],
+  medio: MedioEnvio,
+): T[] {
+  if (medio === 'Ambos') return []
+  return contactos.filter((c) => sinViaDeEnvio(c, medio))
+}
+
+/** Cómo se nombra en el mensaje el dato que cada medio necesita. */
+const DATO_DEL_MEDIO: Record<Exclude<MedioEnvio, 'Ambos'>, string> = {
+  Email: 'una dirección de email cargada',
+  WhatsApp: 'un número de teléfono cargado',
+}
+
+/**
+ * Por qué ese contacto no puede recibir el documento. Nombra las TRES cosas que hacen falta para
+ * entenderlo sin ir a buscar nada: el medio elegido, el contacto, y qué le falta.
+ */
+export const msgContactoSinVia = (nombre: string, medio: MedioEnvio): string =>
+  medio === 'Ambos'
+    ? ''
+    : `Seleccionó ${medio.toLowerCase()} como medio de envío, pero el contacto ${nombre} NO tiene ${DATO_DEL_MEDIO[medio]}.`
+
+/* ===== Cantidad de una línea ===== */
+
+/**
+ * Sólo los dígitos de lo que se tipeó en el campo de cantidad. Devuelve `''` cuando no queda nada, y
+ * ESE vacío es el punto: es lo que permite borrar el "1" para escribir un número que empieza con
+ * otro dígito. Corregirlo mientras se escribe —lo que hacía antes— obligaba a pararse a la derecha
+ * del 1 y borrar hacia atrás para cargar 30.
+ *
+ * Filtra aunque el input sea `type="number"`: ese tipo igual deja pasar el signo, el punto decimal y
+ * la notación científica, y cualquiera de los tres rompe el valor.
+ */
+export const soloCantidad = (entrada: string): string => entrada.replace(/\D/g, '')
+
+/**
+ * Cantidad EFECTIVA de un campo que puede estar a medio escribir. El vacío vale 1: los cálculos de
+ * al lado no pueden quedar en cero mientras se tipea, y 1 es además lo que queda si el usuario se va
+ * del campo sin escribir nada.
+ *
+ * Es lo mismo que se muestra al salir del campo, así que lo que se ve y lo que se calcula no pueden
+ * discrepar.
+ */
+export const cantidadEfectiva = (texto: string): number =>
+  Math.max(1, Math.floor(Number(texto)) || 1)

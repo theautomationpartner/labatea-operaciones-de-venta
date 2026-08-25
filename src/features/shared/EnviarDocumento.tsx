@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ContactosPicker } from '@/features/shared/ContactosPicker'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { faltaParaMedio, sinViaDeEnvio } from '@/lib/validaciones'
+import {
+  contactosSinVia,
+  faltaParaMedio,
+  msgContactoSinVia,
+  sinViaDeEnvio,
+} from '@/lib/validaciones'
 import { comprobanteEnviable } from '@/features/shared/comprobantesEnviables'
 import { getContactosCliente } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -14,6 +19,13 @@ const MEDIOS: readonly MedioEnvio[] = ['Email', 'WhatsApp', 'Ambos']
  * Un <option> nativo sólo admite texto, así que el ícono va como emoji.
  * 'Ambos' no tiene app propia: lleva el sobre y el chat juntos.
  */
+/** Ícono de cada tipo de aviso del envío, al lado de su detalle. */
+const ICONO_LOG: Record<LogEntry['tipo'], string> = {
+  ok: 'fa-circle-check',
+  err: 'fa-circle-exclamation',
+  info: 'fa-circle-info',
+}
+
 const ICONO_MEDIO: Record<MedioEnvio, string> = {
   Email: '📧',
   WhatsApp: '💬',
@@ -27,7 +39,6 @@ interface EnviarDocumentoProps {
    * despacha, si ya se emitió, si el crédito lo frena y cómo se envía.
    */
   documento: string
-  numero: string
   /** Se dispara cuando el envío se completó bien: habilita "Finalizar Operación" en la vista. */
   onEnviado?: () => void
 }
@@ -36,26 +47,10 @@ interface EnviarDocumentoProps {
 type EstadoEnvio = 'idle' | 'enviando' | 'enviado' | 'error'
 
 
-/**
- * El registro del envío es una sola entrada: interesa si salió y a cuántos, no el detalle
- * contacto por contacto.
- */
-function construirLog(contactos: Contacto[], documento: string, numero: string): LogEntry[] {
-  const aceptan = contactos.filter((c) => c.ok).length
-  return [
-    {
-      id: 'envio',
-      tipo: 'ok',
-      titulo: 'Documento enviado correctamente',
-      detalle: `${numero} enviado a ${aceptan} de ${contactos.length} contactos por ${documento}.`,
-    },
-  ]
-}
-
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
-export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocumentoProps) {
+export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) {
   const state = useApp()
-  const { medioEnvio, contactos, cliente, documentoEnviado } = state
+  const { medioEnvio, contactos, cliente, documentoEnviado, log } = state
   const dispatch = useDispatch()
   /* El comprobante a enviar. Es lo ÚNICO que sabe de las diferencias entre uno y otro: el
      componente sólo le pregunta. */
@@ -84,6 +79,19 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
   /* Deja el botón en rojo para poder reintentar. Es lo único que hace: el detalle del problema va
      al log de la derecha, y si el problema fue la API de Monday, a su ventana global. */
   const marcarError = () => setEstadoEnvio('error')
+
+  /**
+   * Vuelve a foja cero tras un intento fallido. Se llama cuando el usuario TOCA algo que puede
+   * haber resuelto el problema —quitar un contacto, cambiar el medio—: dejar el botón en rojo y el
+   * motivo viejo a la vista haría dudar de si el aviso es de antes o de ahora.
+   *
+   * No toca un envío YA hecho: ahí no hay nada que reintentar y el verde tiene que quedarse.
+   */
+  const limpiarIntento = () => {
+    if (documentoEnviado) return
+    setEstadoEnvio('idle')
+    dispatch({ type: 'setLog', entries: null })
+  }
 
   /* Fallo de la API de Monday: además del botón en rojo, dispara la ventana global. `accion`
      completa la frase "No se pudo …". */
@@ -163,6 +171,34 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
     marcarError()
   }
 
+  /**
+   * Frena el envío cuando algún contacto elegido no tiene el dato que el medio necesita, y explica
+   * cuál y por qué. UNA entrada de log por contacto: con dos o tres en falta, un solo mensaje que
+   * los enumere obliga a leerlo entero para saber a quién quitar.
+   *
+   * Se valida ACÁ y no al elegir el contacto: el medio se puede cambiar después de armar la lista,
+   * y lo que era válido con "Ambos" deja de serlo al pasar a "Email". El botón queda en rojo y el
+   * envío se puede reintentar apenas se corrija —quitando al contacto de la lista con su tacho, o
+   * cargándole el dato en Monday—.
+   *
+   * Devuelve `true` si frenó. Con "Ambos" NUNCA frena: ver `contactosSinVia`.
+   */
+  const frenarPorContactoSinVia = (): boolean => {
+    const sinVia = contactosSinVia(contactos, medioEnvio)
+    if (sinVia.length === 0) return false
+    dispatch({
+      type: 'setLog',
+      entries: sinVia.map((c) => ({
+        id: `sin-via-${c.id}`,
+        tipo: 'err' as const,
+        titulo: `${c.name} no puede recibirlo por ${medioEnvio.toLowerCase()}`,
+        detalle: `${msgContactoSinVia(c.name, medioEnvio)} Quitalo de la lista para enviarles al resto, o cargale el dato en Monday y reintentá.`,
+      })),
+    })
+    marcarError()
+    return true
+  }
+
   const confirmar = async () => {
     // Anti-duplicado: si el envío ya se ejecutó con éxito (incluso tras navegar con el stepper), la
     // acción se anula internamente y NO se vuelve a disparar la mutación de envío.
@@ -173,6 +209,10 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
       setAvisoNoEmitido(true)
       return
     }
+    /* Antes de tocar la API: si alguno de los elegidos no tiene por dónde recibirlo con el medio
+       actual, no se manda nada. Que la mitad de la lista quede afuera en silencio es peor que
+       frenar y decir quién falta. */
+    if (frenarPorContactoSinVia()) return
     // El envío es una salida del sistema: no sale nada de un cliente bloqueado o excedido.
     if (bloqueo.frenar()) return
     setEstadoEnvio('enviando')
@@ -202,7 +242,11 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
         fallar(`enviar ${articulo} ${comprobante.nombre}`)
         return
       }
-      dispatch({ type: 'setLog', entries: construirLog(contactos, comprobante.nombre, numero) })
+      /* El éxito NO deja mensaje: lo dice el propio botón, que pasa a verde con "Enviado
+         exitosamente". Un cartel al lado repitiendo lo mismo es ruido. Lo que sí hace falta es
+         LIMPIAR el aviso de un intento fallido anterior, que si no quedaría en rojo al lado de un
+         botón verde. Estos avisos son sólo para lo que salió mal. */
+      dispatch({ type: 'setLog', entries: null })
       // Bandera GLOBAL de éxito: persiste el envío para que el botón quede bloqueado y en verde
       // aunque el usuario navegue con el stepper y vuelva a esta etapa.
       dispatch({ type: 'setDocumentoEnviado', value: true })
@@ -256,9 +300,12 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                 className="full w-medio"
                 style={{ cursor: 'pointer' }}
                 value={medioEnvio}
-                onChange={(e) =>
+                onChange={(e) => {
+                  /* Cambiar el medio puede resolver el problema —o crear otro—: en los dos casos
+                     el aviso anterior ya no aplica. */
+                  limpiarIntento()
                   dispatch({ type: 'setMedioEnvio', value: e.target.value as MedioEnvio })
-                }
+                }}
               >
                 {/* El value queda limpio: el emoji es sólo la etiqueta. */}
                 {MEDIOS.map((m) => (
@@ -308,7 +355,11 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                       type="button"
                       className="del"
                       aria-label={`Quitar ${c.name}`}
-                      onClick={() => dispatch({ type: 'removeContacto', id: c.id })}
+                      onClick={() => {
+                        // Quitar al contacto en falta es justamente cómo se destraba el envío.
+                        limpiarIntento()
+                        dispatch({ type: 'removeContacto', id: c.id })
+                      }}
                     >
                       🗑️
                     </button>
@@ -318,8 +369,9 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
               })}
             </div>
 
-            {/* Todo el feedback vive DENTRO del botón (idle / loading / success / error); el
-                detalle del error va a su derecha. Sin líneas de texto sueltas debajo. */}
+            {/* El botón dice EN QUÉ estado está (idle / enviando / enviado / error) y el detalle
+                va a su derecha: qué salió mal y qué hacer. Sin este bloque el botón se ponía rojo y
+                no explicaba nada —el motivo se escribía en `log`, que no lo renderizaba nadie—. */}
             <div className="enviar-row">
               <button
                 type="button"
@@ -362,6 +414,21 @@ export function EnviarDocumento({ documento, numero, onEnviado }: EnviarDocument
                   </>
                 )}
               </button>
+
+              {/* Detalle de lo último que pasó. `role="status"` y no `alert`: acompaña a una acción
+                  que el usuario acaba de hacer, no interrumpe. */}
+              {log && log.length > 0 && (
+                <div className="enviar-avisos" role="status" aria-live="polite">
+                  {log.map((e) => (
+                    <p key={e.id} className={`enviar-aviso enviar-aviso--${e.tipo}`}>
+                      <i className={`fas ${ICONO_LOG[e.tipo]}`} aria-hidden="true" />
+                      <span>
+                        <strong>{e.titulo}.</strong> {e.detalle}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}

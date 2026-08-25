@@ -281,7 +281,7 @@ export function RemitoEmisionView() {
             variables); se neutraliza el box de página del namespace para que encaje en la columna. */}
         <div className="factura-v2" style={{ padding: 0, maxWidth: 'none', margin: 0 }}>
           <RemitoAGenerar numero={NRO_REMITO} items={remito.items} />
-          <EnviarDocumento documento="remito" numero={NRO_REMITO} />
+          <EnviarDocumento documento="remito" />
         </div>
       </div>
 

@@ -204,7 +204,7 @@ export function EmisionView() {
             emitido={emitido}
             descFormaPago={descFormaPago}
           />
-          <EnviarDocumento documento="presupuesto" numero={nroPresupuesto ?? NRO_PRESUPUESTO} />
+          <EnviarDocumento documento="presupuesto" />
         </div>
       </div>
 
