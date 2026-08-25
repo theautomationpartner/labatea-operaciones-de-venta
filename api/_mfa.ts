@@ -161,7 +161,22 @@ export interface Enrolamiento {
  * de entrar. Confirmado significa que probó que su app genera códigos que validan.
  */
 export async function iniciarEnrolamiento(u: Usuario, etiqueta: string): Promise<Enrolamiento> {
-  const secreto = generateSecret()
+  /*
+   * Se REUSA el secreto pendiente si ya hay uno, en vez de generar otro.
+   *
+   * Generar uno nuevo en cada llamada rompía el enrolamiento de una forma difícil de entender: la
+   * persona escaneaba el QR, el muro se volvía a montar por cualquier motivo —una recarga, cerrar y
+   * reabrir la vista del tablero— y aparecía un QR DISTINTO. Lo que había quedado guardado en Google
+   * Authenticator ya no servía, y ningún código validaba nunca. Desde afuera se veía como si la app
+   * hubiera olvidado el escaneo.
+   *
+   * Sólo se reusa mientras esté PENDIENTE. Un enrolamiento ya confirmado no pasa por acá: a ése se
+   * le pide el código, no el escaneo.
+   */
+  const registro = await mfaStore().leerRegistro(u)
+  const secreto =
+    registro && !registro.confirmado ? descifrar(registro.secreto) : generateSecret()
+
   await mfaStore().guardarPendiente(u, cifrar(secreto))
 
   const uri = generateURI({

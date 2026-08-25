@@ -154,6 +154,22 @@ reiniciar()
   assert.equal(memoria.registros.get(clave(usuario))!.confirmado, true)
 }
 
+// ── Volver a la pantalla del QR no invalida lo ya escaneado ─────────────────────────────────────
+reiniciar()
+{
+  const primero = await iniciarEnrolamiento(usuario, 'test')
+  const segundo = await iniciarEnrolamiento(usuario, 'test')
+
+  /* Pasó en producción: la persona escaneaba el QR, el muro se volvía a montar —una recarga, cerrar
+     y reabrir la vista— y aparecía un QR DISTINTO. Lo guardado en Google Authenticator quedaba
+     muerto y ningún código validaba nunca, con la app mostrando el paso inicial como si no hubiera
+     pasado nada. Mientras el enrolamiento esté PENDIENTE, el secreto es el mismo. */
+  assert.equal(segundo.secreto, primero.secreto, 'el QR pendiente no puede cambiar entre visitas')
+
+  // Y el código del secreto escaneado la primera vez sigue confirmando.
+  const alta = await confirmarEnrolamiento(usuario, generateSync({ secret: primero.secreto }))
+  assert.equal(alta.codigosRecuperacion.length, 10, 'lo escaneado al principio sigue sirviendo')
+}
 // ── Confirmar el enrolamiento YA deja entrar ────────────────────────────────────────────────────
 reiniciar()
 {
