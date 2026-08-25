@@ -5,8 +5,14 @@ import { LogoEmpresa } from '@/components/ui/LogoEmpresa'
 import { Modal } from '@/components/ui/Modal'
 import { hoy } from '@/lib/dates'
 import { OPERACIONES } from '@/lib/pasos'
-import { puedeElegirVendedor } from '@/lib/permisos'
+import {
+  excesosDeLaOperacion,
+  hayExcesos,
+  puedeElegirVendedor,
+  usuarioDeLaOperacion,
+} from '@/lib/permisos'
 import { useApp, useDispatch } from '@/state/hooks'
+import type { ExcesosDeLaOperacion } from '@/lib/permisos'
 import type { Operacion, Vendedor } from '@/types'
 
 /** Item de la barra: etiqueta arriba, selector abajo. */
@@ -121,8 +127,22 @@ function OperacionSelector() {
 }
 
 function VendedorSelector() {
-  const { vendedor, vendedores, vendedoresCargando, usuarioActual, paso, operacion } = useApp()
+  const {
+    vendedor,
+    vendedores,
+    vendedoresCargando,
+    usuarioActual,
+    paso,
+    operacion,
+    lineas,
+    topesDescuento,
+    rentabForzadaActiva,
+  } = useApp()
   const dispatch = useDispatch()
+
+  /* Vendedor propuesto que todavía no se aplicó: hay cargado algo que él no habría podido
+     autorizar, y se pregunta antes de recortarlo. */
+  const [aConfirmar, setAConfirmar] = useState<Vendedor | null>(null)
   /* RBAC: sólo el equipo "Administradores" puede emitir a nombre de OTRO vendedor. El resto ve el
      selector bloqueado, fijo en el vendedor por defecto (su propio usuario). */
   const habilitado = puedeElegirVendedor(usuarioActual, paso, operacion)
@@ -142,6 +162,45 @@ function VendedorSelector() {
   ) : (
     <span className="selbox-ph">Seleccionar...</span>
   )
+  /* Lo que el vendedor PROPUESTO no habría podido firmar. Se calcula con él, no con quien opera. */
+  const excesosDe = (v: Vendedor) =>
+    excesosDeLaOperacion(
+      lineas,
+      topesDescuento,
+      usuarioDeLaOperacion(usuarioActual, v),
+      rentabForzadaActiva,
+    )
+
+  function elegir(v: Vendedor) {
+    // Sin nada que ajustar, el cambio es directo: no se molesta con una pregunta sin contenido.
+    if (!hayExcesos(excesosDe(v))) {
+      dispatch({ type: 'setVendedor', vendedor: v })
+      return
+    }
+    setAConfirmar(v)
+  }
+
+  /**
+   * Aplica el cambio y recorta lo que sobra.
+   *
+   * El recorte pisa trabajo hecho, y por eso nunca pasa sin confirmar: los descuentos bajan al
+   * tope del nuevo responsable y la rentabilidad forzada se apaga. Dejarlos como estaban sería
+   * peor —la operación quedaría firmada por alguien que no puede autorizar eso— y bloquear el
+   * cambio, también: el administrador no podría corregir una asignación equivocada.
+   */
+  function confirmarCambio() {
+    const v = aConfirmar
+    if (!v) return
+    const excesos = excesosDe(v)
+
+    dispatch({ type: 'setVendedor', vendedor: v })
+    for (const linea of excesos.lineas) {
+      dispatch({ type: 'setDescuentoLinea', id: linea.id, descuento: excesos.topeMax })
+    }
+    if (excesos.rentabForzada) dispatch({ type: 'toggleRentabForzada', porcentaje: 0 })
+    setAConfirmar(null)
+  }
+
   return (
     <span
       title={
@@ -161,9 +220,76 @@ function VendedorSelector() {
             {v.name}
           </>
         )}
-        onSelect={(v) => dispatch({ type: 'setVendedor', vendedor: v })}
+        onSelect={elegir}
       />
+      {aConfirmar && <ConfirmarCambioDeVendedor
+        vendedor={aConfirmar}
+        excesos={excesosDe(aConfirmar)}
+        onCancelar={() => setAConfirmar(null)}
+        onConfirmar={confirmarCambio}
+      />}
     </span>
+  )
+}
+
+/**
+ * Aviso previo al cambio de vendedor: dice QUÉ se va a ajustar antes de tocar nada.
+ *
+ * El recorte pisa trabajo hecho, así que no puede pasar en silencio. Y la alternativa —bloquear el
+ * cambio— sería peor: el administrador no podría corregir una asignación equivocada.
+ */
+function ConfirmarCambioDeVendedor({
+  vendedor,
+  excesos,
+  onCancelar,
+  onConfirmar,
+}: {
+  vendedor: Vendedor
+  excesos: ExcesosDeLaOperacion
+  onCancelar: () => void
+  onConfirmar: () => void
+}) {
+  return (
+    <Modal
+      title="Al cambiar de vendedor hay que ajustar la operación"
+      icon={<i className="fas fa-triangle-exclamation modal-icon--warn" />}
+      onClose={onCancelar}
+      actions={
+        <>
+          <button type="button" className="btn btn-primary" onClick={onConfirmar}>
+            Cambiar y ajustar
+          </button>
+          <button type="button" className="btn btn-secundario" onClick={onCancelar}>
+            Cancelar
+          </button>
+        </>
+      }
+    >
+      <p>
+        La operación pasa a estar a nombre de <strong>{vendedor.name}</strong>, que puede autorizar
+        hasta <strong>{excesos.topeMax}%</strong> de descuento. Lo que hay cargado excede eso, así
+        que se ajusta:
+      </p>
+      <ul className="modal-faltantes">
+        {excesos.lineas.length > 0 && (
+          <li>
+            <i className="fas fa-circle-xmark" />
+            {excesos.lineas.length === 1
+              ? `1 línea con descuento mayor pasa a ${excesos.topeMax}%`
+              : `${excesos.lineas.length} líneas con descuento mayor pasan a ${excesos.topeMax}%`}
+          </li>
+        )}
+        {excesos.rentabForzada && (
+          <li>
+            <i className="fas fa-circle-xmark" />
+            La rentabilidad forzada se apaga
+          </li>
+        )}
+      </ul>
+      <p className="modal-detalle">
+        Si no querés ajustar nada, cancelá y la operación sigue con el vendedor actual.
+      </p>
+    </Modal>
   )
 }
 

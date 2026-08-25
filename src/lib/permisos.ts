@@ -85,6 +85,51 @@ export const usuarioDeLaOperacion = (
 }
 
 /**
+ * Lo que la operación tiene cargado y el responsable NO habría podido autorizar.
+ *
+ * Existe porque el vendedor se puede cambiar DESPUÉS de cargar los productos. Que los permisos
+ * sigan al vendedor asignado impide aplicar una excepción nueva, pero no revisa lo ya cargado: sin
+ * esto, un descuento del 20% puesto por un administrador quedaba firmado por alguien con tope 5.
+ */
+export interface ExcesosDeLaOperacion {
+  /** Líneas cuyo descuento se pasa del tope del responsable, con lo que tienen hoy. */
+  lineas: { id: string; descuento: number }[]
+  /** La rentabilidad forzada está activa y el responsable no puede autorizarla. */
+  rentabForzada: boolean
+  /** El máximo que rige para el responsable. Es a lo que hay que recortar. */
+  topeMax: number
+}
+
+/**
+ * Qué habría que ajustar para que la operación quede dentro de lo que el responsable puede firmar.
+ *
+ * A propósito NO depende del paso: la pregunta no es "¿puede editar esto ahora?" sino "¿podría
+ * haber autorizado esto?". Sirve igual para avisar antes de cambiar de vendedor y antes de emitir.
+ */
+export function excesosDeLaOperacion(
+  lineas: readonly { id: string; descuento: number }[],
+  topes: TopesDescuento,
+  responsable: UsuarioActual | null,
+  rentabForzadaActiva: boolean,
+): ExcesosDeLaOperacion {
+  // El administrador puede autorizar cualquier excepción: para él nunca hay nada que ajustar.
+  if (esAdministrador(responsable)) {
+    return { lineas: [], rentabForzada: false, topeMax: BONIFICACION_TOTAL }
+  }
+
+  return {
+    lineas: lineas
+      .filter((l) => l.descuento > topes.max)
+      .map((l) => ({ id: l.id, descuento: l.descuento })),
+    rentabForzada: rentabForzadaActiva,
+    topeMax: topes.max,
+  }
+}
+
+/** ¿Hay algo que ajustar? Evita repetir la misma condición en cada pantalla. */
+export const hayExcesos = (e: ExcesosDeLaOperacion): boolean =>
+  e.lineas.length > 0 || e.rentabForzada
+/**
  * Etapa de SELECCIÓN DE PRODUCTOS de una VENTA o un PRESUPUESTO: el único momento en que el
  * administrador puede pisar valores. Es el paso `productos`, que comparten PRESUPUESTAR y la
  * VENTA directa. La venta CON PRESUPUESTO PREVIO y la venta CON PROFORMA quedan afuera: sus

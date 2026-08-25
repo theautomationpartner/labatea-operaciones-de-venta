@@ -15,6 +15,8 @@ import { CargaLinea } from '@/features/productos/CargaLinea'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import {
   esAdministrador,
+  excesosDeLaOperacion,
+  hayExcesos,
   puedeEditarPrecio,
   puedeElegirVendedor,
   rolUsuario,
@@ -293,5 +295,37 @@ assert.ok(puedeEditarPrecio(comoDuenio, 'productos', 'VENTA'), 'el admin de la c
 // Sin vendedor elegido rige quien está logueado; sin sesión (desarrollo) no se bloquea nada.
 assert.equal(usuarioDeLaOperacion(ADMIN, null), ADMIN, 'sin vendedor manda el logueado')
 assert.equal(usuarioDeLaOperacion(null, devTap), null, 'sin sesión, el caso permisivo de siempre')
+
+// ---------- Lo ya cargado que el nuevo responsable no habría podido firmar ----------
+/* Que los permisos sigan al vendedor asignado impide aplicar una excepción NUEVA, pero no revisa
+   lo que ya está cargado: el vendedor se puede cambiar después de armar la operación. Sin esto, un
+   descuento del 20% puesto por un administrador quedaba firmado por alguien con tope 5. */
+const cargadas = [
+  { id: 'a', descuento: 20 },
+  { id: 'b', descuento: 5 },
+  { id: 'c', descuento: 7.5 },
+]
+const topes = { ...TOPES_DESCUENTO_DEFAULT, max: 5 }
+
+const paraVendedor = excesosDeLaOperacion(cargadas, topes, VENDEDOR, true)
+assert.deepEqual(
+  paraVendedor.lineas,
+  [{ id: 'a', descuento: 20 }, { id: 'c', descuento: 7.5 }],
+  'sólo las que se pasan del tope; la que está justo en el tope no se toca',
+)
+assert.equal(paraVendedor.topeMax, 5, 'y se informa a cuánto hay que recortarlas')
+assert.equal(paraVendedor.rentabForzada, true, 'la rentabilidad forzada tampoco es suya')
+assert.ok(hayExcesos(paraVendedor))
+
+// Para un administrador no hay nada que ajustar: es quien autoriza las excepciones.
+const paraAdmin = excesosDeLaOperacion(cargadas, topes, ADMIN, true)
+assert.deepEqual(paraAdmin.lineas, [], 'el admin puede firmar cualquier descuento')
+assert.equal(paraAdmin.rentabForzada, false, 'y también la rentabilidad forzada')
+assert.ok(!hayExcesos(paraAdmin))
+
+/* Sin nada cargado por encima del tope no se molesta con una pregunta sin contenido: el cambio de
+   vendedor tiene que ser directo en el caso normal. */
+const sinExcesos = excesosDeLaOperacion([{ id: 'a', descuento: 3 }], topes, VENDEDOR, false)
+assert.ok(!hayExcesos(sinExcesos), 'nada que ajustar, nada que preguntar')
 
 console.log('OK · RBAC por equipo, tope de descuento y override de precio')
