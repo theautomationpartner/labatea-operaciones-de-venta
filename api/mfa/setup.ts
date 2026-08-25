@@ -16,8 +16,9 @@ import { endpointMfa, type Pedido } from '../_http.js'
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   await endpointMfa(req, res, async ({ sesion }) => {
     /* La etiqueta es lo que la app de autenticación muestra en la lista. Lleva la cuenta y el
-       usuario para que quien administre dos cuentas no vea dos entradas idénticas. */
-    const etiqueta = `usuario ${sesion.userId} · cuenta ${sesion.accountId}`
+       usuario para que quien administre dos cuentas no vea dos entradas idénticas.
+       En ASCII simple a propósito: ver `etiquetaSegura`. */
+    const etiqueta = `usuario ${sesion.userId} - cuenta ${sesion.accountId}`
     return iniciarEnrolamiento(sesion, etiqueta)
   })
 }

@@ -181,8 +181,14 @@ export async function iniciarEnrolamiento(u: Usuario, etiqueta: string): Promise
 
   const uri = generateURI({
     issuer: process.env.MFA_EMISOR?.trim() || 'La Batea',
-    label: etiqueta,
+    label: etiquetaSegura(etiqueta),
     secret: secreto,
+    /* Se declaran aunque sean los valores por defecto del estándar —SHA1, 6 dígitos, 30 s—, que es
+       lo que toda app de autenticación asume. otplib los omite de la URI justamente por eso; están
+       acá para que la intención quede escrita y para no quedar atados a que ese default no cambie. */
+    algorithm: 'sha1',
+    digits: 6,
+    period: 30,
   })
 
   return { uri, qr: await QRCode.toDataURL(uri), secreto }
@@ -300,6 +306,30 @@ async function emitirDispositivo(u: Usuario): Promise<{ token: string; expiraEn:
   const expira = new Date(Date.now() + ms)
   await mfaStore().guardarDispositivo(u, huella(token), expira)
   return { token, expiraEn: expira.toISOString() }
+}
+
+/**
+ * Deja la etiqueta en ASCII simple, que es lo que toda app de autenticación sabe leer.
+ *
+ * El estándar admite caracteres no-ASCII, pero en la práctica no todos los lectores los
+ * manejan igual: un acento o un separador tipográfico puede hacer que la app rechace el código
+ * sin explicar por qué. La etiqueta es sólo el nombre que se ve en la lista del teléfono, así
+ * que no vale la pena arriesgar el enrolamiento por un carácter decorativo.
+ *
+ * Los dos puntos van aparte: en `otpauth` separan el emisor del nombre de la cuenta, y uno
+ * suelto adentro de la etiqueta parte el nombre en dos.
+ */
+function etiquetaSegura(etiqueta: string): string {
+  return (
+    etiqueta
+      .normalize('NFD')
+      // Saca los diacríticos y deja la letra base (á -> a).
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^ -~]/g, ' ')
+      .replace(/:/g, ' ')
+      .replace(/ +/g, ' ')
+      .trim() || "usuario"
+  )
 }
 
 /** Un solo lugar donde se fijan la tolerancia y la protección anti-reutilización. */

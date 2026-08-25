@@ -154,6 +154,30 @@ reiniciar()
   assert.equal(memoria.registros.get(clave(usuario))!.confirmado, true)
 }
 
+// ── La etiqueta del QR va en ASCII simple ──────────────────────────────────────────────────────
+reiniciar()
+{
+  /* El estándar admite no-ASCII, pero en la práctica no todos los lectores lo manejan igual: un
+     acento o un separador tipográfico puede hacer que la app de autenticación rechace el código sin
+     explicar por qué. La etiqueta es sólo el nombre que se ve en la lista del teléfono. */
+  const { uri } = await iniciarEnrolamiento(usuario, 'María Pérez · admin: ventas')
+  const etiqueta = decodeURIComponent(new URL(uri).pathname.slice(1))
+
+  assert.match(etiqueta, /^[ -~]+$/, 'la etiqueta tiene que ser ASCII imprimible')
+  assert.ok(etiqueta.includes('Maria Perez'), 'los acentos se sacan, las letras NO')
+
+  /* Este es el que importa: al escribir el saneador se me fue una barra y el filtro borraba la
+     letra "s" —"usuario" quedaba como "u uario"—. Una etiqueta mutilada no rompe nada visible, y
+     por eso hay que fijarla. */
+  const { uri: uri2 } = await iniciarEnrolamiento(otro, 'usuario 42 - ventas')
+  assert.ok(
+    decodeURIComponent(new URL(uri2).pathname.slice(1)).endsWith('usuario 42 - ventas'),
+    'la etiqueta ASCII tiene que pasar intacta',
+  )
+
+  const dosPuntos = decodeURIComponent(new URL(uri).pathname.slice(1)).split(':').length - 1
+  assert.equal(dosPuntos, 1, 'un solo `:`: es el que separa el emisor del nombre de la cuenta')
+}
 // ── Volver a la pantalla del QR no invalida lo ya escaneado ─────────────────────────────────────
 reiniciar()
 {
