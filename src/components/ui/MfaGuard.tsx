@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Cargando } from './Cargando'
 import {
   confirmarEnrolamiento,
   DemasiadosIntentos,
@@ -32,6 +33,10 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bloqueado, setBloqueado] = useState(false)
+  /* La sacudida del campo ante un código incorrecto. Es feedback físico: se entiende antes de leer
+     el mensaje, y es lo que el ojo espera de un campo que rechaza algo. */
+  const [sacudir, setSacudir] = useState(false)
+  const campo = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let vivo = true
@@ -75,17 +80,23 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
       if (e instanceof DemasiadosIntentos) setBloqueado(true)
       setError((e as Error).message)
       setCodigo('')
+      setSacudir(true)
+      /* El foco vuelve al campo: quien se equivocó tipeando quiere reintentar ahí mismo, sin tener
+         que ir a buscarlo con el mouse. */
+      campo.current?.focus()
     } finally {
       setEnviando(false)
     }
   }
 
+  /* Mientras se prepara, la animación va sola sobre la app: todavía no hay nada que mostrar dentro
+     del panel, y dibujarlo vacío con un texto adentro es una caja por el gusto de la caja. */
+  if (paso === 'cargando' && !error) return <Cargando mensaje="Preparando la verificación" />
+
   return (
     <div className="mfa-muro">
       <div className="mfa-panel">
         <i className="fas fa-shield-halved mfa-icono" />
-
-        {paso === 'cargando' && <p className="mfa-texto">Preparando la verificación…</p>}
 
         {paso === 'enrolar' && enrolamiento && (
           <>
@@ -140,18 +151,33 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
           <>
             <h2 className="mfa-titulo">Verificación en dos pasos</h2>
             <p className="mfa-texto">
-              Escribí el código de seis dígitos de tu app de verificación. También podés usar uno de
-              tus códigos de rescate.
+              Escribí el código de seis dígitos de tu app de verificación
             </p>
           </>
         )}
 
         {(paso === 'enrolar' || paso === 'verificar') && (
-          <form onSubmit={enviar} className="mfa-form">
+          /* No se reemplaza por un loading: se OSCURECE y se bloquea. Cambiar el formulario por
+             una animación borra lo que la persona acaba de escribir de su vista y la deja sin
+             referencia de qué está pasando; atenuarlo dice "esto sigue acá, esperá". */
+          <form
+            onSubmit={enviar}
+            className={`mfa-form${enviando ? ' mfa-form--enviando' : ''}`}
+            aria-busy={enviando}
+          >
             <input
-              className="mfa-input"
+              ref={campo}
+              className={['mfa-input', error && 'mfa-input--error', sacudir && 'mfa-input--sacudir']
+                .filter(Boolean)
+                .join(' ')}
+              onAnimationEnd={() => setSacudir(false)}
               value={codigo}
-              onChange={(e) => setCodigo(e.target.value)}
+              onChange={(e) => {
+                setCodigo(e.target.value)
+                // Al volver a tipear, el error deja de tener sentido: molesta más de lo que informa.
+                if (error) setError(null)
+              }}
+              aria-invalid={error !== null}
               placeholder="000000"
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -177,12 +203,17 @@ export function MfaGuard({ onListo }: { onListo: () => void }) {
               className="btn btn-primary mfa-boton"
               disabled={enviando || bloqueado || codigo.trim().length < 6}
             >
+              {enviando && <i className="fas fa-circle-notch spin" />}
               {enviando ? 'Verificando…' : paso === 'enrolar' ? 'Confirmar' : 'Verificar'}
             </button>
           </form>
         )}
 
-        {error && <p className="mfa-error">{error}</p>}
+        {error && (
+          <p className="mfa-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   )

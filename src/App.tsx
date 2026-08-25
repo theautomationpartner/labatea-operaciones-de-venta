@@ -11,7 +11,7 @@ import {
   getVendedores,
   limpiarCachesConsultas,
 } from '@/services/monday'
-import { ModalCargando } from '@/components/ui/ModalCargando'
+import { Cargando } from '@/components/ui/Cargando'
 import { ModalErrorMonday } from '@/components/ui/ModalErrorMonday'
 import { MfaGuard } from '@/components/ui/MfaGuard'
 import { ModalErrorSeguridad } from '@/components/ui/ModalErrorSeguridad'
@@ -214,9 +214,7 @@ export function App() {
       {/* El header con los selectores y el resto de la operación se dibujan SÓLO con el acceso
           ya confirmado. Ver el estado `acceso` y `bloqueaLaApp`. */}
       {acceso === 'permitido' && !bloqueada && <Vista />}
-      {acceso === 'verificando' && (
-        <ModalCargando titulo="Verificando acceso" detalle="Un momento, por favor." />
-      )}
+      {acceso === 'verificando' && <Cargando mensaje="Verificando acceso" />}
       {/* PASO 3 · hasta que el backend confirme el código y emita el token del dispositivo, esto
           es lo único que se dibuja. */}
       {acceso === 'mfa' && <MfaGuard onListo={() => setAcceso('permitido')} />}

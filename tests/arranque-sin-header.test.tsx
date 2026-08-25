@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { App } from '@/App'
+import { Cargando } from '@/components/ui/Cargando'
 import { MfaGuard } from '@/components/ui/MfaGuard'
 import { InicioView } from '@/features/inicio/InicioView'
 import { initialState } from '@/state/appState'
@@ -53,9 +54,18 @@ assert.ok(!primerPintado.includes('Confirmar'), 'tampoco el botón de confirmar'
    ÚNICO en pantalla. Se verifica sobre el componente porque el paso 3 sólo se alcanza después de
    dos viajes al servidor, y eso no ocurre en un render estático. */
 const muro = renderToStaticMarkup(createElement(MfaGuard, { onListo: () => {} }))
-assert.ok(muro.includes('mfa-muro'), 'el muro tiene que ocupar la pantalla')
 for (const sena of SENAS) {
   assert.ok(!muro.includes(sena), `el muro deja ver el header: apareció "${sena}"`)
 }
+
+/* En su primer pintado el muro está preparando la verificación, y eso se muestra como animación
+   SOBRE la app: sin caja, sin sombra y sin fondo que oscurezca. Una ventana modal dice
+   "interrumpí lo que estabas haciendo", y acá todavía no había nada que interrumpir. */
+assert.ok(muro.includes('cargando-pantalla'), 'la espera usa el indicador estándar')
+assert.ok(!muro.includes('mfa-panel'), 'la espera NO se dibuja dentro de una card')
+
+const carga = renderToStaticMarkup(createElement(Cargando, { mensaje: 'Verificando acceso' }))
+assert.ok(carga.includes('Verificando acceso'), 'el mensaje va debajo de la animación')
+assert.ok(!carga.includes('modal-'), 'sin ventana: nada de clases de modal')
 
 console.log('arranque-sin-header: OK')

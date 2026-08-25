@@ -2882,6 +2882,7 @@
   color: var(--text-dark);
 }
 .mfa-form {
+  transition: opacity 0.15s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2943,4 +2944,70 @@
   font-size: 13px;
   font-weight: 600;
   color: #b42318;
+}
+
+/* ── Carga de las pantallas de autenticación ──────────────────────────────────────────────────── */
+/* Sin caja y sin fondo: la animación va SOBRE la app, no adentro de una ventana. Ver `Cargando`. */
+.cargando-pantalla {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
+}
+.cargando-pantalla i {
+  font-size: 30px;
+  color: var(--primary-blue);
+}
+.cargando-pantalla span {
+  font-size: 14px;
+  font-weight: 600;
+  color: #676879;
+}
+
+/* Validando: el formulario se ATENÚA y se bloquea, no se reemplaza. Cambiarlo por una animación
+   borraría de la vista lo que la persona acaba de escribir; atenuarlo dice "sigue acá, esperá". */
+.mfa-form--enviando {
+  opacity: 0.55;
+  pointer-events: none;
+}
+/* Rechazo: el campo se marca y se sacude. El movimiento se entiende antes de leer el mensaje. */
+.mfa-input--error {
+  border-color: #b42318;
+  background: #fff7f8;
+}
+.mfa-input--sacudir {
+  animation: mfa-sacudir 0.32s ease;
+}
+@keyframes mfa-sacudir {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-7px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+/* Quien pidió menos movimiento igual tiene el borde rojo y el mensaje: la información no depende
+   de la animación. */
+@media (prefers-reduced-motion: reduce) {
+  .mfa-input--sacudir {
+    animation: none;
+  }
+  .cargando-pantalla i {
+    animation-duration: 2s;
+  }
 }
