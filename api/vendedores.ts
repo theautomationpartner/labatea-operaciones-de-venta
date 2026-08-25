@@ -98,11 +98,24 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
       /* Si esto es `false`, los roles que van abajo son los más restrictivos por defecto y no los
          reales. Distinguirlo evita confundir "no tenés permiso" con "no se pudo averiguar". */
       rolesLeidos,
-      vendedores: vendedores.map((v) => ({
-        ...v,
-        equiposIds: (porId.get(v.id)?.teams ?? []).map((t) => String(t.id)),
-        esAdminDeCuenta: porId.get(v.id)?.kind === 'admin',
-      })),
+      vendedores: vendedores.map((v) => {
+        const enMonday = porId.get(v.id)
+        return {
+          ...v,
+          equiposIds: (enMonday?.teams ?? []).map((t) => String(t.id)),
+          /*
+           * Para el usuario de la SESIÓN manda el token firmado, no la consulta.
+           *
+           * `sesion.isAdmin` lo declara Monday con su firma: no se puede falsear y no depende de que
+           * la consulta de usuarios funcione. Si esa consulta falla —o si el token del servidor no
+           * puede leer algún campo—, sin esto el propio administrador que está usando la app se
+           * queda sin sus permisos al asignarse a sí mismo como vendedor, que es un síntoma
+           * desconcertante: los privilegios desaparecen sin que nada cambie.
+           */
+          esAdminDeCuenta:
+            (v.id === sesion.userId && sesion.isAdmin) || enMonday?.kind === 'admin',
+        }
+      }),
       usuario: {
         id: sesion.userId,
         nombre,
