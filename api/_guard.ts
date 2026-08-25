@@ -9,10 +9,15 @@
  *     `jwt.decode`: decodificar es leer un papel sin mirar el sello, y cualquiera escribe un papel.
  *  2. El algoritmo, fijado a HS256. Sin esa lista un token con `alg: none` —o firmado con otro
  *     esquema— entraría con la firma vacía: es el ataque clásico contra las librerías de JWT.
- *  3. Que no sea un invitado externo (`is_guest`): son cuentas de afuera de la organización.
- *  4. La cuenta, si `MONDAY_ACCOUNT_ID` está configurada. La app se instala por cuenta y el token es
- *     legítimo para cualquiera que la instale; esto la deja atada a la cuenta que corresponde.
- *  5. La lista blanca del tablero privado (ver `_whitelist.ts`).
+ *  3. La cuenta, si `MONDAY_ACCOUNT_ID` está configurada.
+ *     La app se instala por cuenta y el token es legítimo para cualquiera que la instale; esto la
+ *     deja atada a la cuenta que corresponde.
+ *  4. La lista blanca del tablero privado (ver `_whitelist.ts`).
+ *
+ * Lo que NO mira: si el usuario es invitado (`is_guest`) de Monday. Hubo una regla que los rechazaba
+ * de plano, y se sacó porque contradecía a la lista blanca: un permiso EXPLÍCITO —una fila en un
+ * tablero privado que sólo un administrador edita— quedaba anulado por un flag implícito, y el
+ * rechazo se veía igual que "no estás en la lista". Quién entra lo decide un solo lugar.
  *
  * Hacia afuera todos los rechazos dicen lo mismo —"Unauthorized" o "Forbidden", sin detalle—. El
  * motivo queda del lado del servidor: contar si el usuario existe en el tablero, si su estado está
@@ -55,8 +60,8 @@ const TOLERANCIA_RELOJ_S = 30
 /**
  * Verifica la firma del session token y devuelve quién es el usuario.
  *
- * Lanza `ErrorAuth` 401 si el token falta, está vencido o la firma no cierra; 403 si es un invitado
- * externo o es de otra cuenta de Monday.
+ * Lanza `ErrorAuth` 401 si el token falta, está vencido o la firma no cierra; 403 si es de otra
+ * cuenta de Monday. Ser invitado no decide nada acá: lo resuelve la lista blanca.
  */
 export function verificarSesion(authorization: string | undefined): Sesion {
   const claves = clavesDeFirma()
@@ -87,9 +92,6 @@ export function verificarSesion(authorization: string | undefined): Sesion {
   if (!userId || !accountId) /* La firma cerró: el token es de Monday. Lo que falla es su CONTENIDO, y eso apunta a otro
        lado que una firma inválida —a la forma del token, no al secreto—. */
     throw new ErrorAuth(401, 'el token no trae user_id / account_id', 'token_incompleto')
-
-  // Invitado externo: firma válida, pero no es gente de la organización.
-  if (isGuest) throw new ErrorAuth(403, `invitado externo (user ${userId})`, 'no_habilitado')
 
   const cuentaEsperada = process.env.MONDAY_ACCOUNT_ID?.trim()
   if (cuentaEsperada && accountId !== cuentaEsperada) {

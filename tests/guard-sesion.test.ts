@@ -145,7 +145,16 @@ assert.doesNotMatch(
 delete process.env.MONDAY_CLIENT_SECRET
 
 // --- 403: la firma cierra, pero no corresponde ---------------------------------------------------
-assert.equal(status(`Bearer ${firmar({ ...base, is_guest: true })}`), 403, 'invitado externo')
+/* Ser INVITADO de Monday no decide nada acá, y es deliberado: quién entra lo resuelve la lista
+   blanca, que es un permiso explícito en un tablero privado. Hubo una regla que los rechazaba de
+   plano y contradecía a esa lista —un flag implícito anulaba una autorización explícita, con un
+   rechazo que además se veía igual que "no estás en la lista"—. */
+assert.equal(status(`Bearer ${firmar({ ...base, is_guest: true })}`), 'ok', 'el invitado pasa el guardián')
+assert.equal(
+  verificarSesion(`Bearer ${firmar({ ...base, is_guest: true })}`).isGuest,
+  true,
+  'pero la sesión declara que lo es, para el log y para la lista blanca',
+)
 
 process.env.MONDAY_ACCOUNT_ID = '35883216'
 assert.equal(status(`Bearer ${firmar(base)}`), 'ok', 'la cuenta esperada pasa')
@@ -153,15 +162,17 @@ assert.equal(status(`Bearer ${firmar({ ...base, account_id: 999 })}`), 403, 'cue
 delete process.env.MONDAY_ACCOUNT_ID
 
 // --- Hacia afuera, ningún mensaje cuenta qué falló -----------------------------------------------
+process.env.MONDAY_ACCOUNT_ID = '35883216'
 const rechazo = (() => {
   try {
-    verificarSesion(`Bearer ${firmar({ ...base, is_guest: true })}`)
+    verificarSesion(`Bearer ${firmar({ ...base, account_id: 777 })}`)
   } catch (e) {
     return e as ErrorAuth
   }
   throw new Error('debería haber rechazado')
 })()
 assert.equal(rechazo.message, 'Forbidden', 'el mensaje público no da detalle')
-assert.match(rechazo.motivo, /invitado externo/, 'el detalle queda para el log')
+assert.match(rechazo.motivo, /cuenta ajena/, 'el detalle queda para el log')
+delete process.env.MONDAY_ACCOUNT_ID
 
 console.log('guard-sesion: OK')

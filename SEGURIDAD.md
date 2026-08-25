@@ -104,7 +104,7 @@ sale del deploy.
 5. Recién ahí el endpoint usa `MONDAY_TOKEN` y habla con la API de Monday.
 
 Rechazos: **401** si no se puede probar quién es (falta el token, está vencido, la firma no cierra);
-**403** si se sabe quién es pero no corresponde (invitado externo, cuenta ajena, fuera de la lista).
+**403** si se sabe quién es pero no corresponde (cuenta ajena, fuera de la lista).
 Hacia afuera van sólo `Unauthorized` / `Forbidden`: el motivo queda en el log del servidor, porque
 contarle al que prueba si el usuario existe en el tablero es entregarle la mitad del trabajo.
 
@@ -121,6 +121,10 @@ contarle al que prueba si el usuario existe en el tablero es entregarle la mitad
 - **La lista blanca se consulta en el backend, siempre.** Si la consulta viviera en el frontend, el
   usuario se estaría respondiendo que sí a sí mismo.
 - **El tablero es privado** para que el propio usuario no pueda editar la lista que lo habilita.
+- **Los invitados de Monday entran si están en la lista.** Hubo una regla que los rechazaba de plano
+  y se sacó: contradecía a la lista blanca, porque un flag implícito anulaba un permiso explícito
+  —una fila que sólo un administrador puede escribir— y el rechazo se veía igual que "no estás en la
+  lista". Quién entra lo decide un solo lugar.
 - **Falla cerrada.** Si Monday no contesta, no entra nadie. El fallo no se cachea, así que la app
   vuelve sola en cuanto la API responde.
 - **Caché de 5 min para los "sí"** (es el techo de lo que tarda una revocación en hacerse efectiva) y
@@ -214,7 +218,7 @@ Si querés ejercitarla igual, hay dos caminos:
 ### 5. Verificación
 
 ```bash
-npm run test:guard      # firma, alg:none, vencido, invitado, cuenta ajena
+npm run test:guard      # firma, alg:none, vencido, cuenta ajena, invitados
 npm run test:whitelist  # activo / no activo / ausente, caché y falla cerrada
 npm run test:portero    # Capa 1: procedencia por sufijo de dominio
 ```
