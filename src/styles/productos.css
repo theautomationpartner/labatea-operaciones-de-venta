@@ -448,11 +448,28 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+/* Valor de cada métrica del resumen.
+   RESERVA su ancho en lugar de crecer con el número: la fila usa `space-between`, así que un
+   subtotal más largo le comía el espacio libre y corría de lugar a la cantidad, al descuento y al
+   botón. Cargar unidades movía media fila.
+   Los 15ch son el PEOR caso real, medido: "$ 99.999.999,99" son 15 caracteres, así que hasta ese
+   importe —bastante más que los 10 millones— la columna no cambia de ancho.
+   `tabular-nums` es lo que hace confiable la medida: con dígitos de ancho uniforme, 1ch vale para
+   cualquier número, y de paso el importe deja de temblar al pasar de 1 a 2, que tipográficamente
+   son anchos distintos. */
 .productos-v2 .cl-metric-v {
+  min-width: 15ch;
+  font-variant-numeric: tabular-nums;
   font-size: 18px;
   font-weight: 800;
   color: var(--p-text-main);
   white-space: nowrap;
+}
+/* La rentabilidad es un PORCENTAJE, no un importe: su peor caso ("-1.234,56%") entra en 9ch, así
+   que reservarle los 15 de un importe ensancharía la fila sin necesidad y la haría envolverse antes
+   de tiempo en pantallas angostas. */
+.productos-v2 .cl-metric-v--pct {
+  min-width: 9ch;
 }
 .productos-v2 .cl-metric-v--verde {
   color: var(--green-dark);

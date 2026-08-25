@@ -10,7 +10,13 @@ import {
   precioNetoDe,
   rentabilidadConDescuento,
 } from '@/lib/selectors'
-import { aplicarTecleoDescuento, BONIFICACION_TOTAL, validarDescuento } from '@/lib/validaciones'
+import {
+  aplicarTecleoDescuento,
+  BONIFICACION_TOTAL,
+  cantidadEfectiva,
+  soloCantidad,
+  validarDescuento,
+} from '@/lib/validaciones'
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
 import { DetalleDescuentos } from './DetalleDescuentos'
@@ -63,7 +69,12 @@ export function CargaLinea({
   descFormaPago = 0,
 }: CargaLineaProps) {
   const { topesDescuento: topesTablero, usuarioActual, vendedor, paso, operacion, rentabForzadaActiva, rentabForzadaPctActiva } = useApp()
-  const [cantidad, setCantidad] = useState(1)
+  /* La cantidad vive como TEXTO, no como número, y eso es lo que permite dejar el campo vacío
+     mientras se edita. Con un número la única forma de representar "vacío" es el 0 o el 1, y por eso
+     antes el 1 no se podía borrar: para escribir 30 había que ponerse a la derecha del 1 y volver
+     atrás. El número se deriva del texto (`cantidad`) y el vacío se resuelve al salir del campo. */
+  const [cantidadTexto, setCantidadTexto] = useState('1')
+  const cantidad = cantidadEfectiva(cantidadTexto)
   const [descuento, setDescuento] = useState('')
   // Aviso de la tecla rechazada por pasarse del máximo; se limpia al corregir.
   const [rechazado, setRechazado] = useState('')
@@ -86,7 +97,8 @@ export function CargaLinea({
   const precioEditable = showFinancialData && puedeEditarPrecio(responsable, paso, operacion)
   const topesDescuento = topesDescuentoDe(topesTablero, responsable, paso, operacion)
 
-  const cambiarCantidad = (delta: number) => setCantidad((c) => Math.max(1, c + delta))
+  const cambiarCantidad = (delta: number) =>
+    setCantidadTexto(String(Math.max(1, cantidad + delta)))
 
   /**
    * Admite decimales (1,5 % / 1.5 %): coma o punto como separador. Lo que se pasa del tope no
@@ -414,9 +426,15 @@ export function CargaLinea({
                   type="number"
                   className="qty-val"
                   min={1}
-                  value={cantidad}
+                  value={cantidadTexto}
                   disabled={!producto}
-                  onChange={(e) => setCantidad(Math.max(1, Number(e.target.value) || 1))}
+                  /* Se acepta el campo VACÍO y sólo dígitos: nada de signos ni notación científica,
+                     que `type="number"` deja pasar y romperían el valor. Vacío NO se corrige acá
+                     —corregirlo mientras se escribe es justamente lo que impedía borrar el 1—. */
+                  onChange={(e) => setCantidadTexto(soloCantidad(e.target.value))}
+                  /* Al salir del campo se resuelve el vacío: si no quedó una cantidad válida, vuelve
+                     a 1, que es lo que ya estaban usando los cálculos. */
+                  onBlur={() => setCantidadTexto(String(cantidad))}
                 />
                 <button
                   type="button"

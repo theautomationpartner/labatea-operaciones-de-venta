@@ -123,8 +123,10 @@ assert.ok(html.includes('cl-metric-v--sub'), 'al subtotal le falta su tamaño pr
 /* Las DOS rentabilidades dicen cosas distintas: la de la ficha es la de CATÁLOGO y no se mueve al
    bonificar; la "Rentabilidad Final" del resumen es la que baja con el descuento total. Mostrar la
    bonificada en las dos las volvía la misma métrica repetida. */
+/* La clase puede venir acompañada de modificadores (`cl-metric-v cl-metric-v--pct`), así que se
+   busca por PREFIJO: lo que se verifica es el valor mostrado, no la lista exacta de clases. */
 const rentDe = (h: string, marca: string, clase: string) =>
-  h.match(new RegExp(`${marca}</span><span class="${clase}"[^>]*>(.*?)<`))?.[1]
+  h.match(new RegExp(`${marca}</span><span class="${clase}[^"]*"[^>]*>(.*?)<`))?.[1]
 const rentFicha = (h: string) => rentDe(h, 'Rentabilidad', 'cl-kpi-v')
 const rentFinal = (h: string) => rentDe(h, 'Rentabilidad Final', 'cl-metric-v')
 
