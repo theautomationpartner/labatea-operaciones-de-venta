@@ -130,6 +130,9 @@ export function RemitoEmisionView() {
         const { envio } = remito
         const lineas: LineaRemito[] = remito.items.map((it) => ({
           productoId: it.productoId,
+          /* ANTERIOR: la línea se linkea a su pendiente de entrega, no al producto. Es lo que
+             después permite volver desde el remito a la venta que le puso el precio. */
+          pendienteEntregaId: it.pendienteEntregaId,
           nombre: it.nombre,
           cantidad: it.cantidad,
           pesoUnitario: it.peso ?? 0,

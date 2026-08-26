@@ -27,6 +27,7 @@ import { EntregaView } from '@/features/cobro/EntregaView'
 import { FacturaView } from '@/features/factura/FacturaView'
 import { ProductosView } from '@/features/productos/ProductosView'
 import { RemitoView } from '@/features/remito/RemitoView'
+import { RemitoDevolucionView } from '@/features/remitir/RemitoDevolucionView'
 import { RemitoEmisionView } from '@/features/remitir/RemitoEmisionView'
 import { RemitoEnvioView } from '@/features/remitir/RemitoEnvioView'
 import { RemitoProductosView } from '@/features/remitir/RemitoProductosView'
@@ -49,6 +50,7 @@ const VISTAS: Record<Paso, () => JSX.Element | null> = {
   'remito-productos': RemitoProductosView,
   'remito-envio': RemitoEnvioView,
   'remito-emision': RemitoEmisionView,
+  'remito-devolucion': RemitoDevolucionView,
 }
 
 export function App() {

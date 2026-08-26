@@ -1,4 +1,4 @@
-import { EMISIONES_REMITO } from '@/lib/pasos'
+import { EMISIONES_REMITO, EMISION_REMITO_LABEL } from '@/lib/pasos'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { TipoEmisionRemito } from '@/types'
 
@@ -28,8 +28,12 @@ export function RemitoConfig() {
             <option value="" disabled>
               Seleccionar...
             </option>
+            {/* El `value` va explícito: la etiqueta que se lee ("DEVOLUCIÓN") no es el valor que
+                viaja al estado ("DEVOLUCION"), y sin él el `option` usaría su texto. */}
             {EMISIONES_REMITO.map((t) => (
-              <option key={t}>{t}</option>
+              <option key={t} value={t}>
+                {EMISION_REMITO_LABEL[t]}
+              </option>
             ))}
           </select>
         </div>
@@ -41,7 +45,9 @@ export function RemitoConfig() {
           <i className="fas fa-circle-info" />
           {remito.tipoEmision === 'POSTERIOR'
             ? 'Se remite mercadería que quedará pendiente de facturar.'
-            : 'Se remite mercadería de una venta ya facturada, pendiente de entregar.'}
+            : remito.tipoEmision === 'ANTERIOR'
+              ? 'Se remite mercadería de una venta ya facturada, pendiente de entregar.'
+              : 'La mercadería vuelve del cliente: se imputa contra los remitos de entrega de los últimos 30 días, suma al stock y deja una nota de crédito pendiente de emitir.'}
         </div>
       )}
     </div>

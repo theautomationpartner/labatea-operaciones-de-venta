@@ -20,7 +20,7 @@ import {
 import { useApp } from '@/state/hooks'
 import type { Producto } from '@/types'
 import { DetalleDescuentos } from './DetalleDescuentos'
-import { ProveedorLinea, StockPanel } from './StockPanel'
+import { ProveedorLinea, StockPanel, type ModoStock } from './StockPanel'
 
 interface CargaLineaProps {
   producto: Producto | null
@@ -43,6 +43,8 @@ interface CargaLineaProps {
    * igual que en la tabla. 0 = sin forma de pago que descuente.
    */
   descFormaPago?: number
+  /** Sentido en el que la cantidad mueve el stock. La devolución la hace ENTRAR; el resto, salir. */
+  modoStock?: ModoStock
 }
 
 /**
@@ -67,6 +69,7 @@ export function CargaLinea({
   showFinancialData = true,
   convirtiendo = false,
   descFormaPago = 0,
+  modoStock = 'consumo',
 }: CargaLineaProps) {
   const { topesDescuento: topesTablero, usuarioActual, vendedor, paso, operacion, rentabForzadaActiva, rentabForzadaPctActiva } = useApp()
   /* La cantidad vive como TEXTO, no como número, y eso es lo que permite dejar el campo vacío
@@ -503,7 +506,12 @@ export function CargaLinea({
                 </h4>
                 <ProveedorLinea producto={producto} />
               </div>
-              <StockPanel producto={producto} cantidad={cantidad} conProveedor={false} />
+              <StockPanel
+                producto={producto}
+                cantidad={cantidad}
+                conProveedor={false}
+                modo={modoStock}
+              />
             </>
           ) : (
             <div className="stock-placeholder">

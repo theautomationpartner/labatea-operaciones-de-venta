@@ -177,6 +177,7 @@ const remitoInicial: RemitoState = {
   envio: envioInicial,
   remitoId: null,
   emitido: false,
+  devolucionRegistrada: false,
 }
 
 const cobroInicial: CobroState = {
@@ -362,6 +363,7 @@ export type Action =
   | { type: 'confirmarRutaEntrega' }
   | { type: 'setRemitoCreado'; value: string | null }
   | { type: 'emitirRemito' }
+  | { type: 'registrarDevolucion' }
 
 const nuevoId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -410,7 +412,10 @@ export const hayDocumentoEmitido = (s: AppState): boolean =>
   s.documentoEmitido ||
   Boolean(s.proformaId) ||
   s.factura.comprobantes.length > 0 ||
-  s.remito.emitido
+  s.remito.emitido ||
+  /* La devolución no emite un PDF, pero sí escribe en el stock y en los remitos imputados: una vez
+     registrada, cambiar productos o cantidades dejaría la pantalla mintiendo sobre el tablero. */
+  s.remito.devolucionRegistrada
 
 /**
  * Los selectores de operación viven en todos los pasos, así que el modo puede cambiar
@@ -991,12 +996,18 @@ export function reducer(state: AppState, action: Action): AppState {
               // Del catálogo salen el id del producto (para linkearlo), su peso y su precio unitario.
               productoId: action.producto.id,
               peso: action.producto.peso,
+              /* Ítem de "Stock y Movimientos" del producto: es donde la DEVOLUCION asienta el
+                 movimiento de ingreso. Viene del maestro, así no hay que ir a buscarlo por nombre. */
+              stockId: action.producto.stockId,
               // El precio de lista (ya con/sin IVA según el cliente) alimenta el importe a facturar.
               precioUnitario: action.producto.precio,
               // Tipo de mercadería (CO / COM): viaja a la "Vta Pend de Facturar" del remito POSTERIOR.
               tipo: action.producto.tipo,
               // Rentabilidad según la lista del cliente: se guarda en la "Vta Pend de Facturar".
               rentabilidad: action.producto.rentabilidad,
+              /* La ficha entera acompaña a la línea: con ella la tabla puede volver a mostrar el
+                 stock del producto (y sus ingresos) sin salir a buscarlo de nuevo. */
+              producto: action.producto,
             },
           ],
         },
@@ -1121,6 +1132,11 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'emitirRemito':
       return { ...state, remito: { ...state.remito, emitido: true } }
+
+    /* La devolución ya impactó el stock y los remitos imputados. Es irreversible, así que a partir
+       de acá la operación entera queda en solo lectura (ver `hayDocumentoEmitido`). */
+    case 'registrarDevolucion':
+      return { ...state, remito: { ...state.remito, devolucionRegistrada: true } }
 
     default:
       return state

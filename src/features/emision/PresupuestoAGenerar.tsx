@@ -17,7 +17,6 @@ interface PresupuestoAGenerarProps {
    * cascada con el descuento manual de cada línea, igual que en la tabla de productos y que en las
    * columnas del subelemento que se escriben en Monday.
    */
-  descFormaPago?: number
 }
 
 /** Verde de los importes en dólares (mismo tono que la tabla y el resumen del presupuesto). */
@@ -28,17 +27,17 @@ const esUsd = (l: LineaPresupuesto): boolean => esDolar(l.producto.moneda)
 
 /** Importe bonificado por unidad: TODO lo que se descuenta (forma de pago + manual, en cascada).
  *  Es el "Descuento TOTAL" del subelemento (`numeric_mm5w6h1x`). En la moneda del producto. */
-const bonifUnitDe = (l: LineaPresupuesto, descFormaPago: number): number =>
-  descuentoUnitario(l.producto.precio, l.descuento, descFormaPago).total
+const bonifUnitDe = (l: LineaPresupuesto): number =>
+  descuentoUnitario(l.producto.precio, l.descuento).total
 
 /** Total de la línea, ya bonificado: (precio − bonif) × cantidad. En la moneda del producto. */
-const totalDe = (l: LineaPresupuesto, descFormaPago: number): number =>
-  round2(descuentoUnitario(l.producto.precio, l.descuento, descFormaPago).precioFinal * l.cantidad)
+const totalDe = (l: LineaPresupuesto): number =>
+  round2(descuentoUnitario(l.producto.precio, l.descuento).precioFinal * l.cantidad)
 
 /** Suma de los totales (ya bonificados) de las líneas de una moneda (pesos o dólares). */
-const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean, descFormaPago: number): number =>
+const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
   round2(
-    lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l, descFormaPago), 0),
+    lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l), 0),
   )
 
 /** Suma del BRUTO (precio × cantidad, sin bonificar) de las líneas de una moneda. */
@@ -63,12 +62,11 @@ export function PresupuestoAGenerar({
   numero,
   lineas,
   emitido = false,
-  descFormaPago = 0,
 }: PresupuestoAGenerarProps) {
   const [abierta, setAbierta] = useState(true)
 
-  const totalPesos = totalMoneda(lineas, false, descFormaPago)
-  const totalUsd = totalMoneda(lineas, true, descFormaPago)
+  const totalPesos = totalMoneda(lineas, false)
+  const totalUsd = totalMoneda(lineas, true)
   const hayDolares = lineas.some(esUsd)
   // Totales estándar en pesos: bruto, descuento (bruto − neto) y gravado (= neto). El presupuesto
   // NO liquida IVA, así que el IVA es 0 y el Total coincide con el Gravado.
@@ -157,10 +155,10 @@ export function PresupuestoAGenerar({
                         {fmt(round2(l.producto.precio))}
                       </td>
                       <td className="ta-r" style={{ color: colUsd }}>
-                        {fmt(bonifUnitDe(l, descFormaPago))}
+                        {fmt(bonifUnitDe(l))}
                       </td>
                       <td className="ta-r comp-total-prod" style={{ color: colUsd }}>
-                        {fmt(totalDe(l, descFormaPago))}
+                        {fmt(totalDe(l))}
                       </td>
                     </tr>
                   )

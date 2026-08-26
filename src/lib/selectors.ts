@@ -520,6 +520,32 @@ export interface Cobertura {
   excede: boolean
 }
 
+/** Cómo quedarían las cuatro métricas del tablero de stock si la devolución se registrara. */
+export interface StockProyectado {
+  ingresos: number
+  fisico: number
+  comercial: number
+  disponible: number
+}
+
+/**
+ * Proyecta el stock de un producto al que ENTRAN unidades (devolución), replicando las mismas tres
+ * fórmulas del tablero "🧮Stock y Movimientos" en vez de inventar unas propias:
+ *
+ *   Físico     = Ingreso Total − Egreso Total
+ *   Comercial  = Físico − Pend de Entrega Vta
+ *   Disponible = Comercial + Pend de Recibir Compra
+ *
+ * La devolución sólo mueve el INGRESO; el resto se arrastra por la cadena. Es una proyección: no
+ * pisa ninguno de los valores leídos, que se siguen mostrando como base.
+ */
+export function stockConIngreso(p: Producto, cantidad: number): StockProyectado {
+  const ingresos = round2(p.ingresos + cantidad)
+  const fisico = round2(ingresos - p.egresos)
+  const comercial = round2(fisico - p.pendEntregaVta)
+  return { ingresos, fisico, comercial, disponible: round2(comercial + p.pendRecepcionCompra) }
+}
+
 /** Cuánto del stock disponible se lleva la cantidad en curso. No altera el stock. */
 export function cobertura(p: Producto, cantidad: number): Cobertura {
   // Sin stock disponible cualquier cantidad ya lo excede: la barra va al tope, no a cero.

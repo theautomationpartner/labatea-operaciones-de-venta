@@ -27,18 +27,6 @@ export const FORMAS_PAGO_VENTA: readonly FormaPagoVenta[] = [
 ]
 
 /**
- * Formas de pago que ofrece el PRESUPUESTO para el descuento por pronto pago. NO incluye la
- * CUENTA CORRIENTE: diferir el pago no bonifica nada, así que ofrecerla sería ofrecer un 0%.
- * A diferencia de la venta, no dependen de la condición de pago del cliente: el presupuesto es
- * una propuesta comercial, todavía no hay un cobro pactado.
- */
-export const FORMAS_PAGO_PRESUPUESTO: readonly FormaPagoVenta[] = [
-  'CONTADO',
-  'TARJETA DE CREDITO',
-  'TARJETA DE DEBITO',
-]
-
-/**
  * Formas de pago que puede elegir el cliente según su condición de pago pactada:
  *   · CUENTA CORRIENTE → todas (contado, cuenta corriente y las dos tarjetas).
  *   · cualquier otra (CONTADO, proveedores) → sólo CONTADO.

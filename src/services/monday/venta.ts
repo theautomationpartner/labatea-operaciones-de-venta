@@ -233,7 +233,7 @@ interface LineaVentaCreada extends LineaVenta {
 
 /**
  * Crea (bulk) los ítems de "Pends de Entrega" (18421035527) de una venta POSTERIOR: uno por
- * producto, enlazando cliente, producto, venta y —clave— el SUBELEMENTO de la venta
+ * producto, enlazando cliente, producto y —clave— el SUBELEMENTO de la venta
  * (board_relation_mm5pcdfj = {"item_ids":[ID_SUBITEM]}), con la cantidad vendida y el estado "Pend
  * de Entregar 100%" (índice dinámico). El enlace al subelemento se inyecta EN LA CREACIÓN del
  * pendiente (no en un update posterior): el ID del subítem ya se conoce, y no depende del ID del
@@ -245,7 +245,6 @@ interface LineaVentaCreada extends LineaVenta {
  */
 async function crearPendientesEntrega(
   clienteId: string | undefined,
-  ventaId: string,
   lineas: LineaVentaCreada[],
   rutaId?: string,
 ): Promise<void> {
@@ -260,9 +259,10 @@ async function crearPendientesEntrega(
   )
   const variables: Record<string, unknown> = {}
   const campos = conProd.map((l, i) => {
+    /* La venta NO se escribe acá: el tablero de pendientes no tiene columna de venta a nivel ítem.
+       Se llega a ella por el subelemento de venta que se enlaza más abajo (ver `COL`). */
     const cv: Record<string, unknown> = {
       [COL.pendienteEntregaItem.cantidad]: String(round2(l.cantidad)),
-      [COL.pendienteEntregaItem.venta]: { item_ids: [Number(ventaId)] },
     }
     if (clienteId) cv[COL.pendienteEntregaItem.cliente] = { item_ids: [Number(clienteId)] }
     if (l.productoId) cv[COL.pendienteEntregaItem.producto] = { item_ids: [Number(l.productoId)] }
@@ -552,7 +552,7 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
          puede largarse en paralelo. El error se traga igual (best-effort): la venta ya está creada
          y no se invalida porque falle el movimiento de stock. */
   if (tipoEntrega === 'POSTERIOR') {
-    void crearPendientesEntrega(clienteId, itemId, lineasConSub, rutaId).catch(() => {
+    void crearPendientesEntrega(clienteId, lineasConSub, rutaId).catch(() => {
       /* La creación de pendientes de entrega es best-effort y desacoplada. */
     })
   } else if (tipoEntrega === 'SIMULTANEA') {
@@ -618,8 +618,9 @@ function mapPendienteEntrega(item: MondayItem): VentaEntregaProducto {
   const c = byId(item)
   const producto = c[COL.pendienteEntregaItem.producto]?.linked_items?.[0]
   const prodCols = producto ? byId(producto) : {}
-  const venta = c[COL.pendienteEntregaItem.venta]?.linked_items?.[0]
   const ventaSub = c[COL.pendienteEntregaItem.ventaSubelemento]?.linked_items?.[0]
+  /* La venta es el ítem PADRE de ese subelemento: el pendiente no la guarda por su cuenta. */
+  const venta = ventaSub?.parent_item
   const ruta = c[COL.pendienteEntregaItem.ruta]?.linked_items?.[0]
   const vendida = numCol(c[COL.pendienteEntregaItem.cantidad])
   const entregada = numCol(c[COL.pendienteEntregaItem.entregada])
@@ -679,7 +680,7 @@ async function getVentasEntregaPendienteImpl(clienteId: string): Promise<VentaEn
         ) {
           items {
             id name
-            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.venta}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.ruta}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}"]) {
+            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.ruta}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}"]) {
               id text
               ... on StatusValue { index }
               ... on FormulaValue { display_value }
@@ -687,6 +688,11 @@ async function getVentasEntregaPendienteImpl(clienteId: string): Promise<VentaEn
               ... on BoardRelationValue {
                 linked_items {
                   id name
+                  # El padre sólo lo tiene el subelemento de venta, y es por donde se llega a la
+                  # venta de origen. En los demás conectados (el producto, la ruta) viene nulo.
+                  # Los comentarios DENTRO de la consulta van con '#': los de bloque de JS no son
+                  # sintaxis válida de GraphQL y tumban la consulta entera.
+                  parent_item { id name }
                   column_values(ids: ["${COL.producto.codigo}","${COL.producto.unidadMedida}","${COL.producto.peso}"]) { id text }
                 }
               }
@@ -706,7 +712,8 @@ async function getVentasEntregaPendienteImpl(clienteId: string): Promise<VentaEn
     if (prod.pendiente <= 0) continue
     const ventaId = prod.ventaId || item.id
     const nombreVenta =
-      byId(item)[COL.pendienteEntregaItem.venta]?.linked_items?.[0]?.name || ventaId
+      byId(item)[COL.pendienteEntregaItem.ventaSubelemento]?.linked_items?.[0]?.parent_item?.name ||
+      ventaId
     if (!porVenta.has(ventaId)) {
       porVenta.set(ventaId, { id: ventaId, nro: nombreVenta, estadoEntrega: '', fecha: '', productos: [] })
     }

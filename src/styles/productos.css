@@ -423,9 +423,14 @@
   border-radius: var(--p-radius-md);
   background: #f7f9fc;
 }
-/* Sin datos financieros sólo queda el botón: sin fondo ni caja, contra el margen derecho. */
+/* Sin datos financieros (remito y devolución) no hay métricas: quedan sólo la cantidad y el botón,
+   sin fondo ni caja, contra el margen derecho.
+   Se alinean por su BASE y no por su centro: "Cantidad" arrastra su rótulo arriba, así que
+   centrando la fila se centra el bloque entero (rótulo + input) contra el botón, y el input queda
+   unos píxeles más abajo. Con `flex-end` el input y el botón apoyan sobre la misma línea. */
 .productos-v2 .cl-resumen:not(:has(.cl-metric)) {
   background: none;
+  align-items: flex-end;
   justify-content: flex-end;
   padding: 0;
 }
@@ -739,7 +744,7 @@
    comen el espacio a la barra de cobertura. */
 .productos-v2 .stock-boxes {
   display: flex;
-  /* Las 3 cajas también envuelven entre sí cuando la línea es muy angosta. */
+  /* Las cajas (3, o 4 con los ingresos de la devolución) envuelven entre sí en angosto. */
   flex-wrap: wrap;
   gap: 12px;
   flex: 1 1 320px;
@@ -1246,6 +1251,40 @@
 }
 .productos-v2 .qbox .qbtns button:first-child {
   border-bottom: 1px solid var(--p-border);
+}
+/* Cantidad inválida. Va namespaceado porque `.productos-v2 .qbox` (0,2,0) le gana por especificidad
+   a `.qbox--error` (0,1,0) de la base: sin esto el borde rojo nunca se pintaba y sólo quedaba el
+   fondo rosa, que solo no alcanza para leerse como un error. */
+/* Proyección del stock al registrar la devolución, al lado del valor que hoy tiene el tablero.
+   Va en verde y un cuerpo menor: acompaña al dato real, no lo reemplaza. */
+.productos-v2 .stock-box-proy {
+  margin-left: 8px;
+  font-size: 0.8em;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.productos-v2 .qbox--error {
+  border-color: var(--red);
+  background: #fff5f6;
+}
+.productos-v2 .qbox--error input {
+  background: #fff5f6;
+  border-right-color: var(--red);
+  color: var(--red);
+  font-weight: 700;
+}
+.productos-v2 .qbox--error .qbtns button {
+  background: #fff5f6;
+  color: var(--red);
+}
+.productos-v2 .qbox--error .qbtns button:first-child {
+  border-bottom-color: var(--red);
+}
+/* Al enfocar sigue mandando el error: el campo no deja de estar mal porque se lo esté editando. */
+.productos-v2 .qbox--error:focus-within {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(228, 66, 88, 0.12);
 }
 /* Alto reservado para el input de cantidad en este contexto (qbox más alto que la base): iguala el
    alto de la fila con y sin selección, evitando el layout shift al marcar el producto. */

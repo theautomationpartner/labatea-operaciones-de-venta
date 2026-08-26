@@ -209,6 +209,13 @@ const PRODUCTOS_POR_TANDA_REMITO = 25
 export interface LineaRemito {
   /** Ítem del Maestro de Productos, para linkear la línea. */
   productoId?: string
+  /**
+   * ANTERIOR: ítem de "Pends de Entrega" del que sale la línea. La columna "✋Producto" del
+   * subelemento acepta los DOS tableros (Maestro y Pends de Entrega), y en el remito ANTERIOR se
+   * usa para el pendiente: es lo que ata la línea a su venta —y por lo tanto al precio con el que
+   * se vendió— cuando el mismo producto entra al remito desde dos ventas distintas.
+   */
+  pendienteEntregaId?: string
   nombre: string
   cantidad: number
   /** Peso unitario del producto (kg). El peso de la línea es cantidad × este valor. */
@@ -265,7 +272,11 @@ const columnasLineaRemito = (l: LineaRemito, totalProducto: number | null): Reco
   if (totalProducto != null) {
     cv[COL.remitoSub.totalProducto] = String(totalProducto)
   }
-  if (l.productoId) cv[COL.remitoSub.producto] = { item_ids: [Number(l.productoId)] }
+  /* La columna es de UN solo ítem: o el pendiente (ANTERIOR) o el producto (POSTERIOR, que sale
+     del catálogo y no tiene pendiente). El pendiente manda porque conserva el linaje completo
+     —producto, venta y precio—, mientras que el producto solo pierde de qué venta salió. */
+  const origen = l.pendienteEntregaId ?? l.productoId
+  if (origen) cv[COL.remitoSub.producto] = { item_ids: [Number(origen)] }
   if (l.um) cv[COL.remitoSub.unidadMedida] = { labels: [l.um] }
   return cv
 }

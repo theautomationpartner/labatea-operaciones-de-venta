@@ -110,6 +110,11 @@ async function leerDelServidor(): Promise<RespuestaEquipo> {
  * entera: ni el id del tablero ni esta consulta llegan al bundle que se despliega.
  */
 async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
+  /* OJO con los campos de `users`: la app fija `API-Version: 2024-10` (ver `sdk.ts`) y ahí NO
+     existe `User.kind`. Pedirlo hacía que Monday rechazara el documento ENTERO en la validación
+     —no sólo ese campo—, así que la respuesta venía sin `boards` ni `me`, `mondayApi` lanzaba y el
+     selector de vendedor quedaba vacío en desarrollo. El admin de la cuenta se lee con `is_admin`,
+     que sí existe en esa versión. */
   const BOARD = '18427866249'
   const COL_USUARIO = 'text_mm6hqsmt'
   const COL_ESTADO = 'status'
@@ -118,7 +123,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
   const data = await mondayApi<{
     boards?: { items_page?: { items?: FilaTablero[] } }[]
     me?: { id: string; name: string; is_admin?: boolean | null; teams?: { id: string }[] } | null
-    users?: { id: string; kind?: string | null; teams?: { id: string }[] }[]
+    users?: { id: string; is_admin?: boolean | null; teams?: { id: string }[] }[]
   }>(
     `query ($board: ID!, $cols: [String!]) {
       boards(ids: [$board]) {
@@ -130,7 +135,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
         }
       }
       me { id name is_admin teams { id } }
-      users(limit: 200) { id kind teams { id } }
+      users(limit: 200) { id is_admin teams { id } }
     }`,
     { board: BOARD, cols: [COL_USUARIO, COL_ESTADO] },
   )
@@ -145,7 +150,7 @@ async function leerEnDesarrollo(): Promise<RespuestaEquipo> {
         id,
         nombre: i.name,
         equiposIds: (porId.get(id)?.teams ?? []).map((t) => String(t.id)),
-        esAdminDeCuenta: porId.get(id)?.kind === 'admin',
+        esAdminDeCuenta: porId.get(id)?.is_admin === true,
       }
     })
     .filter((v) => v.id !== '')

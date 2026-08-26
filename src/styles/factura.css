@@ -443,6 +443,39 @@
 .factura-v2 .comp-table td:last-child {
   padding-right: 0;
 }
+/*
+ * Reparto PAREJO de las columnas de datos. Con `table-layout: auto` y `width: 100%`, el sobrante
+ * de la tabla se reparte entre TODAS las columnas en proporción a su contenido: en una card angosta
+ * casi no se nota, pero a lo ancho de la página abre huecos irregulares —"Venta" y "Cantidad"
+ * quedaban flotando en el medio, lejos de "Precio unitario", "IVA" y "Total"—.
+ *
+ * La solución es darle TODO el sobrante a la primera columna (el nombre del producto, que es la que
+ * puede aprovecharlo): las demás se encogen a su contenido y quedan separadas por el mismo aire,
+ * que lo fija su padding y no el azar del ancho disponible.
+ */
+.factura-v2 .comp-table--pareja th:first-child,
+.factura-v2 .comp-table--pareja td:first-child {
+  width: 100%;
+}
+.factura-v2 .comp-table--pareja th:not(:first-child),
+.factura-v2 .comp-table--pareja td:not(:first-child) {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.factura-v2 .comp-table--pareja th:last-child,
+.factura-v2 .comp-table--pareja td:last-child {
+  padding-right: 0;
+}
+/* Misma tipografía que la tabla que la precede en la etapa (`.productos-v2 .pend-table`): las dos
+   listan lo mismo —producto, cantidad, importe— una debajo de la otra, y con dos cuerpos distintos
+   se leían como dos documentos ajenos. */
+.factura-v2 .comp-table--pareja th {
+  font-size: 12px;
+}
+.factura-v2 .comp-table--pareja td {
+  font-size: 14px;
+}
+
 .factura-v2 .comp-cod {
   color: var(--f-primary);
   font-weight: 700;

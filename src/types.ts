@@ -16,6 +16,8 @@ export type Paso =
   | 'remito-productos'
   | 'remito-envio'
   | 'remito-emision'
+  /** REMITO · DEVOLUCION: imputación contra los remitos de entrega y cierre de la operación. */
+  | 'remito-devolucion'
 
 export interface Vendedor {
   /** ID numérico del usuario de Monday. Se guarda para asignar la venta en las mutaciones. */
@@ -224,6 +226,17 @@ export interface Producto {
   um: string
   /** Peso unitario en kg ("✋Peso (kg)" del maestro). Alimenta el peso del remito. */
   peso?: number
+  /* Las CUATRO piezas con las que el tablero de stock arma sus tres fórmulas. Viajan con el
+     producto para poder proyectar cómo quedaría el stock al devolver, sin re-consultarlo:
+       Físico = Ingreso − Egreso · Comercial = Físico − Pend de Entrega · Disponible = Comercial + Pend de Recibir */
+  /** "🤖Ingreso Total": unidades que YA entraron. La devolución las incrementa. */
+  ingresos: number
+  /** "🤖Egreso Total": unidades que salieron. Se guarda en positivo y RESTA al físico. */
+  egresos: number
+  /** "🤖Pend de Entrega Vta": lo comprometido por ventas; resta al comercial. */
+  pendEntregaVta: number
+  /** "🤖Pend de Recibir Compra": lo que va a entrar por compras; suma al disponible. */
+  pendRecepcionCompra: number
   fisico: number
   comercial: number
   disponible: number
@@ -586,8 +599,10 @@ export type TipoEntrega = 'POSTERIOR' | 'ANTERIOR' | 'SIMULTANEA'
 /**
  * POSTERIOR: se remite mercadería que se facturará luego (queda pend. de facturar).
  * ANTERIOR: se remite mercadería de una venta ya facturada, pendiente de entregar.
+ * DEVOLUCION: la mercadería vuelve del cliente. Es el único sentido inverso: no se entrega nada,
+ * se imputa contra remitos de entrega ya emitidos, entra al stock y deja una NC pendiente.
  */
-export type TipoEmisionRemito = 'ANTERIOR' | 'POSTERIOR'
+export type TipoEmisionRemito = 'ANTERIOR' | 'POSTERIOR' | 'DEVOLUCION'
 
 /** Estado de entrega de una venta ya facturada. Sólo las dos primeras se remiten. */
 export type EstadoEntrega = 'Pend. de Entregar' | 'Parcialmente entregada' | 'Entregada'
@@ -683,6 +698,12 @@ export interface RemitoItem {
   /** Rentabilidad del producto según la lista del cliente, en %. POSTERIOR: viaja a la "Vta Pend de
    *  Facturar" para reusarla en la rentabilidad general al facturar la venta DIRECTA con entrega ANTERIOR. */
   rentabilidad?: number
+  /**
+   * Ficha del catálogo con la que se cargó la línea. Sólo la traen las líneas que salieron del
+   * catálogo (POSTERIOR y DEVOLUCION): es lo que permite volver a ver el stock del producto desde
+   * la tabla, sin re-consultarlo. Las líneas que nacen de un pendiente no la tienen.
+   */
+  producto?: Producto
   /** ANTERIOR: ítem de "Pends de Entrega" de la línea. Se afecta al emitir el remito. */
   pendienteEntregaId?: string
   /** ANTERIOR: ítem de "Stock y Movimientos" del producto. Se afecta al emitir el remito. */
@@ -790,4 +811,10 @@ export interface RemitoState {
   remitoId: string | null
   /** Emitido: habilita el cierre del proceso. */
   emitido: boolean
+  /**
+   * DEVOLUCION: la devolución ya se registró en Monday (movimientos de stock + cantidad devuelta
+   * en los remitos imputados). Es irreversible, así que a partir de acá la operación queda en
+   * solo lectura y el botón de finalizar no puede volver a dispararla.
+   */
+  devolucionRegistrada: boolean
 }

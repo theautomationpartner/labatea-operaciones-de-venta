@@ -10,7 +10,15 @@ export interface CV {
   display_value?: string | null
   /** Índice de la etiqueta en una columna status. Es más estable que su texto. */
   index?: number | null
-  linked_items?: { id: string; name: string; column_values: CV[] }[]
+  /* `parent_item` sólo viene cuando la consulta lo pide: es el ítem padre de un SUBELEMENTO
+     conectado (p. ej., del subelemento de venta al que apunta un pendiente de entrega se llega
+     así a la venta). Por eso `column_values` también es opcional acá. */
+  linked_items?: {
+    id: string
+    name: string
+    column_values?: CV[]
+    parent_item?: { id: string; name: string } | null
+  }[]
   /** Sólo los IDs de los ítems conectados, cuando no hace falta traerlos enteros. */
   linked_item_ids?: string[]
 }
@@ -21,8 +29,11 @@ export interface MondayItem {
   column_values: CV[]
 }
 
-export const byId = (item: { column_values: CV[] }): Record<string, CV> =>
-  Object.fromEntries(item.column_values.map((c) => [c.id, c]))
+/* `column_values` es opcional porque un ítem CONECTADO puede haberse pedido sin columnas (sólo
+   `id`/`name`/`parent_item`). En ese caso el mapa sale vacío, que es exactamente lo que
+   corresponde: no se pidió ninguna columna, así que no hay ninguna que leer. */
+export const byId = (item: { column_values?: CV[] }): Record<string, CV> =>
+  Object.fromEntries((item.column_values ?? []).map((c) => [c.id, c]))
 
 /** Valor de una columna: usa display_value (fórmulas) o text (numéricas/comunes). */
 export const valor = (cv?: CV): string => cv?.display_value ?? cv?.text ?? ''

@@ -38,7 +38,6 @@ export function ProductosView() {
     tipoVenta,
     tipoEntrega,
     formaPago,
-    descuentoPagoActivo,
     descuentosPago,
     comisiones,
     tasaCambio,
@@ -72,11 +71,11 @@ export function ProductosView() {
     (operacion === 'PRESUPUESTAR' ||
       (esVenta && tipoVenta === 'DIRECTA' && tipoEntrega !== 'ANTERIOR'))
   /* Descuento por pronto pago de la forma de pago elegida. Se compone con el descuento manual de
-     cada línea en la tabla y en el resumen. En la VENTA rige siempre (la forma de pago define el
-     ramal del cobro); en el PRESUPUESTO es opcional y sólo cuenta con la pregunta contestada que
-     sí —apagada, el presupuesto sale a precios de lista aunque haya una forma de pago vieja—. */
-  const aplicaDescPago = esVenta || descuentoPagoActivo
-  const descFormaPago = aplicaDescPago ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
+     cada línea en la tabla y en el resumen.
+     Es EXCLUSIVO DE LA VENTA, donde la forma de pago define el ramal del cobro. El PRESUPUESTO
+     sale SIEMPRE a precios de lista: su check de formas de pago no bonifica nada, sólo pide que el
+     PDF incluya la leyenda (ver `DescuentoPagoPresupuesto`). */
+  const descFormaPago = esVenta ? descuentoDeFormaPago(formaPago, descuentosPago) : 0
   /* El presupuesto no liquida IVA: ni en el precio unitario ni en los totales. La venta sí,
      así que la misma vista calcula distinto según de qué operación se trate. */
   const resumen = useMemo(
@@ -311,17 +310,6 @@ export function ProductosView() {
               /* PRESUPUESTO: avanzar a emisión es una transición local y silenciosa. El ítem NO se
                  crea acá: nace al hacer click en "Emitir Presupuesto". Sin queries ni modales. */
               if (lineas.length === 0) return
-              /* Con la pregunta contestada que SÍ, la forma de pago es obligatoria para avanzar,
-                 igual que en la venta: define el descuento que se aplica a cada precio unitario y
-                 la leyenda que va al PDF. Con la pregunta apagada no hace falta ninguna. */
-              if (descuentoPagoActivo && !formaPago) {
-                setAviso({
-                  titulo: 'Falta la forma de pago',
-                  texto:
-                    'Pediste aplicar descuentos por forma de pago: seleccioná cuál antes de continuar a la siguiente etapa.',
-                })
-                return
-              }
               dispatch({ type: 'goto', paso: 'emision' })
             }}
           >

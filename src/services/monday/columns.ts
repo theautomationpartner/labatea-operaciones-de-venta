@@ -84,6 +84,10 @@ export const BOARDS = {
   consignacionesCYO: 18421465215,
   /** "💲Registro de Comisiones": un ítem por venta comisionable, con un subítem por producto. */
   comisiones: 18421035548,
+  /** "Notas de Credito Pends de Emitir": lo que deja una devolución para acreditarle al cliente. */
+  notasCredito: 18428263659,
+  /** Subelementos de la nota de crédito: un producto devuelto cada uno. */
+  notasCreditoSub: 18428265309,
   /** Subelementos de "💲Registro de Comisiones": un producto comisionable de la venta cada uno. */
   comisionesSub: 18421035638,
 } as const
@@ -224,6 +228,26 @@ export const REMITO_ENVIO_ESTADO = {
   enviando: 'Enviando',
   enviado: 'Enviado',
   error: 'Error - Ver Update',
+} as const
+
+/**
+ * Etiquetas de "🤖Estado" (columna `status`) del subelemento de "🧮Stock y Movimientos" con las
+ * que nace cada movimiento. Como en el resto de la app, el índice se resuelve LEYENDO la columna:
+ * acá sólo viven los textos que se buscan. La devolución lleva dos candidatos porque la "v" del
+ * label del board convive con la grafía que usa el requerimiento.
+ */
+/**
+ * Estado con el que nace la nota de crédito en "🤖Estado de Emision" (`status`). Como en el resto
+ * de la app se escribe por ÍNDICE resuelto leyendo la columna; acá sólo vive el texto que se busca.
+ */
+export const NOTA_CREDITO_ESTADO = {
+  pendiente: 'Pend de Emitir',
+  emitida: 'Emitida 100%',
+} as const
+
+export const STOCK_MOV_LABEL = {
+  entrega: ['RTO Venta Entrega'],
+  devolucion: ['RTO Venta Devolucion', 'RTO Venta DEvolucion', 'RTO Venta Devolución'],
 } as const
 
 /**
@@ -447,12 +471,10 @@ export const COL = {
     /** "🤖Desc $ x Prod": monto del descuento por producto por unidad, en la moneda del producto.
      *  Es el descuento manual del vendedor sobre el precio ya rebajado por la forma de pago. */
     descProdMonto: 'numeric_mm5x3wee',
-    /** "🤖Desc % x Forma de Pago": descuento por pronto pago aplicado al presupuesto, en %. 0 cuando
-     *  el vendedor no pidió aplicarlo. */
-    descFormaPagoPct: 'numeric_mm6e2zs9',
-    /** "🤖Desc $ x Forma de Pago": monto por unidad de ese descuento (precio de lista × %fp/100), en
-     *  la moneda del producto. Junto con "Desc $ x Prod" compone el "Descuento TOTAL". */
-    descFpMonto: 'numeric_mm6ehr78',
+    /* El presupuesto NO aplica descuento por forma de pago: su check sólo pide que el PDF incluya
+       la leyenda. Por eso "Desc % x Forma de Pago" (numeric_mm6e2zs9) y "Desc $ x Forma de Pago"
+       (numeric_mm6ehr78) siguen existiendo en el board pero la app no las escribe, y el descuento
+       por unidad va entero en `descTotal`. */
     /** "🤖Nota de Credito x Comision": Costo Original − Nuevo Precio de Costo, por la rentabilidad forzada. */
     notaCreditoComision: 'numeric_mm63sbtd',
     /** "🤖Costo $": costo del producto en PESOS (original, o el nuevo si se forzó la rentabilidad). */
@@ -865,12 +887,24 @@ export const COL = {
     estadoEnvio: 'color_mm5gpcbj',
     /** "🤖Num Remito Talonario": la hoja del talonario (subítem) que numera este remito. */
     numRemitoTalonario: 'board_relation_mm5jy3ke',
+    /**
+     * "Vtas Pends de Facturar": el pendiente que dejó un remito POSTERIOR. Es el único camino a la
+     * venta de ese remito —recién existe cuando el pendiente se factura—, y por ahí llega la
+     * devolución al precio con el que armar la nota de crédito.
+     */
+    vtaPendFacturar: 'board_relation_mm5nfdfh',
   },
   // Un producto entregado en el remito (subelemento de 🧾🚚 Remitos Ventas).
   remitoSub: {
     producto: 'board_relation_mkwca4wb',
     /** "✋Cant a Entregar": las unidades que salieron en el remito. */
     cantEntregada: 'numeric_mm54mbjx',
+    /**
+     * "🤖Cant Devuelta": unidades de ESTA línea que ya volvieron por una devolución. Es lo único
+     * que permite que un remito no se impute dos veces: lo devolvible de la línea es
+     * `cantEntregada − cantDevuelta`, y cada devolución lo acumula.
+     */
+    cantDevuelta: 'numeric_mm6jp7tx',
     unidadMedida: 'dropdown_mm5g9mp',
     /** "🤖Peso": peso de la línea remitada (cantidad × peso unitario del producto). */
     peso: 'numeric_mm5ga7bw',
@@ -940,9 +974,16 @@ export const COL = {
     cliente: 'board_relation_mm5p8hpc',
     /** "🤖Maestro de Productos": el producto pendiente. */
     producto: 'board_relation_mkwbxjqx',
-    /** "🤖Venta": la venta que originó el pendiente (nivel ítem). */
-    venta: 'board_relation_mkwbb4w4',
-    /** "📈Subelementos de Ventas": el subelemento de venta del que sale esta línea (18421035581). */
+    /**
+     * "📈Subelementos de Ventas": el subelemento de venta del que sale esta línea (18421035581).
+     * Es el ÚNICO puente del pendiente a la venta —el tablero no tiene columna de venta a nivel
+     * ítem—, así que a la venta se llega por el `parent_item` de este subelemento.
+     *
+     * (Antes había acá un `venta: 'board_relation_mkwbb4w4'` que NO existe en este tablero: es la
+     * columna "Venta" de "Vtas Pends de Facturar". Al mandarla en el `create_item` del pendiente
+     * se llevaba puesto el enlace de abajo, y por eso los pendientes quedaban sin subelemento de
+     * venta y la venta de origen se leía siempre vacía.)
+     */
     ventaSubelemento: 'board_relation_mm5pcdfj',
     /** "🤖Q VTA": cantidad vendida. */
     cantidad: 'numeric_mkwb862t',
@@ -975,6 +1016,12 @@ export const COL = {
   stockItem: {
     /** "🤖Pend de Entrega Vta": saldo pendiente de entregar; se decrementa al remitir. */
     pendEntregaVta: 'numeric_mm5nscx',
+    /** "🤖Ingreso Total": espejo de los ingresos de los subelementos de movimiento. */
+    ingresos: 'lookup_mm578v5m',
+    /** "🤖Egreso Total": el espejo gemelo de los egresos. Se guarda en POSITIVO y se RESTA. */
+    egresos: 'lookup_mm57sf80',
+    /** "🤖Pend de Recibir Compra": lo que va a entrar por compras; suma al stock disponible. */
+    pendRecepcionCompra: 'numeric_mm57p2wq',
     /** "🤖Stock Fisico": ingresos − egresos registrados. */
     fisico: 'formula_mm57f9pn',
     /** "🤖Stock Comercial": el físico menos lo pendiente de entregar por ventas. */
@@ -988,10 +1035,47 @@ export const COL = {
     estado: 'status',
     /** "🤖Egreso": cantidad que sale del stock. */
     egreso: 'numeric_mm57fs41',
+    /** "🤖Ingreso": cantidad que entra al stock. Es por donde vuelve la mercadería devuelta. */
+    ingreso: 'numeric_mm57q4sm',
     /** "🤖Fecha Mov": fecha del movimiento (YYYY-MM-DD). */
     fecha: 'date0',
     /** "Numero Comprobante": el número de hoja del remito. */
     comprobante: 'text_mm5nmtat',
+  },
+  // Cabecera de la nota de crédito pendiente de emitir (board 18428263659).
+  notaCredito: {
+    /** "🤖Cliente": a quién se le acredita (Personas, 18420688238). */
+    cliente: 'board_relation_mm6ky9b6',
+    /** "🤖Vendedor" (people): el vendedor de la operación. */
+    vendedor: 'person',
+    /** "🤖Fecha Venc": vencimiento de la nota de crédito. */
+    vencimiento: 'date4',
+    /** "🤖TOTAL $": importe total a acreditar, IVA incluido. El board es mono-moneda (pesos). */
+    total: 'numeric_mm6kk7af',
+    /** "🤖IVA $": el IVA de toda la nota, sumado de sus productos. Sólo vive a nivel ítem: el
+     *  cliente no quiere ver el impuesto abierto por producto. */
+    iva: 'numeric_mm6kfj4k',
+    /** "🤖Importe Emitido": arranca en 0; lo carga quien emita el comprobante. */
+    importeEmitido: 'numeric_mm6kd8qc',
+    /** "🤖Estado de Emision": nace "Pend de Emitir" (por índice dinámico). */
+    estadoEmision: 'status',
+  },
+  // Un producto devuelto de la nota de crédito (subelemento, board 18428265309).
+  notaCreditoSub: {
+    /** "📦Producto": conecta con el Maestro de Productos (18421035535). */
+    producto: 'board_relation_mm6kv1m5',
+    /** "🤖Unidad de Venta": la U.M. del producto. El board nace sin etiquetas: se crean al vuelo. */
+    unidadVenta: 'dropdown_mm6ktjyx',
+    /** "🤖Cant Imputada": unidades devueltas que esta línea acredita. */
+    cantImputada: 'numeric_mm6kxz8x',
+    /** "🤖Precio Unit $": el precio con el que se vendió el producto en SU venta. */
+    precioUnit: 'numeric_mm6k7ny6',
+    /** "🤖IVA $": el IVA de esta línea. El total de la nota lo suma aparte, a nivel ítem. */
+    iva: 'numeric_mm6kxkb8',
+    /** "🤖Subtotal": cantidad × precio unitario. El board no lo deriva, se manda calculado. */
+    subtotal: 'numeric_mm6k10mg',
+    /** "🤖Cant Emitida": arranca en 0; el "Pend de Emitir" del board sale de restarla. */
+    cantEmitida: 'numeric_mm6kdgdn',
   },
   // Cabecera del comprobante (board 18422405731). Una venta puede generar varios.
   facturacion: {

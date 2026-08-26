@@ -9,6 +9,7 @@ import { getVentasEntregaPendiente } from '@/services/monday'
 import { hayDocumentoEmitido, type SeleccionRemito } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { VentaEntregaPendiente, VentaEntregaProducto } from '@/types'
+import { CargaProductoDevolucion } from './CargaProductoDevolucion'
 import { CargaProductoRemito } from './CargaProductoRemito'
 import { TablaRemito } from './TablaRemito'
 
@@ -45,6 +46,9 @@ export function RemitoProductosView() {
   const { cliente, operacion, tipoVenta, tipoEntrega, remito } = state
   const dispatch = useDispatch()
   const esAnterior = remito.tipoEmision === 'ANTERIOR'
+  /* DEVOLUCION: la mercadería VUELVE. Sale del catálogo como el POSTERIOR, pero sin importes y sin
+     control de crédito (una devolución baja la deuda del cliente, no la sube). */
+  const esDevolucion = remito.tipoEmision === 'DEVOLUCION'
   /* GUARDRAIL post-emisión: con el remito ya emitido, la carga de productos queda en SOLO LECTURA. */
   const bloqueadoPorEmision = hayDocumentoEmitido(state)
   // Aviso al intentar avanzar sin productos en el remito.
@@ -141,19 +145,31 @@ export function RemitoProductosView() {
       {/* La bajada cambia según de dónde sale la mercadería. */}
       <PasoTitulo
         numero={indiceDePaso('remito-productos', operacion, tipoVenta, tipoEntrega, remito.tipoEmision) + 1}
-        titulo="Cargar productos del remito"
+        titulo={esDevolucion ? 'Seleccionar productos regresados' : 'Cargar productos del remito'}
         descripcion={
-          esAnterior
-            ? 'Elegí los productos pendientes de entregar de las ventas facturadas y ajustá la cantidad a remitar.'
-            : 'Buscá y cargá desde el catálogo los productos que salen en este remito.'
+          esDevolucion
+            ? 'Buscá cada producto que devuelve el cliente e indicá la cantidad devuelta.'
+            : esAnterior
+              ? 'Elegí los productos pendientes de entregar de las ventas facturadas y ajustá la cantidad a remitar.'
+              : 'Buscá y cargá desde el catálogo los productos que salen en este remito.'
         }
       />
 
       {bloqueadoPorEmision ? (
         <div className="card aviso-bloqueo">
-          <i className="fas fa-lock" /> El remito ya fue emitido en Monday: la carga de productos
-          quedó bloqueada y no puede modificarse.
+          <i className="fas fa-lock" />{' '}
+          {esDevolucion
+            ? 'La devolución ya se registró en Monday: la carga de productos quedó bloqueada y no puede modificarse.'
+            : 'El remito ya fue emitido en Monday: la carga de productos quedó bloqueada y no puede modificarse.'}
         </div>
+      ) : esDevolucion ? (
+        <>
+          <p className="remito-aviso remito-aviso--plano">
+            <i className="fas fa-triangle-exclamation" /> Los productos con cadena de frío no se
+            aceptan.
+          </p>
+          <CargaProductoDevolucion />
+        </>
       ) : esAnterior ? (
         /* Sin panel lateral: la tabla de pendientes ocupa el 100% del ancho, con su buscador y
            su botonera arriba. */
@@ -193,15 +209,23 @@ export function RemitoProductosView() {
         items={remito.items}
         onCantidad={(uid, cantidad) => dispatch({ type: 'setRemitoItemCantidad', uid, cantidad })}
         onRemove={(uid) => dispatch({ type: 'removeRemitoItem', uid })}
-        // POSTERIOR: la venta se factura después, así que se muestran precios e importe pendiente.
-        mostrarImporte={!esAnterior}
+        /* POSTERIOR: la venta se factura después, así que se muestran precios e importe pendiente.
+           La DEVOLUCION tampoco los muestra: su importe lo define la venta de cada remito imputado. */
+        mostrarImporte={!esAnterior && !esDevolucion}
         // ANTERIOR: cómo queda el pendiente de cada línea de la venta después de esta entrega.
         mostrarResultante={esAnterior}
-        /* ANTERIOR: una vez confirmado el producto, su cantidad no baja de 1 (entregar cero
-           unidades no es una entrega). Para sacarlo del remito está la papelera. */
-        cantidadMin={esAnterior ? 1 : 0}
+        /* ANTERIOR y DEVOLUCION: una vez confirmado el producto, su cantidad no baja de 1 (ni
+           entregar ni devolver cero unidades es algo). Para sacarlo de la lista está la papelera. */
+        cantidadMin={esAnterior || esDevolucion ? 1 : 0}
         // Post-emisión: cantidades no editables y sin quitar líneas.
         soloLectura={bloqueadoPorEmision}
+        /* En la devolución nadie entrega nada: la mercadería vuelve, y cada línea se puede
+           desplegar para volver a ver el stock del producto —sus ingresos incluidos—. */
+        mostrarStock={esDevolucion}
+        modoStock={esDevolucion ? 'ingreso' : 'consumo'}
+        titulo={esDevolucion ? 'Productos devueltos' : undefined}
+        colCantidad={esDevolucion ? 'Cantidad devuelta' : undefined}
+        vacio={esDevolucion ? 'Todavía no especificaste qué productos te devolvieron.' : undefined}
       />
 
       <footer className="page-footer">
@@ -221,17 +245,21 @@ export function RemitoProductosView() {
               setSinProductos(true)
               return
             }
-            if (bloqueo.frenar()) return
-            dispatch({ type: 'goto', paso: 'remito-envio' })
+            /* La devolución no compromete crédito: lo libera. El bloqueo por deuda no aplica. */
+            if (!esDevolucion && bloqueo.frenar()) return
+            dispatch({ type: 'goto', paso: esDevolucion ? 'remito-devolucion' : 'remito-envio' })
           }}
         >
-          Continuar a entrega de mercadería <i className="fas fa-chevron-right" />
+          {esDevolucion ? 'Continuar a imputación de remitos' : 'Continuar a entrega de mercadería'}{' '}
+          <i className="fas fa-chevron-right" />
         </button>
       </footer>
 
       {sinProductos && (
         <AvisoModal titulo="No hay productos seleccionados" onClose={() => setSinProductos(false)}>
-          Tenés que agregar al menos un producto para armar el remito y continuar.
+          {esDevolucion
+            ? 'Tenés que agregar al menos un producto para registrar la devolución y continuar.'
+            : 'Tenés que agregar al menos un producto para armar el remito y continuar.'}
         </AvisoModal>
       )}
 

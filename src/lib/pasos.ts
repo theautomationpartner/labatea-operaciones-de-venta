@@ -6,12 +6,23 @@ import type { Operacion, Paso, TipoEmisionRemito, TipoEntrega, TipoVenta } from 
  * proforma o remito). Antes cada recorrido inventaba su variante —"Cargar productos", "Seleccionar
  * remito", "Productos a remitar", "Emitir factura", "Emitir remito", "Emisión y envío"—, así que la
  * misma etapa cambiaba de nombre según cómo hubieras entrado.
+ *
+ * La única excepción es la DEVOLUCION, donde la mercadería va en el sentido inverso y la etapa no
+ * hace lo mismo que su equivalente de venta (ver `productosDevolucion`).
  */
 export const ETAPA = {
   cliente: 'Seleccionar Cliente',
   productos: 'Seleccionar Productos',
   cobro: 'Cobro',
   entrega: 'Entrega de Mercadería',
+  /**
+   * DEVOLUCION. Es la única etapa que NO comparte el nombre con su equivalente de las otras
+   * operaciones: no se eligen productos para vender sino para que vuelvan, y el recorrido entero
+   * va en el sentido inverso. Nombrarla igual que la de venta invitaba a leer mal la operación.
+   */
+  productosDevolucion: 'Seleccionar Productos Regresados',
+  /** DEVOLUCION: reemplaza a la entrega. No sale mercadería, se imputa la que vuelve. */
+  imputacion: 'Imputación de Remitos',
   emitir: 'Emitir y Enviar',
 } as const
 
@@ -45,6 +56,17 @@ export const PASOS_REMITO_OPERACION = [
 ] as const
 
 /**
+ * REMITO · DEVOLUCION: tres etapas. No hay entrega que definir —la mercadería vuelve, no sale— ni
+ * emisión que enviar: la imputación contra los remitos de entrega ES el cierre de la operación,
+ * y desde ahí se registran el movimiento de stock y la cantidad devuelta de cada remito.
+ */
+export const PASOS_REMITO_DEVOLUCION = [
+  ETAPA.cliente,
+  ETAPA.productosDevolucion,
+  ETAPA.imputacion,
+] as const
+
+/**
  * La entrega ANTERIOR parte de un remito ya emitido, no del catálogo ni del presupuesto:
  * la mercadería salió antes de la factura, así que lo que se carga son sus pendientes de
  * facturar. Vale para los dos tipos de venta, directa o con presupuesto previo.
@@ -62,11 +84,11 @@ export function pasosDe(
   tipoEntrega: TipoEntrega | null,
   tipoEmision: TipoEmisionRemito | null = null,
 ): readonly string[] {
-  /* El tipo de emisión del remito ya no cambia las ETIQUETAS —las dos variantes recorren las
-     mismas cuatro etapas—; sigue en la firma porque decide de dónde salen los productos. */
+  /* ANTERIOR y POSTERIOR recorren las MISMAS cuatro etapas: el tipo de emisión sólo decide de
+     dónde salen los productos. La DEVOLUCION sí cambia el recorrido: son tres etapas y la última
+     no es una emisión, es la imputación contra los remitos ya entregados. */
   if (operacion === 'REMITO') {
-    void tipoEmision
-    return PASOS_REMITO_OPERACION
+    return tipoEmision === 'DEVOLUCION' ? PASOS_REMITO_DEVOLUCION : PASOS_REMITO_OPERACION
   }
   // La VENTA PROFORMA tiene un recorrido fijo de cuatro pasos: no configura venta ni entrega.
   if (operacion === 'VENTA PROFORMA') return PASOS_VENTA
@@ -91,9 +113,11 @@ export function pasosKeysDe(
   tipoEntrega: TipoEntrega | null,
   tipoEmision: TipoEmisionRemito | null = null,
 ): readonly Paso[] {
-  void tipoEmision // el remito comparte las mismas claves en ANTERIOR y POSTERIOR
   if (operacion === 'REMITO') {
-    return ['cliente', 'remito-productos', 'remito-envio', 'remito-emision']
+    // ANTERIOR y POSTERIOR comparten claves; la DEVOLUCION cierra en su propia etapa.
+    return tipoEmision === 'DEVOLUCION'
+      ? ['cliente', 'remito-productos', 'remito-devolucion']
+      : ['cliente', 'remito-productos', 'remito-envio', 'remito-emision']
   }
   if (operacion === 'VENTA PROFORMA') return ['cliente', 'venta-proforma', 'cobro', 'factura']
   if (operacion !== 'VENTA') return ['cliente', 'productos', 'emision'] // PRESUPUESTAR
@@ -144,8 +168,19 @@ export function pasoDeProductos(
 /** Las tres entregas valen para cualquier tipo de venta. */
 export const ENTREGAS: readonly TipoEntrega[] = ['POSTERIOR', 'ANTERIOR', 'SIMULTANEA']
 
-/** El remito se emite antes o después de facturar. */
-export const EMISIONES_REMITO: readonly TipoEmisionRemito[] = ['POSTERIOR', 'ANTERIOR']
+/** El remito se emite antes o después de facturar; o es la vuelta de la mercadería. */
+export const EMISIONES_REMITO: readonly TipoEmisionRemito[] = [
+  'POSTERIOR',
+  'ANTERIOR',
+  'DEVOLUCION',
+]
+
+/** Etiqueta del tipo de emisión en el selector. Sólo la devolución no se lee bien en mayúsculas. */
+export const EMISION_REMITO_LABEL: Record<TipoEmisionRemito, string> = {
+  POSTERIOR: 'POSTERIOR',
+  ANTERIOR: 'ANTERIOR',
+  DEVOLUCION: 'DEVOLUCIÓN',
+}
 
 export const OPERACIONES: readonly Operacion[] = [
   'PRESUPUESTAR',

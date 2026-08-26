@@ -32,17 +32,12 @@ export interface FragmentoSubitem {
  * pesos, las columnas `$` (Precio Unit $, TOTAL $). El Importe Bonif. y el resto de las columnas son
  * comunes. El producto se linkea sólo si trae id de Monday (en modo local no hay ids reales).
  *
- * `descFormaPago` es el descuento por pronto pago del presupuesto (0 cuando el vendedor no pidió
- * aplicarlo). Se compone EN CASCADA con el descuento manual de la línea —con las mismas fórmulas
- * de `lib/descuentos` que usa la tabla de productos—, así lo que se asienta en el board es
- * exactamente lo que vio el vendedor.
+ * El presupuesto tiene UN solo descuento: el manual que el vendedor carga por línea. No aplica el
+ * de forma de pago —su check sólo pide la leyenda en el PDF—, así que no hay ninguna cascada que
+ * componer y el "Descuento TOTAL" es ese monto por unidad, en pesos:
  *
- * Los dos descuentos se asientan por separado, cada uno con su % y su monto por unidad, y el
- * "Descuento TOTAL" es la SUMA de los dos montos:
- *
- *   Desc $ x Prod + Desc $ x Forma de Pago = Descuento TOTAL
- *   Precio Unit − Descuento TOTAL          = Precio Unit C/Desc Total
- *   Precio Unit C/Desc Total × Cant        = Subtotal
+ *   Precio Unit − Descuento TOTAL   = Precio Unit C/Desc Total
+ *   Precio Unit C/Desc Total × Cant = Subtotal
  *
  * Sin descuentos, el "Descuento TOTAL" vale 0 —no el precio unitario— y el precio con descuento
  * total coincide con el de lista.
@@ -50,35 +45,31 @@ export interface FragmentoSubitem {
 export function fragmentoSubitem(
   linea: LineaPresupuesto,
   indice: number,
-  descFormaPago = 0,
 ): FragmentoSubitem {
   const p = linea.producto
   const alias = `s${indice}`
   const precio = round2(p.precio)
-  /* Descuento de la línea por unidad, en cascada: primero el de forma de pago sobre el precio de
-     lista y después el manual sobre el precio ya rebajado. Todos los montos en la moneda del
-     producto. Sin descuento por forma de pago el resultado es idéntico al de siempre. */
-  const dto = descuentoUnitario(p.precio, linea.descuento, descFormaPago)
+  /* Descuento de la línea por unidad: el MANUAL del vendedor sobre el precio de lista, en la
+     moneda del producto. El presupuesto no aplica descuento por forma de pago —su check sólo pide
+     la leyenda en el PDF—, así que no hay cascada que componer. */
+  const dto = descuentoUnitario(p.precio, linea.descuento)
   // Total de la línea, ya bonificado: precio final × cantidad, en la moneda del producto.
   const total = round2(dto.precioFinal * linea.cantidad)
   const usd = esDolar(p.moneda)
-  // ¿Se aplicó algún descuento, por producto o por forma de pago?
+  // ¿La línea lleva descuento?
   const tieneDescuento = dto.total > 0
   const columnas: Record<string, unknown> = {
     [COL.presupuestoSub.cantidad]: String(linea.cantidad),
     // Rentabilidad del producto CON DECIMALES (no se redondea a entero).
     [COL.presupuestoSub.rentabilidad]: String(round2(p.rentabilidad)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
-    /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento MANUAL por unidad, en la moneda del
-       producto —sobre el precio ya rebajado por la forma de pago, que es donde muerde—. */
+    /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento por unidad, en la moneda del
+       producto. */
     [COL.presupuestoSub.descProdMonto]: String(dto.manual),
-    // "Desc % x Forma de Pago" (numeric_mm6e2zs9): el % de pronto pago aplicado al presupuesto.
-    [COL.presupuestoSub.descFormaPagoPct]: String(round2(descFormaPago)),
-    /* "Desc $ x Forma de Pago" (numeric_mm6ehr78): su monto por unidad, sobre el precio de LISTA
-       (es el primero de la cascada), en la moneda del producto. */
-    [COL.presupuestoSub.descFpMonto]: String(dto.formaPago),
-    /* "Descuento TOTAL" (numeric_mm5w6h1x): la SUMA de los dos montos de arriba. Sin ningún
-       descuento va en 0 —NO el precio unitario—, que es lo que la columna significa. */
+    /* "Descuento TOTAL" (numeric_mm5w6h1x): el descuento por unidad EN PESOS. Sin descuento va en
+       0 —NO el precio unitario—, que es lo que la columna significa.
+       Las columnas "Desc % x Forma de Pago" (numeric_mm6e2zs9) y "Desc $ x Forma de Pago"
+       (numeric_mm6ehr78) NO se escriben: el presupuesto no aplica ese descuento. */
     [COL.presupuestoSub.descTotal]: String(dto.total),
     // "Precio Unit C/Desc Total" (numeric_mm5rddvm): precio de lista − Descuento TOTAL.
     [COL.presupuestoSub.precioConDescTotal]: String(dto.precioFinal),
@@ -137,10 +128,9 @@ export interface SolicitudBulk {
 export function construirBulkSubitems(
   lineas: LineaPresupuesto[],
   desde = 0,
-  descFormaPago = 0,
 ): SolicitudBulk | null {
   if (lineas.length === 0) return null
-  const fragmentos = lineas.map((l, i) => fragmentoSubitem(l, desde + i, descFormaPago))
+  const fragmentos = lineas.map((l, i) => fragmentoSubitem(l, desde + i))
   const declaraciones = ['$parentId: ID!', ...fragmentos.flatMap((f) => f.declaraciones)]
   const variables = Object.assign({}, ...fragmentos.map((f) => f.variables)) as Record<
     string,

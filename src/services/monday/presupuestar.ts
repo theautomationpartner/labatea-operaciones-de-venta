@@ -663,6 +663,15 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     peso: numCol(c[COL.producto.peso]),
     /* Las tres cantidades de stock son fórmulas del ítem conectado en "🧮Stock y Movimientos"
        (board 18421752251): el maestro NO las tiene. Sin ítem de stock conectado quedan en 0. */
+    /* Los ingresos son una MIRROR de los subelementos de movimiento, así que su `display_value`
+       puede venir como lista separada por comas: hay que sumarla, no pasarla por `num()`. */
+    ingresos: sumaMirror(stock[COL.stockItem.ingresos]),
+    /* Ingresos y egresos son MIRRORS de los subelementos de movimiento: su `display_value` puede
+       venir como lista separada por comas, así que hay que sumarla y no pasarla por `num()`. Los
+       dos pendientes sí son columnas numéricas comunes. */
+    egresos: sumaMirror(stock[COL.stockItem.egresos]),
+    pendEntregaVta: numCol(stock[COL.stockItem.pendEntregaVta]),
+    pendRecepcionCompra: numCol(stock[COL.stockItem.pendRecepcionCompra]),
     fisico: numCol(stock[COL.stockItem.fisico]),
     comercial: numCol(stock[COL.stockItem.comercial]),
     disponible: numCol(stock[COL.stockItem.disponible]),
@@ -708,6 +717,10 @@ const columnasProducto = (lista: ListaPrecio): string =>
  * relación del maestro: una sola consulta trae el producto y su stock.
  */
 const COLUMNAS_STOCK = JSON.stringify([
+  COL.stockItem.ingresos,
+  COL.stockItem.egresos,
+  COL.stockItem.pendEntregaVta,
+  COL.stockItem.pendRecepcionCompra,
   COL.stockItem.fisico,
   COL.stockItem.comercial,
   COL.stockItem.disponible,
@@ -721,6 +734,10 @@ const COLUMNAS_STOCK = JSON.stringify([
  * Los ítems conectados traen además las columnas de stock. Las pide para TODAS las relaciones
  * del producto (proveedor incluido), pero eso no molesta: la API devuelve sólo las columnas que
  * existen en el tablero del ítem, así que en el proveedor la lista vuelve vacía.
+ *
+ * OJO con los fragmentos: el stock mezcla FÓRMULAS (los tres saldos) y MIRRORS (Ingreso y Egreso
+ * Total, que espejan los subelementos de movimiento). Cada tipo necesita el suyo; el que falte
+ * vuelve en cero sin avisar.
  */
 const seleccionProducto = (lista: ListaPrecio): string => `
   id name
@@ -735,6 +752,9 @@ const seleccionProducto = (lista: ListaPrecio): string => `
         column_values(ids: ${COLUMNAS_STOCK}) {
           id text
           ... on FormulaValue { display_value }
+          # Ingreso y Egreso Total son MIRRORS de los subelementos de movimiento: sin este
+          # fragmento vuelven con 'text: null' y sin 'display_value', o sea en cero.
+          ... on MirrorValue { display_value }
         }
       }
     }
@@ -1036,7 +1056,7 @@ export async function getOpcionesFiltros(): Promise<OpcionesFiltros> {
 
 /* ===== 4) Contactos del cliente (según "Para Enviar") ===== */
 
-function mapContacto(item: MondayItem, documento: string): Contacto {
+function mapContacto(item: { id: string; name: string; column_values?: CV[] }, documento: string): Contacto {
   const c = byId(item)
   const paraEnviar = c[COL.contacto.paraEnviar]?.text ?? ''
   // Acepta el documento si el nombre del documento está entre sus valores de "Para Enviar".
@@ -1141,14 +1161,9 @@ export interface DatosPresupuesto {
   /** Total en dólares (neto de los productos en dólares): "🤖TOTAL EN DOLARES $u". */
   totalUsd: number
   /**
-   * Descuento por forma de pago (pronto pago) aplicado al presupuesto, en puntos porcentuales.
-   * 0 cuando el vendedor no pidió aplicarlo. Se compone en cascada con el descuento manual de
-   * cada línea, igual que en la pantalla.
-   */
-  descFormaPago?: number
-  /**
-   * El vendedor contestó que SÍ a "¿Desea aplicar descuentos por forma de pago?" y eligió una.
-   * Tilda la casilla del ítem que hace que el PDF incluya la leyenda de la forma de pago.
+   * El vendedor contestó que SÍ a "¿Desea aplicar la leyenda de descuentos por forma de pago?".
+   * Tilda la casilla del ítem que hace que el PDF incluya esa leyenda, y NADA MÁS: el presupuesto
+   * no aplica ningún descuento por forma de pago a los productos.
    */
   descuentoPagoAplicado?: boolean
 }
@@ -1176,12 +1191,8 @@ export interface PresupuestoCreado {
  * devolvió: si vuelve a fallar se informa, pero no se corta la creación de las demás. Devuelve
  * `true` si el subelemento quedó creado.
  */
-async function crearSubitemSuelto(
-  itemId: string,
-  linea: LineaPresupuesto,
-  descFormaPago = 0,
-): Promise<boolean> {
-  const bulk = construirBulkSubitems([linea], 0, descFormaPago)
+async function crearSubitemSuelto(itemId: string, linea: LineaPresupuesto): Promise<boolean> {
+  const bulk = construirBulkSubitems([linea])
   if (!bulk) return false
   try {
     const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
@@ -1229,7 +1240,6 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     totalPesos,
     totalUsd,
     vendedor,
-    descFormaPago = 0,
     descuentoPagoAplicado = false,
   } = datos
 
@@ -1291,7 +1301,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   const faltantes: LineaPresupuesto[] = []
   for (let desde = 0; desde < lineas.length; desde += SUBITEMS_POR_TANDA) {
     const tanda = lineas.slice(desde, desde + SUBITEMS_POR_TANDA)
-    const bulk = construirBulkSubitems(tanda, desde, descFormaPago)
+    const bulk = construirBulkSubitems(tanda, desde)
     if (!bulk) continue
 
     const res = await mondayApi<Record<string, { id: string } | null>>(bulk.query, {
@@ -1308,7 +1318,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   // 2.b) Reintento de las líneas que no entraron, una por solicitud.
   const sinCrear: LineaPresupuesto[] = []
   for (const linea of faltantes) {
-    if (await crearSubitemSuelto(itemId, linea, descFormaPago)) subitemsCreados++
+    if (await crearSubitemSuelto(itemId, linea)) subitemsCreados++
     else sinCrear.push(linea)
   }
 

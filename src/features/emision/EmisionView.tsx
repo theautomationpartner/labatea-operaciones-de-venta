@@ -4,7 +4,6 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
-import { descuentoDeFormaPago } from '@/lib/cobros'
 import { addDays } from '@/lib/dates'
 import { PASOS_PRESUPUESTO, indiceDePaso } from '@/lib/pasos'
 import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
@@ -38,32 +37,23 @@ export function EmisionView() {
     operacion,
     tipoVenta,
     tipoEntrega,
-    formaPago,
     descuentoPagoActivo,
-    descuentosPago,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
      el botón "Emitir Presupuesto" no se reactiva al volver a esta etapa. */
   const emitido = documentoEmitido
 
-  /* Descuento por forma de pago del presupuesto: sólo cuenta si el vendedor contestó que sí a la
-     pregunta del paso de productos y eligió una forma. Es el mismo % que se aplicó a cada precio
-     unitario allá, así que el resumen de emisión y el ítem de Monday dicen lo mismo que la tabla. */
-  const descFormaPago = useMemo(
-    () => (descuentoPagoActivo ? descuentoDeFormaPago(formaPago, descuentosPago) : 0),
-    [descuentoPagoActivo, formaPago, descuentosPago],
-  )
   // El presupuesto no liquida IVA: el importe total es el subtotal de sus productos.
   const resumen = useMemo(
-    () => resumenPresupuesto(lineas, false, descFormaPago),
-    [lineas, descFormaPago],
+    () => resumenPresupuesto(lineas, false),
+    [lineas],
   )
   /* Totales bimonetarios (pesos y dólares por separado): los mismos que muestra el paso de armado.
      Se escriben en el ítem del presupuesto al crearlo (TOTAL EN PESOS / TOTAL EN DOLARES). */
   const bimoneda = useMemo(
-    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0, descFormaPago),
-    [lineas, tasaCambio, descFormaPago],
+    () => resumenPresupuestoBimoneda(lineas, tasaCambio ?? 0),
+    [lineas, tasaCambio],
   )
   const vencimiento = useMemo(
     () => addDays(fechaEmision, diasVigencia),
@@ -133,10 +123,9 @@ export function EmisionView() {
           moneda,
           totalPesos: bimoneda.ars.neto,
           totalUsd: bimoneda.usd.neto,
-          /* Descuento por forma de pago: baja el precio unitario de cada subelemento y tilda la
-             casilla que suma la leyenda de formas de pago al PDF. */
-          descFormaPago,
-          descuentoPagoAplicado: descuentoPagoActivo && !!formaPago,
+          /* Lo ÚNICO que hace el check: tilda la casilla del ítem que le pide al PDF incluir la
+             leyenda de las formas de pago bonificadas. No baja ningún precio. */
+          descuentoPagoAplicado: descuentoPagoActivo,
         })
         if (creado.subitemsCreados !== lineas.length) {
           setError(
@@ -202,7 +191,6 @@ export function EmisionView() {
             numero={nroPresupuesto ?? NRO_PRESUPUESTO}
             lineas={lineas}
             emitido={emitido}
-            descFormaPago={descFormaPago}
           />
           <EnviarDocumento documento="presupuesto" />
         </div>

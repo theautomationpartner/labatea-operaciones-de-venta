@@ -16,6 +16,15 @@
 /** Vaciados de todas las cachés creadas, para limpiarlas juntas cuando haga falta. */
 const limpiadores: Array<() => void> = []
 
+/**
+ * Registra un vaciado propio en la limpieza general. Lo usan las cachés que no se arman con los
+ * helpers de abajo —por ejemplo, un índice de resultados ya resueltos que hay que poder consultar
+ * sin esperar una promesa— para que no queden fuera de `limpiarCachesConsultas`.
+ */
+export function registrarLimpieza(limpiar: () => void): void {
+  limpiadores.push(limpiar)
+}
+
 /** Vacía TODAS las cachés de consultas (documentos y catálogos). Fuerza refetch en la próxima lectura. */
 export function limpiarCachesConsultas(): void {
   for (const limpiar of limpiadores) limpiar()
