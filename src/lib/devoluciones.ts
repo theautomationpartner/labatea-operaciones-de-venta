@@ -11,7 +11,7 @@
  * queda cargado sobre la última línea consumida, que así excede lo que ese remito podía devolver
  * y obliga a corregirla a mano antes de cerrar (ver `lineaInvalida`).
  */
-import { formatDate, parseDate } from '@/lib/dates'
+import { parseDate } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 
 /** Días corridos máximos entre la emisión del remito de entrega y la devolución. */
@@ -97,8 +97,17 @@ export interface ProductoADevolver {
 
 /* ===== Lo que sale de la imputación ===== */
 
-/** Por qué un remito con unidades disponibles quedó afuera. */
-export type MotivoDescarte = 'PLAZO' | 'SIN_FECHA'
+/**
+ * Por qué un remito con unidades disponibles quedó afuera:
+ *  · PLAZO           — se emitió hace más de `DIAS_MAX_DEVOLUCION` días corridos.
+ *  · SIN_FECHA       — no tiene fecha de emisión, así que no hay plazo que medir.
+ *  · FACTURA_VENCIDA — la factura de su venta ya venció. No se acredita contra un comprobante
+ *                      vencido: la nota de crédito nace con el vencimiento de SU factura, y una
+ *                      que ya pasó no tiene contra qué aplicarse.
+ *  · SIN_FACTURAR    — remito POSTERIOR cuyo pendiente todavía no se facturó. Mismo motivo de
+ *                      fondo: no hay factura contra la que acreditar.
+ */
+export type MotivoDescarte = 'PLAZO' | 'SIN_FECHA' | 'FACTURA_VENCIDA' | 'SIN_FACTURAR'
 
 export interface RemitoDescartado {
   remitoId: string
@@ -145,15 +154,34 @@ export interface ImputacionProducto extends ProductoADevolver {
  *
  * Los candidatos se ordenan del MÁS NUEVO al más antiguo y se consumen en ese orden hasta cubrir
  * la cantidad; de cada línea sólo se puede tomar lo que todavía no se devolvió (entregada − ya
- * devuelta), así un remito nunca se imputa dos veces entre devoluciones sucesivas. Un remito
- * emitido hace más de `DIAS_MAX_DEVOLUCION` días no es elegible y se informa aparte; lo que quede
- * sin cubrir por eso se carga sobre la última línea consumida para que salte a la vista.
+ * devuelta), así un remito nunca se imputa dos veces entre devoluciones sucesivas.
+ *
+ * Una línea queda AFUERA por dos motivos, y los dos se informan aparte: que su remito se haya
+ * emitido hace más de `DIAS_MAX_DEVOLUCION` días, o que la factura de su venta ya esté vencida
+ * —contra un comprobante vencido no hay nada que acreditar—. Lo que quede sin cubrir por eso se
+ * carga sobre la última línea consumida para que salte a la vista.
+ *
+ * `precios` llega indexado por subelemento de remito y es lo que aporta el vencimiento de cada
+ * factura. Por eso los precios se consultan ANTES de imputar y no después: dejaron de ser un dato
+ * del documento para ser parte de la regla.
  */
 export function imputarDevolucion(
   productos: ProductoADevolver[],
   remitos: RemitoEntrega[],
   fechaDevolucion: string,
+  precios: PrecioLinea[] = [],
 ): ImputacionProducto[] {
+  const porLinea = new Map(precios.map((p) => [p.subitemId, p]))
+
+  /** La factura de esa línea ya venció. Sin factura todavía (remito POSTERIOR sin facturar) no hay
+   *  vencimiento que haya pasado, así que la línea sigue siendo elegible. */
+  const facturaVencida = (subitemId: string): boolean => {
+    const venc = porLinea.get(subitemId)?.vencimientoFactura
+    if (!venc) return false
+    const dias = diasCorridos(fechaDevolucion, venc)
+    return dias !== null && dias < 0
+  }
+
   return productos.map((prod) => {
     const candidatos: (ImputacionLinea & { motivo: MotivoDescarte | null })[] = []
 
@@ -175,8 +203,18 @@ export function imputarDevolucion(
           disponible,
           imputada: 0,
           /* El plazo corre entre la emisión del remito y HOY. Sin fecha legible no hay plazo que
-             medir, y sin plazo no se puede afirmar que el remito esté dentro de los 30 días. */
-          motivo: dias === null ? 'SIN_FECHA' : dias > DIAS_MAX_DEVOLUCION ? 'PLAZO' : null,
+             medir, y sin plazo no se puede afirmar que el remito esté dentro de los 30 días. La
+             factura vencida se evalúa al final: primero manda lo que pasa con el remito. */
+          motivo:
+            dias === null
+              ? 'SIN_FECHA'
+              : dias > DIAS_MAX_DEVOLUCION
+                ? 'PLAZO'
+                : porLinea.get(linea.subitemId)?.sinFacturar
+                  ? 'SIN_FACTURAR'
+                  : facturaVencida(linea.subitemId)
+                    ? 'FACTURA_VENCIDA'
+                    : null,
         })
       }
     }
@@ -237,8 +275,7 @@ export function imputarDevolucion(
 }
 
 /** Hay al menos una unidad imputada: sin esto no se emite ningún remito de devolución. */
-export const hayImputacion = (imp: ImputacionProducto[]): boolean =>
-  imp.some((p) => p.imputada > 0)
+export const hayImputacion = (imp: ImputacionProducto[]): boolean => imp.some((p) => p.imputada > 0)
 
 /**
  * La línea devuelve más de lo que su remito todavía podía recibir. Se mide contra lo DISPONIBLE
@@ -263,9 +300,14 @@ export const hayLineasInvalidas = (imp: ImputacionProducto[]): boolean =>
 export interface PrecioLinea {
   /** Subelemento del remito al que corresponde este precio. */
   subitemId: string
-  ventaId?: string
-  /** ID visible de la venta ("VTA-016"). */
-  ventaNro?: string
+  /**
+   * Ítem al que pertenece la línea y que la nota de crédito enlaza: la VENTA cuando ya se facturó,
+   * o su "Vtas Pends de Facturar" cuando todavía no. Es también la clave por la que se agrupan las
+   * notas: una por comprobante, porque cada una vence cuando vence su factura.
+   */
+  origenId?: string
+  /** ID visible de ese ítem ("VTA-016"). */
+  origenNro?: string
   /** Precio unitario ya bonificado, en la moneda del comprobante. */
   precioUnitario: number
   /** Alícuota de IVA de la línea, en %. */
@@ -276,13 +318,20 @@ export interface PrecioLinea {
   enDolares?: boolean
   /** Tipo de cambio de la factura original. Sólo aplica en dólares. */
   tipoCambio?: number
+  /**
+   * La línea salió de un remito POSTERIOR cuyo pendiente todavía NO está 100% facturado. No se
+   * puede devolver: no hay comprobante contra el que acreditar, y el precio ni siquiera es
+   * definitivo —el descuento por forma de pago se decide recién al facturar—. Viaja marcada, con
+   * el precio en cero, para que la imputación la descarte con su motivo.
+   */
+  sinFacturar?: boolean
 }
 
 export interface LineaNotaCredito {
   remitoId: string
   remitoNro: string
-  ventaId?: string
-  ventaNro?: string
+  /* La venta y el vencimiento NO viven acá: son de la NOTA, porque todas sus líneas pertenecen a
+     la misma factura (ver `construirNotasCredito`). */
   productoId?: string
   codigo: string
   nombre: string
@@ -297,15 +346,21 @@ export interface LineaNotaCredito {
   subtotal: number
   ivaImporte: number
   total: number
-  /** Vencimiento de la nota de crédito, en dd/MM/yyyy. */
-  vencimiento: string
-  /** La factura original ya estaba vencida: se tomó el vencimiento del día. */
-  vencimientoDelDia: boolean
   /** No se encontró el precio del producto en la venta del remito: la línea queda en 0. */
   sinPrecio: boolean
 }
 
+/** Una nota de crédito: la de UNA factura, con las líneas devueltas que le corresponden. */
 export interface NotaCreditoPendiente {
+  /**
+   * Ítem que la nota enlaza: la venta facturada, o su "Vtas Pends de Facturar" si todavía no se
+   * facturó. Es la clave por la que se agrupan las líneas.
+   */
+  origenId?: string
+  /** ID visible de ese ítem ("VTA-016"), para rotular la nota. */
+  origenNro?: string
+  /** Vencimiento de la factura de esa venta, en dd/MM/yyyy. Vacío si todavía no se facturó. */
+  vencimiento: string
   lineas: LineaNotaCredito[]
   /** Total de las líneas facturadas en pesos. */
   totalPesos: number
@@ -316,28 +371,32 @@ export interface NotaCreditoPendiente {
 }
 
 /**
- * Arma el ítem pendiente de emisión de nota de crédito a partir de la imputación: una línea por
- * LÍNEA DE REMITO imputada, con el precio unitario con el que ese producto se vendió en la venta
- * de la que salió esa línea.
+ * Arma las notas de crédito que deja la devolución: UNA POR FACTURA.
  *
- * La clave es el subelemento del remito y no el producto: si un remito entregó el mismo producto
- * dos veces, viniendo de dos ventas distintas, cada línea se acredita a su propio precio. Es la
- * única forma de garantizar que se acredita lo que el cliente efectivamente pagó.
+ * Cada nota se acredita contra un comprobante concreto y vence cuando vence ESA factura, así que
+ * no puede haber una sola nota mezclando ventas: si un mismo producto se imputó a dos remitos que
+ * pertenecen a facturas distintas, salen dos notas, cada una con su vencimiento y enlazada a su
+ * propia venta. Las líneas se agrupan por `origenId` (la venta, o el pendiente de facturar cuando
+ * el remito POSTERIOR todavía no se facturó).
  *
- * El vencimiento es el de la factura de esa venta; si ya venció, el del día en que se registra la
- * devolución. Facturado en dólares, la línea conserva su moneda y arrastra el tipo de cambio de la
- * factura original —no el del día—, que es lo que ata la NC al comprobante que corrige.
+ * El precio de cada línea es el de SU venta —dos remitos del mismo producto pueden haberse vendido
+ * a precios distintos—, y en dólares arrastra el tipo de cambio de la factura original, no el del
+ * día: lo que se acredita es lo que el cliente pagó.
  *
- * Sólo CONSTRUYE el documento: no lo escribe en Monday. El tablero destino todavía no está
- * definido, así que el resultado se muestra en pantalla y nada más.
+ * No hay caso de "factura vencida" acá: esas líneas ya quedaron fuera de la imputación
+ * (`MotivoDescarte.FACTURA_VENCIDA`), porque contra un comprobante vencido no hay nada que
+ * acreditar.
+ *
+ * Sólo CONSTRUYE los documentos: no los escribe en Monday.
  */
-export function construirNotaCredito(
+export function construirNotasCredito(
   imputaciones: ImputacionProducto[],
   precios: PrecioLinea[],
-  fechaDevolucion: string,
-): NotaCreditoPendiente {
+): NotaCreditoPendiente[] {
   const porLinea = new Map(precios.map((p) => [p.subitemId, p]))
-  const lineas: LineaNotaCredito[] = []
+  /* Se agrupa en un Map para conservar el ORDEN en que aparecen las ventas: la primera nota es la
+     del primer remito imputado, que es el más nuevo. */
+  const notas = new Map<string, NotaCreditoPendiente>()
 
   for (const prod of imputaciones) {
     for (const l of prod.lineas) {
@@ -347,17 +406,9 @@ export function construirNotaCredito(
       const subtotal = round2(l.imputada * precioUnitario)
       const ivaImporte = round2(subtotal * (iva / 100))
 
-      /* Vencimiento: el de la factura de la venta. Vencido (o desconocido) se usa el del día,
-         que es la fecha en la que se está registrando la devolución. */
-      const vencFactura = venta?.vencimientoFactura ?? ''
-      const dias = vencFactura ? diasCorridos(fechaDevolucion, vencFactura) : null
-      const vigente = dias !== null && dias >= 0
-
-      lineas.push({
+      const linea: LineaNotaCredito = {
         remitoId: l.remitoId,
         remitoNro: l.remitoNro,
-        ventaId: venta?.ventaId,
-        ventaNro: venta?.ventaNro,
         productoId: prod.productoId,
         codigo: prod.codigo,
         nombre: prod.nombre,
@@ -370,22 +421,37 @@ export function construirNotaCredito(
         subtotal,
         ivaImporte,
         total: round2(subtotal + ivaImporte),
-        vencimiento: vigente ? vencFactura : fechaDevolucion,
-        vencimientoDelDia: !vigente,
         sinPrecio: venta === undefined,
-      })
+      }
+
+      /* Sin venta conocida la línea no se puede agrupar con nadie: queda en su propia nota, que la
+         pantalla marca como incompleta. Mezclarla con otra le pondría un vencimiento que no es. */
+      const clave = venta?.origenId ?? `sin-venta:${l.subitemId}`
+      const nota = notas.get(clave)
+      if (nota) nota.lineas.push(linea)
+      else {
+        notas.set(clave, {
+          origenId: venta?.origenId,
+          origenNro: venta?.origenNro,
+          vencimiento: venta?.vencimientoFactura ?? '',
+          lineas: [linea],
+          totalPesos: 0,
+          totalDolares: 0,
+          incompleta: false,
+        })
+      }
     }
   }
 
-  const suma = (moneda: 'Pesos' | 'Dólares') =>
+  const suma = (lineas: LineaNotaCredito[], moneda: 'Pesos' | 'Dólares') =>
     round2(lineas.filter((l) => l.moneda === moneda).reduce((acc, l) => acc + l.total, 0))
 
-  return {
-    lineas,
-    totalPesos: suma('Pesos'),
-    totalDolares: suma('Dólares'),
-    incompleta: lineas.some((l) => l.sinPrecio),
-  }
+  return [...notas.values()].map((nota) => ({
+    ...nota,
+    totalPesos: suma(nota.lineas, 'Pesos'),
+    totalDolares: suma(nota.lineas, 'Dólares'),
+    incompleta: nota.lineas.some((l) => l.sinPrecio),
+  }))
 }
 
 /**
@@ -412,7 +478,9 @@ export interface LineaNotaCreditoAEmitir {
 }
 
 export interface NotaCreditoAEmitir {
-  /** Vencimiento del documento, en dd/MM/yyyy. */
+  /** Venta (o pendiente de facturar) que la nota acredita. Se enlaza a nivel ítem en el tablero. */
+  origenId?: string
+  /** Vencimiento de la factura de esa venta, en dd/MM/yyyy. Vacío si todavía no se facturó. */
   vencimiento: string
   /** Suma de los subtotales de las líneas, SIN IVA, en pesos. */
   subtotal: number
@@ -453,17 +521,15 @@ export function notaCreditoAMonday(nc: NotaCreditoPendiente): NotaCreditoAEmitir
       subtotal: aPesos(l, l.subtotal),
     }))
 
-  const vencimientos = nc.lineas
-    .map((l) => parseDate(l.vencimiento))
-    .filter((d): d is Date => d !== null)
-    .sort((a, b) => a.getTime() - b.getTime())
-
   const subtotal = round2(lineas.reduce((acc, l) => acc + l.subtotal, 0))
   // El IVA del documento es la suma del de sus líneas: se calcula una vez, en un solo lugar.
   const iva = round2(lineas.reduce((acc, l) => acc + l.iva, 0))
 
   return {
-    vencimiento: vencimientos.length > 0 ? formatDate(vencimientos[0]) : '',
+    origenId: nc.origenId,
+    /* El vencimiento sale de la NOTA, no de sus líneas: todas pertenecen a la misma factura, así
+       que hay un solo vencimiento posible y no hay nada que elegir entre varios. */
+    vencimiento: nc.vencimiento,
     subtotal,
     iva,
     /* Como en el resto de los documentos de la app (ver la venta), el TOTAL incluye el IVA y la

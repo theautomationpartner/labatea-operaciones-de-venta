@@ -21,6 +21,7 @@ import {
   NOTA_CREDITO_ESTADO,
   personCol,
   STOCK_MOV_LABEL,
+  VTA_PEND_FACTURADA_LABEL,
 } from './columns'
 import { byId, numCol, valor, type CV, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
@@ -33,7 +34,10 @@ const POR_TANDA = 25
  * la metadata de la columna, no con un número fijo: el board puede reordenar o reescribir sus
  * etiquetas y la escritura tiene que seguir cayendo donde corresponde.
  */
-const indiceDeLabel = (settingsStr: string | undefined, candidatos: readonly string[]): number | null => {
+const indiceDeLabel = (
+  settingsStr: string | undefined,
+  candidatos: readonly string[],
+): number | null => {
   if (!settingsStr) return null
   const labels = (JSON.parse(settingsStr).labels ?? {}) as Record<string, string>
   for (const cand of candidatos) {
@@ -61,6 +65,11 @@ interface OrigenPendiente {
  * Hacen de puente: la línea de un remito ANTERIOR no apunta al producto sino a SU pendiente
  * (ver `crearRemito`), y el pendiente es el único que sabe de qué subelemento de venta salió
  * —y por lo tanto a qué precio se vendió—.
+ *
+ * Se buscan en los DOS tableros de pendientes, el activo y el de COMPLETADOS. No es un detalle:
+ * al entregarse el 100% una automatización mueve el pendiente al segundo, y una devolución es
+ * justamente mercadería que el cliente ya recibió. Mirando sólo el activo, el caso más común
+ * —producto entregado por completo— no encontraba ningún remito.
  */
 async function getPendientesDelCliente(
   clienteId: number,
@@ -68,7 +77,7 @@ async function getPendientesDelCliente(
 ): Promise<Map<string, OrigenPendiente>> {
   const data = await mondayApi<{ boards: { items_page: { items: MondayItem[] } }[] }>(
     `query ($cliente: CompareValue!, $productos: CompareValue!) {
-      boards(ids: [${BOARDS.pendientesEntrega}]) {
+      boards(ids: [${BOARDS.pendientesEntrega}, ${BOARDS.pendientesEntregaCompletados}]) {
         items_page(
           limit: 500,
           query_params: {rules: [
@@ -89,7 +98,8 @@ async function getPendientesDelCliente(
     { cliente: [clienteId], productos },
   )
   const porId = new Map<string, OrigenPendiente>()
-  for (const it of data.boards[0]?.items_page?.items ?? []) {
+  // Los dos tableros vuelven como dos entradas de `boards`: se recorren las dos.
+  for (const it of (data.boards ?? []).flatMap((b) => b.items_page?.items ?? [])) {
     const c = byId(it)
     const productoId = c[COL.pendienteEntregaItem.producto]?.linked_item_ids?.[0]
     if (!productoId) continue
@@ -256,8 +266,9 @@ const facturadoEnDolares = (moneda: string): boolean => /d[oó]lar|usd/i.test(mo
 
 /** Datos del comprobante y de la venta que encabezan una línea acreditada. */
 interface CabeceraVenta {
-  ventaId?: string
-  ventaNro?: string
+  /** Ítem que la nota de crédito enlaza y por el que se agrupan sus líneas. */
+  origenId?: string
+  origenNro?: string
   vencimientoFactura?: string
   enDolares?: boolean
   tipoCambio?: number
@@ -291,8 +302,8 @@ function leerCabeceraVenta(venta: MondayItem): CabeceraVenta {
   )
   const fc: Record<string, CV> = comprobante ? byId(comprobante) : {}
   return {
-    ventaId: venta.id,
-    ventaNro: valor(c[COL.venta.idVta]),
+    origenId: venta.id,
+    origenNro: valor(c[COL.venta.idVta]),
     vencimientoFactura: desdeIso(fc[COL.facturacion.fechaVtoPago]?.text?.trim() ?? ''),
     enDolares: facturadoEnDolares(valor(fc[COL.facturacion.moneda])),
     /* Tipo de cambio de la FACTURA original; si el comprobante no lo trae, el que la venta
@@ -354,8 +365,16 @@ async function preciosPorSubelementoDeVenta(
 /**
  * POSTERIOR — el remito salió del catálogo, así que su línea no tiene subelemento de venta: la
  * venta aparece recién cuando se factura el pendiente ("Vtas Pends de Facturar"). Se llega a ella
- * por ahí y se busca el producto entre sus subelementos. Sin venta todavía, la línea queda sin
- * precio y la NC lo marca.
+ * por ahí y se busca el producto entre sus subelementos.
+ *
+ * El pendiente se lee por ID y no por tablero: al facturarse al 100% una automatización lo mueve
+ * a "Vtas Pends de Facturar 100% FACTURADAS", así que filtrar por board lo perdería (el mismo
+ * problema que ya había con los pendientes de entrega completados).
+ *
+ * SÓLO se devuelve lo que ya está 100% FACTURADO. Un pendiente sin facturar no tiene comprobante
+ * contra el que acreditar, y su precio tampoco es el definitivo: el descuento por forma de pago se
+ * decide al facturar, así que el que guardó al remitir es el de lista y acreditarlo devolvería de
+ * más. Esas líneas vuelven marcadas con `sinFacturar` y la imputación las descarta.
  */
 async function preciosPorVentaDelPendiente(
   lineas: { subitemId: string; productoId: string; vtaPendIds: string[] }[],
@@ -363,11 +382,15 @@ async function preciosPorVentaDelPendiente(
   const pendIds = [...new Set(lineas.flatMap((l) => l.vtaPendIds))]
   if (pendIds.length === 0) return []
 
+  /* Del pendiente se leen su ESTADO y su venta. El estado es el que habilita todo: sólo un
+     pendiente "100% Facturada" tiene un comprobante contra el que acreditar y un precio
+     definitivo. Se lee por ID y no por tablero: al facturarse, una automatización lo mueve a
+     "Vtas Pends de Facturar 100% FACTURADAS", así que filtrar por board lo perdería. */
   const pend = await mondayApi<{ items: MondayItem[] }>(
     `query ($ids: [ID!]) {
       items(ids: $ids) {
-        id
-        column_values(ids: ["${COL.vtaPendFacturar.venta}"]) {
+        id name
+        column_values(ids: ["${COL.vtaPendFacturar.venta}","${COL.vtaPendFacturar.estadoFacturacion}"]) {
           id text
           ... on BoardRelationValue { linked_item_ids }
         }
@@ -375,10 +398,16 @@ async function preciosPorVentaDelPendiente(
     }`,
     { ids: pendIds },
   )
+  /* Sólo entran los pendientes 100% FACTURADOS, y de ellos la venta que enlaza
+     `board_relation_mkwbb4w4`. Un pendiente a medio facturar —o sin facturar— no aporta ninguna
+     venta, así que su línea termina marcada como `sinFacturar` más abajo. */
   const ventaPorPendiente = new Map<string, string>()
   for (const it of pend.items ?? []) {
-    const venta = byId(it)[COL.vtaPendFacturar.venta]?.linked_item_ids?.[0]
-    if (venta) ventaPorPendiente.set(it.id, String(venta))
+    const c = byId(it)
+    const facturado =
+      valor(c[COL.vtaPendFacturar.estadoFacturacion]).trim() === VTA_PEND_FACTURADA_LABEL
+    const venta = c[COL.vtaPendFacturar.venta]?.linked_item_ids?.[0]
+    if (facturado && venta) ventaPorPendiente.set(it.id, String(venta))
   }
 
   // Venta de cada línea: la primera de sus pendientes de facturar que ya se haya facturado.
@@ -393,22 +422,26 @@ async function preciosPorVentaDelPendiente(
     }
   }
   const ventaIds = [...new Set(ventaPorLinea.values())]
-  if (ventaIds.length === 0) return []
-
-  const data = await mondayApi<{ items: (MondayItem & { subitems: MondayItem[] })[] }>(
-    `query ($ids: [ID!]) {
+  const data =
+    ventaIds.length === 0
+      ? { items: [] as (MondayItem & { subitems: MondayItem[] })[] }
+      : await mondayApi<{ items: (MondayItem & { subitems: MondayItem[] })[] }>(
+          `query ($ids: [ID!]) {
       items(ids: $ids) {
         id
         ${CAMPOS_VENTA}
         subitems { id ${CAMPOS_VENTA_SUB} }
       }
     }`,
-    { ids: ventaIds },
-  )
+          { ids: ventaIds },
+        )
 
   /* Acá el precio SÍ se indexa por producto: el remito POSTERIOR no arrastra de qué línea de venta
      salió cada unidad, simplemente porque la venta no existía cuando se remitió. */
-  const porVenta = new Map<string, { cabecera: CabeceraVenta; precios: Map<string, PrecioSubVenta> }>()
+  const porVenta = new Map<
+    string,
+    { cabecera: CabeceraVenta; precios: Map<string, PrecioSubVenta> }
+  >()
   for (const venta of data.items ?? []) {
     const cabecera = leerCabeceraVenta(venta)
     const precios = new Map<string, PrecioSubVenta>()
@@ -425,7 +458,11 @@ async function preciosPorVentaDelPendiente(
     const ventaId = ventaPorLinea.get(l.subitemId)
     const venta = ventaId ? porVenta.get(ventaId) : undefined
     const precio = venta?.precios.get(l.productoId)
-    return venta && precio ? [{ subitemId: l.subitemId, ...venta.cabecera, ...precio }] : []
+    if (venta && precio) return [{ subitemId: l.subitemId, ...venta.cabecera, ...precio }]
+
+    /* Sin venta facturada la línea NO se devuelve. Vuelve marcada —y no simplemente ausente— para
+       que la imputación la descarte con su motivo, en vez de imputarla sin precio. */
+    return [{ subitemId: l.subitemId, precioUnitario: 0, iva: 0, sinFacturar: true }]
   })
 }
 
@@ -446,7 +483,11 @@ export async function getPreciosDeLineas(remitos: RemitoEntrega[]): Promise<Prec
       if (l.ventaSubitemId) {
         conVentaSub.push({ subitemId: l.subitemId, ventaSubitemId: l.ventaSubitemId })
       } else if (r.vtaPendIds?.length) {
-        porPendiente.push({ subitemId: l.subitemId, productoId: l.productoId, vtaPendIds: r.vtaPendIds })
+        porPendiente.push({
+          subitemId: l.subitemId,
+          productoId: l.productoId,
+          vtaPendIds: r.vtaPendIds,
+        })
       }
     }
   }
@@ -519,7 +560,10 @@ export async function registrarDevolucionStock(
     }`,
     buscaPorNombre ? { nombres: aResolver } : {},
   )
-  const estadoIdx = indiceDeLabel(meta.estado[0]?.columns?.[0]?.settings_str, STOCK_MOV_LABEL.devolucion)
+  const estadoIdx = indiceDeLabel(
+    meta.estado[0]?.columns?.[0]?.settings_str,
+    STOCK_MOV_LABEL.devolucion,
+  )
   const porNombre = new Map(
     (meta.stock?.[0]?.items_page?.items ?? []).map((it) => [it.name.trim(), it.id]),
   )
@@ -549,7 +593,9 @@ export async function registrarDevolucionStock(
       variables[`cv${n}`] = JSON.stringify(cv)
       return `s${n}: create_subitem(parent_item_id: $p${n}, item_name: $n${n}, column_values: $cv${n}) { id }`
     })
-    const decl = tanda.map((_, i) => `$p${desde + i}: ID!, $n${desde + i}: String!, $cv${desde + i}: JSON!`)
+    const decl = tanda.map(
+      (_, i) => `$p${desde + i}: ID!, $n${desde + i}: String!, $cv${desde + i}: JSON!`,
+    )
     const res = await mondayApi<Record<string, { id: string } | null>>(
       `mutation (${decl.join(', ')}) { ${campos.join('\n')} }`,
       variables,
@@ -590,10 +636,11 @@ export async function registrarDevolucionEnRemitos(
   if (!mondayHabilitado()) return true
 
   // Lo ya devuelto se ACUMULA, así que primero hay que leerlo: una sola consulta para todos.
-  const data = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
-    `query ($ids: [ID!]) { items(ids: $ids) { id column_values(ids: ["${col}"]) { text } } }`,
-    { ids: subIds },
-  )
+  const data = await mondayApi<{
+    items: { id: string; column_values: { text: string | null }[] }[]
+  }>(`query ($ids: [ID!]) { items(ids: $ids) { id column_values(ids: ["${col}"]) { text } } }`, {
+    ids: subIds,
+  })
   const actual = new Map<string, number>()
   for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
 
@@ -637,6 +684,8 @@ export interface DatosNotaCredito {
   nombre: string
   clienteId?: string
   vendedorId?: string | null
+  /** Venta (o pendiente de facturar) que la nota acredita. Se enlaza a nivel ítem. */
+  ventaId?: string
   /** Vencimiento de la nota de crédito, en YYYY-MM-DD. */
   vencimientoIso?: string
   /** Importe total a acreditar (con IVA), en pesos. */
@@ -656,8 +705,10 @@ export interface DatosNotaCredito {
  * El board es MONO-MONEDA (sus columnas son "$"), así que las líneas llegan ya convertidas a pesos
  * por el llamador. Ver `notaCreditoAMonday`.
  */
-export async function crearNotaCredito(datos: DatosNotaCredito): Promise<{ id: string; subitemsCreados: number }> {
-  const { nombre, clienteId, vendedorId, vencimientoIso, total, iva, lineas } = datos
+export async function crearNotaCredito(
+  datos: DatosNotaCredito,
+): Promise<{ id: string; subitemsCreados: number }> {
+  const { nombre, clienteId, vendedorId, ventaId, vencimientoIso, total, iva, lineas } = datos
   if (!mondayHabilitado()) {
     return { id: `mock-nc-${lineas.length}`, subitemsCreados: lineas.length }
   }
@@ -676,6 +727,10 @@ export async function crearNotaCredito(datos: DatosNotaCredito): Promise<{ id: s
     [COL.notaCredito.importeEmitido]: '0',
   }
   if (clienteId) cabecera[COL.notaCredito.cliente] = { item_ids: [Number(clienteId)] }
+  // La venta que esta nota acredita: es lo que la ata a una factura y a su vencimiento.
+  if (ventaId && Number.isFinite(Number(ventaId))) {
+    cabecera[COL.notaCredito.venta] = { item_ids: [Number(ventaId)] }
+  }
   const persona = personCol(vendedorId)
   if (persona) cabecera[COL.notaCredito.vendedor] = persona
   if (vencimientoIso) cabecera[COL.notaCredito.vencimiento] = { date: vencimientoIso }
@@ -711,9 +766,7 @@ export async function crearNotaCredito(datos: DatosNotaCredito): Promise<{ id: s
          mandar una U.M. que todavía no tenga rechazaría la mutación entera. */
       return `s${n}: create_subitem(parent_item_id: $parentId, item_name: $n${n}, column_values: $cv${n}, create_labels_if_missing: true) { id }`
     })
-    const decl = tanda
-      .map((_, i) => `$n${desde + i}: String!, $cv${desde + i}: JSON!`)
-      .join(', ')
+    const decl = tanda.map((_, i) => `$n${desde + i}: String!, $cv${desde + i}: JSON!`).join(', ')
     const res = await mondayApi<Record<string, { id: string } | null>>(
       `mutation ($parentId: ID!, ${decl}) { ${campos.join('\n')} }`,
       variables,

@@ -60,8 +60,16 @@ export const BOARDS = {
   talonarios: 18423468398,
   /** Subelementos del talonario: una hoja/folio cada uno, con su estado "Pend de Usar". */
   talonariosSub: 18423468575,
-  /** "🚚Pends de Entrega": un ítem por producto vendido pendiente de entregar. */
+  /** "🚚Pends de Entrega Venta": un ítem por producto vendido pendiente de entregar. */
   pendientesEntrega: 18421035527,
+  /**
+   * "Pends de Entrega COMPLETADOS": adonde una automatización MUEVE el pendiente cuando se
+   * entregó al 100%. Mismas columnas que el de arriba.
+   *
+   * La devolución tiene que mirarlo sí o sí: se devuelve mercadería que YA se recibió, así que su
+   * pendiente casi siempre está completado y por lo tanto fuera del board activo.
+   */
+  pendientesEntregaCompletados: 18425042683,
   /** Subelementos de "Pends de Entrega": un movimiento de entrega (RTO) cada uno. */
   pendientesEntregaSub: 18421035605,
   /** "🧮Stock y Movimientos": un ítem por producto, con su saldo y sus movimientos. */
@@ -240,6 +248,13 @@ export const REMITO_ENVIO_ESTADO = {
  * Estado con el que nace la nota de crédito en "🤖Estado de Emision" (`status`). Como en el resto
  * de la app se escribe por ÍNDICE resuelto leyendo la columna; acá sólo vive el texto que se busca.
  */
+/**
+ * "🤖Estado de Facturacion" de "Vtas Pends de Facturar" (color_mm5ndgd5). Sólo un pendiente
+ * 100% facturado puede recibir una devolución: antes de facturarse no hay comprobante contra el
+ * que acreditar, ni precio definitivo (el descuento por forma de pago se decide al facturar).
+ */
+export const VTA_PEND_FACTURADA_LABEL = '100% Facturada'
+
 export const NOTA_CREDITO_ESTADO = {
   pendiente: 'Pend de Emitir',
   emitida: 'Emitida 100%',
@@ -1059,6 +1074,12 @@ export const COL = {
     importeEmitido: 'numeric_mm6kd8qc',
     /** "🤖Estado de Emision": nace "Pend de Emitir" (por índice dinámico). */
     estadoEmision: 'status',
+    /**
+     * "📈Ventas": la venta que esta nota acredita. Acepta también "Vtas Pends de Facturar", que es
+     * lo que se enlaza cuando el remito POSTERIOR todavía no se facturó. Hay UNA nota por venta,
+     * porque cada una vence cuando vence la factura de la suya.
+     */
+    venta: 'board_relation_mm6m1xw6',
   },
   // Un producto devuelto de la nota de crédito (subelemento, board 18428265309).
   notaCreditoSub: {

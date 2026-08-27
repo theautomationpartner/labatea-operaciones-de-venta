@@ -5,7 +5,7 @@ import { CompBody } from '@/features/shared/CompBody'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { aIso, hoy, hoyIso } from '@/lib/dates'
 import {
-  construirNotaCredito,
+  construirNotasCredito,
   DIAS_MAX_DEVOLUCION,
   hayImputacion,
   hayLineasInvalidas,
@@ -37,8 +37,12 @@ type EstadoRegistro = 'idle' | 'registrando' | 'error'
  *
  * El operador ya declaró cliente, productos y cantidades; acá el sistema muestra QUÉ remitos
  * absorben esa devolución: se consume del más nuevo hacia atrás, descartando lo emitido hace más de
- * 30 días corridos. Lo que no entra por esa regla NO se descuenta en silencio —queda cargado sobre
- * la última línea, marcada en rojo— y hay que corregirlo a mano antes de poder cerrar.
+ * 30 días corridos y lo que pertenezca a una factura ya vencida. Lo que no entra por esas reglas NO
+ * se descuenta en silencio —queda cargado sobre la última línea, marcada en rojo— y hay que
+ * corregirlo a mano antes de poder cerrar.
+ *
+ * Los precios se consultan ANTES de imputar, no después: el vencimiento de cada factura es parte
+ * de la regla, no un dato del documento.
  *
  * La consulta a Monday se hace UNA vez por combinación de cliente y productos: volver con el
  * stepper reusa lo ya traído (ver `remitosEntregaEnCache`), y sólo cambiar los productos a devolver
@@ -46,8 +50,8 @@ type EstadoRegistro = 'idle' | 'registrando' | 'error'
  *
  * "Finalizar Operación" es el ÚNICO disparador de la escritura: suma la mercadería al stock (un
  * movimiento de ingreso por producto), acumula la cantidad devuelta en cada línea de remito
- * imputada y deja la nota de crédito pendiente de emitir. Las dos primeras se esperan —y al volver
- * la app se reinicia—; la nota de crédito se dispara sin esperarla.
+ * imputada y deja UNA nota de crédito por factura, cada una enlazada a su venta. Las dos primeras
+ * se esperan —y al volver la app se reinicia—; las notas se disparan sin esperarlas.
  */
 export function RemitoDevolucionView() {
   const { cliente, vendedor, operacion, tipoVenta, tipoEntrega, remito } = useApp()
@@ -81,6 +85,9 @@ export function RemitoDevolucionView() {
   /* Los precios llegan DESPUÉS de los remitos: mientras tanto las líneas de la nota de crédito no
      tienen importe, y eso no es un error que haya que pintar de rojo. */
   const [cargandoPrecios, setCargandoPrecios] = useState(false)
+  /* La imputación ya no se puede resolver sin los precios: el vencimiento de cada factura decide
+     qué línea entra. Hasta que estén, no hay reparto que mostrar ni operación que cerrar. */
+  const resolviendo = cargando || cargandoPrecios
 
   const [estado, setEstado] = useState<EstadoRegistro>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +96,7 @@ export function RemitoDevolucionView() {
      inválida: la imputación normal no se edita. */
   const [corregidas, setCorregidas] = useState<Record<string, number>>({})
   const [avisoInvalida, setAvisoInvalida] = useState(false)
+  const [avisoSinPrecio, setAvisoSinPrecio] = useState(false)
 
   // Remitos de entrega del cliente que contienen los productos a devolver.
   useEffect(() => {
@@ -119,8 +127,32 @@ export function RemitoDevolucionView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteId, claveProductos, dispatch])
 
-  /* La imputación es DERIVADA: sale de lo declarado en el paso anterior y de los remitos traídos.
-     No vive en el estado global justamente porque no se edita. */
+  /* Los precios se piden para TODOS los remitos candidatos y ANTES de imputar, no después: el
+     vencimiento de la factura dejó de ser un dato del documento para ser parte de la regla —una
+     línea cuya factura ya venció no se imputa—, así que hay que conocerlo para poder repartir. */
+  const claveRemitos = remitos.map((r) => r.id).join(',')
+  useEffect(() => {
+    if (remitos.length === 0) {
+      setPrecios([])
+      return
+    }
+    let vivo = true
+    setCargandoPrecios(true)
+    getPreciosDeLineas(remitos)
+      .then((ps: PrecioLinea[]) => vivo && setPrecios(ps))
+      /* Sin precios la devolución igual se puede registrar: lo que queda incompleta es la nota de
+         crédito, y el panel lo dice. */
+      .catch(() => vivo && setPrecios([]))
+      .finally(() => vivo && setCargandoPrecios(false))
+    return () => {
+      vivo = false
+    }
+    // `claveRemitos` representa a `remitos`: es su versión estable entre renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claveRemitos])
+
+  /* La imputación es DERIVADA: sale de lo declarado en el paso anterior, de los remitos traídos y
+     del vencimiento de cada factura. No vive en el estado global justamente porque no se edita. */
   const calculadas: ImputacionProducto[] = useMemo(
     () =>
       imputarDevolucion(
@@ -134,8 +166,9 @@ export function RemitoDevolucionView() {
         })),
         remitos,
         fechaDevolucion,
+        precios,
       ),
-    [remito.items, remitos, fechaDevolucion],
+    [remito.items, remitos, fechaDevolucion, precios],
   )
 
   /* Las correcciones se aplican ACÁ, sobre la imputación calculada, y no en cada consumidor: así
@@ -176,37 +209,17 @@ export function RemitoDevolucionView() {
      operación no se cierra: lo que se escribiría en el stock y en el remito sería falso. */
   const hayInvalidas = hayLineasInvalidas(imputaciones)
 
-  /* Precio de venta de cada LÍNEA imputada: es el de la nota de crédito. Se pide recién cuando la
-     imputación ya está resuelta, así se consultan sólo las ventas que se van a usar. */
-  const remitosImputados = useMemo(() => {
-    const ids = new Set(imputaciones.flatMap((p) => p.lineas.map((l) => l.remitoId)))
-    return remitos.filter((r) => ids.has(r.id))
-  }, [imputaciones, remitos])
-  const claveImputados = remitosImputados.map((r) => r.id).join(',')
-
-  useEffect(() => {
-    if (remitosImputados.length === 0) {
-      setPrecios([])
-      return
-    }
-    let vivo = true
-    setCargandoPrecios(true)
-    getPreciosDeLineas(remitosImputados)
-      .then((ps: PrecioLinea[]) => vivo && setPrecios(ps))
-      /* La nota de crédito es informativa: si los precios no se pueden leer, la devolución igual
-         se puede registrar. El panel lo dice. */
-      .catch(() => vivo && setPrecios([]))
-      .finally(() => vivo && setCargandoPrecios(false))
-    return () => {
-      vivo = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claveImputados])
-
-  const notaCredito: NotaCreditoPendiente = useMemo(
-    () => construirNotaCredito(imputaciones, precios, fechaDevolucion),
-    [imputaciones, precios, fechaDevolucion],
+  /* UNA nota de crédito por factura: cada una se acredita contra su comprobante y vence cuando
+     vence esa factura, así que no pueden mezclarse en un solo documento. */
+  const notas: NotaCreditoPendiente[] = useMemo(
+    () => construirNotasCredito(imputaciones, precios),
+    [imputaciones, precios],
   )
+
+  /* Alguna línea imputada no tiene precio. NO se puede cerrar así: la mercadería entraría al stock
+     y esas unidades quedarían sin acreditar —el cliente devuelve y nadie le devuelve la plata—.
+     No es algo que la pantalla pueda arreglar sola: hay que ir a mirar la venta en el sistema. */
+  const hayNotasIncompletas = notas.some((n) => n.incompleta)
 
   if (!cliente) return null
 
@@ -227,6 +240,10 @@ export function RemitoDevolucionView() {
       setAvisoInvalida(true)
       return
     }
+    if (hayNotasIncompletas) {
+      setAvisoSinPrecio(true)
+      return
+    }
     if (!puedeRegistrar) {
       setSinImputar(true)
       return
@@ -238,15 +255,18 @@ export function RemitoDevolucionView() {
          se emite remito de devolución, así que tampoco vuelve la mercadería. */
       const porProducto = imputaciones.filter((p) => p.imputada > 0)
 
-      /* La nota de crédito sale PRIMERO y SIN `await`: así empieza a escribirse mientras corren
-         las otras dos, y el cierre no la espera. Un fallo suyo tampoco puede tumbar la devolución
-         —el stock y los remitos son lo que tiene que quedar bien—, así que se traga acá. */
-      const aEmitir = notaCreditoAMonday(notaCredito)
-      if (aEmitir.lineas.length > 0) {
+      /* Las notas de crédito salen PRIMERO y SIN `await`: una por factura, cada una enlazada a su
+         venta y con el vencimiento de ESE comprobante. Empiezan a escribirse mientras corren las
+         otras dos y el cierre no las espera; un fallo suyo tampoco puede tumbar la devolución —el
+         stock y los remitos son lo que tiene que quedar bien—, así que se traga acá. */
+      for (const nota of notas) {
+        const aEmitir = notaCreditoAMonday(nota)
+        if (aEmitir.lineas.length === 0) continue
         void crearNotaCredito({
           nombre: cliente.name,
           clienteId: cliente.id,
           vendedorId: vendedor?.id ?? null,
+          ventaId: aEmitir.origenId,
           vencimientoIso: aIso(aEmitir.vencimiento),
           total: aEmitir.total,
           iva: aEmitir.iva,
@@ -323,10 +343,18 @@ export function RemitoDevolucionView() {
         imputaciones={imputaciones}
         editables={editables}
         onCantidad={ajustarCantidad}
-        cargando={cargando}
+        cargando={resolviendo}
       />
 
-      <NotaCreditoPanel nc={notaCredito} cargando={cargando || cargandoPrecios} />
+      {/* Una card por nota, o sea por factura. Mientras se resuelve la imputación se dibuja UNA
+          vacía, para que la etapa nazca con su forma final y no aparezcan cards de golpe. */}
+      {resolviendo || notas.length === 0 ? (
+        <NotaCreditoPanel nc={null} cargando />
+      ) : (
+        notas.map((nota, i) => (
+          <NotaCreditoPanel key={nota.origenId ?? `nota-${i}`} nc={nota} cargando={false} />
+        ))
+      )}
 
       <div className="footer-acts">
         <button
@@ -347,11 +375,19 @@ export function RemitoDevolucionView() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={yaRegistrada || estado === 'registrando' || cargando || hayInvalidas}
+          disabled={
+            yaRegistrada ||
+            estado === 'registrando' ||
+            resolviendo ||
+            hayInvalidas ||
+            hayNotasIncompletas
+          }
           title={
             hayInvalidas
               ? 'Corregí las cantidades imputadas marcadas como inválidas para poder finalizar.'
-              : undefined
+              : hayNotasIncompletas
+                ? 'Hay productos sin precio en la venta de su remito: no se pueden acreditar.'
+                : undefined
           }
           onClick={finalizar}
         >
@@ -371,6 +407,15 @@ export function RemitoDevolucionView() {
         <AvisoModal titulo="Hay cantidades inválidas" onClose={() => setAvisoInvalida(false)}>
           Alguna línea imputa más unidades de las que ese remito entregó. Corregí las cantidades
           marcadas en rojo antes de finalizar la operación.
+        </AvisoModal>
+      )}
+
+      {avisoSinPrecio && (
+        <AvisoModal titulo="Hay productos sin precio" onClose={() => setAvisoSinPrecio(false)}>
+          Alguna línea no tiene precio en la venta de su remito, así que no se puede acreditar. Si
+          se cerrara igual, la mercadería entraría al stock y esas unidades quedarían sin devolverle
+          nada al cliente. Revisá en el sistema la venta de ese remito para entender por qué el
+          producto quedó sin precio.
         </AvisoModal>
       )}
 
@@ -434,7 +479,13 @@ function TablaImputacion({
     ? []
     : imputaciones.flatMap((p) => [
         ...p.lineas.map((l) => ({ prod: p, linea: l, descarte: null })),
-        ...p.descartados.map((d) => ({ prod: p, linea: null, descarte: d })),
+        /* Los descartados por PLAZO no se listan: son los más numerosos —un cliente con historial
+           tiene decenas— y no habilitan ninguna decisión, sólo alargan la tabla. Lo que falte por
+           esa razón se explica igual en el aviso del pie. Los otros motivos sí se muestran: son
+           pocos y señalan algo a revisar en el sistema. */
+        ...p.descartados
+          .filter((d) => d.motivo !== 'PLAZO')
+          .map((d) => ({ prod: p, linea: null, descarte: d })),
       ])
 
   /**
@@ -510,9 +561,13 @@ function TablaImputacion({
                     <td className="ta-c">—</td>
                     <td className="ta-c" style={{ color: 'var(--red)', fontWeight: 600 }}>
                       <span className="pend-qty-slot">
-                        {descarte.motivo === 'PLAZO'
-                          ? `Fuera de los ${DIAS_MAX_DEVOLUCION} días`
-                          : 'Sin fecha de emisión'}
+                        {descarte.motivo === 'FACTURA_VENCIDA'
+                          ? 'Factura vencida'
+                          : descarte.motivo === 'SIN_FACTURAR'
+                            ? 'Sin facturar'
+                            : descarte.motivo === 'SIN_FECHA'
+                              ? 'Sin fecha de emisión'
+                              : `Fuera de los ${DIAS_MAX_DEVOLUCION} días`}
                       </span>
                     </td>
                   </tr>
@@ -627,7 +682,8 @@ function NotaCreditoPanel({
   nc,
   cargando,
 }: {
-  nc: NotaCreditoPendiente
+  /** La nota a mostrar. `null` mientras todavía no se sabe cuáles van a ser. */
+  nc: NotaCreditoPendiente | null
   /** Todavía no se sabe qué se va a acreditar: la card se dibuja, pero vacía. */
   cargando: boolean
 }) {
@@ -635,13 +691,13 @@ function NotaCreditoPanel({
   /* Mientras se resuelve la imputación no hay nada que acreditar: se muestran el encabezado y las
      columnas, y nada más. Rellenarla a medias —con las líneas pero sin sus precios— la haría pasar
      por una nota de crédito en cero, que es justo lo que no es. */
-  const lineas = cargando ? [] : nc.lineas
+  const lineas = cargando || !nc ? [] : nc.lineas
 
   const enPesos = lineas.filter((l) => l.moneda === 'Pesos')
   const subtotal = round2(enPesos.reduce((acc, l) => acc + l.subtotal, 0))
   const iva = round2(enPesos.reduce((acc, l) => acc + l.ivaImporte, 0))
-  const totalPesos = cargando ? 0 : nc.totalPesos
-  const hayDolares = !cargando && nc.totalDolares > 0
+  const totalPesos = nc && !cargando ? nc.totalPesos : 0
+  const hayDolares = Boolean(nc) && !cargando && (nc?.totalDolares ?? 0) > 0
 
   return (
     /* Las clases `comp-*` viven bajo el namespace `.factura-v2`, así que la card se monta dentro
@@ -658,10 +714,21 @@ function NotaCreditoPanel({
               onClick={() => setAbierta((v) => !v)}
             >
               <i className={`fas fa-chevron-down comp-chev ${abierta ? 'open' : ''}`} />
-              <span className="comp-tit">Nota de crédito pendiente de emisión</span>
+              <span className="comp-tit">
+                Nota de crédito pendiente de emisión
+                {nc?.origenNro ? ` · ${nc.origenNro}` : ''}
+              </span>
             </button>
 
             <div className="comp-head-datos">
+              {/* El vencimiento es el de la factura que esta nota acredita: uno solo para todas
+                  sus líneas, porque todas pertenecen a esa misma venta. */}
+              {nc?.vencimiento && (
+                <div className="comp-head-dato">
+                  <span className="comp-head-lbl">Vencimiento</span>
+                  <span className="comp-head-val">{nc.vencimiento}</span>
+                </div>
+              )}
               <div className="comp-head-dato">
                 <span className="comp-head-lbl">Productos</span>
                 <span className="comp-head-val">{lineas.length}</span>
@@ -675,7 +742,7 @@ function NotaCreditoPanel({
                     className="comp-head-val comp-head-val--imp"
                     style={{ color: 'var(--green-dark)', fontSize: '0.85em' }}
                   >
-                    {moneyU(nc.totalDolares)}
+                    {moneyU(nc?.totalDolares ?? 0)}
                   </span>
                 )}
               </div>
@@ -688,7 +755,8 @@ function NotaCreditoPanel({
                 <thead>
                   <tr>
                     <th>Producto</th>
-                    <th className="ta-c">Venta</th>
+                    {/* La venta NO va por fila: todas las líneas de esta nota son de la misma
+                        factura, y su ID ya está en el título de la card. */}
                     <th className="ta-c">Cantidad</th>
                     <th className="ta-r">Precio unitario</th>
                     <th className="ta-r">IVA</th>
@@ -706,7 +774,6 @@ function NotaCreditoPanel({
                           {l.codigo && <span className="comp-cod">{l.codigo}</span>}
                           <span className="comp-nom">{l.nombre}</span>
                         </td>
-                        <td className="ta-c">{l.ventaNro || '—'}</td>
                         <td className="ta-c">{l.cantidad}</td>
                         <td className="ta-r" style={{ color: colUsd }}>
                           {l.sinPrecio ? (
@@ -760,13 +827,13 @@ function NotaCreditoPanel({
                           style={{ color: 'var(--green-dark)' }}
                         >
                           <span>Total en dólares</span>
-                          <b>{moneyU(nc.totalDolares)}</b>
+                          <b>{moneyU(nc?.totalDolares ?? 0)}</b>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {nc.incompleta && (
+                  {nc?.incompleta && (
                     <p className="devol-sincubrir">
                       <i className="fas fa-triangle-exclamation" /> Falta el precio de alguna línea
                       en la venta de su remito: la nota de crédito no se puede emitir así.

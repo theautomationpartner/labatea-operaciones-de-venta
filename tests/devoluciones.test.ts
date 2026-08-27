@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict'
 import {
-  construirNotaCredito,
+  construirNotasCredito,
   type PrecioLinea,
   DIAS_MAX_DEVOLUCION,
   diasCorridos,
@@ -52,7 +52,7 @@ const rto = (id: string, fecha: string, entregada: number, devuelta = 0): Remito
   ventaIds: [`vta-${id}`],
   lineas: [{ subitemId: `sub-${id}`, productoId: PRODUCTO, entregada, devuelta }],
 })
-/** El precio con el que se vendió una línea, tal como lo devuelve `getPreciosDeLineas`. */
+/** El precio y la factura de una línea, tal como los devuelve `getPreciosDeLineas`. */
 const precio = (
   subitemId: string,
   precioUnitario: number,
@@ -175,104 +175,108 @@ assert.equal(dos[0].lineas[0].subitemId, 'sub-z', 'cada producto imputa contra S
 assert.equal(dos[1].lineas[0].subitemId, 'sub-w', 'y no contra la del otro producto')
 assert.deepEqual([dos[0].imputada, dos[1].imputada], [2, 8], 'ambos quedan cubiertos')
 
-// ---------- Nota de crédito: precio de la venta de CADA remito imputado ----------
-const nc = construirNotaCredito(
-  [ejemplo],
+/* ---------- La factura vencida saca a la línea de la imputación ----------
+   No se acredita contra un comprobante que ya venció: esa línea no aporta unidades, se informa
+   como descartada y lo que no cubre se carga sobre la última línea que sí entró. */
+const conVencida = imputarDevolucion(
+  [{ ...z, cantidad: 5 }],
+  [rto('vigente', '10/08/2026', 2), rto('facturaVieja', '12/08/2026', 99)],
+  HOY,
   [
-    // Factura todavía vigente: la NC vence cuando vence ella.
-    precio('sub-Rto A', 100, 21, '30/09/2026', { ventaNro: 'VTA-016' }),
-    // Factura YA vencida: se toma el vencimiento del día.
-    precio('sub-Rto B', 50, 10.5, '01/07/2026', { ventaNro: 'VTA-011' }),
+    precio('sub-vigente', 100, 21, '30/09/2026', { origenId: 'v-vigente', origenNro: 'VTA-1' }),
+    // Venció el 01/08, doce días antes de la devolución.
+    precio('sub-facturaVieja', 100, 21, '01/08/2026', { origenId: 'v-vieja', origenNro: 'VTA-0' }),
   ],
-  HOY,
-)
-assert.equal(nc.lineas.length, 2, 'una línea de NC por remito imputado')
-const [ncA, ncB] = nc.lineas
-assert.equal(ncA.total, 726, '6 × 100 + 21% de IVA')
-assert.equal(ncA.vencimiento, '30/09/2026', 'la NC vence con la factura de su venta')
-assert.equal(ncA.vencimientoDelDia, false, 'la factura seguía vigente')
-assert.equal(ncB.vencimiento, HOY, 'factura vencida → vencimiento del día')
-assert.equal(ncB.vencimientoDelDia, true, 'y se marca como tal')
-// 4 × 50 = 200, más 10,5% de IVA.
-assert.equal(ncB.total, 221, 'la segunda línea acredita las 4 unidades que se le imputaron')
-assert.equal(nc.totalPesos, 726 + 221, 'el total suma las dos líneas en pesos')
-assert.equal(nc.incompleta, false, 'las dos líneas tienen precio')
-
-// ---------- En dólares: la NC hereda el tipo de cambio de la factura ORIGINAL ----------
-const ncUsd = construirNotaCredito(
-  [ejemplo],
-  [precio('sub-Rto A', 12, 21, '30/09/2026', { enDolares: true, tipoCambio: 1200 })],
-  HOY,
-)
-const enUsd = ncUsd.lineas[0]
-assert.equal(enUsd.moneda, 'Dólares', 'la línea conserva la moneda del comprobante')
-assert.equal(enUsd.tipoCambio, 1200, 'con el tipo de cambio de la factura original, no el del día')
-assert.equal(ncUsd.totalDolares, 87.12, '6 × 12 + 21% de IVA, en dólares')
-assert.equal(ncUsd.totalPesos, 0, 'nada cae en el total en pesos')
-// La línea sin precio conocido queda marcada: la NC no se puede emitir así.
-assert.equal(ncUsd.lineas[1].sinPrecio, true, 'sin la venta de esa línea no hay precio')
-assert.equal(ncUsd.incompleta, true, 'y la NC queda marcada como incompleta')
-
-/* ---------- El MISMO producto dos veces en el MISMO remito, desde dos ventas ----------
-   Es el caso que obliga a que el precio se resuelva por LÍNEA y no por producto: el remito
-   consolidó dos pendientes del mismo producto, cada uno de una venta con su propio precio. */
-const dosVentas: RemitoEntrega = {
-  id: 'Rto D',
-  nro: 'Rto D',
-  fecha: '15/08/2026',
-  ventaIds: ['vta-cara', 'vta-barata'],
-  lineas: [
-    // Se listan con la cara primero para que el orden de las líneas no sea el que "acierta".
-    { subitemId: 'sub-cara', productoId: PRODUCTO, entregada: 4, devuelta: 0, ventaSubitemId: 'vs-cara' },
-    { subitemId: 'sub-barata', productoId: PRODUCTO, entregada: 6, devuelta: 0, ventaSubitemId: 'vs-barata' },
-  ],
-}
-const consolidado = imputarDevolucion([{ ...z, cantidad: 10 }], [dosVentas], HOY)[0]
-assert.equal(consolidado.lineas.length, 2, 'las dos líneas del remito se imputan por separado')
+)[0]
 assert.deepEqual(
-  consolidado.lineas.map((l) => [l.subitemId, l.imputada]),
-  [
-    ['sub-cara', 4],
-    ['sub-barata', 6],
-  ],
-  'cada línea aporta lo suyo',
-)
-
-const ncDos = construirNotaCredito(
-  [consolidado],
-  [
-    precio('sub-cara', 1000, 21, '30/09/2026', { ventaNro: 'VTA-100' }),
-    precio('sub-barata', 400, 21, '30/09/2026', { ventaNro: 'VTA-050' }),
-  ],
-  HOY,
+  conVencida.descartados.map((d) => [d.remitoNro, d.motivo]),
+  [['facturaVieja', 'FACTURA_VENCIDA']],
+  'el remito con la factura vencida queda afuera, aunque esté en plazo',
 )
 assert.deepEqual(
-  ncDos.lineas.map((l) => [l.ventaNro, l.cantidad, l.precioUnitario]),
-  [
-    ['VTA-100', 4, 1000],
-    ['VTA-050', 6, 400],
-  ],
-  'cada línea se acredita al precio de SU venta, no a uno solo para el producto',
+  conVencida.lineas.map((l) => [l.remitoNro, l.imputada]),
+  [['vigente', 5]],
+  'sólo imputa el de factura vigente; el excedente se le carga a él',
 )
-// 4×1000 + 6×400 = 6400, más 21% de IVA.
-assert.equal(ncDos.totalPesos, 7744, 'el total mezcla los dos precios, cada uno por su cantidad')
+/* Remito POSTERIOR cuyo pendiente todavía no se facturó: NO se devuelve. Sin comprobante no hay
+   contra qué acreditar, y su precio ni siquiera es el definitivo (el descuento por forma de pago
+   se decide al facturar). El servicio la manda marcada con `sinFacturar`. */
+const sinFacturar = imputarDevolucion(
+  [{ ...z, cantidad: 2 }],
+  [rto('posterior', '10/08/2026', 5)],
+  HOY,
+  [{ subitemId: 'sub-posterior', precioUnitario: 0, iva: 0, sinFacturar: true }],
+)[0]
+assert.equal(sinFacturar.imputada, 0, 'lo no facturado no se imputa')
+assert.deepEqual(
+  sinFacturar.descartados.map((d) => [d.remitoNro, d.motivo]),
+  [['posterior', 'SIN_FACTURAR']],
+  'y se informa con su propio motivo',
+)
+assert.equal(sinFacturar.sinCubrir, 2, 'las 2 unidades quedan sin cubrir')
 
-/* ---------- La nota de crédito, tal como se escribe en el tablero ----------
-   El board es mono-moneda ("$"), así que las líneas en dólares se convierten con el tipo de cambio
-   de SU factura original —no con el del día— y el vencimiento del documento es el más temprano. */
-const aEmitir = notaCreditoAMonday(
-  construirNotaCredito(
+/* ---------- UNA nota de crédito por factura ----------
+   El ejemplo imputa contra dos remitos; si cada uno pertenece a una venta distinta, salen dos
+   notas, cada una con su vencimiento y su venta enlazada. */
+const notas = construirNotasCredito(
+  [ejemplo],
+  [
+    precio('sub-Rto A', 100, 21, '30/09/2026', { origenId: 'v-016', origenNro: 'VTA-016' }),
+    precio('sub-Rto B', 50, 10.5, '15/10/2026', { origenId: 'v-011', origenNro: 'VTA-011' }),
+  ],
+)
+assert.equal(notas.length, 2, 'dos facturas, dos notas de crédito')
+assert.deepEqual(
+  notas.map((n) => [n.origenNro, n.vencimiento, n.lineas.length]),
+  [
+    ['VTA-016', '30/09/2026', 1],
+    ['VTA-011', '15/10/2026', 1],
+  ],
+  'cada nota lleva su venta, su vencimiento y sus propias líneas',
+)
+// 6 × 100 + 21% de IVA; y 4 × 50 + 10,5%.
+assert.equal(notas[0].totalPesos, 726, 'el total de la primera nota')
+assert.equal(notas[1].totalPesos, 221, 'y el de la segunda')
+assert.equal(notas[0].incompleta, false, 'las dos tienen precio')
+
+// Dos remitos de la MISMA factura se acreditan en una sola nota.
+const unaSola = construirNotasCredito(
+  [ejemplo],
+  [
+    precio('sub-Rto A', 100, 21, '30/09/2026', { origenId: 'v-016', origenNro: 'VTA-016' }),
+    precio('sub-Rto B', 100, 21, '30/09/2026', { origenId: 'v-016', origenNro: 'VTA-016' }),
+  ],
+)
+assert.equal(unaSola.length, 1, 'misma venta, una sola nota')
+assert.equal(unaSola[0].lineas.length, 2, 'con las dos líneas adentro')
+
+// Una línea sin precio no se puede agrupar con nadie: queda en su nota, marcada como incompleta.
+const sinPrecio = construirNotasCredito(
+  [ejemplo],
+  [precio('sub-Rto A', 100, 21, '30/09/2026', { origenId: 'v-016', origenNro: 'VTA-016' })],
+)
+assert.equal(sinPrecio.length, 2, 'la línea sin precio no se mezcla con la que sí lo tiene')
+assert.equal(sinPrecio[1].incompleta, true, 'y su nota queda marcada')
+
+/* ---------- En dólares, al cambio de la factura que corrige ---------- */
+const enDolares = notaCreditoAMonday(
+  construirNotasCredito(
     [ejemplo],
     [
-      precio('sub-Rto A', 100, 21, '30/09/2026', { ventaNro: 'VTA-016' }),
-      precio('sub-Rto B', 10, 21, '15/09/2026', { enDolares: true, tipoCambio: 1500 }),
+      precio('sub-Rto A', 100, 21, '30/09/2026', { origenId: 'v-016', origenNro: 'VTA-016' }),
+      precio('sub-Rto B', 10, 21, '30/09/2026', {
+        origenId: 'v-016',
+        origenNro: 'VTA-016',
+        enDolares: true,
+        tipoCambio: 1500,
+      }),
     ],
-    HOY,
-  ),
+  )[0],
 )
-assert.equal(aEmitir.vencimiento, '15/09/2026', 'vence con la primera de sus facturas')
+assert.equal(enDolares.origenId, 'v-016', 'la nota se enlaza a su venta')
+assert.equal(enDolares.vencimiento, '30/09/2026', 'con el vencimiento de esa factura')
 assert.deepEqual(
-  aEmitir.lineas.map((l) => [l.cantidad, l.precioUnitario, l.subtotal, l.iva]),
+  enDolares.lineas.map((l) => [l.cantidad, l.precioUnitario, l.subtotal, l.iva]),
   [
     // 6 × $100 en pesos, IVA 21% = $126.
     [6, 100, 600, 126],
@@ -281,18 +285,10 @@ assert.deepEqual(
   ],
   'los dólares se llevan a pesos al cambio de la factura que corrigen, IVA incluido',
 )
-assert.equal(aEmitir.subtotal, 60_600, 'el subtotal es la suma de las líneas, ya en pesos')
-/* El IVA del documento es la suma del de sus líneas ($126 + $12.600), y el TOTAL lo incluye,
-   como en el resto de los documentos de la app. */
-assert.equal(aEmitir.iva, 126 + 12_600, 'el IVA se suma de todas las líneas, convertido a pesos')
-assert.equal(aEmitir.total, 60_600 + 12_726, 'el total va con el IVA incluido')
+assert.equal(enDolares.subtotal, 60_600, 'el subtotal es la suma de las líneas, ya en pesos')
+assert.equal(enDolares.iva, 126 + 12_600, 'el IVA se suma de todas las líneas, convertido a pesos')
+assert.equal(enDolares.total, 60_600 + 12_726, 'el total va con el IVA incluido')
 
-// Una línea sin precio NO se acredita: emitir una nota en cero es peor que no emitirla.
-const incompleta = notaCreditoAMonday(
-  construirNotaCredito([ejemplo], [precio('sub-Rto A', 100, 21, '30/09/2026')], HOY),
+console.log(
+  'OK · biológicos, plazo, factura vencida, imputación por remito y una nota de crédito por factura',
 )
-assert.equal(incompleta.lineas.length, 1, 'la línea sin precio queda afuera')
-assert.equal(incompleta.subtotal, 600, 'y no suma nada al subtotal')
-assert.equal(incompleta.iva, 126, 'ni al IVA')
-
-console.log('OK · biológicos, plazo de 30 días, imputación por remito y nota de crédito')
