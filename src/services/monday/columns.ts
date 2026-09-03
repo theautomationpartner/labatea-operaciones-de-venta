@@ -684,8 +684,16 @@ export const COL = {
     /** "🤖Banco Emisor" del cheque (dropdown de texto libre). */
     bancoEmisorCheque: 'dropdown_mm5yfd8n',
     /**
+     * "🤖Fecha Pago": SOLO del cheque. Es la fecha a partir de la cual el banco lo paga, la
+     * única de las dos que el vendedor carga.
+     */
+    fechaPago: 'date_mm6v7nvg',
+    /**
      * "🤖Fecha Venc": la columna de vencimiento es COMPARTIDA. La usan el cheque y las dos
      * tarjetas —cada movimiento es un subelemento de un solo medio, así que nunca compiten—.
+     *
+     * En el cheque NO es un dato cargado: sale de la fecha de pago más los días de vigencia (ver
+     * `vencimientoCheque`), así que lo que llega acá es siempre el cálculo, nunca algo tipeado.
      */
     vencimiento: 'date_mm5y4zxa',
     /* TARJETA (débito y crédito). El recibo NO guarda el número del plástico ("🤖Nro Tarjeta",

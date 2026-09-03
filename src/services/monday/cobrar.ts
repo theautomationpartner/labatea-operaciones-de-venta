@@ -16,7 +16,13 @@
  * Igual que el resto de la capa, sin token (`mondayHabilitado`) no se escribe nada y se
  * devuelven ids simulados para que el prototipo siga corriendo en local.
  */
-import { cuitCompleto, esAnticipo, esRetencion, type BalancePago } from '@/lib/cobros'
+import {
+  cuitCompleto,
+  esAnticipo,
+  esRetencion,
+  vencimientoCheque,
+  type BalancePago,
+} from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import type { MovimientoPago } from '@/types'
@@ -103,8 +109,13 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     if (cuitCompleto(m.cuitEmisor)) cv[COL.cobroSub.cuit] = m.cuitEmisor
     const emision = fechaCol(m.fechaEmisionCheque)
     if (emision) cv[COL.cobroSub.fechaEmisionCheque] = emision
-    // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento de la tarjeta.
-    const vencimiento = fechaCol(m.chequeVencimiento)
+    /* Las DOS fechas del cheque. La de pago es la que se cargó; el vencimiento sale de ella más
+       los días de vigencia (`vencimientoCheque`), nunca de algo que el usuario haya tipeado —en
+       pantalla ese campo es de sólo lectura—. "🤖Fecha Venc" es la MISMA columna que usa el
+       vencimiento de la tarjeta. */
+    const fechaPago = fechaCol(m.chequeFechaPago)
+    if (fechaPago) cv[COL.cobroSub.fechaPago] = fechaPago
+    const vencimiento = fechaCol(vencimientoCheque(m.chequeFechaPago))
     if (vencimiento) cv[COL.cobroSub.vencimiento] = vencimiento
     /* El formato viaja TAL CUAL: los valores de `FormatoCheque` son las etiquetas de la columna
        ("Cheque" / "eCheq"), verificadas contra el board, así que no hay nada que traducir. */

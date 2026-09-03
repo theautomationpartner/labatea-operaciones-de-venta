@@ -37,7 +37,10 @@ responder({
 const cheque = await procesarComprobante(archivo, 'Cheque')
 assert.equal(cheque.datos.numeroCheque, '00123456', 'el número, tal cual')
 assert.equal(cheque.datos.fechaEmisionCheque, '01/08/2026', 'ISO → dd/MM/yyyy')
-assert.equal(cheque.datos.chequeVencimiento, '12/08/2026', 'y el formato del papel se respeta')
+/* La única fecha que se lee del cheque es la de PAGO. El escenario la sigue nombrando
+   "vencimiento" —en el papel es esa casilla— y ese alias tiene que seguir cayendo acá: el
+   vencimiento de verdad ya no se lee, se calcula. */
+assert.equal(cheque.datos.chequeFechaPago, '12/08/2026', 'y el formato del papel se respeta')
 assert.equal(cheque.datos.bancoEmisor, 'GALICIA')
 /* El CUIT vuelve en los TRES tramos que espera el formulario, aunque haya venido de corrido. */
 assert.equal(cheque.datos.cuitEmisor, '20-45037195-6', 'el CUIT se arma con guiones')

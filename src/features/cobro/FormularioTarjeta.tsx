@@ -23,7 +23,7 @@ const borradorVacio = (tipo: TipoTarjetaCobro): Borrador => ({
   formaPago: formaPagoTarjeta(tipo),
   importe: 0,
   referencia: '',
-  chequeVencimiento: '',
+  chequeFechaPago: '',
   cuentaPropia: null,
   cuentaPropiaId: null,
   comprobanteNombre: '',

@@ -12,7 +12,8 @@ import {
   CUIT_TRAMOS,
   DESCUENTO_PAGO_DEFAULT,
   FORMAS_PAGO,
-  MSG_CHEQUE_VENCIMIENTO,
+  MSG_CHEQUE_FECHA_PAGO,
+  MSG_CHEQUE_VENCIDO,
   MSG_CHEQUE_CLIENTE_NO,
   MSG_CUIT_SIN_VALIDAR,
   SIN_DESCUENTOS_PAGO,
@@ -31,7 +32,10 @@ import {
   retencionSinComprobante,
   soloDigitos,
   tramoCuitIncompleto,
-  vencimientoChequeInvalido,
+  chequeVencido,
+  fechaPagoChequeInvalida,
+  vencimientoCheque,
+  DIAS_VIGENCIA_CHEQUE,
 } from '@/lib/cobros'
 import { formatDate } from '@/lib/dates'
 import { totalVentaOperacion } from '@/lib/selectors'
@@ -172,23 +176,67 @@ assert.equal(
   'el recordatorio de validar es el que ve el vendedor al intentar agregar sin haber validado',
 )
 
-// ---------- MÓDULO 2: vencimiento del cheque ----------
-assert.ok(!vencimientoChequeInvalido(HOY), 'vencer HOY es válido (la regla es <=)')
-assert.ok(!vencimientoChequeInvalido(AYER), 'un vencimiento pasado es válido')
-assert.ok(vencimientoChequeInvalido(MANANA), 'un vencimiento futuro incumple la regla')
-assert.ok(vencimientoChequeInvalido(''), 'sin fecha cargada no se puede agregar')
-assert.ok(vencimientoChequeInvalido(undefined), 'sin fecha cargada no se puede agregar')
+/* ---------- MÓDULO 2: las DOS fechas del cheque ----------
+   El vendedor carga UNA sola —la de PAGO— y el vencimiento sale de ella sumando los días de
+   vigencia. Que sea derivado es lo que hace que las dos reglas no sean independientes, y eso es
+   justo lo que se fija acá: mientras el cálculo sea "pago + 30", una fecha de pago válida NUNCA
+   puede dar un cheque vencido. */
+assert.equal(DIAS_VIGENCIA_CHEQUE, 30, 'un cheque vale 30 días desde su fecha de pago')
+assert.equal(
+  vencimientoCheque(HOY),
+  diaRelativo(DIAS_VIGENCIA_CHEQUE),
+  'el vencimiento es la fecha de pago más los días de vigencia',
+)
+assert.equal(vencimientoCheque(''), '', 'sin fecha de pago no hay vencimiento que mostrar')
+assert.equal(vencimientoCheque(undefined), '', 'ni con el campo sin tocar')
 
-const cheque = (chequeVencimiento: string): Pick<MovimientoPago, 'formaPago' | 'chequeVencimiento'> => ({
-  formaPago: 'Cheque',
-  chequeVencimiento,
-})
-assert.ok(chequeInvalido(cheque(MANANA)), 'el cheque a futuro queda marcado')
-assert.ok(!chequeInvalido(cheque(HOY)), 'el cheque de hoy pasa')
+/* La fecha de pago: SOLO hoy. Es una igualdad estricta, no un piso: el cheque cuenta como pago de
+   contado porque el banco lo paga el mismo día en que se registra el cobro, y eso no lo cumple ni
+   el diferido ni el atrasado. Las dos direcciones se fijan por separado porque son dos errores
+   distintos de cometer: aceptar el de ayer sería una regla `>=` mal escrita, y aceptar el de
+   mañana —que es el caso REAL, el cheque a 30 días que el cliente ofrece— sería no haber
+   cambiado nada. */
+assert.ok(!fechaPagoChequeInvalida(HOY), 'pagadero HOY es lo único válido')
+assert.ok(fechaPagoChequeInvalida(MANANA), 'un cheque diferido no es plata de hoy: no entra')
+assert.ok(fechaPagoChequeInvalida(diaRelativo(30)), 'ni el típico a 30 días')
+assert.ok(fechaPagoChequeInvalida(AYER), 'y uno de ayer tampoco: estuvo disponible y no se presentó')
+/* Sin fecha NO es "inválida": es un campo sin cargar, que el formulario reclama por otro lado. Que
+   estas dos cosas sean distintas es lo que deja mostrar dos mensajes distintos. */
+assert.ok(!fechaPagoChequeInvalida(''), 'sin fecha cargada no hay fecha mala, hay un campo vacío')
+assert.ok(!fechaPagoChequeInvalida(undefined), 'ni con el campo sin tocar')
+
+/* El vencido: sólo puede darse con una fecha de pago vieja de MÁS de los días de vigencia. Con el
+   borde exacto —pago = hoy − 30— el vencimiento cae HOY, y un cheque que vence hoy todavía se
+   cobra. */
+assert.ok(!chequeVencido(HOY), 'un cheque pagadero hoy no está vencido')
+assert.ok(!chequeVencido(AYER), 'ni uno de ayer: le quedan 29 días')
 assert.ok(
-  !chequeInvalido({ formaPago: 'Efectivo', chequeVencimiento: MANANA }),
+  !chequeVencido(diaRelativo(-DIAS_VIGENCIA_CHEQUE)),
+  'ni el del borde exacto, que vence HOY',
+)
+assert.ok(
+  chequeVencido(diaRelativo(-DIAS_VIGENCIA_CHEQUE - 1)),
+  'un día más viejo y el vencimiento ya pasó: el cheque está VENCIDO',
+)
+assert.ok(!chequeVencido(''), 'sin fecha de pago no hay vencimiento y no hay nada vencido')
+
+const cheque = (chequeFechaPago: string): Pick<MovimientoPago, 'formaPago' | 'chequeFechaPago'> => ({
+  formaPago: 'Cheque',
+  chequeFechaPago,
+})
+assert.ok(chequeInvalido(cheque(AYER)), 'el cheque con fecha de pago vieja queda marcado')
+assert.ok(chequeInvalido(cheque(MANANA)), 'y el diferido también')
+assert.ok(chequeInvalido(cheque('')), 'y sin fecha tampoco se puede cargar')
+assert.ok(!chequeInvalido(cheque(HOY)), 'el único que pasa es el pagadero hoy')
+assert.ok(
+  !chequeInvalido({ formaPago: 'Efectivo', chequeFechaPago: AYER }),
   'la regla sólo mira los cheques',
 )
+
+/* Los dos mensajes son los que ve el vendedor debajo de cada campo, y no dicen lo mismo: uno pide
+   corregir la fecha, el otro pide OTRO cheque. */
+assert.equal(MSG_CHEQUE_FECHA_PAGO, 'La fecha de pago debe ser la de hoy')
+assert.equal(MSG_CHEQUE_VENCIDO, 'El cheque está VENCIDO. Ingresar otro cheque.')
 
 // ---------- CUIT del emisor del cheque: XX-XXXXXXXX-X ----------
 assert.deepEqual(
@@ -297,17 +345,17 @@ assert.equal(
    además un `bloqueoCobro` que las componía en un mensaje: nunca se mostró en ninguna pantalla
    —la card arma el suyo con el total— así que se eliminó junto con el resto del código muerto. */
 const movimiento = (m: Partial<MovimientoPago>): MovimientoPago =>
-  ({ id: '1', importe: 100, referencia: '', chequeVencimiento: '', formaPago: 'Efectivo', ...m }) as MovimientoPago
+  ({ id: '1', importe: 100, referencia: '', chequeFechaPago: '', formaPago: 'Efectivo', ...m }) as MovimientoPago
 
 assert.equal(
-  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeVencimiento: MANANA })),
+  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeFechaPago: AYER })),
   true,
-  'un cheque a futuro no se puede cargar',
+  'un cheque con fecha de pago distinta de hoy no se puede cargar',
 )
 assert.equal(
-  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeVencimiento: HOY, cuitEmisor: '20-12345678-3' })),
+  chequeInvalido(movimiento({ formaPago: 'Cheque', chequeFechaPago: HOY, cuitEmisor: '20-12345678-3' })),
   false,
-  'un cheque de hoy con CUIT completo se puede cargar',
+  'un cheque pagadero hoy con CUIT completo se puede cargar',
 )
 assert.equal(
   retencionSinComprobante(movimiento({ formaPago: 'Retencion IVA' })),

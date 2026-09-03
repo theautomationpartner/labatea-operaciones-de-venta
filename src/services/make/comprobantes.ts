@@ -75,7 +75,7 @@ export interface DatosComprobante {
   // Cheque
   numeroCheque?: string
   fechaEmisionCheque?: string
-  chequeVencimiento?: string
+  chequeFechaPago?: string
   bancoEmisor?: string
   cuitEmisor?: string
   formatoCheque?: FormatoCheque
@@ -199,7 +199,15 @@ const ALIAS: Record<keyof DatosComprobante, string[]> = {
   importe: ['importe', 'importeRetencion', 'montoRetenido', 'monto', 'total', 'amount'],
   numeroCheque: ['numeroCheque', 'nroCheque', 'chequeNumero', 'checkNumber'],
   fechaEmisionCheque: ['fechaEmisionCheque', 'fechaEmision', 'emision', 'issueDate'],
-  chequeVencimiento: [
+  /* La única fecha que el escenario lee del cheque es la de PAGO. Los alias con "vencimiento"
+     siguen aceptados porque así la venía nombrando —en el papel es la misma casilla—, y el
+     vencimiento de verdad ya no se lee de ningún lado: se calcula (ver `vencimientoCheque`). */
+  chequeFechaPago: [
+    'chequeFechaPago',
+    'fechaPago',
+    'fechaDePago',
+    'pagueseA',
+    'payDate',
     'chequeVencimiento',
     'fechaVencimientoCheque',
     'fechaVencimiento',
@@ -281,7 +289,7 @@ function normalizar(fuente: Record<string, unknown>): DatosComprobante {
   poner('importe', aNumero(leer('importe')))
   poner('numeroCheque', aTexto(leer('numeroCheque')))
   poner('fechaEmisionCheque', aFecha(leer('fechaEmisionCheque')))
-  poner('chequeVencimiento', aFecha(leer('chequeVencimiento')))
+  poner('chequeFechaPago', aFecha(leer('chequeFechaPago')))
   poner('bancoEmisor', aTexto(leer('bancoEmisor')))
   poner('cuitEmisor', aCuit(leer('cuitEmisor')))
   poner('formatoCheque', aFormatoCheque(leer('formatoCheque')))

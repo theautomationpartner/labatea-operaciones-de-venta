@@ -2,7 +2,7 @@
  * Reglas del cobro de una factura: descuentos por forma de pago, balance de cada
  * movimiento y trackeo de lo cobrado contra el total de la venta.
  */
-import { parseDate } from '@/lib/dates'
+import { addDays, parseDate } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import type {
   Cliente,
@@ -307,24 +307,75 @@ export const validarCuitEmisor = (
 /** Aviso al intentar agregar un cheque cuyo CUIT de emisor todavía no se validó. */
 export const MSG_CUIT_SIN_VALIDAR = 'Validá el CUIT del emisor antes de agregar el cheque'
 
-/** Mensaje único de la regla de vencimiento del cheque: lo comparten el formulario y el bloqueo. */
-export const MSG_CHEQUE_VENCIMIENTO = 'La fecha de vencimiento debe ser como máximo la fecha de hoy'
+/**
+ * Días que un cheque sigue siendo cobrable contados desde su fecha de pago. Es el plazo legal de
+ * presentación: pasado eso el banco ya no lo paga.
+ */
+export const DIAS_VIGENCIA_CHEQUE = 30
 
 /**
- * Regla de negocio del cheque: el vencimiento NO puede ser posterior al día de hoy (venc <= hoy),
- * así que sólo se aceptan cheques ya vencidos o que vencen en el día. Se compara por DÍA —hoy a la
- * medianoche—, no por hora, para que un cheque con fecha de hoy sea siempre válido.
+ * Vencimiento del cheque: su fecha de pago más los días de vigencia. Es un valor DERIVADO —no se
+ * carga ni se puede editar—, así que se calcula en cada lugar que lo necesita a partir del único
+ * dato que el usuario tiene delante. Guardarlo en el borrador abriría la puerta a que las dos
+ * fechas se separen (una leída del cheque, la otra tipeada) y el recibo terminaría con un plazo
+ * que no sale de ninguna de las dos.
  *
- * Reemplaza a la regla anterior (vencer DESPUÉS de la emisión de la factura), que era incompatible:
- * la factura se emite hoy, con lo que ninguna fecha podía cumplir las dos a la vez.
+ * Sin fecha de pago cargada devuelve '': no hay vencimiento que mostrar todavía.
  */
-export function vencimientoChequeInvalido(vencimiento: string | undefined): boolean {
-  const venc = parseDate(vencimiento ?? '')
-  if (!venc) return true
+export const vencimientoCheque = (fechaPago: string | undefined): string => {
+  const venc = addDays(fechaPago ?? '', DIAS_VIGENCIA_CHEQUE)
+  return venc === '--' ? '' : venc
+}
+
+/** Hoy a la medianoche. Las dos reglas del cheque comparan por DÍA, no por hora. */
+const inicioDeHoy = (): number => {
   const hoy = new Date()
   hoy.setHours(0, 0, 0, 0)
-  return venc.getTime() > hoy.getTime()
+  return hoy.getTime()
 }
+
+/**
+ * La fecha quedó ANTES de hoy. Sin fecha devuelve `false` a propósito: eso es un campo sin cargar
+ * —que se reclama como falta—, no una fecha pasada.
+ */
+const anteriorAHoy = (valor: string | undefined): boolean => {
+  const f = parseDate(valor ?? '')
+  return !!f && f.getTime() < inicioDeHoy()
+}
+
+/**
+ * Regla del cheque, primera mitad: la fecha de PAGO tiene que ser EXACTAMENTE la de hoy. Es lo que
+ * hace que el cheque cuente como un pago de CONTADO: el banco lo paga el mismo día en que se
+ * registra el cobro, así que la venta queda cancelada en el acto y no pendiente.
+ *
+ * Por eso es una igualdad y no un "no antes de hoy": un cheque pagadero la semana que viene no es
+ * plata de hoy —es un crédito—, y uno pagadero ayer es un cheque que estuvo disponible y no se
+ * presentó. Ninguno de los dos entra.
+ *
+ * Sin fecha cargada devuelve `false`: eso es un campo vacío, que se reclama aparte.
+ */
+export const fechaPagoChequeInvalida = (fechaPago: string | undefined): boolean => {
+  const f = parseDate(fechaPago ?? '')
+  return !!f && f.getTime() !== inicioDeHoy()
+}
+
+/**
+ * Regla del cheque, segunda mitad: el VENCIMIENTO tampoco puede ser anterior a hoy.
+ *
+ * Con la fecha de pago atada a hoy, el vencimiento siempre cae a los `DIAS_VIGENCIA_CHEQUE` días y
+ * esta regla NUNCA se enciende sola: cuando se enciende, la de la fecha de pago ya estaba
+ * encendida. Se conserva igual porque es la que le pone NOMBRE al problema —"el cheque está
+ * vencido" no es lo mismo que "la fecha no es la de hoy"— y porque es la única que seguiría
+ * valiendo si algún día volviera a aceptarse un cheque diferido.
+ */
+export const chequeVencido = (fechaPago: string | undefined): boolean =>
+  anteriorAHoy(vencimientoCheque(fechaPago))
+
+/** Mensaje de la fecha de pago que no es la de hoy. Lo comparten el formulario y el bloqueo. */
+export const MSG_CHEQUE_FECHA_PAGO = 'La fecha de pago debe ser la de hoy'
+
+/** Mensaje del cheque cuyo vencimiento —pago + vigencia— ya pasó. */
+export const MSG_CHEQUE_VENCIDO = 'El cheque está VENCIDO. Ingresar otro cheque.'
 
 /**
  * CUIT del emisor del cheque, cargado en tres tramos con el formato XX-XXXXXXXX-X. Cada tramo
@@ -381,10 +432,14 @@ export const formaPagoTarjeta = (tipo: TipoTarjetaCobro): FormaPago =>
 /** Un cobro con tarjeta —débito o crédito— se puede partir en una o dos tarjetas. */
 export const PAGOS_TARJETA = ['1', '2'] as const
 
-/** El cheque tiene una fecha de vencimiento que incumple la regla (o no la tiene cargada). */
-export function chequeInvalido(m: Pick<MovimientoPago, 'formaPago' | 'chequeVencimiento'>): boolean {
+/**
+ * El cheque no se puede cargar: le falta la fecha de pago, esa fecha no es la de hoy, o el
+ * vencimiento que sale de ella ya pasó.
+ */
+export function chequeInvalido(m: Pick<MovimientoPago, 'formaPago' | 'chequeFechaPago'>): boolean {
   if (m.formaPago !== 'Cheque') return false
-  return vencimientoChequeInvalido(m.chequeVencimiento)
+  if (!parseDate(m.chequeFechaPago ?? '')) return true
+  return fechaPagoChequeInvalida(m.chequeFechaPago) || chequeVencido(m.chequeFechaPago)
 }
 
 /* ===== Tipo de cobro de la operación ===== */
@@ -535,13 +590,6 @@ export function importeSugeridoTarjeta(
   if (cantPagos === '2' && cargadas === 0) return 0
   return Math.max(diferencia, 0)
 }
-
-/**
- * La MISMA regla del vencimiento del cheque, dicha en el ancho de un campo. Debajo de un input hay
- * lugar para un renglón, no para la explicación entera: ahí se dice qué tiene que pasar, y el
- * porqué queda para `MSG_CHEQUE_VENCIMIENTO`, que se muestra donde hay ancho de pantalla.
- */
-export const MSG_CHEQUE_VENC_CORTO = 'El vencimiento no puede ser posterior a hoy'
 
 /**
  * El cobro ya está CUBIERTO: lo recibido alcanza exactamente lo que hay que cancelar, así que el

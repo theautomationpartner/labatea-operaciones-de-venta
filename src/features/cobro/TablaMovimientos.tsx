@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { esRetencion, type BalancePago } from '@/lib/cobros'
+import { esRetencion, vencimientoCheque, type BalancePago } from '@/lib/cobros'
 import { money } from '@/lib/format'
 import { useDispatch } from '@/state/hooks'
 import type { MovimientoPago } from '@/types'
@@ -27,7 +27,10 @@ function detalleDe(m: MovimientoPago): Dato[] {
     return [
       { label: 'Número de cheque', valor: m.numeroCheque || '—' },
       { label: 'Fecha de emisión', valor: m.fechaEmisionCheque || '—' },
-      { label: 'Fecha de vencimiento', valor: m.chequeVencimiento || '—' },
+      { label: 'Fecha de pago', valor: m.chequeFechaPago || '—' },
+      /* El vencimiento se recalcula acá en vez de leerse del movimiento: es derivado de la fecha
+         de pago y no se guarda, así que la fila muestra exactamente lo que va a viajar al recibo. */
+      { label: 'Fecha de venc.', valor: vencimientoCheque(m.chequeFechaPago) || '—' },
       { label: 'Banco emisor', valor: m.bancoEmisor || '—' },
       { label: 'CUIT del emisor', valor: m.cuitEmisor || '—' },
     ]

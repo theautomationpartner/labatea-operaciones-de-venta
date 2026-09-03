@@ -453,8 +453,12 @@ export interface MovimientoPago {
    * tablero. Es opcional para que el formulario no tenga que inventarle un valor a cada borrador.
    */
   referencia?: string
-  /** Sólo cheque: no puede vencer después del día de hoy (ver `chequeInvalido`). */
-  chequeVencimiento: string
+  /**
+   * Sólo cheque: la fecha a partir de la cual el banco lo paga. No puede ser anterior a hoy, y de
+   * ella sale el vencimiento —fecha de pago + `DIAS_VIGENCIA_CHEQUE`—, que NO se guarda porque es
+   * derivado (ver `vencimientoCheque` y `chequeInvalido`).
+   */
+  chequeFechaPago: string
   /** Cheque: número, fecha de emisión (dd/mm/aaaa) y banco emisor. */
   numeroCheque?: string
   fechaEmisionCheque?: string

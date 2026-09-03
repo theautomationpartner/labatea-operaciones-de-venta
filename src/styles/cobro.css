@@ -683,6 +683,19 @@
   flex: 0 0 20%;
   max-width: 20%;
 }
+/* Campo CALCULADO: no se edita, su valor sale de otro campo. Se ve como un dato y no como un
+   control —fondo apagado, cursor de texto normal— para que nadie intente escribirlo. El color del
+   texto NO se baja: es un dato que hay que leer, no una opción deshabilitada. */
+.cobro-v2 .cobro-in--calculado {
+  background: #f4f5f7;
+  cursor: default;
+}
+/* En error gana el rojo del campo inválido. Hace falta decirlo: `.cobro-in--error` se declara ANTES
+   en la hoja y con la misma especificidad, así que el fondo apagado de arriba le ganaría por orden y
+   se comería el aviso de que el cheque está vencido. */
+.cobro-v2 .cobro-in--calculado.cobro-in--error {
+  background: #fff2f0;
+}
 /* Cheque: el número de cheque, un 15% más ancho que un campo normal (200px → 230px). */
 .cobro-v2 .cobro-cond .cobro-form-campo.cobro-campo--nro {
   flex: 1 1 230px;
