@@ -5,13 +5,13 @@
       "name": "dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 5180
+      "port": 5190
     },
     {
       "name": "dev-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5181"],
-      "port": 5181
+      "runtimeArgs": ["run", "dev", "--", "--port", "5191"],
+      "port": 5191
     }
   ]
 }

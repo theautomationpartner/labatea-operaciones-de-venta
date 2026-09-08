@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ActividadesDelDocumento } from '@/features/actividad/ActividadesDelDocumento'
 import { CompBody } from '@/features/shared/CompBody'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { money, round2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
-import { IVA_RATE } from '@/lib/selectors'
-import { crearProforma } from '@/services/monday'
+import { documentoDeVentaItem, IVA_RATE } from '@/lib/selectors'
+import {
+  crearProforma,
+  getActividadesDePresupuestos,
+  getActividadesHeredadasDePresupuestos,
+} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
+import type { ActividadListada } from '@/types'
 
 /** Muestra el valor, o «Sin especificar» si viene vacío. */
 const oSinEsp = (v: string | null | undefined) => (v && v.trim() ? v : 'Sin especificar')
@@ -88,6 +94,28 @@ export function CobroProforma() {
   const [emitiendo, setEmitiendo] = useState(false)
   const [abierta, setAbierta] = useState(true)
 
+  /* La gestión comercial que hereda esta proforma: sólo CON PRESUPUESTO PREVIO trae algo que
+     mostrar (de los presupuestos que aportaron algún producto, ver `getActividadesDePresupuestos`
+     más abajo, en `emitir`). La DIRECTA todavía no eligió nada: esa etapa viene DESPUÉS del cobro,
+     recién antes de facturar (ver "Registrar Actividad"), así que el campo se ve vacío hasta ahí —
+     mismo criterio que la proforma que sale de acá: nace sin actividad propia. */
+  const [actividadesHeredadas, setActividadesHeredadas] = useState<ActividadListada[]>([])
+  useEffect(() => {
+    if (tipoVenta !== 'CON PRESUPUESTO PREVIO') {
+      setActividadesHeredadas([])
+      return
+    }
+    let vivo = true
+    getActividadesHeredadasDePresupuestos(
+      [...new Set(state.ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
+    ).then((as) => {
+      if (vivo) setActividadesHeredadas(as)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [tipoVenta, state.ventaItems])
+
   /**
    * Emite la proforma: crea el ítem cabecera en el board de Proformas, un subelemento por producto
    * y dispara la generación del PDF. Al terminar bien, guarda el id de la proforma (para el envío)
@@ -97,6 +125,16 @@ export function CobroProforma() {
     if (emitiendo || emitida || productos.length === 0) return
     setEmitiendo(true)
     try {
+      /* Sólo CON PRESUPUESTO PREVIO hereda actividad: la gestión ya se completó al presupuestar, y
+         esta factura proforma la arrastra de los presupuestos que aportaron algún producto. La
+         DIRECTA nace sin actividad propia —esa se elige recién en "Registrar Actividad", más
+         adelante, en la venta que termine emitiendo esta misma operación—. */
+      const actividadesIds =
+        tipoVenta === 'CON PRESUPUESTO PREVIO'
+          ? await getActividadesDePresupuestos(
+              [...new Set(state.ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
+            )
+          : []
       const creada = await crearProforma({
         clienteId: cliente!.id,
         vendedorId: state.vendedor?.id ?? null,
@@ -107,6 +145,7 @@ export function CobroProforma() {
         descFormaPago,
         tasaCambio: state.tasaCambio,
         lineas: productos,
+        actividadesIds,
       })
       // El estado de "emitida" se deriva de este id global: sobrevive a la navegación entre pasos.
       dispatch({ type: 'setProformaId', value: creada.id })
@@ -163,6 +202,12 @@ export function CobroProforma() {
             <div className="rrow">
               <span className="rlabel">Entrega</span>
               <span className="rvalue">{entregaTexto()}</span>
+            </div>
+            <div className="rrow">
+              <span className="rlabel">Actividades</span>
+              <span className="rvalue">
+                <ActividadesDelDocumento actividades={actividadesHeredadas} />
+              </span>
             </div>
           </div>
 

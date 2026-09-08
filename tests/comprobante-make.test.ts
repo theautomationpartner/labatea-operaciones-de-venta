@@ -55,13 +55,35 @@ const parcial = await procesarComprobante(archivo, 'Cheque')
 assert.deepEqual(Object.keys(parcial.datos), ['importe'], 'sólo entra lo que trae algo adentro')
 
 /* ---------- El escenario RECHAZA el documento ----------
-   Leyó bien y lo que leyó no es el comprobante que se esperaba: es un error del archivo subido, y
-   se dice con el tipo que sí reconoció, que es lo único accionable. */
+   Leyó bien y lo que leyó no sirve. Vuelve como RESULTADO y NO como excepción: una excepción lo
+   mete en el mismo cajón que el servidor caído, y en pantalla terminaba de rojo y con la palabra
+   "error fatal" encima de algo que se arregla cambiando el archivo. La diferencia no la ve ningún
+   typecheck —`rechazo` es opcional—, así que se fija acá. */
 responder({ tipoValido: false, tipoDetectado: 'Factura A' })
-await assert.rejects(
-  procesarComprobante(archivo, 'Cheque'),
-  /no corresponde a Cheque.*Factura A/s,
-  'nombra el medio esperado y el que se reconoció',
+const otroTipo = await procesarComprobante(archivo, 'Cheque')
+assert.deepEqual(
+  otroTipo.rechazo,
+  { motivo: 'tipo', tipoDetectado: 'Factura A' },
+  'el documento equivocado se informa, con el tipo que SÍ se reconoció',
+)
+assert.deepEqual(otroTipo.datos, {}, 'y no se vuelca nada sobre el formulario')
+
+/* El comprobante es del tipo correcto pero no lo emitió el cliente de la operación. Es el rechazo
+   MÁS específico: cuando el escenario manda las dos banderas, gana éste. */
+responder({ clienteValido: false, tipoValido: false, tipoDetectado: 'Cheque' })
+assert.deepEqual(
+  (await procesarComprobante(archivo, 'Cheque')).rechazo,
+  { motivo: 'cliente' },
+  '"no es de este cliente" explica más que "no sirve"',
+)
+
+/* La AUSENCIA de la bandera no es un "no": un escenario que todavía no valida el cliente no puede
+   empezar a rechazar todos los comprobantes de golpe. */
+responder({ numeroCheque: '00123456' })
+assert.equal(
+  (await procesarComprobante(archivo, 'Cheque')).rechazo,
+  undefined,
+  'sin bandera no hay rechazo',
 )
 
 /* ---------- Error declarado por el escenario, con un 200 igual ---------- */

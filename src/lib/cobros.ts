@@ -9,6 +9,7 @@ import type {
   CondicionPago,
   FormaPago,
   FormaPagoVenta,
+  FormatoCheque,
   MovimientoPago,
   Operacion,
   TipoPago,
@@ -371,6 +372,94 @@ export const fechaPagoChequeInvalida = (fechaPago: string | undefined): boolean 
 export const chequeVencido = (fechaPago: string | undefined): boolean =>
   anteriorAHoy(vencimientoCheque(fechaPago))
 
+/* ===== Un mismo movimiento no se carga dos veces ===== */
+
+/**
+ * Sólo los dígitos, sin ceros a la izquierda. Es lo que hace comparables al mismo número escrito
+ * por dos personas distintas: "0012-3456", "00123456" y "123456" son UN cupón, no tres.
+ */
+const idComparable = (v: string | undefined): string => {
+  const d = (v ?? '').replace(/\D/g, '')
+  return d ? d.replace(/^0+/, '') || '0' : ''
+}
+
+/**
+ * Qué hace ÚNICO a un movimiento, y qué campo lo lleva.
+ *
+ * Cada medio que trae un papel numerado tiene su identificador: el cheque son DOS datos juntos
+ * —quién lo libró y su número, porque cada banco numera su chequera por su cuenta y dos emisores
+ * repiten números todo el tiempo—, la transferencia su número de operación, la tarjeta el cupón
+ * del posnet y la retención el número del certificado.
+ *
+ * La clave arranca con el MEDIO: el número 100 de una retención de IVA y el 100 de una de IIBB son
+ * dos certificados distintos, y tratarlos como el mismo frenaría una carga legítima. El cheque y el
+ * eCheq SÍ comparten espacio —los dos son `formaPago: 'Cheque'`—, que es lo que se quiere: el
+ * mismo documento no entra dos veces por haber cambiado el formato en el selector.
+ *
+ * Devuelve `null` cuando el identificador no está cargado: sin él no hay con qué comparar, y no se
+ * inventa una identidad vacía que haría "duplicados" de todos los movimientos a medio cargar.
+ * El efectivo y el anticipo no tienen número y nunca son duplicados: se pueden cargar dos veces a
+ * propósito.
+ */
+export const identidadMovimiento = (
+  m: Pick<
+    MovimientoPago,
+    | 'formaPago'
+    | 'numeroCheque'
+    | 'cuitEmisor'
+    | 'nroComprobanteTransferencia'
+    | 'numeroCupon'
+    | 'nroComprobanteRetencion'
+  >,
+): { clave: string; campo: string } | null => {
+  const armar = (campo: string, ...partes: (string | undefined)[]) => {
+    const ids = partes.map(idComparable)
+    return ids.every(Boolean) ? { clave: [m.formaPago, ...ids].join('|'), campo } : null
+  }
+  if (m.formaPago === 'Cheque') return armar('numeroCheque', m.cuitEmisor, m.numeroCheque)
+  if (m.formaPago === 'Transferencia') {
+    return armar('nroCompTransf', m.nroComprobanteTransferencia)
+  }
+  if (esMedioTarjeta(m.formaPago)) return armar('numeroCupon', m.numeroCupon)
+  if (esRetencion(m.formaPago)) return armar('nroCompRet', m.nroComprobanteRetencion)
+  return null
+}
+
+/**
+ * Ese movimiento YA está en la tabla de cobros registrados.
+ *
+ * Es el control de duplicados que se puede hacer sin salir de la pantalla, y es distinto del que
+ * corre contra Monday: acá se mira lo que el vendedor acaba de cargar y todavía no se guardó —que
+ * es invisible para cualquier consulta—; allá, lo que ya se recibió en otras operaciones. Los dos
+ * hacen falta y ninguno cubre al otro.
+ */
+export const movimientoRepetido = (
+  cargados: readonly Pick<
+    MovimientoPago,
+    | 'formaPago'
+    | 'numeroCheque'
+    | 'cuitEmisor'
+    | 'nroComprobanteTransferencia'
+    | 'numeroCupon'
+    | 'nroComprobanteRetencion'
+  >[],
+  candidato: Parameters<typeof identidadMovimiento>[0],
+): boolean => {
+  const id = identidadMovimiento(candidato)
+  if (!id) return false
+  return cargados.some((c) => identidadMovimiento(c)?.clave === id.clave)
+}
+
+/** Aviso al intentar agregar un movimiento que ya figura en la tabla, debajo de su identificador. */
+export const MSG_MOVIMIENTO_REPETIDO = 'Ya cargaste este movimiento en la tabla de cobros'
+
+/**
+ * Título de la ventana del cheque que ya existe EN MONDAY. Dice cuál de los dos formatos es, porque
+ * es el dato con el que el vendedor va a buscar el papel entre los que tiene en la mano.
+ */
+export const tituloChequeDuplicado = (formato: FormatoCheque | undefined): string =>
+  `${formato === 'eCheq' ? 'eCheq' : 'Cheque'} duplicado`
+
 /** Mensaje de la fecha de pago que no es la de hoy. Lo comparten el formulario y el bloqueo. */
 export const MSG_CHEQUE_FECHA_PAGO = 'La fecha de pago debe ser la de hoy'
 
@@ -490,6 +579,21 @@ export const cobroSimultaneoOperacion = (
 /**
  * Se muestra el "Impacto en cuenta corriente" del cierre. Sólo tiene sentido cuando la venta se
  * va a la cuenta del cliente: ahí hay un saldo proyectado que mostrar.
+ *
+ * NO EXISTE EL COBRO PARCIAL CONTRA CUENTA CORRIENTE, y es a propósito. La forma de pago parte la
+ * venta en dos caminos que no se mezclan:
+ *
+ *   · CUENTA CORRIENTE → la venta NO cobra nada en el acto. El paso de cobro no ofrece siquiera
+ *     el formulario de movimientos: se muestra este panel y la venta entera queda como deuda en
+ *     "💰Fact Vtas Pends de Cobro". No hay forma de entregar una parte ahora y dejar el resto a
+ *     cuenta; para eso se cobra la deuda después, con su propio recibo.
+ *   · CONTADO y las dos TARJETAS → se cobran en el acto y por el 100%: `cobroCompleto` exige que
+ *     lo cancelado iguale exactamente el total, así que tampoco hay medio pago que deje un resto
+ *     colgando en la cuenta.
+ *
+ * La consecuencia es que una venta nunca deja un saldo parcial en la cuenta corriente: o la deja
+ * entera, o no la toca. Es lo que hace que el impacto de esta card sea siempre el total de la
+ * venta, y que el crédito se mida por ese mismo total (ver `@/lib/credito`).
  */
 export const mostrarImpactoCtaCte = (forma: FormaPagoVenta | null): boolean =>
   forma === 'CUENTA CORRIENTE'
@@ -545,14 +649,25 @@ export interface EstadoCtaCte {
   limite: number
   /** Saldo real que hoy tiene el cliente en su cuenta corriente, sin esta venta. */
   saldoPendiente: number
+  /** Mercadería ya entregada y todavía sin facturar: toma línea aunque no esté en el saldo. */
+  remitosPendFacturar: number
   cancelado: number
-  /** Cómo queda la cuenta tras sumar esta venta e imputarle lo cobrado. */
+  /** Cómo queda el SALDO de la cuenta tras sumar esta venta e imputarle lo cobrado. */
   resultante: number
+  /**
+   * LÍNEA que queda comprometida: el saldo resultante más los remitos pendientes de facturar.
+   * Es el número que se contrasta contra el límite —el mismo que usa el bloqueo por crédito—,
+   * porque el saldo por sí solo ignora la mercadería entregada sin facturar.
+   */
+  lineaResultante: number
 }
 
 /**
  * Cómo queda la cuenta corriente del cliente después de esta venta y su cobro. El límite y el
  * saldo salen del board ("🤖Saldo Cta Cte"), no de un cálculo propio: son el punto de partida.
+ *
+ * `totalVenta` llega CON IVA: es el importe que se asienta en la cuenta, el mismo con el que se
+ * mide el crédito (ver `@/lib/credito`).
  *
  * Lo que descuenta de la cuenta es lo CANCELADO (caja + descuentos), no lo que entró a caja:
  * el descuento por forma de pago salda deuda igual que el dinero.
@@ -563,12 +678,15 @@ export function estadoCtaCte(
   cancelado: number,
 ): EstadoCtaCte {
   const saldoPendiente = cliente.saldoCtaCte
+  const resultante = round2(saldoPendiente + totalVenta - cancelado)
   return {
     cuenta: cliente.codigo || cliente.id,
     limite: cliente.limit,
     saldoPendiente,
+    remitosPendFacturar: cliente.remitosPendFacturar,
     cancelado,
-    resultante: saldoPendiente + totalVenta - cancelado,
+    resultante,
+    lineaResultante: round2(resultante + cliente.remitosPendFacturar),
   }
 }
 

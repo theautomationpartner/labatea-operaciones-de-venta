@@ -1,0 +1,978 @@
+/**
+ * Operación REGISTRO DE ACTIVIDADES (etapas "Registrar Actividad" y "Seleccionar Persona").
+ *
+ * Namespaceado bajo `.actividad-v2`, con los mismos márgenes, la misma gramática de cards y los
+ * mismos tokens que el cobro (`.cobro-v2`) y el cliente (`.cliente-v2`): la operación es nueva,
+ * el look & feel no.
+ */
+
+.actividad-v2 {
+  --a-surface: #ffffff;
+  --a-panel: #f7f8fa;
+  --a-border: #e4e7ec;
+  --a-border-fuerte: #d0d5dd;
+  --a-text-main: #1f2937;
+  --a-text-title: #0f172a;
+  --a-text-muted: #667085;
+  --a-primary: #0052cc;
+  --a-primary-soft: #eef5ff;
+  --a-green: #00c875;
+  --a-green-soft: #eafbf2;
+  --a-green-text: #16a34a;
+  --a-yellow: #ffcb00;
+  --a-yellow-soft: #fff8e1;
+  --a-yellow-text: #b7791f;
+  --a-red: #e44258;
+  --a-radius-md: 8px;
+  --a-radius-lg: 12px;
+  --a-shadow: 0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  /* Mismo ancho máximo y márgenes que el resto de las etapas. */
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 0 24px;
+  color: var(--a-text-main);
+  font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+.actividad-v2 input,
+.actividad-v2 button,
+.actividad-v2 select,
+.actividad-v2 textarea {
+  font-family: inherit;
+}
+.actividad-v2 .paso-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.actividad-v2 .header-section {
+  margin-bottom: 0;
+}
+
+/* El buscador de Persona se monta bajo `.cliente-v2` (ver la vista): acá se le saca el box de
+   página de ese namespace para que encaje como una card más de esta etapa. */
+.actividad-v2 .act-buscador {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.actividad-v2 .act-buscador .toolbar-wrapper {
+  margin-bottom: 0;
+}
+
+/* El buscador y la ficha de la Persona son UNA sola caja: buscar y ver a quién se encontró es un
+   mismo gesto. Las dos mitades pierden su propio borde y su sombra —la caja es la de afuera— y
+   quedan separadas por un filete, sin ningún margen entre ellas. */
+.actividad-v2 .act-persona-caja {
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-shadow);
+  overflow: hidden;
+}
+.actividad-v2 .act-persona-caja .card {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 0;
+}
+.actividad-v2 .act-persona-caja .act-persona {
+  border: none;
+  border-top: 1px solid var(--a-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ===== Panel del formulario ===== */
+.actividad-v2 .act-panel {
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-shadow);
+  overflow: hidden;
+}
+.actividad-v2 .act-panel-head {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--a-border);
+  background: var(--a-panel);
+}
+.actividad-v2 .act-panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--a-text-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actividad-v2 .act-panel-title i {
+  color: var(--a-primary);
+}
+.actividad-v2 .act-panel-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ===== Campos ===== */
+.actividad-v2 .act-fila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.actividad-v2 .act-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.actividad-v2 .act-campo--ancho {
+  flex-basis: 100%;
+}
+/* Los campos cortos —Tipo, Fecha actividad, Fecha de Notificación— van a ANCHO FIJO, la mitad de
+   lo que ocupaban repartiéndose la fila: un selector de cinco opciones y una fecha no necesitan
+   media pantalla, y estirados hasta el borde el dato quedaba perdido contra el margen izquierdo.
+   El `max-width` es el seguro para pantallas angostas: ahí la fila envuelve (`flex-wrap`) y cada
+   campo se achica en vez de desbordar. */
+.actividad-v2 .act-fila > .act-campo {
+  flex: 0 0 344px;
+  max-width: 100%;
+}
+/* La hora va más angosta que la fecha: son cuatro dígitos, no una fecha entera. */
+.actividad-v2 .act-fila > .act-campo--corto {
+  flex: 0 0 168px;
+}
+.actividad-v2 .act-lbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-lbl--legend {
+  padding: 0;
+  /* +2px sobre el resto: es la pregunta que ramifica el formulario, no un rótulo más. */
+  font-size: 15px;
+  color: var(--a-text-title);
+}
+.actividad-v2 .act-req {
+  color: var(--a-red);
+  margin-left: 3px;
+}
+.actividad-v2 .act-in,
+.actividad-v2 .act-area {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--a-border-fuerte);
+  border-radius: var(--a-radius-md);
+  background: #fff;
+  font-size: 14px;
+  color: var(--a-text-main);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.actividad-v2 .act-area {
+  resize: vertical;
+  min-height: 76px;
+  line-height: 1.45;
+}
+.actividad-v2 .act-in:focus,
+.actividad-v2 .act-area:focus {
+  border-color: var(--a-primary);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.12);
+}
+.actividad-v2 .act-in--ph {
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-in--error {
+  border-color: var(--a-red);
+}
+.actividad-v2 .act-in--error:focus {
+  box-shadow: 0 0 0 3px rgba(228, 66, 88, 0.12);
+}
+.actividad-v2 .act-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-red);
+}
+.actividad-v2 .act-ayuda {
+  font-size: 12px;
+  color: var(--a-text-muted);
+}
+
+/* ===== La pregunta: pendiente o completada =====
+   Dos casillas excluyentes (por dentro son radios). El color de cada una es el que tiene su
+   estado en el board: amarillo lo que queda por hacer, verde lo que ya se hizo. */
+.actividad-v2 .act-estado {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.actividad-v2 .act-estado-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.actividad-v2 .act-estado-op {
+  flex: 1 1 260px;
+  display: flex;
+  /* Un solo renglón: la casilla y el rótulo se centran entre sí. */
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--a-border-fuerte);
+  border-radius: var(--a-radius-md);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.actividad-v2 .act-estado-op:hover {
+  border-color: var(--a-primary);
+}
+.actividad-v2 .act-estado-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.actividad-v2 .act-estado-box {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--a-border-fuerte);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  background: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+.actividad-v2 .act-estado-box i {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.actividad-v2 .act-estado-op.is-on .act-estado-box i {
+  opacity: 1;
+}
+/* El foco de teclado se ve en la casilla: el input real está oculto. */
+.actividad-v2 .act-estado-input:focus-visible + .act-estado-box {
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.25);
+}
+.actividad-v2 .act-estado-nom {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--a-text-title);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+/* PENDIENTE · amarillo. */
+.actividad-v2 .act-estado-op--pendiente .act-estado-nom i {
+  color: var(--a-yellow-text);
+}
+.actividad-v2 .act-estado-op--pendiente.is-on {
+  border-color: var(--a-yellow);
+  background: var(--a-yellow-soft);
+}
+.actividad-v2 .act-estado-op--pendiente.is-on .act-estado-box {
+  background: var(--a-yellow);
+  border-color: var(--a-yellow);
+  /* Sobre amarillo el tilde blanco no se lee: va en el mismo tono oscuro del rótulo. */
+  color: #6b4e00;
+}
+/* COMPLETADA · verde. */
+.actividad-v2 .act-estado-op--completada .act-estado-nom i {
+  color: var(--a-green-text);
+}
+.actividad-v2 .act-estado-op--completada.is-on {
+  border-color: var(--a-green);
+  background: var(--a-green-soft);
+}
+.actividad-v2 .act-estado-op--completada.is-on .act-estado-box {
+  background: var(--a-green);
+  border-color: var(--a-green);
+}
+
+/* ===== Lo que se despliega =====
+   Cada bloque entra deslizándose desde arriba, así se ve DE DÓNDE salió: es la respuesta que se
+   acaba de dar la que hace crecer el formulario. */
+.actividad-v2 .act-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: act-desplegar 0.28s ease;
+}
+@keyframes act-desplegar {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* El plegado es la misma animación al revés: el bloque se va POR DONDE VINO. Sin esto, contestar
+   "Pendiente" borraba media pantalla de un cuadro para el otro. Mientras se va no se toca —el
+   contenido que muestra ya es una copia congelada—, y al terminar la vista lo desmonta. */
+.actividad-v2 .act-extra--saliendo {
+  animation: act-plegar 0.26s ease forwards;
+  pointer-events: none;
+}
+@keyframes act-plegar {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+/* Con `prefers-reduced-motion` el bloque aparece y se va sin desplazarse. La duración NO baja a
+   cero: el desmontaje escucha el fin de la animación, y sin animación ese aviso no llega nunca
+   (queda el reloj de respaldo de la vista, pero el bloque tardaría de más en irse). */
+@media (prefers-reduced-motion: reduce) {
+  .actividad-v2 .act-extra,
+  .actividad-v2 .act-extra--saliendo {
+    animation-duration: 1ms;
+  }
+}
+
+/* ===== Interruptor "Cargar futura actividad" ===== */
+.actividad-v2 .act-sw-fila {
+  padding-top: 14px;
+  border-top: 1px dashed var(--a-border);
+}
+.actividad-v2 .act-sw {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.actividad-v2 .act-sw-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.actividad-v2 .act-sw-pista {
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: #cfd4dc;
+  position: relative;
+  transition: background 0.2s;
+}
+.actividad-v2 .act-sw-bolita {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.3);
+  transition: transform 0.2s;
+}
+.actividad-v2 .act-sw-input:checked + .act-sw-pista {
+  background: var(--a-primary);
+}
+.actividad-v2 .act-sw-input:checked + .act-sw-pista .act-sw-bolita {
+  transform: translateX(18px);
+}
+.actividad-v2 .act-sw-input:focus-visible + .act-sw-pista {
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.25);
+}
+.actividad-v2 .act-sw-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.actividad-v2 .act-sw-nom {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--a-text-title);
+}
+.actividad-v2 .act-sw-ayuda {
+  font-size: 12px;
+  color: var(--a-text-muted);
+  max-width: 620px;
+}
+
+/* ===== Bloque de la actividad proyectada ===== */
+.actividad-v2 .act-proyectada {
+  padding: 16px;
+  border: 1px dashed var(--a-primary);
+  border-radius: var(--a-radius-md);
+  background: var(--a-primary-soft);
+}
+.actividad-v2 .act-proyectada-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.actividad-v2 .act-proyectada-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--a-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.actividad-v2 .act-proyectada-hint {
+  font-size: 12px;
+  color: var(--a-text-muted);
+}
+
+/* ===== Persona elegida ===== */
+.actividad-v2 .act-persona {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-shadow);
+}
+.actividad-v2 .act-persona-datos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.actividad-v2 .act-persona-cod {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-persona-nom {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--a-text-title);
+}
+.actividad-v2 .act-persona-dir {
+  font-size: 13px;
+  color: var(--a-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.actividad-v2 .act-persona-dir i {
+  color: var(--a-primary);
+}
+.actividad-v2 .act-persona-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.actividad-v2 .act-persona-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.actividad-v2 .act-persona-badge.is-activo {
+  background: var(--a-green-soft);
+  color: var(--a-green-text);
+}
+.actividad-v2 .act-persona-badge.is-inactivo {
+  background: #fdecef;
+  color: var(--a-red);
+}
+
+/* ===== Tabla de contactos =====
+   Mismo diseño que la tabla de anticipos: caja con cabecera propia, encabezados en gris sobre el
+   fondo de la card, filas separadas por un filete y el dato principal en dos renglones (nombre
+   arriba, código abajo). */
+.actividad-v2 .act-tabla-caja {
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-shadow);
+  overflow: hidden;
+}
+.actividad-v2 .act-tabla-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  /* El reclamo (y el contador que lo reemplaza) van PEGADOS al título, no contra el borde opuesto
+     de la card: a un metro de distancia se leía como un dato suelto y no como lo que le falta a
+     esta tabla. */
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--a-border);
+  background: var(--a-panel);
+}
+.actividad-v2 .act-tabla-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--a-text-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actividad-v2 .act-tabla-title i {
+  color: var(--a-primary);
+}
+.actividad-v2 .act-tabla-hint {
+  font-size: 12px;
+  color: var(--a-text-muted);
+}
+/* Reclamo del dato que falta. Mismo aviso en línea que el del cobro (`.cobro-bloqueo-inline`):
+   rojo, en negrita y con el signo de exclamación, para que se lea como un pendiente y no como una
+   aclaración. Desaparece solo en cuanto hay algún contacto tildado. */
+.actividad-v2 .act-tabla-req {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-red);
+}
+/* En anchos angostos la tabla scrollea sola: la página no se desborda. */
+.actividad-v2 .act-tabla-scroll {
+  overflow-x: auto;
+}
+.actividad-v2 .act-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.actividad-v2 .act-tabla th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+  border-bottom: 1px solid var(--a-border);
+  white-space: nowrap;
+}
+.actividad-v2 .act-tabla td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--a-border);
+  vertical-align: middle;
+}
+.actividad-v2 .act-tabla tbody tr:last-child td {
+  border-bottom: 0;
+}
+.actividad-v2 .act-tabla-chk {
+  width: 1px;
+  padding-right: 0;
+}
+.actividad-v2 .act-tabla-fila {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.actividad-v2 .act-tabla-fila:hover {
+  background: #f9fafb;
+}
+.actividad-v2 .act-tabla-fila.is-on {
+  background: var(--a-primary-soft);
+}
+/* Ya CONFIRMADO: se ve elegido pero no se toca —se quita desde la tabla de abajo—, así que va en
+   verde (hecho) y no en azul (tildado ahora), y sin cursor de mano ni realce al pasar por encima. */
+.actividad-v2 .act-tabla-fila.is-ya {
+  background: var(--a-green-soft);
+  cursor: default;
+}
+.actividad-v2 .act-tabla-fila.is-ya:hover {
+  background: var(--a-green-soft);
+}
+.actividad-v2 .act-tabla-fila.is-ya .act-chk-box {
+  background: var(--a-green);
+  border-color: var(--a-green);
+}
+/* Reemplaza al código del contacto en el segundo renglón: ahí lo que importa es que ya está. */
+.actividad-v2 .act-tabla-ya {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-green-text);
+}
+.actividad-v2 .act-tabla-ya i {
+  margin-right: 4px;
+}
+/* Pie de la tabla, con el botón de confirmar: el filete lo separa de los renglones para que no se
+   lea como una fila más. */
+.actividad-v2 .act-tabla-pie {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--a-border);
+}
+
+.actividad-v2 .act-tabla-fila--skeleton {
+  cursor: default;
+}
+.actividad-v2 .act-tabla-fila--skeleton:hover {
+  background: transparent;
+}
+/* Dato principal en dos renglones: el nombre manda y el código queda de apoyo. */
+.actividad-v2 .act-tabla-nom {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--a-text-title);
+}
+.actividad-v2 .act-tabla-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-tabla-dato {
+  color: var(--a-text-main);
+}
+/* Renglón de "buscando": los MISMOS estilos que la búsqueda de pendientes del REMITO
+   (`.presup-vacio`, con el spinner a la izquierda del texto). */
+.actividad-v2 .act-tabla-cargando {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-tabla-cargando i {
+  margin-right: 8px;
+}
+.actividad-v2 .act-tabla-vacia td {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--a-text-muted);
+}
+.actividad-v2 .act-tabla-vacia i {
+  margin-right: 8px;
+}
+
+/* Casilla de la tabla. Cuadrada como la de la pregunta: es la misma gramática de selección. */
+.actividad-v2 .act-chk {
+  display: inline-flex;
+  cursor: pointer;
+}
+.actividad-v2 .act-chk-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.actividad-v2 .act-chk-box {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--a-border-fuerte);
+  border-radius: 4px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.actividad-v2 .act-chk-box i {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.actividad-v2 .act-chk-input:checked + .act-chk-box,
+.actividad-v2 .act-chk-input:indeterminate + .act-chk-box {
+  background: var(--a-primary);
+  border-color: var(--a-primary);
+}
+.actividad-v2 .act-chk-input:checked + .act-chk-box i {
+  opacity: 1;
+}
+/* Indeterminado: la rayita del "algunos", sin el tilde del "todos". */
+.actividad-v2 .act-chk-input:indeterminate + .act-chk-box::after {
+  content: '';
+  width: 8px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+.actividad-v2 .act-chk-input:focus-visible + .act-chk-box {
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.25);
+}
+.actividad-v2 .act-chk-input:disabled + .act-chk-box {
+  background: #f2f4f7;
+  border-color: #e4e7ec;
+  cursor: not-allowed;
+}
+
+/* ===== Columnas propias de la tabla de actividades ===== */
+/* La fecha nunca se parte en dos renglones: es un dato corto y de ancho fijo. */
+.actividad-v2 .act-tabla-fecha {
+  white-space: nowrap;
+}
+/* La resolución puede ser un párrafo: se recorta a un renglón con puntos suspensivos y el texto
+   completo queda en el `title`. Sin el tope, una sola fila estiraba la tabla entera. */
+.actividad-v2 .act-tabla-resol {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a-text-muted);
+}
+
+/* Estado de la actividad: la misma pastilla que usa el board, con SU color. */
+.actividad-v2 .act-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.actividad-v2 .act-badge--verde {
+  background: var(--a-green-soft);
+  color: var(--a-green-text);
+}
+.actividad-v2 .act-badge--amarillo {
+  background: var(--a-yellow-soft);
+  color: var(--a-yellow-text);
+}
+.actividad-v2 .act-badge--rojo {
+  background: #fdecef;
+  color: var(--a-red);
+}
+.actividad-v2 .act-badge--gris {
+  background: #f1f5f9;
+  color: var(--a-text-muted);
+}
+
+/* ===== Estado vacío: cajas quietas que preservan el layout (mismo criterio que la ficha del
+   cliente: sin animación ni parpadeo). ===== */
+.actividad-v2 .skeleton {
+  display: block;
+  background: #eef1f6;
+  border-radius: 6px;
+}
+.actividad-v2 .skeleton--linea {
+  height: 14px;
+  margin-bottom: 10px;
+}
+.actividad-v2 .skeleton--corto {
+  width: 90px;
+}
+.actividad-v2 .skeleton--titulo {
+  height: 22px;
+  width: 220px;
+}
+.actividad-v2 .skeleton--medio {
+  width: 260px;
+}
+.actividad-v2 .skeleton--badge {
+  display: inline-block;
+  height: 18px;
+  width: 18px;
+  border-radius: 4px;
+}
+.actividad-v2 .skeleton--estado {
+  height: 26px;
+  width: 110px;
+  border-radius: 999px;
+}
+
+/* ===== Aviso de operación ya registrada ===== */
+.actividad-v2 .aviso-bloqueo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid #fde3a7;
+  border-radius: var(--a-radius-md);
+  background: #fff8e6;
+  font-size: 13px;
+  font-weight: 600;
+  color: #8a6100;
+}
+
+/* ===== Footer de acciones ===== */
+.actividad-v2 .actions-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  margin-bottom: 64px;
+}
+/* Con el "Volver" a la izquierda, el aviso y el cierre viajan juntos a la derecha. */
+.actividad-v2 .act-cierre {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 680px) {
+  .actividad-v2 .actions-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .actividad-v2 .act-persona {
+    flex-direction: column;
+  }
+}
+
+/* ===== Cierre de la operación: el tilde =====
+   Tapa la pantalla mientras se dibuja el tilde y la app vuelve a su estado inicial. No tiene
+   botón: no hay ninguna decisión pendiente (ver `ActividadRegistrada`). */
+.actividad-v2 .act-exito {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  animation: act-exito-fondo 0.25s ease;
+}
+@keyframes act-exito-fondo {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.actividad-v2 .act-exito-caja {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 40px 56px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+.actividad-v2 .act-exito-svg {
+  width: 84px;
+  height: 84px;
+}
+/* El aro y la marca se dibujan con el mismo truco: el trazo entero como hueco, que se va
+   cerrando. Primero el aro; la marca arranca cuando el aro ya casi cerró. */
+.actividad-v2 .act-exito-aro {
+  fill: none;
+  stroke: var(--a-green);
+  stroke-width: 3;
+  stroke-dasharray: 145;
+  stroke-dashoffset: 145;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  animation: act-trazar 0.75s ease-out forwards;
+}
+.actividad-v2 .act-exito-tilde {
+  fill: none;
+  stroke: var(--a-green);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: act-trazar 0.45s 0.6s ease-out forwards;
+}
+@keyframes act-trazar {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.actividad-v2 .act-exito-txt {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--a-text-title);
+  /* Entra después del tilde: primero el gesto, después la palabra. */
+  opacity: 0;
+  animation: act-exito-texto 0.4s 0.95s ease forwards;
+}
+@keyframes act-exito-texto {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Sin movimiento: el tilde y el texto ya están dibujados desde el primer cuadro. */
+@media (prefers-reduced-motion: reduce) {
+  .actividad-v2 .act-exito-aro,
+  .actividad-v2 .act-exito-tilde {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+  .actividad-v2 .act-exito-txt {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+/* ===== Renglón "Actividades" de los resúmenes =====
+   Va SIN namespace: se monta dentro del resumen del presupuesto (`.resumen-emision`) y del de la
+   venta (`.resumen-venta`), que son de otras hojas. Es sólo texto, así que hereda tipografía y
+   color del renglón; lo único suyo es el recorte y el "+". */
+.act-resumen {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+  cursor: help;
+}
+/* El nombre es una frase entera: se recorta con puntos suspensivos en vez de partir el renglón. */
+.act-resumen-nom {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* El "+" nunca se recorta: es lo que avisa que hay más de una, y va en el azul de lo accionable. */
+.act-resumen-mas {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--primary-blue);
+}
+
+/* ===== Renglón "Actividades" de los resúmenes =====
+   SIN namespace a propósito: `ActividadesDelDocumento` se monta en las tres fichas de resumen
+   —presupuesto (`.emision-v2`), venta (`.factura-v2`) y proforma (`.cobro-v2`)—, y una copia de
+   estas reglas en cada una se desincronizaría a la primera corrección.
+
+   El nombre de una actividad es una frase entera ("Visita al Campo - 07/09/2026 - 7001 - La Batea
+   S.A TEST - Juan Pérez"): sin recorte estiraba el renglón y se salía de la tarjeta. Se recorta con
+   puntos suspensivos y el nombre completo queda en el `title`, igual que el resto de la lista. */
+.act-resumen {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+.act-resumen-nom {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* El "+N" dice cuántas quedaron afuera: es lo último que se puede perder, así que no se encoge. */
+.act-resumen-mas {
+  flex: 0 0 auto;
+}

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { claseCajaSelector, claseSelector } from '@/features/shared/faltaSeleccion'
 import { descuentoDeFormaPago, formasPagoDeCliente } from '@/lib/cobros'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { FormaPagoVenta } from '@/types'
@@ -13,7 +14,7 @@ import type { FormaPagoVenta } from '@/types'
  */
 /** `bloqueado`: post-emisión, el selector queda deshabilitado (no se cambia la forma de pago). */
 export function FormaPagoSelect({ bloqueado = false }: { bloqueado?: boolean }) {
-  const { formaPago, cliente, descuentosPago } = useApp()
+  const { formaPago, cliente, descuentosPago, intentoAvanzar } = useApp()
   const dispatch = useDispatch()
   // Las opciones dependen de la condición de pago del cliente: sólo la cuenta corriente las habilita
   // todas; el resto opera únicamente de contado.
@@ -33,7 +34,7 @@ export function FormaPagoSelect({ bloqueado = false }: { bloqueado?: boolean }) 
 
   return (
     <div className="forma-pago">
-      <div className="cfgbox">
+      <div className={claseCajaSelector(formaPago, intentoAvanzar)}>
         <div className="cfg-ic">
           <i className="fas fa-money-bill-wave" />
         </div>
@@ -43,7 +44,7 @@ export function FormaPagoSelect({ bloqueado = false }: { bloqueado?: boolean }) 
           </label>
           <select
             id="forma-pago"
-            className={`cfg-sel ${formaPago ? '' : 'cfg-sel--ph'}`}
+            className={`cfg-sel ${claseSelector(formaPago)}`}
             value={formaPago ?? ''}
             disabled={bloqueado}
             onChange={(e) =>

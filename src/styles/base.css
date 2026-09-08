@@ -12,6 +12,9 @@
   --text-dark: #323338;
   --text-gray: #676879;
   --border: #d0d4e4;
+  /* Borde más claro que `--border`. Lo usaban por su cuenta las hojas de cada vista
+     (--f-border, --c-border…); vive acá para que un control global pueda pedirlo. */
+  --border-suave: #e4e7ec;
   --bg: #ffffff;
   --avatar-orange: #f29100;
   --tag-bg: #eaf2fd;

@@ -1015,6 +1015,15 @@
 .cobro-v2 .cobro-imp-num--total.is-over {
   color: var(--c-danger);
 }
+/* Aclaración al pie del saldo resultante: cuánta línea queda tomada contando los remitos
+   pendientes de facturar. Es contexto del número grande, así que va chica y en gris. */
+.cobro-v2 .cobro-imp-nota {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
 
 /* ===== Avisos y pie ===== */
 .cobro-v2 .cobro-aviso {
@@ -1473,7 +1482,7 @@
    estado. El recuadro entero es el que informa —el color se ve antes que el texto—. */
 .cobro-v2 .cobro-lector--procesando,
 .cobro-v2 .cobro-lector--listo,
-.cobro-v2 .cobro-lector--sin-datos,
+.cobro-v2 .cobro-lector--advertencia,
 .cobro-v2 .cobro-lector--error {
   border-style: solid;
 }
@@ -1484,7 +1493,11 @@
   border-color: var(--c-success);
   background: #f2fbf7;
 }
-.cobro-v2 .cobro-lector--sin-datos {
+/* ADVERTENCIA: el circuito anduvo y el problema es el documento —no se pudo leer, no es el del
+   medio elegido, o no lo emitió el cliente—. Ámbar y no rojo: nada está roto, y lo que hay que
+   hacer es cambiar el archivo. El rojo queda para lo único que el usuario no puede arreglar: que
+   el escenario no conteste. */
+.cobro-v2 .cobro-lector--advertencia {
   border-color: var(--c-warning);
   background: #fffaf0;
 }
@@ -1512,10 +1525,10 @@
 .cobro-v2 .cobro-lector-cara--listo .cobro-lector-titulo {
   color: #0b7a4b;
 }
-.cobro-v2 .cobro-lector-cara--sin-datos {
+.cobro-v2 .cobro-lector-cara--advertencia {
   color: var(--c-warning);
 }
-.cobro-v2 .cobro-lector-cara--sin-datos .cobro-lector-titulo {
+.cobro-v2 .cobro-lector-cara--advertencia .cobro-lector-titulo {
   color: #b26a00;
 }
 .cobro-v2 .cobro-lector-cara--error {
@@ -1589,6 +1602,32 @@
 }
 .cobro-v2 .cobro-lector-accion:hover {
   color: var(--c-primary-hover);
+}
+/* "Eliminar" saca el comprobante y vacía los campos que completó: es la única acción del recuadro
+   que DESHACE algo, y por eso es la única en rojo. Se declara DESPUÉS de la regla de arriba —misma
+   especificidad—, así que le gana por orden; el `:hover` propio hace falta por lo mismo. */
+.cobro-v2 .cobro-lector-accion--quitar {
+  color: var(--c-danger);
+}
+.cobro-v2 .cobro-lector-accion--quitar:hover {
+  color: #b8202f;
+}
+/* El "+ Agregar" mientras se consulta el padrón de cheques: el mismo botón, con un anillo girando
+   donde estaba el "+". No cambia de medida —"Validando" y "Agregar" pesan casi lo mismo— así que la
+   fila no se mueve al empezar ni al terminar. */
+.cobro-v2 .cobro-btn-spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  animation: cobro-btn-girar 0.7s linear infinite;
+}
+@keyframes cobro-btn-girar {
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* Lo que la lectura no pudo completar, al pie del recuadro. Va DEBAJO del archivo y sus acciones,
    que es el orden en que se lee lo que pasó: se procesó, este es el documento, y esto quedó

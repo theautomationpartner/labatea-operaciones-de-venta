@@ -1,4 +1,5 @@
 import { PasoHeader } from '@/features/shared/PasoHeader'
+import { pasoInicialDe } from '@/lib/pasos'
 import { getProximoNroPresupuesto } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 
@@ -15,7 +16,9 @@ export function InicioView() {
         .then((nro) => dispatch({ type: 'setNroPresupuesto', value: nro }))
         .catch(() => {})
     }
-    dispatch({ type: 'goto', paso: 'cliente' })
+    /* No todas las operaciones abren eligiendo cliente: REGISTRO DE ACTIVIDADES arranca
+       registrando la actividad y deja la Persona para el final (ver `pasoInicialDe`). */
+    dispatch({ type: 'goto', paso: pasoInicialDe(operacion) })
   }
 
   return (

@@ -79,6 +79,10 @@ export function VentaProformaView() {
       value: p?.id ?? null,
       importe: p?.importe ?? null,
       tipoVenta: p?.tipoVenta ?? null,
+      /* Y su TIPO DE ENTREGA (color_mm489k2j): de él dependen el movimiento de stock y los
+         pendientes. El recorrido de la VENTA PROFORMA no tiene etapa de entrega, así que si no
+         viaja desde acá la venta nace SIMULTÁNEA sea cual sea la proforma. */
+      tipoEntrega: p?.tipoEntrega ?? null,
     })
   }, [seleccionada, proformas, dispatch])
 
@@ -125,10 +129,29 @@ export function VentaProformaView() {
 
   return (
     <section className="view productos-v2 paso-layout">
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={indiceDePaso('venta-proforma', operacion, tipoVenta, tipoEntrega)} />
+      <PasoHeader
+        pasos={pasosDe(operacion, tipoVenta, tipoEntrega, null, state.proformaTipoVenta)}
+        actual={indiceDePaso(
+          'venta-proforma',
+          operacion,
+          tipoVenta,
+          tipoEntrega,
+          null,
+          state.proformaTipoVenta,
+        )}
+      />
 
       <PasoTitulo
-        numero={indiceDePaso('venta-proforma', operacion, tipoVenta, tipoEntrega) + 1}
+        numero={
+          indiceDePaso(
+            'venta-proforma',
+            operacion,
+            tipoVenta,
+            tipoEntrega,
+            null,
+            state.proformaTipoVenta,
+          ) + 1
+        }
         titulo="Cargar productos"
         descripcion="Elegí una proforma del cliente: entran todos sus productos, sin edición. La selección es exclusiva (una proforma a la vez)."
       />
@@ -151,7 +174,7 @@ export function VentaProformaView() {
       <footer className="page-footer">
         <button
           type="button"
-          className="btn-outline"
+          className="btn-volver"
           onClick={() => dispatch({ type: 'goto', paso: 'cliente' })}
         >
           <i className="fas fa-arrow-left" /> Volver

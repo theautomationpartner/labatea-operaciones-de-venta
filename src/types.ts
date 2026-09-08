@@ -1,6 +1,12 @@
 /** Modelo de dominio. La capa de servicio (v2) debe devolver exactamente estas formas. */
 
-export type Operacion = 'PRESUPUESTAR' | 'VENTA' | 'VENTA PROFORMA' | 'REMITO'
+export type Operacion =
+  | 'PRESUPUESTAR'
+  | 'VENTA'
+  | 'VENTA PROFORMA'
+  | 'REMITO'
+  /** Registra una actividad comercial (visita, llamada, mail) contra una Persona y sus contactos. */
+  | 'REGISTRO DE ACTIVIDADES'
 
 export type Paso =
   | 'inicio'
@@ -18,6 +24,16 @@ export type Paso =
   | 'remito-emision'
   /** REMITO · DEVOLUCION: imputación contra los remitos de entrega y cierre de la operación. */
   | 'remito-devolucion'
+  /** REGISTRO DE ACTIVIDADES · etapa 1: los datos de la actividad (y la proyectada, si se carga). */
+  | 'actividad'
+  /** REGISTRO DE ACTIVIDADES · etapa 2: a qué Persona y a cuáles de sus contactos se le asienta. */
+  | 'actividad-persona'
+  /**
+   * VENTA / PRESUPUESTO · "Registrar Actividad": la gestión comercial que origina el documento,
+   * antes de emitirlo. Es la MISMA etapa del recorrido de actividades, pero acá la Persona ya es
+   * el cliente de la operación, así que no se la vuelve a elegir (ver `registraActividad`).
+   */
+  | 'venta-actividad'
 
 export interface Vendedor {
   /** ID numérico del usuario de Monday. Se guarda para asignar la venta en las mutaciones. */
@@ -324,6 +340,14 @@ export interface PresupuestoProducto {
   estadoUso?: string
   /** ID del subelemento del presupuesto en Monday. */
   subitemId?: string
+  /**
+   * ID del ÍTEM del presupuesto (o de la proforma) del que salió esta línea.
+   *
+   * Viaja con cada producto y no a nivel de la selección porque una venta CON PRESUPUESTO PREVIO
+   * puede armarse con líneas de VARIOS presupuestos a la vez —tres productos de uno, dos de otro—,
+   * y al registrarla hay que enlazar a todos los que aportaron.
+   */
+  presupuestoId?: string
   /** ID del producto conectado en el Maestro de Productos. */
   productoId?: string
   /** ID del ítem de "Stock y Movimientos" (subitem board_relation_mm5pzc9y). Viaja a la venta
@@ -821,4 +845,144 @@ export interface RemitoState {
    * solo lectura y el botón de finalizar no puede volver a dispararla.
    */
   devolucionRegistrada: boolean
+}
+
+/* ===== REGISTRO DE ACTIVIDADES =====
+   Una actividad comercial que se asienta en el board "Actividades" (18420688236): qué se hizo,
+   de qué tipo, cuándo, y si quedó pendiente o completada. */
+
+/** Labels de "✋Tipo de actividad" (columna status del board). Se escriben tal cual. */
+export type TipoActividad =
+  | 'Whatsapp'
+  | 'Visita al Campo'
+  | 'Email'
+  | 'Reunión Presencial'
+  | 'Llamada telefónica'
+
+/**
+ * En qué estado queda la actividad que se está cargando. Son las DOS opciones que ofrece la app;
+ * el board tiene además "Vencido", que lo pone una automatización cuando pasa la fecha, no la app.
+ * Ojo: "Completada" es como se lee en la pantalla, pero el label del board es "Completado"
+ * (ver `ESTADO_ACTIVIDAD_LABEL`).
+ */
+export type EstadoActividad = 'Pendiente' | 'Completada'
+
+/**
+ * Qué se viene a hacer en la segunda etapa de REGISTRO DE ACTIVIDADES. Son dos operaciones
+ * distintas sobre el mismo board:
+ *   · REGISTRAR NUEVA ACTIVIDAD: se carga una gestión que no estaba, con el formulario de siempre.
+ *   · COMPLETAR ACTIVIDAD PENDIENTE: no se carga nada nuevo, se cierran las que ya estaban
+ *     agendadas para las Personas y contactos elegidos en la etapa 1.
+ *
+ * El valor ES la etiqueta que se muestra en el selector, como en `TipoVenta`: no hay traducción
+ * en el medio y el `select` se arma con la lista tal cual.
+ */
+export type TipoOperacionActividad = 'REGISTRAR NUEVA ACTIVIDAD' | 'COMPLETAR ACTIVIDAD PENDIENTE'
+
+/**
+ * La actividad FUTURA que se agenda al cerrar una completada ("¿Cargar futura actividad?"). Se
+ * carga como una actividad más —mismo board, mismos campos— y nace SIEMPRE "Pendiente": todavía
+ * no pasó. Suma la fecha de alarma, que es lo único que no tiene la actividad que se está cerrando.
+ */
+export interface ActividadProyectada {
+  tipo: TipoActividad | null
+  /** dd/MM/yyyy. Tiene que ser POSTERIOR a hoy: es una actividad que todavía no ocurrió. */
+  fecha: string
+  /** HH:mm. La gestión se agenda a una hora, no a un día suelto. */
+  hora: string
+  /** Los MISMOS campos que la actividad que se está cargando, incluida esta. Opcional. */
+  resolucion: string
+}
+
+/**
+ * Una actividad YA cargada en el tablero, tal como se lista en la etapa "Registrar Actividad" de la
+ * venta y el presupuesto. Es de sólo lectura: ahí no se edita la actividad, se elige cuál (o
+ * cuáles) originaron el documento que se está por emitir.
+ */
+export interface ActividadListada {
+  /** ID del ítem en Monday: es lo que se linkea al presupuesto o a la venta. */
+  id: string
+  /** Nombre del ítem: la descripción con la que se cargó la gestión. */
+  nombre: string
+  /**
+   * Label de "✋Tipo de actividad" (Visita al Campo, Llamada telefónica…). Junto con el primer
+   * contacto arma el rótulo con el que se lista la gestión (ver `etiquetaActividad`): el `nombre`
+   * del ítem lleva además la fecha y la Persona, y en una celda de tabla no se lee.
+   */
+  tipo: string
+  /** Nombre + Apellido de los contactos con los que se hizo. Vacío = el ítem no tiene ninguno. */
+  contactos: string[]
+  /** dd/MM/yyyy, o '' si el ítem no la tiene cargada. */
+  fecha: string
+  /** Label de "✋Estado De Actividad" tal como está en el board (Pendiente / Completado / Vencido). */
+  estado: string
+  resolucion: string
+}
+
+/**
+ * Una actividad PENDIENTE del tablero, con las relaciones que dicen a quién involucra. Es lo que
+ * se lista al elegir "COMPLETAR ACTIVIDAD PENDIENTE": las relaciones no se muestran, se usan para
+ * quedarse sólo con las de las Personas y contactos elegidos en la etapa 1 (ver
+ * `filtrarPendientesDe`).
+ */
+export interface ActividadPendiente extends ActividadListada {
+  /** Ítems de "✋Personas" conectados a la actividad. */
+  personaIds: string[]
+  /** Ítems de "✋Contactos" conectados. Vacío = la actividad se cargó sin contactos. */
+  contactosIds: string[]
+}
+
+/**
+ * Un contacto tildado en la etapa 1, con la Persona de la que salió.
+ *
+ * La Persona viaja PEGADA al contacto y no aparte porque la etapa deja mezclar contactos de varios
+ * clientes: se busca uno, se tildan sus contactos, se busca otro y se tildan los suyos. Sin este
+ * vínculo, al asentar la actividad no habría forma de saber a qué Personas involucra.
+ */
+export interface ContactoElegido {
+  /** Ítem del contacto en Monday (board 18420688239): es lo que se linkea. */
+  itemId: string
+  /** Nombre + Apellido, como lo muestra la tabla. Entra en el nombre del ítem de la actividad. */
+  nombre: string
+  /**
+   * Whatsapp y email, como los muestra la tabla de seleccionados. No viajan a Monday —ya están en
+   * el ítem del contacto— pero sin ellos la tabla tendría que volver a consultarlos, y los
+   * contactos de las Personas que ya no están en pantalla no se pueden volver a pedir.
+   */
+  telefono: string
+  email: string
+  /** Ítem de la Persona a la que pertenece, y su nombre: los dos entran en el asiento. */
+  personaId: string
+  personaNombre: string
+}
+
+/** Etapa 1 + etapa 2 de REGISTRO DE ACTIVIDADES: todo lo que se va a asentar en el board. */
+export interface ActividadState {
+  /**
+   * Qué se eligió hacer en la etapa 2. `null` hasta que se contesta: no hay opción por defecto,
+   * igual que con el tipo de venta. Decide qué se despliega —el formulario o la lista de
+   * pendientes— y qué hace "Finalizar Operación".
+   */
+  tipoOperacion: TipoOperacionActividad | null
+  tipo: TipoActividad | null
+  /** dd/MM/yyyy. Cuándo se hizo (o se va a hacer). */
+  fecha: string
+  /** HH:mm. A qué hora: el board guarda fecha Y hora en "✋Fecha Act". */
+  hora: string
+  /** null hasta que se contesta la pregunta: no hay estado por defecto. */
+  estado: EstadoActividad | null
+  /** Cómo se resolvió. Sólo con la actividad "Completada". */
+  resolucion: string
+  /** El interruptor de "Cargar futura actividad" está encendido (sólo con "Completada"). */
+  cargarFutura: boolean
+  proyectada: ActividadProyectada
+  /** Contactos tildados, cada uno con su Persona. Pueden ser de VARIOS clientes distintos. */
+  contactos: ContactoElegido[]
+  /** Las pendientes tildadas para pasar a "Completado". Sólo cuenta con `tipoOperacion` COMPLETAR. */
+  pendientes: ActividadListada[]
+  /** IDs de los ítems creados en Monday. No vacíos = la operación ya se asentó y no se repite. */
+  actividadId: string | null
+  proyectadaId: string | null
+  /** Las pendientes elegidas ya se cerraron en el board: es lo que impide repetir la operación. */
+  completadas: boolean
 }

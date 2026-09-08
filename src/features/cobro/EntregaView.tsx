@@ -1,5 +1,5 @@
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
-import { pasosDe } from '@/lib/pasos'
+import { pasoAntesDeEmitir, pasosDe, registraActividad } from '@/lib/pasos'
 import { useApp, useDispatch } from '@/state/hooks'
 import { EntregaCierreVenta } from './EntregaCierreVenta'
 
@@ -37,19 +37,24 @@ export function EntregaView() {
         <div className="footer-acts">
           <button
             type="button"
-            className="cobro-btn cobro-btn--out"
+            className="btn-volver"
             onClick={() => dispatch({ type: 'goto', paso: 'cobro' })}
           >
-            <i className="fas fa-arrow-left" /> Volver a paso anterior
+            <i className="fas fa-arrow-left" /> Volver
           </button>
           <button
             type="button"
             className="cobro-btn cobro-btn--primary"
             disabled={faltaRutaLaBatea}
             title={faltaRutaLaBatea ? 'Confirmá la Ruta de Entrega para continuar.' : undefined}
-            onClick={() => dispatch({ type: 'goto', paso: 'factura' })}
+            onClick={() =>
+              dispatch({ type: 'goto', paso: pasoAntesDeEmitir(operacion, tipoVenta) })
+            }
           >
-            Continuar a Emitir factura <i className="fas fa-arrow-right" />
+            {/* La venta DIRECTA registra su actividad antes de facturar; la que viene de un
+                presupuesto previo va derecho a la emisión. */}
+            Continuar a {registraActividad(operacion, tipoVenta) ? 'Registrar Actividad' : 'Emitir factura'}{' '}
+            <i className="fas fa-arrow-right" />
           </button>
         </div>
       </div>

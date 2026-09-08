@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
   },
   // Puerto fijo del proyecto: strictPort evita que Vite salte a otro si está ocupado.
   server: {
-    port: 5180,
+    port: 5190,
     strictPort: true,
     // Proxy hacia la API de Monday en desarrollo: evita CORS al pegar desde el navegador.
     proxy: {

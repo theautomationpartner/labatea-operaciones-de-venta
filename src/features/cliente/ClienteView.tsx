@@ -73,6 +73,9 @@ export function ClienteView() {
     /* La configuración de la operación tampoco apaga el botón: se explica qué falta elegir
        en vez de dejar al usuario adivinando por qué no avanza. */
     if (faltaConfigurar) {
+      /* Además de nombrarlo en la ventana, se SEÑALAN en rojo los selectores que faltan: el aviso
+         dice qué falta, la marca dice dónde está. */
+      dispatch({ type: 'intentoAvanzar' })
       setAvisoConfig(true)
       return
     }

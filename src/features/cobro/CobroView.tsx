@@ -15,7 +15,13 @@ import {
   tipoTarjetaDe,
 } from '@/lib/cobros'
 import { money } from '@/lib/format'
-import { indiceDePaso, pasoDeProductos, pasoTrasCobro, pasosDe } from '@/lib/pasos'
+import {
+  indiceDePaso,
+  pasoDeProductos,
+  pasoTrasCobro,
+  pasosDe,
+  registraActividad,
+} from '@/lib/pasos'
 import { totalVentaOperacion } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
@@ -158,7 +164,10 @@ export function CobroView() {
      se traslada al "Finalizar Operación". Con entrega POSTERIOR se pasa antes por "Entrega de
      Mercadería"; si no, directo a la factura. */
   const continuarAFactura = () => {
-    dispatch({ type: 'goto', paso: pasoTrasCobro(tipoEntrega) })
+    dispatch({
+      type: 'goto',
+      paso: pasoTrasCobro(tipoEntrega, operacion, tipoVenta, state.proformaTipoVenta),
+    })
   }
 
   /* Ya no hay botón "Confirmar cobro": el registro de cobros queda SIEMPRE editable durante la
@@ -216,11 +225,16 @@ export function CobroView() {
   return (
     <section className="view cobro-v2 paso-layout">
       {/* ZONA 1 · mismo encabezado que el resto de las etapas. */}
-      <PasoHeader pasos={pasosDe(operacion, tipoVenta, tipoEntrega)} actual={indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega)} />
+      <PasoHeader
+        pasos={pasosDe(operacion, tipoVenta, tipoEntrega, null, state.proformaTipoVenta)}
+        actual={indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega, null, state.proformaTipoVenta)}
+      />
 
       <div className="paso-body">
         <PasoTitulo
-          numero={indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega) + 1}
+          numero={
+            indiceDePaso('cobro', operacion, tipoVenta, tipoEntrega, null, state.proformaTipoVenta) + 1
+          }
           titulo="Cobro"
           descripcion={
             formaPago === 'CUENTA CORRIENTE'
@@ -277,7 +291,12 @@ export function CobroView() {
 
         {/* CUENTA CORRIENTE: sin "¿Desea registrar un cobro?". Sólo el "Impacto en cuenta
             corriente": cómo queda el saldo del cliente al registrarse la nueva deuda. */}
-        {formaPago === 'CUENTA CORRIENTE' && <ImpactoCtaCte cliente={cliente} resumen={resumen} />}
+        {/* El exceso lo decide el MISMO chequeo que frena el botón de continuar: si la card
+            pintara el resultante por su cuenta, podría mostrarlo en negro mientras la operación
+            está frenada por crédito. */}
+        {formaPago === 'CUENTA CORRIENTE' && (
+          <ImpactoCtaCte cliente={cliente} resumen={resumen} excedido={bloqueo.excedido} />
+        )}
 
         {/* TARJETA: cabecera de métricas + carga de tarjetas + tabla de movimientos. Sin botón de
             confirmar: cierra cuando la DIFERENCIA llega a 0. */}
@@ -353,12 +372,12 @@ export function CobroView() {
         <div className="footer-acts">
           <button
             type="button"
-            className="cobro-btn cobro-btn--out"
+            className="btn-volver"
             onClick={() =>
               dispatch({ type: 'goto', paso: pasoDeProductos(operacion, tipoVenta, tipoEntrega) })
             }
           >
-            <i className="fas fa-arrow-left" /> Volver a paso anterior
+            <i className="fas fa-arrow-left" /> Volver
           </button>
           {/* A la derecha: en EMITIR PROFORMA, "Guardar Venta" (a la izquierda del "Continuar", que
               queda deshabilitado). En el resto, sólo "Continuar". */}
@@ -392,7 +411,9 @@ export function CobroView() {
             >
               {esEntregaPosterior
                 ? 'Continuar a Entrega de Mercadería'
-                : 'Continuar a Emitir factura'}{' '}
+                : registraActividad(operacion, tipoVenta, state.proformaTipoVenta)
+                  ? 'Continuar a Registrar Actividad'
+                  : 'Continuar a Emitir factura'}{' '}
               <i className="fas fa-arrow-right" />
             </button>
           </div>

@@ -2,7 +2,13 @@
  * Reglas de negocio puras (sin React, sin DOM): totales, crédito y cobertura.
  * Aisladas acá para que la capa de servicio sólo tenga que aportar los datos.
  */
-import { aplicaCredito, creditoDisponibleProyectado, creditoResultante } from '@/lib/credito'
+import {
+  aplicaCredito,
+  creditoDisponibleProyectado,
+  creditoResultante,
+  SIN_CREDITO,
+  type OperacionCredito,
+} from '@/lib/credito'
 import { bonificacionLinea, descuentoCompuesto, ivaLinea, netoLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
@@ -22,12 +28,70 @@ import type {
 export const IVA_RATE = 0.21
 
 /**
- * Tasa de comisión que rige la operación, según su tipo de venta: la "Activa" para la venta CON
- * PRESUPUESTO PREVIO y la "Pasiva" para la DIRECTA. Es una sola para toda la venta; el producto
- * sólo decide si comisiona o no.
+ * Cómo se llegó a la venta. No alcanza con el tipo de venta: la tasa depende de la CADENA que la
+ * originó —si hubo un presupuesto en el medio, y si esa cadena tiene una gestión comercial
+ * registrada (actividades linkeadas)—.
+ *
+ * "Con actividades" significa: el documento que origina la venta tiene actividades en su columna
+ * "🤖Actividades". En la venta CON PRESUPUESTO PREVIO son las de los presupuestos que aportaron
+ * algún producto; en la DIRECTA, las tildadas en su propia etapa "Registrar Actividad" (ver
+ * `actividadesDeLaVenta`).
  */
-export const tasaComision = (comisiones: ComisionesVenta, tipoVenta: TipoVenta): number =>
-  tipoVenta === 'CON PRESUPUESTO PREVIO' ? comisiones.activa : comisiones.pasiva
+export type CombinacionVenta =
+  | 'ACTIVIDADES-PRESUPUESTO-VENTA'
+  | 'PRESUPUESTO-VENTA'
+  | 'ACTIVIDADES-VENTA-DIRECTA'
+  | 'VENTA-DIRECTA'
+
+export const combinacionDeVenta = (
+  tipoVenta: TipoVenta,
+  conActividades: boolean,
+): CombinacionVenta =>
+  tipoVenta === 'CON PRESUPUESTO PREVIO'
+    ? conActividades
+      ? 'ACTIVIDADES-PRESUPUESTO-VENTA'
+      : 'PRESUPUESTO-VENTA'
+    : conActividades
+      ? 'ACTIVIDADES-VENTA-DIRECTA'
+      : 'VENTA-DIRECTA'
+
+/**
+ * Qué tasa le toca a cada combinación. Las cuatro juntas y a la vista porque son la regla entera:
+ * repartidas en condicionales, cambiar una obliga a releer todas para saber qué se rompió.
+ *
+ * DEFINIDAS por negocio:
+ *   · ACTIVIDADES-PRESUPUESTO-VENTA → Activa. La venta nace de un presupuesto que a su vez nace de
+ *     una gestión registrada: es la cadena completa, y es la que paga la tasa alta.
+ *   · VENTA-DIRECTA → Pasiva. Entró sin presupuesto y sin gestión previa.
+ *
+ * SIN DEFINIR todavía (PRESUPUESTO-VENTA y ACTIVIDADES-VENTA-DIRECTA): quedan con el mismo valor
+ * que tenían antes de partir la regla en cuatro —la venta con presupuesto previo pagaba Activa y
+ * la directa, Pasiva—, así que hoy nada cambia de monto. NO es una decisión de negocio: es el
+ * statu quo esperando la definición. Cuando llegue, se cambia acá y en ningún otro lado; ojo con
+ * que ahí `conActividades` pasa a importar de verdad y hay que hacérselo llegar a los que hoy no
+ * lo mandan (ver el comentario de `tasaComision`).
+ */
+const TASA_POR_COMBINACION: Record<CombinacionVenta, keyof ComisionesVenta> = {
+  'ACTIVIDADES-PRESUPUESTO-VENTA': 'activa',
+  'PRESUPUESTO-VENTA': 'activa',
+  'ACTIVIDADES-VENTA-DIRECTA': 'pasiva',
+  'VENTA-DIRECTA': 'pasiva',
+}
+
+/**
+ * Tasa de comisión que rige la operación. Es una sola para toda la venta; el producto sólo decide
+ * si comisiona o no.
+ *
+ * `conActividades` viene en `false` por defecto porque HOY no cambia ningún monto: las dos
+ * combinaciones que dependen de él resuelven igual que sus pares (ver `TASA_POR_COMBINACION`). El
+ * día que se definan, quien llame tiene que mandar el dato de verdad —lo sabe `actividadesDeLaVenta`,
+ * que es asíncrono— y este default deja de ser inocuo.
+ */
+export const tasaComision = (
+  comisiones: ComisionesVenta,
+  tipoVenta: TipoVenta,
+  conActividades = false,
+): number => comisiones[TASA_POR_COMBINACION[combinacionDeVenta(tipoVenta, conActividades)]]
 
 /**
  * Comisión de UNA línea: la tasa aplicada sobre su importe neto —precio SIN IVA y con el descuento
@@ -373,11 +437,17 @@ export function creditoCliente(c: Cliente): CreditoCliente {
 }
 
 export interface ImpactoCredito {
-  /** Crédito que le quedaría al cliente si se confirma la operación. */
+  /** Crédito que le quedaría al cliente si se confirma la operación, clampado en 0. */
   disponible: number
+  /**
+   * Lo mismo, SIN clampear: puede dar negativo, y es la señal de exceso que las cards pintan en
+   * rojo. Con el crédito que no rige queda el disponible actual, porque la operación no mueve la
+   * línea: proyectar una baja que no va a ocurrir es decirle al vendedor que consumió crédito.
+   */
+  resultante: number
   usadoPct: number
   critico: boolean
-  /** El límite rige esta operación. Con `false` los tres campos de arriba quedan neutros. */
+  /** El límite rige esta operación. Con `false` los campos de arriba quedan neutros. */
   aplica: boolean
 }
 
@@ -385,12 +455,24 @@ export interface ImpactoCredito {
  * Proyecta el crédito sumando el importe de la operación en curso: el disponible del board
  * baja y el uso crece a medida que se cargan productos.
  *
- * Si el crédito no rige (contado, o cliente liberado sin crédito) no se proyecta nada: no
- * hay línea que consumir, así que la operación nunca "usa" ni "excede".
+ * Si el crédito no rige para esta operación —forma de pago que no es CUENTA CORRIENTE, entrega
+ * ANTERIOR (ya consumió al salir el remito) o cliente liberado sin crédito— no se proyecta nada:
+ * no hay línea que consumir, así que la operación nunca "usa" ni "excede".
  */
-export function impactoCredito(cliente: Cliente | null, importe: number): ImpactoCredito {
-  if (!aplicaCredito(cliente)) {
-    return { disponible: cliente?.disponible ?? 0, usadoPct: 0, critico: false, aplica: false }
+export function impactoCredito(
+  cliente: Cliente | null,
+  importe: number,
+  op: OperacionCredito,
+): ImpactoCredito {
+  const disponibleActual = cliente?.disponible ?? 0
+  if (!aplicaCredito(cliente, op)) {
+    return {
+      disponible: disponibleActual,
+      resultante: disponibleActual,
+      usadoPct: 0,
+      critico: false,
+      aplica: false,
+    }
   }
   const limite = cliente?.limit ?? 0
   const usado = (cliente ? cliente.limit - cliente.disponible : 0) + importe
@@ -398,6 +480,9 @@ export function impactoCredito(cliente: Cliente | null, importe: number): Impact
   return {
     // El disponible proyectado sale de la fórmula centralizada, ya clampada en 0.
     disponible: creditoDisponibleProyectado(cliente, importe),
+    resultante: cliente
+      ? creditoResultante(cliente, importe)
+      : round2(disponibleActual - importe),
     usadoPct,
     critico: usadoPct >= CREDITO_FOOTER_CRITICO,
     aplica: true,
@@ -424,7 +509,7 @@ export interface ResumenVenta {
   usadoPct: number
   /** Al rojo, igual que en el footer del presupuesto. */
   critico: boolean
-  /** Crédito que queda tras la venta (puede ser negativo). */
+  /** Crédito que queda tras la venta, medido sobre el TOTAL CON IVA (puede ser negativo). */
   resultante: number
   limite: number
 }
@@ -436,6 +521,12 @@ export function resumenVenta(
   descFormaPago = 0,
   /** Tasas del tablero de configuración. Sin ellas la comisión da 0, no un número inventado. */
   comisiones: ComisionesVenta = { activa: 0, pasiva: 0 },
+  /**
+   * Operación en curso, para decidir si el crédito rige. Por defecto NO rige: quien sólo quiere
+   * los totales (ver `totalVentaOperacion`) no tiene que fabricar un contexto de crédito, y un
+   * llamador que se olvide de pasarlo no dispara bloqueos que nadie decidió.
+   */
+  credito: OperacionCredito = SIN_CREDITO,
 ): ResumenVenta {
   /* El descuento por forma de pago (pronto pago) se compone EN CASCADA con el de cada línea: baja
      el neto y la rentabilidad igual que en la venta DIRECTA. La VENTA sobre PROFORMA trae su propio
@@ -469,7 +560,11 @@ export function resumenVenta(
 
   const limite = cliente?.limit ?? 0
   const disponible = cliente?.disponible ?? 0
-  const impacto = impactoCredito(cliente, total)
+  /* Lo que la venta consume de la línea es el TOTAL CON IVA: es el importe que se asienta en la
+     cuenta corriente cuando la venta va a cuenta. Medirlo sobre el neto dejaba entrar el IVA por
+     encima del límite. */
+  const consumeLinea = round2(total + iva)
+  const impacto = impactoCredito(cliente, consumeLinea, credito)
 
   return {
     subtotal,
@@ -482,7 +577,7 @@ export function resumenVenta(
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,
-    resultante: cliente ? creditoResultante(cliente, total) : round2(disponible - total),
+    resultante: impacto.resultante,
     limite,
   }
 }
@@ -603,6 +698,8 @@ export function resumenFactura(
   comisionTasa = 0,
   /** Descuento por forma de pago (%) de la operación. 0 = sin descuento. */
   descFormaPago = 0,
+  /** Operación en curso, para decidir si el crédito rige. Por defecto NO rige (ver `resumenVenta`). */
+  credito: OperacionCredito = SIN_CREDITO,
 ): ResumenFactura {
   /** Neto de la línea, con el descuento por forma de pago ya aplicado y SIN IVA. */
   const netoDe = (it: FacturaItem) => netoLinea(it.precio, it.aFacturar, 0, descFormaPago)
@@ -638,21 +735,27 @@ export function resumenFactura(
 
   const limite = cliente?.limit ?? 0
   const disponible = cliente?.disponible ?? 0
-  const impacto = impactoCredito(cliente, neto)
+  /* Igual que en la venta armada desde el catálogo: lo que consume la línea es el TOTAL CON IVA,
+     que es lo que se asienta en la cuenta corriente. */
+  const total = round2(neto + iva)
+  const impacto = impactoCredito(cliente, total, credito)
 
   return {
     subtotal,
     descuento: descuentoAplicado,
     neto,
     iva,
-    total: round2(neto + iva),
+    total,
     comision,
     // A dos decimales, como el resto de las rentabilidades generales.
     rentabilidad: neto > 0 ? round2(rentPonderada / neto) : 0,
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,
-    resultante: disponible - neto,
+    /* Del impacto, no de `disponible - neto`: aquél ignoraba los remitos pendientes de facturar y
+       medía sin IVA, así que decía otra cosa que el bloqueo de la misma pantalla. Y con el crédito
+       que no rige —la entrega ANTERIOR es justamente ese caso— no proyecta ninguna baja. */
+    resultante: impacto.resultante,
     limite,
   }
 }
@@ -781,6 +884,16 @@ export const estadoResultante = (resultante: number): string | null => {
 /** Identidad de una línea del presupuesto llevada a la venta. */
 export const ventaItemUid = (presupuestoId: string, indice: number): string =>
   `${presupuestoId}-${indice}`
+
+/**
+ * La inversa de `ventaItemUid`: de qué documento salió la línea (el id antes del último guión).
+ *
+ * Sirve para la venta CON PRESUPUESTO PREVIO: de acá sale qué presupuestos aportaron algún
+ * producto, para heredar SUS actividades (ver `getActividadesDePresupuestos`). En la VENTA
+ * PROFORMA el prefijo es el id de la PROFORMA, no el de un presupuesto —ahí no se usa este
+ * helper: la proforma ya trae sus actividades heredadas en su propia columna.
+ */
+export const documentoDeVentaItem = (uid: string): string => uid.slice(0, uid.lastIndexOf('-'))
 
 /** Identidad de una línea de una venta llevada al remito (emisión ANTERIOR). */
 export const remitoItemUid = (ventaId: string, indice: number): string => `${ventaId}-${indice}`

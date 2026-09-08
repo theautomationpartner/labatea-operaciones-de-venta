@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import {
   clienteBloqueado,
+  creditoDeOperacion,
   excedeCredito,
   MENSAJE_CLIENTE_BLOQUEADO,
   mensajeCreditoExcedido,
@@ -47,10 +48,14 @@ export function useBloqueoCredito(
   importe: number,
   { bloqueante = true }: OpcionesBloqueo = {},
 ): BloqueoCredito {
-  const { cliente } = useApp()
+  const estado = useApp()
+  const { cliente } = estado
   const [aviso, setAviso] = useState<{ titulo: string; texto: string } | null>(null)
 
-  const excedido = excedeCredito(cliente, importe)
+  /* El crédito se mide contra LA OPERACIÓN, no sólo contra el cliente: una venta de contado o con
+     tarjeta no consume línea aunque el cliente opere a cuenta corriente. */
+  const op = creditoDeOperacion(estado)
+  const excedido = excedeCredito(cliente, importe, op)
 
   const frenar = ({ avisarSiempre = false }: { avisarSiempre?: boolean } = {}): boolean => {
     if (!cliente) return false
@@ -58,7 +63,7 @@ export function useBloqueoCredito(
       setAviso({ titulo: 'Cliente bloqueado', texto: MENSAJE_CLIENTE_BLOQUEADO })
       return true
     }
-    if (excedeCredito(cliente, importe)) {
+    if (excedeCredito(cliente, importe, op)) {
       // Se avisa si la operación frena (venta) o si el llamador pide avisar igual (el botón de
       // continuar del presupuesto: muestra el modal, pero deja avanzar).
       if (bloqueante || avisarSiempre) {

@@ -49,7 +49,10 @@ function ok(nombre: string, cond: boolean) {
   console.log('  ✓', nombre)
 }
 
-const impacto = renderToStaticMarkup(createElement(ImpactoCtaCte, { cliente, resumen }))
+const pintar = (c: Cliente, excedido = false) =>
+  renderToStaticMarkup(createElement(ImpactoCtaCte, { cliente: c, resumen, excedido }))
+
+const impacto = pintar(cliente)
 
 console.log('Caso 1 · Las 4 métricas del resumen de cuenta:')
 ok('1. N° de cuenta', impacto.includes('N° de cuenta') && impacto.includes('CTA-042'))
@@ -63,5 +66,26 @@ console.log('Caso 2 · La "Deuda" va en verde:')
 ok('el rótulo lleva la clase verde', impacto.includes('cobro-cab-lbl cobro-cab-lbl--verde">Deuda<'))
 ok('el valor lleva la clase verde', impacto.includes('cobro-imp-num cobro-imp-num--verde'))
 ok('no quedó ninguna acción montada dentro de la card', !impacto.includes('cobro-card-acts'))
+
+console.log('Caso 3 · El rojo lo decide el MISMO chequeo que frena la operación:')
+/* Sin remitos el saldo resultante (650) entra en el límite (1000), así que no se pinta en rojo.
+   El panel no recalcula nada: obedece al `excedido` que le pasa el bloqueo por crédito. */
+ok('sin exceso, el saldo resultante va en negro', !impacto.includes('cobro-imp-num--total is-over'))
+ok('con exceso, el saldo resultante va en rojo', pintar(cliente, true).includes('cobro-imp-num--total is-over'))
+
+console.log('Caso 4 · Los remitos pendientes de facturar:')
+ok('sin remitos, la métrica no se monta', !impacto.includes('Remitos pend. de facturar'))
+/* Mismo cliente con 500 de mercadería entregada sin facturar: el saldo resultante sigue siendo 650,
+   pero la línea comprometida es 650 + 500 = 1150, por encima del límite de 1000. Ese es exactamente
+   el caso en el que el panel pintaba verde mientras el bloqueo frenaba. */
+const conRemitos = { ...cliente, remitosPendFacturar: 500, lineaUtilizada: 900, disponible: 100 }
+const impactoRemitos = pintar(conRemitos, true)
+ok('con remitos, se muestran como métrica propia', impactoRemitos.includes('Remitos pend. de facturar'))
+ok('con su importe', impactoRemitos.includes(money(500)))
+ok('el saldo resultante NO los suma (sigue siendo 650)', impactoRemitos.includes(money(650)))
+ok(
+  'pero se aclara la línea comprometida contra el límite',
+  impactoRemitos.includes('Línea comprometida') && impactoRemitos.includes(money(1150)),
+)
 
 console.log(`\nOK · ${asserts} asserts pasaron.`)

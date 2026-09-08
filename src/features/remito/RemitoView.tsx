@@ -228,7 +228,7 @@ export function RemitoView() {
       <footer className="page-footer">
         <button
           type="button"
-          className="btn-outline"
+          className="btn-volver"
           onClick={() => dispatch({ type: 'goto', paso: 'cliente' })}
         >
           <i className="fas fa-arrow-left" /> Volver

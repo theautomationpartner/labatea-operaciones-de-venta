@@ -35,6 +35,11 @@ export const BOARDS = {
   cobros: 18421035524,
   /** Subelementos del recibo: un movimiento de pago cada uno. */
   cobrosSub: 18421035599,
+  /**
+   * "🧾cheques/eCheq en Cartera": TODOS los cheques ya recibidos, uno por ítem. Es el padrón
+   * contra el que se controla que un cheque no se cargue dos veces (ver `chequesCartera.ts`).
+   */
+  chequesCartera: 18425237398,
   /** "💰Fact Vtas Pends de Cobro": la deuda que deja el pago POSTERIOR. */
   factPendientes: 18421035508,
   /** "💳Ctas Bancarias Personas": las cuentas a las que el cliente transfiere. */
@@ -98,6 +103,11 @@ export const BOARDS = {
   notasCreditoSub: 18428265309,
   /** Subelementos de "💲Registro de Comisiones": un producto comisionable de la venta cada uno. */
   comisionesSub: 18421035638,
+  /**
+   * "Actividades": la gestión comercial con la Persona (visita, llamada, mail). Un ítem por
+   * actividad; la que se agenda para más adelante es otro ítem del mismo board.
+   */
+  actividades: 18420688236,
 } as const
 
 /** Item de config donde vive el valor de "Días de Vigencia de Presupuesto". */
@@ -309,6 +319,21 @@ export const CLIENTE_ACTIVO_INDEX = 1
 /** Índice de "Clientes" en "✋Categoria" (dropdown_mm54e5ag). La columna es multi-valor. */
 export const CATEGORIA_CLIENTE_INDEX = 1
 
+/**
+ * Índice del label "Completado" en "✋Estado De Actividad" del board de Actividades
+ * (activity_status). Sólo las actividades COMPLETADAS pueden originar un presupuesto o una venta:
+ * una Pendiente o Vencida todavía no tiene una gestión resuelta que imputar. Se filtra por índice
+ * —no por el texto "Completado"— porque es lo que aguanta que le reescriban la etiqueta al label.
+ */
+export const ACTIVIDAD_COMPLETADA_INDEX = 4
+
+/**
+ * Índice de "Pendiente" en la misma columna. Es el estado de las actividades que la operación
+ * REGISTRO DE ACTIVIDADES ofrece cerrar ("COMPLETAR ACTIVIDAD PENDIENTE"): lo que quedó agendado y
+ * todavía no se resolvió. Por índice y no por label, por lo mismo que arriba.
+ */
+export const ACTIVIDAD_PENDIENTE_INDEX = 3
+
 export const COL = {
   cliente: {
     categoria: 'dropdown_mm54e5ag', // multi-valor: se filtra por "contiene Cliente"
@@ -399,6 +424,36 @@ export const COL = {
     L2: 'formula_mm51nqvz',
     L3: 'formula_mm51fjf5',
   } as Partial<Record<ListaPrecio, string>>,
+  /** Board "Actividades" (18420688236). Los rótulos del board llevan un ✋ que acá no hace falta. */
+  actividad: {
+    /** "✋Tipo de actividad" (status): Whatsapp / Visita al Campo / Email / Reunión / Llamada. */
+    tipo: 'activity_type',
+    /** "✋Fecha Act": cuándo se hizo (o se va a hacer) la actividad. */
+    fecha: 'activity_start_time',
+    /** "✋Estado De Actividad" (status): Pendiente / Completado / Vencido. */
+    estado: 'activity_status',
+    /** "✋Resolucion/Observaciones": cómo terminó la actividad completada. */
+    resolucion: 'long_text_mm587wjy',
+    /**
+     * "✋Fecha de Notificacion": cuándo avisar de la actividad proyectada. La APP ya no la escribe
+     * —se sacó el campo del formulario—; queda mapeada porque la columna sigue en el board y se
+     * completa a mano desde ahí.
+     */
+    fechaAlarma: 'date_mm6wzf75',
+    /** "✋Vendedor" (people): a nombre de quién queda la gestión. */
+    vendedor: 'activity_owner',
+    /** "✋Personas": a quién se le asienta la actividad (board de Personas, 18420688238). */
+    persona: 'board_relation_mm588ws8',
+    /** "✋Contactos": con quiénes se hizo (board de Contactos, 18420688239). */
+    contactos: 'board_relation_mm58wj7q',
+    /**
+     * "🧾Presupuestos" y "📈Ventas": el documento que salió de esta gestión. Vacías = la actividad
+     * todavía no se imputó a ninguno, y por eso se ofrece en la etapa "Registrar Actividad" de la
+     * venta y el presupuesto (ver `getActividadesSinAsignar`).
+     */
+    presupuesto: 'board_relation_mm6w5qmc',
+    venta: 'board_relation_mm6w93j2',
+  },
   contacto: {
     codigo: 'pulse_id_mm572ncq',
     /** El nombre se arma con estas dos columnas, no con el `name` del ítem. */
@@ -449,6 +504,11 @@ export const COL = {
      * al PDF que tiene que incluir la leyenda de la forma de pago bonificada.
      */
     descuentoFormaPago: 'boolean_mm6dnwf1',
+    /**
+     * "🤖Actividades" (board 18420688236): las gestiones comerciales que originaron este
+     * presupuesto. Se escriben al crearlo, con las tildadas en la etapa "Registrar Actividad".
+     */
+    actividades: 'board_relation_mm6w6mra',
   },
   // Columnas del subelemento (un producto de la lista):
   presupuestoSub: {
@@ -548,6 +608,13 @@ export const COL = {
     medioEnvio: 'dropdown_mm5njprp',
     /** Acción de envío (status): ponerlo en "Enviar" dispara el despacho. */
     estadoEnvio: 'color_mm5spfvt',
+    /**
+     * "🤖Actividades" (board 18420688236): sólo se completa cuando la venta que emite esta
+     * factura proforma es CON PRESUPUESTO PREVIO, heredando las del/de los presupuestos que
+     * aportaron productos (ver `getActividadesDePresupuestos`). Una proforma DIRECTA nace sin
+     * actividad propia: esa se elige recién en "Registrar Actividad", en la venta que la use.
+     */
+    actividades: 'board_relation_mm6zc4fa',
   },
   // Columnas del subelemento de la Proforma (un producto cada uno):
   proformaSub: {
@@ -630,6 +697,16 @@ export const COL = {
   /* Un movimiento de pago del recibo (board 18421035599): hay uno por cada movimiento cargado,
      sea el cobro SIMULTÁNEO o POSTERIOR (la venta con TARJETA es SIMULTÁNEA y detalla ahí sus cupones).
      Cada medio de cobro completa su propio juego de columnas; las dos primeras son de todos. */
+  /* Un cheque del padrón de "🧾cheques/eCheq en Cartera" (board 18425237398). Sólo se LEE: la app
+     no crea ítems ahí, los consulta para no admitir dos veces el mismo cheque. */
+  chequeCartera: {
+    /** "Personas": el cliente que entregó el cheque. Es por quién se acota la búsqueda. */
+    cliente: 'board_relation_mm643x5f',
+    /** "🤖CUIT Emisor". De TEXTO, y en el tablero está con guiones ("30-71803864-9"). */
+    cuitEmisor: 'text_mm5ye31b',
+    /** "🤖Número de Cheque", también de texto. */
+    numero: 'text_mm5y2nqc',
+  },
   cobroSub: {
     /**
      * "✋Caja": qué es el subelemento. En los movimientos de pago lleva el medio de cobro; en los
@@ -761,6 +838,16 @@ export const COL = {
   },
   // Cabecera de la venta (board 18421035510).
   venta: {
+    /**
+     * "📈Proformas": la proforma que originó esta venta (board 18424580497). Sólo se completa en
+     * la VENTA PROFORMA; en el resto de los recorridos no hay proforma que enlazar.
+     */
+    proforma: 'board_relation_mm5spfc3',
+    /**
+     * "🧾Presupuestos": los presupuestos que aportaron líneas a esta venta (board 18421035513).
+     * Son VARIOS: una venta CON PRESUPUESTO PREVIO se arma tomando productos de más de uno.
+     */
+    presupuestos: 'board_relation_mm52yrq5',
     /** "✋Vendedor" (people): el vendedor de la operación. */
     vendedor: 'person',
     cliente: 'board_relation_mm582k6v',
@@ -816,6 +903,13 @@ export const COL = {
     medioEnvioProforma: 'dropdown_mm5njprp',
     /** Estado de envío de la proforma: ponerlo en "Enviar" dispara la distribución. */
     estadoEnvioProforma: 'color_mm5n6zrn',
+    /**
+     * "🤖Actividades" (board 18420688236): las gestiones comerciales que originaron esta venta.
+     * DIRECTA: las tildadas en la etapa "Registrar Actividad" de esta operación. CON PRESUPUESTO
+     * PREVIO: las heredadas de los presupuestos que aportaron algún producto vendido (su propia
+     * columna "🤖Actividades"), sin etapa propia (ver `registraActividad`).
+     */
+    actividades: 'board_relation_mm6wb3hw',
   },
   // Un producto de la venta (subelemento de 📈Ventas).
   ventaSub: {
@@ -872,14 +966,22 @@ export const COL = {
   },
   // Cabecera del remito de venta (board 18421035529).
   remito: {
+    /**
+     * "🤖Nro Remito": el número del papel. La app NO lo escribe —aparece cuando la emisión
+     * termina—; lo LEE para bajárselo al subelemento del pendiente de entrega, que es donde queda
+     * el historial de lo que salió (ver `leerNroRemito`).
+     *
+     * Reemplaza a un `text_mm516d4q` ("🤖Nro Rto") que este mapa seguía declarando y que YA NO
+     * EXISTE en el tablero. No lo escribía nadie, así que no llegó a romper nada: mandar una
+     * columna inexistente hace que Monday rechace la mutación ENTERA, no sólo ese campo.
+     */
+    nroRemito: 'text_mm6zr80p',
     /** "🤖Vendedor" (people): el vendedor de la operación. */
     vendedor: 'multiple_person_mm51xr9f',
     /** "Cliente": es por donde se acotan los remitos al cliente elegido. */
     cliente: 'board_relation_mm5act3k',
     /** "✋Venta": Anterior / Posterior, según cuándo se factura lo entregado. */
     venta: 'color_mkwbrkg6',
-    /** "🤖Nro Rto": el número impreso del remito. */
-    nroRemito: 'text_mm516d4q',
     fechaEmision: 'date_mm5144rt',
     /** ID del ítem ("RTOVTA-04"); es con lo que se renombra y lo que ve el usuario. */
     pulseId: 'pulse_id_mkwbze0n',
@@ -1010,6 +1112,16 @@ export const COL = {
     ventaSubelemento: 'board_relation_mm5pcdfj',
     /** "🤖Q VTA": cantidad vendida. */
     cantidad: 'numeric_mkwb862t',
+    /**
+     * "🤖Nro Factura": el número del comprobante con el que se vendió lo que queda por entregar.
+     * Lo lleva el pendiente para que, al remitar semanas después, se sepa contra qué factura sale la
+     * mercadería sin tener que subir a la venta.
+     *
+     * Lleva el MISMO texto que el movimiento de stock de la venta simultánea —"N° Factura - N°
+     * Comprobante" (ver `leerNroComprobanteFactura`)—: es el mismo dato, y lo único que cambia
+     * según el tipo de entrega es en qué columna cae.
+     */
+    nroFactura: 'text_mm6wsabe',
     /** "🤖U.Medida": mirror de la U.M. del producto (refleja el Maestro vía board_relation_mkwbxjqx). */
     unidadMedida: 'lookup_mm5pggg9',
     /** "🛣️Rutas de Transporte": ruta de entrega del pendiente (board 18421708745). Se hereda de la
@@ -1032,6 +1144,12 @@ export const COL = {
     cantRto: 'numeric_mkwbzd9j',
     /** "🤖Tipo RTO": nace "RTO Entrega A Cliente" (por índice dinámico). */
     tipoRto: 'color_mkwbzrx2',
+    /**
+     * "🤖Nro Remito": con qué papel salió esta entrega. Se copia del remito ya emitido
+     * (`COL.remito.nroRemito`), así el historial del pendiente dice contra qué remito se descargó
+     * sin tener que abrir el remito.
+     */
+    nroRemito: 'text_mm6zv788',
   },
   /* Ítem de "Stock y Movimientos" (board 18421752251): un ítem por producto, conectado al maestro.
      Las tres cantidades de stock que muestra la app SALEN DE ACÁ (son fórmulas del board, no
@@ -1117,6 +1235,13 @@ export const COL = {
     cuit: 'numeric_mm0yadnb',
     /** "Sit Iva": la condición del receptor frente al IVA. */
     sitIva: 'dropdown_mm48dfba',
+    /**
+     * "N° Factura" y "N° Comprobante": el número del papel una vez emitido. La app NO los escribe
+     * —los completa la emisión electrónica, después de crear el ítem—; los LEE para estampar el
+     * comprobante en el movimiento de stock de la venta simultánea (ver `leerNroComprobanteFactura`).
+     */
+    nroFactura: 'text_mm3k5zh4',
+    nroComprobante: 'numeric_mm3kg6ph',
     puntoVenta: 'dropdown_mm3skjcc',
     fechaEmision: 'date',
     condicionVenta: 'dropdown_mm2ged22',

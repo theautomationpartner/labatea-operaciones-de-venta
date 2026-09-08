@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
+import { ActividadesDelDocumento } from '@/features/actividad/ActividadesDelDocumento'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { money, pctDec } from '@/lib/format'
 import type { ResumenPresupuesto } from '@/lib/selectors'
@@ -52,7 +53,8 @@ export function ResumenEmision({
   emitido,
   onGenerar,
 }: ResumenEmisionProps) {
-  const { vendedor, cliente, lineas, fechaEmision, nroPresupuesto } = useApp()
+  const { vendedor, cliente, lineas, fechaEmision, nroPresupuesto, actividadesDocumento } =
+    useApp()
 
   return (
     <div className="card card--flush resumen-emision">
@@ -98,6 +100,11 @@ export function ResumenEmision({
         </Fila>
         <Fila label="Fecha de vencimiento" tono="rojo">
           {vencimiento} 📅
+        </Fila>
+        {/* La gestión comercial de la que sale el presupuesto: se elige en la etapa anterior y
+            queda asociada al ítem al emitirlo. Cierra el resumen, pegada al botón de emisión. */}
+        <Fila label="Actividades">
+          <ActividadesDelDocumento actividades={actividadesDocumento} />
         </Fila>
       </div>
 

@@ -308,6 +308,14 @@
   outline: none;
   cursor: pointer;
 }
+/* Selector de configuración que frena el avance: se intentó continuar y sigue sin elegir. El
+   borde va en la CAJA porque el `select` no tiene borde propio. Reemplaza al violeta del `.cfgbox`
+   —no lo acompaña—: dos bordes de colores distintos en la misma caja no se leen como uno solo. */
+.cfgbox--falta {
+  border-color: var(--red);
+  background: #fff6f6;
+  box-shadow: 0 1px 3px rgba(226, 68, 92, 0.12);
+}
 .cfg-sel--ph {
   color: var(--text-gray);
   font-weight: 500;
@@ -611,11 +619,13 @@
   font-weight: 600;
   font-size: 13px;
 }
-/* Fila ya elegida: fondo gris estático, el mismo tono sutil de las cajas vacías del skeleton
-   (#eef1f6). No cambia al pasar el mouse: es un estado, no una acción. */
+/* Fila del producto que está cargado AHORA: fondo gris estático, el mismo tono sutil de las cajas
+   vacías del skeleton (#eef1f6). No cambia al pasar el mouse ni se puede clickear: es un estado
+   —"ya está cargado"—, no una acción. Al elegir otro producto, esta fila vuelve a estar disponible. */
 .ritem--elegido,
 .ritem--elegido:hover {
   background: #eef1f6;
+  cursor: default;
 }
 .ritem-meta {
   display: inline-flex;
@@ -635,6 +645,14 @@
   font-weight: 700;
   font-size: 12px;
   color: var(--primary-blue);
+}
+/* Precio de lista de la fila: mismo peso que el código, en el gris del texto para que el azul del
+   código siga siendo lo que separa una fila de otra. Nunca se parte en dos renglones. */
+.ritem-precio {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-dark);
+  white-space: nowrap;
 }
 .results-empty {
   padding: 16px;
@@ -2897,6 +2915,15 @@
 }
 .btn-secundario:hover {
   background: #f5f6f8;
+}
+/* Remate de una ventana: la frase que dice QUÉ HACER, separada del cuerpo por un renglón propio y
+   centrada como él. Es un bloque y no un `<br>` porque lo que se quiere es el aire de arriba, y un
+   salto de línea suelto no lo da. */
+.modal-remate {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+  color: var(--text-dark);
 }
 /* Código técnico del rechazo, al pie del mensaje: sirve para reportarlo, no para leerlo. */
 .modal-detalle {

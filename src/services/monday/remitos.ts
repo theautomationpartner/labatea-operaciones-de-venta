@@ -842,7 +842,11 @@ export interface LineaEntregaAnterior {
  * y, en la MISMA solicitud, linkea el remito emitido en la columna a nivel ítem del pendiente
  * (board_relation_mkwbvma5). El id del remito se reusa como `item_id` del cambio de columna.
  */
-async function bulkAEntrega(items: LineaEntregaAnterior[], remitoId?: string): Promise<void> {
+async function bulkAEntrega(
+  items: LineaEntregaAnterior[],
+  remitoId?: string,
+  nroRemito = '',
+): Promise<void> {
   const conPend = items.filter((l) => l.pendienteEntregaId && l.cantidad > 0)
   if (conPend.length === 0) return
   const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
@@ -862,6 +866,10 @@ async function bulkAEntrega(items: LineaEntregaAnterior[], remitoId?: string): P
       [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
     }
     if (idx != null) cv[COL.pendienteEntregaSub.tipoRto] = { index: idx }
+    /* Con qué remito salió. SÓLO si hay número: aparece cuando la emisión termina, y una columna
+       en blanco dice la verdad —todavía no se emitió— mientras que un texto vacío escrito a
+       propósito no agrega nada. */
+    if (nroRemito) cv[COL.pendienteEntregaSub.nroRemito] = nroRemito
     variables[`p${i}`] = l.pendienteEntregaId
     variables[`pn${i}`] = l.nombre
     variables[`pcv${i}`] = JSON.stringify(cv)
@@ -918,9 +926,11 @@ async function bulkBVenta(items: LineaEntregaAnterior[]): Promise<void> {
 export async function afectarEntregaAnterior(
   items: LineaEntregaAnterior[],
   remitoId?: string,
+  /** "🤖Nro Remito" del papel ya emitido. Vacío si la emisión no llegó a asignarlo. */
+  nroRemito = '',
 ): Promise<void> {
   if (!mondayHabilitado()) return
-  await Promise.all([bulkAEntrega(items, remitoId), bulkBVenta(items)])
+  await Promise.all([bulkAEntrega(items, remitoId, nroRemito), bulkBVenta(items)])
 }
 
 /** Una línea a conciliar: su cantidad remitada y los ítems de pendiente/stock a afectar. */
@@ -1057,6 +1067,30 @@ export async function getRemitoPdf(itemId: string): Promise<RemitoPdfDoc | null>
   )
   const asset = data.items[0]?.assets?.[0]
   return asset?.public_url ? { url: asset.public_url, nombre: asset.name } : null
+}
+
+/**
+ * "🤖Nro Remito" del remito ya emitido.
+ *
+ * NO lo escribe la app: aparece cuando la emisión termina, así que leerlo antes devuelve vacío. Por
+ * eso se consulta recién cuando el PDF está disponible —que es la señal de que la emisión
+ * terminó— y no al crear el remito.
+ *
+ * Devuelve `''` si todavía no hay número: es la respuesta honesta, y quien lo consume decide. Lo
+ * que NO puede pasar es que la entrega se deje de registrar por esperar un dato que llega por otro
+ * camino.
+ */
+export async function leerNroRemito(itemId: string): Promise<string> {
+  if (!mondayHabilitado()) return ''
+  const data = await mondayApi<{
+    items: { column_values: { id: string; text: string | null }[] }[]
+  }>(
+    `query ($ids: [ID!]) {
+      items(ids: $ids) { column_values(ids: ["${COL.remito.nroRemito}"]) { id text } }
+    }`,
+    { ids: [itemId] },
+  )
+  return (data.items[0]?.column_values[0]?.text ?? '').trim()
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   crearVtaPendienteFacturar,
   emitirRemito,
   esperarRemitoPdf,
+  leerNroRemito,
   getHojaTalonario,
   marcarHojaUsada,
   mondayHabilitado,
@@ -212,10 +213,24 @@ export function RemitoEmisionView() {
       } catch {
         /* El cierre de la hoja del talonario es best-effort. */
       }
-      /* Conciliación del remito ANTERIOR: dos bulk PARALELAS y DESACOPLADAS —Bulk A crea el subítem
-         de historial en "Pends de Entrega"; Bulk B acumula lo entregado en el subelemento de la
-         Venta—. Se dispara SIN await (fire-and-forget): no bloquea la finalización del remito, y las
-         dos operaciones corren en paralelo (nunca A→B encadenadas). */
+      dispatch({ type: 'emitirRemito' })
+      const generado = await esperarRemitoPdf(id)
+
+      /* El PDF a la vista es la señal de que la emisión TERMINÓ, y recién ahí el tablero le asignó
+         su "🤖Nro Remito". Por eso se lee acá y no antes: consultado al crear el remito vuelve
+         vacío siempre. Sin PDF no se consulta —no hay número que leer— y sin número la conciliación
+         corre igual: registrar la entrega importa más que anotar con qué papel salió. */
+      const nroRemito = generado ? await leerNroRemito(id).catch(() => '') : ''
+
+      /* Conciliación del remito: dos bulk PARALELAS y DESACOPLADAS —Bulk A crea el subítem de
+         historial en "Pends de Entrega", con el número del remito; Bulk B acumula lo entregado en
+         el subelemento de la Venta—. Se dispara SIN await (fire-and-forget): no bloquea el cierre
+         de la operación, y las dos corren en paralelo (nunca A→B encadenadas).
+
+         Va DESPUÉS de la espera del PDF, y no antes como estaba: el número del remito no existe
+         hasta que la emisión termina, y el subítem tiene que nacer con él. Se dispara ANTES del
+         corte por desmontaje a propósito: es un registro que no puede quedar sin hacer porque el
+         usuario haya navegado a otra pantalla mientras se generaba el PDF. */
       void afectarEntregaAnterior(
         remito.items.map((it) => ({
           cantidad: it.cantidad,
@@ -225,11 +240,11 @@ export function RemitoEmisionView() {
         })),
         // El remito recién emitido se linkea a nivel ítem de cada pendiente de entrega.
         id,
+        nroRemito,
       ).catch(() => {
         /* La conciliación de entrega es best-effort: el remito ya quedó emitido. */
       })
-      dispatch({ type: 'emitirRemito' })
-      const generado = await esperarRemitoPdf(id)
+
       if (!activo.current) return
       if (generado) {
         setEstado('listo')
@@ -291,10 +306,10 @@ export function RemitoEmisionView() {
       <div className="footer-acts">
         <button
           type="button"
-          className="btn btn-out"
+          className="btn-volver"
           onClick={() => dispatch({ type: 'goto', paso: 'remito-envio' })}
         >
-          <i className="fas fa-arrow-left" /> Volver a paso anterior
+          <i className="fas fa-arrow-left" /> Volver
         </button>
         {/* Cierra el remito y reinicia la app. Alcanza con el remito EMITIDO: el envío al cliente
             es una gestión aparte y puede quedar pendiente. */}

@@ -359,7 +359,7 @@ export function RemitoDevolucionView() {
       <div className="footer-acts">
         <button
           type="button"
-          className="btn btn-out"
+          className="btn-volver"
           disabled={yaRegistrada}
           title={
             yaRegistrada
@@ -368,7 +368,7 @@ export function RemitoDevolucionView() {
           }
           onClick={() => dispatch({ type: 'goto', paso: 'remito-productos' })}
         >
-          <i className="fas fa-arrow-left" /> Volver a paso anterior
+          <i className="fas fa-arrow-left" /> Volver
         </button>
         {/* Queda clickeable aunque no haya nada imputado: la ventana explica POR QUÉ, en vez de
             dejar un botón muerto sin motivo. */}

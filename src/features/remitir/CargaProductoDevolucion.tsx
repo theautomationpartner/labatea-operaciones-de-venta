@@ -58,6 +58,9 @@ export function CargaProductoDevolucion() {
           lista={cliente?.list ?? 'L1'}
           conIva={clienteLlevaIva(cliente?.status ?? '')}
           onSelect={elegir}
+          /* La fila marcada en la lista es la del producto cargado ahora, no un historial de lo
+             que se fue eligiendo: al agregarlo a la tabla se descarga y la marca se va sola. */
+          codigoCargado={seleccionado?.codigo}
           variante="v2"
           onAviso={(a) => {
             setAvisoBusqueda(a)

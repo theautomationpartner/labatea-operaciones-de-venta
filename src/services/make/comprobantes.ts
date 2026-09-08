@@ -97,6 +97,26 @@ export interface DatosComprobante {
   cuentaPropia?: string
 }
 
+/**
+ * Por qué el escenario NO aceptó el documento. Ninguno de los dos es una falla: el circuito
+ * funcionó de punta a punta y la IA leyó bien; lo que está mal es el archivo que se subió.
+ *
+ *   · `tipo`   — el documento no es el comprobante del medio de cobro elegido (se subió un cheque
+ *                 estando en Transferencia, por ejemplo);
+ *   · `cliente` — es el comprobante correcto pero no lo emitió el cliente de la operación.
+ *
+ * Por eso viajan como RESULTADO y no como excepción: una excepción los mete en el mismo cajoń que
+ * el servidor caído, y en pantalla terminaban de rojo y con la palabra "error fatal" encima de algo
+ * que se arregla cambiando el archivo.
+ */
+export type MotivoRechazo = 'tipo' | 'cliente'
+
+/** El escenario rechazó el documento, con el tipo que SÍ reconoció cuando lo dijo. */
+export interface RechazoLectura {
+  motivo: MotivoRechazo
+  tipoDetectado?: string
+}
+
 /** Resultado de leer un comprobante. */
 export interface LecturaComprobante {
   jobId: string
@@ -116,6 +136,20 @@ export interface LecturaComprobante {
    * respuesta; acá el módulo está y lo que falló fue la lectura del documento.
    */
   respondioJson: boolean
+  /**
+   * El escenario miró el documento y lo rechazó. Con esto cargado NO hay datos que volcar: lo que
+   * corresponde es cambiar el archivo, no reintentar la misma lectura.
+   */
+  rechazo?: RechazoLectura
+}
+
+/** Datos del cliente de la operación. Viajan al escenario para que pueda verificar de quién es el
+ *  comprobante: sin ellos, la validación "no fue emitido por el cliente seleccionado" no existe del
+ *  otro lado, porque Make no tiene con qué compararlo. */
+export interface ClienteLectura {
+  id: string
+  nombre: string
+  cuit: string
 }
 
 /**
@@ -128,7 +162,7 @@ export interface LecturaComprobante {
 export async function procesarComprobante(
   archivo: File,
   formaPago: FormaPago,
-  opciones: OpcionesWebhook = {},
+  opciones: OpcionesWebhook & { cliente?: ClienteLectura | null } = {},
 ): Promise<LecturaComprobante> {
   const jobId = nuevoJobId()
 
@@ -138,6 +172,13 @@ export async function procesarComprobante(
   form.append('nombreArchivo', archivo.name)
   form.append('tipoArchivo', archivo.type || 'application/octet-stream')
   form.append('origen', 'registrar-cobros-recibos')
+  /* El cliente de la operación. Es lo que le permite al escenario contestar si el comprobante fue
+     emitido por él: sin estos campos esa validación no puede existir del otro lado. */
+  if (opciones.cliente) {
+    form.append('clienteId', opciones.cliente.id)
+    form.append('clienteNombre', opciones.cliente.nombre)
+    form.append('clienteCuit', opciones.cliente.cuit)
+  }
   form.append('archivo', archivo, archivo.name)
 
   /* Se ESPERA la respuesta del escenario completo, no el acuse de recibo: el módulo de IA tiene que
@@ -162,17 +203,14 @@ export async function procesarComprobante(
     throw new Error(mensajeDelEscenario(raiz) || 'No se pudo leer el documento.')
   }
 
-  /* La IA rechazó el documento: leyó bien, y lo que leyó no es el comprobante que se esperaba. Es
-     un error del archivo subido —no de la lectura—, así que se dice como tal y con el tipo que sí
-     reconoció, que es lo único accionable: cambiar el archivo o cambiar el medio de cobro. */
+  /* La IA rechazó el documento: leyó bien, y lo que leyó no sirve. Son dos rechazos distintos —no
+     es el tipo de comprobante esperado, o no lo emitió el cliente de la operación— y ninguno es un
+     fallo: el circuito anduvo. Vuelven como RESULTADO para que la pantalla los muestre como una
+     advertencia con su mensaje propio, en vez de mezclarlos con el servidor caído. */
   const indice = indexar(raiz)
-  const valido = buscar(indice, ALIAS_VALIDO)
-  // El `false` puede venir como booleano o como texto, según cómo arme el JSON el módulo de IA.
-  if (valido === false || crudo(valido).toLowerCase() === 'false') {
-    const detectado = aTexto(buscar(indice, ALIAS_TIPO))
-    throw new Error(
-      `El documento no corresponde a ${formaPago}${detectado ? `: se reconoció "${detectado}"` : ''}.`,
-    )
+  const rechazo = rechazoDeclarado(indice)
+  if (rechazo) {
+    return { jobId: crudo(raiz.jobId) || jobId, datos: {}, campos: 0, respondioJson: true, rechazo }
   }
 
   const datos = normalizar(indice)
@@ -182,6 +220,23 @@ export async function procesarComprobante(
     campos: Object.keys(datos).length,
     respondioJson: true,
   }
+}
+
+/** Una bandera del escenario que dice NO, sea booleana o texto —arma el JSON un módulo de IA—. */
+const dijoQueNo = (v: unknown): boolean => v === false || crudo(v).toLowerCase() === 'false'
+
+/**
+ * El rechazo que declaró el escenario, o `undefined` si no rechazó nada.
+ *
+ * El del CLIENTE se mira primero: cuando el escenario manda las dos banderas, la más específica es
+ * la que hay que contar —"no es de este cliente" explica más que "no sirve"—.
+ */
+function rechazoDeclarado(indice: Record<string, unknown>): RechazoLectura | undefined {
+  if (dijoQueNo(buscar(indice, ALIAS_CLIENTE_VALIDO))) return { motivo: 'cliente' }
+  if (dijoQueNo(buscar(indice, ALIAS_VALIDO))) {
+    return { motivo: 'tipo', tipoDetectado: aTexto(buscar(indice, ALIAS_TIPO)) }
+  }
+  return undefined
 }
 
 /* ===== Normalización de la respuesta ===== */
@@ -269,6 +324,23 @@ const ALIAS: Record<keyof DatosComprobante, string[]> = {
  * con motivo, y se muestra como error en vez de como "no se obtuvieron los datos".
  */
 const ALIAS_VALIDO = ['tipoValido', 'esValido', 'valido', 'valid']
+
+/**
+ * Cómo puede llamarse el veredicto del escenario sobre DE QUIÉN es el documento. En `false` la IA
+ * dice que el comprobante no lo emitió el cliente de la operación.
+ *
+ * Es una lista larga a propósito: el escenario se arma del otro lado y esta bandera es nueva, así
+ * que se aceptan los nombres razonables por adelantado. Si no manda ninguno, no hay rechazo por
+ * cliente y todo sigue como antes —la ausencia de la bandera nunca se lee como un "no"—.
+ */
+const ALIAS_CLIENTE_VALIDO = [
+  'clienteValido',
+  'esDelCliente',
+  'clienteCoincide',
+  'coincideCliente',
+  'clienteCorrecto',
+  'emisorValido',
+]
 
 /** Qué tipo de documento reconoció la IA. Sólo se usa para explicar un rechazo. */
 const ALIAS_TIPO = ['tipoDetectado', 'tipoDocumento', 'tipo']

@@ -173,6 +173,13 @@
   text-align: center;
   /* Reparte las palabras entre las líneas en vez de dejar una sola colgando en la última. */
   text-wrap: balance;
+  /* Alto RESERVADO: tres líneas, que es lo que ocupa el rótulo más largo del sistema
+     ("Seleccionar Productos Regresados", "Registrar Nueva Actividad", "Completar Actividad
+     Pendiente"). Sin esto el alto de la barra —y con ella el del encabezado— sale de en cuántas
+     líneas parte CADA rótulo, y en REGISTRO DE ACTIVIDADES la segunda etapa se renombra en vivo:
+     al elegir "REGISTRAR NUEVA ACTIVIDAD" pasaba de dos líneas a tres y empujaba toda la página
+     hacia abajo. Reservado desde el arranque, el encabezado mide siempre lo mismo. */
+  min-height: 3.6em;
 }
 /* El color del número dice en qué estado está la etapa: verde ya cumplida, azul la actual,
    gris la que falta. */
@@ -368,6 +375,40 @@
    bajaba de 1200px, aunque siguiera compartiendo fila con los selectores y sobrara lugar a la
    derecha. La posición la decide sola el `space-between` del contenedor, por LÍNEA: arriba a la
    derecha mientras entre, a la izquierda sólo cuando colapsa a su propia línea. */
+
+/* Botón de RETROCESO de etapa. Es el mismo control en las catorce pantallas de la app, así que se
+   define UNA vez y global: antes cada vista lo escribía con la clase que tuviera a mano —`.btn
+   .btn-out`, `.btn-outline` de dos hojas distintas, `.cobro-btn--out`— y convivían cuatro diseños,
+   con bordes, radios y rellenos distintos según la etapa.
+
+   Va sin scope de vista a propósito: las etapas viven en scopes distintos (`productos-v2`,
+   `emision-v2`, `actividad-v2`, `factura-v2`…) y una de ellas no tiene scope propio, así que
+   cualquier clase con prefijo dejaba pantallas afuera —que es exactamente cómo empezó la
+   divergencia—. */
+.btn-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #fff;
+  border: 1px solid var(--border-suave);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-volver:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+/* Deshabilitado sólo se apaga el texto: el botón sigue siendo el mismo control, y rellenarlo de
+   gris lo haría leer como otra cosa. */
+.btn-volver:disabled {
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
 
 /* Salir de la operación: acompaña al título del paso, no a la barra de contexto. */
 .btn-cancelar {

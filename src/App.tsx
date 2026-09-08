@@ -19,6 +19,9 @@ import { estadoSegundoFactor } from '@/services/mfa'
 import { useErrorSeguridad } from '@/hooks/useErrorSeguridad'
 import { bloqueaLaApp, notificarErrorSeguridad } from '@/lib/errorSeguridad'
 import { enMonday, getSessionToken, resumenSessionToken } from '@/lib/mondayAuth'
+import { ActividadView } from '@/features/actividad/ActividadView'
+import { ActividadPersonaView } from '@/features/actividad/ActividadPersonaView'
+import { VentaActividadView } from '@/features/actividad/VentaActividadView'
 import { ClienteView } from '@/features/cliente/ClienteView'
 import { EmisionView } from '@/features/emision/EmisionView'
 import { InicioView } from '@/features/inicio/InicioView'
@@ -51,6 +54,9 @@ const VISTAS: Record<Paso, () => JSX.Element | null> = {
   'remito-envio': RemitoEnvioView,
   'remito-emision': RemitoEmisionView,
   'remito-devolucion': RemitoDevolucionView,
+  actividad: ActividadView,
+  'actividad-persona': ActividadPersonaView,
+  'venta-actividad': VentaActividadView,
 }
 
 export function App() {

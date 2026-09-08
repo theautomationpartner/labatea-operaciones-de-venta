@@ -1,8 +1,15 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
+import { ActividadesDelDocumento } from '@/features/actividad/ActividadesDelDocumento'
+import { documentoDeVentaItem } from '@/lib/selectors'
 import { money } from '@/lib/format'
+import { registraActividad } from '@/lib/pasos'
+import {
+  getActividadesHeredadasDePresupuestos,
+  getActividadesHeredadasDeProforma,
+} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { Cliente } from '@/types'
+import type { ActividadListada, Cliente } from '@/types'
 
 interface ResumenVentaProps {
   cliente: Cliente
@@ -61,10 +68,47 @@ export function ResumenVenta({
   emitiendo,
   onEmitir,
 }: ResumenVentaProps) {
-  const { vendedor, fechaEmision, factura } = useApp()
+  const {
+    vendedor,
+    fechaEmision,
+    factura,
+    operacion,
+    tipoVenta,
+    proformaTipoVenta,
+    proformaId,
+    ventaItems,
+    actividadesDocumento,
+  } = useApp()
   const dispatch = useDispatch()
   const yaEmitido = emitidos > 0
   const rotuloFacturas = cantidadFacturas === 1 ? 'una factura' : `${cantidadFacturas} facturas`
+
+  /* La gestión comercial de la venta. DIRECTA (y proforma DIRECTA): las tildadas en "Registrar
+     Actividad" de esta operación, ya en `actividadesDocumento`. CON PRESUPUESTO PREVIO —que no
+     tiene esa etapa— las hereda de los presupuestos que aportaron algún producto, o de la
+     proforma si viene de una VENTA PROFORMA armada con presupuestos previos: se traen acá para
+     mostrarlas, con el MISMO criterio que usará `useCrearVenta` al escribirlas en el ítem. */
+  const propiaActividad = registraActividad(operacion, tipoVenta, proformaTipoVenta)
+  const [heredadas, setHeredadas] = useState<ActividadListada[]>([])
+  useEffect(() => {
+    if (propiaActividad) return
+    let vivo = true
+    const traer =
+      operacion === 'VENTA PROFORMA' && proformaTipoVenta === 'CON PRESUPUESTO PREVIO'
+        ? proformaId
+          ? getActividadesHeredadasDeProforma(proformaId)
+          : Promise.resolve([])
+        : getActividadesHeredadasDePresupuestos(
+            [...new Set(ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
+          )
+    traer.then((as) => {
+      if (vivo) setHeredadas(as)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [propiaActividad, operacion, proformaTipoVenta, proformaId, ventaItems])
+  const actividadesAMostrar = propiaActividad ? actividadesDocumento : heredadas
 
   return (
     <div className="card card--flush resumen-venta">
@@ -104,8 +148,14 @@ export function ResumenVenta({
       </div>
 
       {/* Comisión del vendedor por esta venta: cierra los números de la operación, antes de las
-          observaciones. Es el mismo importe que se registra en "💲Registro de Comisiones". */}
+          observaciones. Es el mismo importe que se registra en "💲Registro de Comisiones".
+          Actividades va JUSTO ANTES: exactamente igual que en el presupuesto, siempre visible sin
+          importar el tipo de venta —CON PRESUPUESTO PREVIO no elige nada acá, hereda la del
+          presupuesto, pero el campo se muestra igual—. */}
       <div className="rgroup resumen-comision">
+        <Fila label="Actividades">
+          <ActividadesDelDocumento actividades={actividadesAMostrar} />
+        </Fila>
         <Fila label="Comision x Venta" requerido={false} tono="verde">
           {money(comision)}
         </Fila>

@@ -20,6 +20,7 @@ import type {
   LetraComprobante,
   MedioEnvio,
   MonedaFactura,
+  TipoEntrega,
 } from '@/types'
 import {
   BOARDS,
@@ -64,8 +65,38 @@ export interface DatosFacturacion {
    */
   diasVencimiento: number
   observaciones: string
+  /**
+   * Cuándo sale la mercadería. SÓLO se usa para la leyenda de entrega: con entrega SIMULTÁNEA la
+   * mercadería sale JUNTO con el comprobante, y eso se deja dicho en las observaciones (ver
+   * `LEYENDA_ENTREGA_SIMULTANEA`). En las otras entregas no se dice nada: sería falso.
+   */
+  tipoEntrega?: TipoEntrega | null
   /** Ítem de la venta en "📈Ventas", para dejar el comprobante conectado a ella. */
   ventaId?: string | null
+}
+
+/**
+ * Leyenda que se estampa en las Observaciones del comprobante cuando la entrega es SIMULTÁNEA: la
+ * mercadería salió con la factura, así que el papel lo dice.
+ */
+export const LEYENDA_ENTREGA_SIMULTANEA = 'Mercaderia 100% Entregada'
+
+/**
+ * Las observaciones del comprobante: la leyenda de entrega primero y, debajo, lo que haya escrito
+ * el vendedor.
+ *
+ * Se COMBINAN en vez de pisarse porque las dos cosas viven en la misma columna del board
+ * (text_mm345tzb, "Observaciones") y ninguna es prescindible: la leyenda es información del
+ * comprobante, y lo tipeado a mano suele ser una instrucción de entrega que alguien va a leer.
+ */
+export const observacionesComprobante = (
+  observaciones: string,
+  tipoEntrega: TipoEntrega | null | undefined,
+): string => {
+  const escritas = (observaciones ?? '').trim()
+  if (tipoEntrega !== 'SIMULTANEA') return escritas
+  return escritas ? `${LEYENDA_ENTREGA_SIMULTANEA}
+${escritas}` : LEYENDA_ENTREGA_SIMULTANEA
 }
 
 /** Un comprobante ya escrito en el board. Es lo que la vista guarda en el estado. */
@@ -117,7 +148,12 @@ function columnasComprobante(
     [COL.facturacion.puntoVenta]: { labels: [FACT_PUNTO_VENTA_DEFAULT] },
     [COL.facturacion.condicionVenta]: { labels: [condicionVentaDe(cliente.condicionPago ?? '')] },
     [COL.facturacion.letra]: { labels: [letra] },
-    [COL.facturacion.observaciones]: datos.observaciones,
+    /* Observaciones del comprobante: con entrega SIMULTÁNEA arrancan con la leyenda de que la
+       mercadería ya salió, y siguen con lo que haya escrito el vendedor. */
+    [COL.facturacion.observaciones]: observacionesComprobante(
+      datos.observaciones,
+      datos.tipoEntrega,
+    ),
   }
   if (emision) cv[COL.facturacion.fechaEmision] = { date: emision }
   // Vencimiento del pago: el que trae el comprobante, o emisión + los días configurados.
@@ -480,4 +516,55 @@ export async function seguirEnvioFactura(
     await esperar(intervalo)
   }
   return ultimo
+}
+
+/**
+ * Número del papel de los comprobantes ya emitidos: "N° Factura - N° Comprobante".
+ *
+ * Es UN solo valor y va a los dos destinos por igual; lo que cambia según el tipo de entrega es
+ * DÓNDE se escribe, no qué se escribe:
+ *
+ *   · entrega SIMULTÁNEA → al movimiento de stock, que es por donde salió la mercadería;
+ *   · entrega POSTERIOR → al pendiente de entrega, que es lo que queda por salir.
+ *
+ * Las dos columnas de origen las completa la EMISIÓN ELECTRÓNICA, no la app: cuando se crea el
+ * ítem de facturación vienen vacías y se llenan después. Por eso acá no se exige nada —se devuelve
+ * lo que haya en el momento de leer, y `''` si todavía no hay número—. Quien lo consume decide
+ * qué hacer con el vacío; lo que NO puede pasar es que la venta se frene esperando un dato que
+ * llega por otro camino.
+ *
+ * Una venta puede partirse en más de un comprobante (mercadería común y consignada). Los números
+ * se juntan en un solo texto: el destino es por producto y la app no mapea cada producto a su
+ * comprobante, así que nombrar los dos es más honesto que elegir uno.
+ */
+export async function leerNroComprobanteFactura(
+  facturaIds: readonly string[],
+): Promise<string> {
+  const ids = facturaIds.filter(Boolean)
+  if (ids.length === 0 || !mondayHabilitado()) return ''
+
+  const data = await mondayApi<{
+    items: { id: string; column_values: { id: string; text: string | null }[] }[]
+  }>(
+    `query ($ids: [ID!]) {
+      items(ids: $ids) {
+        id
+        column_values(ids: ["${COL.facturacion.nroFactura}", "${COL.facturacion.nroComprobante}"]) {
+          id
+          text
+        }
+      }
+    }`,
+    { ids },
+  )
+
+  const numeros = (data.items ?? []).map((it) => {
+    const col = (id: string) => (it.column_values.find((c) => c.id === id)?.text ?? '').trim()
+    /* Se unen sólo las partes que TIENEN valor: con la emisión a medio camino puede haber número
+       de factura y todavía no de comprobante, y "0001-00001234 - " es peor que "0001-00001234". */
+    return [col(COL.facturacion.nroFactura), col(COL.facturacion.nroComprobante)]
+      .filter(Boolean)
+      .join(' - ')
+  })
+  return [...new Set(numeros.filter(Boolean))].join(', ')
 }

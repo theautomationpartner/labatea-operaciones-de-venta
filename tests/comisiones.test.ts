@@ -2,7 +2,9 @@
  * Motor de comisiones: tasa ÚNICA por tipo de venta (del tablero de configuración) aplicada sobre
  * el neto de cada producto comisionable.
  *
- *   · MÓDULO 2 — "Activa" rige la venta CON PRESUPUESTO PREVIO; "Pasiva", la DIRECTA.
+ *   · MÓDULO 2 — la tasa sale de la COMBINACIÓN de venta, no sólo de su tipo: si hubo un
+ *     presupuesto en el medio y si la cadena tiene actividades linkeadas. Son cuatro, y dos
+ *     todavía no están definidas por negocio (ver `TASA_POR_COMBINACION`).
  *   · MÓDULO 3 — el producto sólo aporta si comisiona ("SI"); ya no aporta su propio porcentaje.
  *   · MÓDULO 4 — la base es el precio SIN IVA y con el descuento total (manual + forma de pago)
  *     ya aplicado.
@@ -11,12 +13,53 @@
  */
 import assert from 'node:assert/strict'
 import { netoLinea } from '@/lib/descuentos'
-import { comisionLinea, comisionLineas, resumenVenta, tasaComision } from '@/lib/selectors'
+import {
+  combinacionDeVenta,
+  comisionLinea,
+  comisionLineas,
+  resumenVenta,
+  tasaComision,
+} from '@/lib/selectors'
 import type { ComisionesVenta, LineaPresupuesto, Producto, VentaItem } from '@/types'
 
 const TASAS: ComisionesVenta = { activa: 4, pasiva: 1.5 }
 
-// ---------- MÓDULO 2: qué tasa rige cada tipo de venta ----------
+/* ---------- MÓDULO 2: qué tasa rige cada COMBINACIÓN de venta ----------
+   No alcanza con el tipo de venta: la tasa sale de la cadena que originó la venta —presupuesto de
+   por medio o no, y con gestión registrada o no—. Son cuatro combinaciones. */
+assert.equal(combinacionDeVenta('CON PRESUPUESTO PREVIO', true), 'ACTIVIDADES-PRESUPUESTO-VENTA')
+assert.equal(combinacionDeVenta('CON PRESUPUESTO PREVIO', false), 'PRESUPUESTO-VENTA')
+assert.equal(combinacionDeVenta('DIRECTA', true), 'ACTIVIDADES-VENTA-DIRECTA')
+assert.equal(combinacionDeVenta('DIRECTA', false), 'VENTA-DIRECTA')
+
+/* Las DOS definidas por negocio. Son las que no se pueden tocar sin una decisión nueva. */
+assert.equal(
+  tasaComision(TASAS, 'CON PRESUPUESTO PREVIO', true),
+  4,
+  'ACTIVIDADES-PRESUPUESTO-VENTA: la cadena completa paga la Activa',
+)
+assert.equal(
+  tasaComision(TASAS, 'DIRECTA', false),
+  1.5,
+  'VENTA-DIRECTA: sin presupuesto ni gestión previa, la Pasiva',
+)
+
+/* Las DOS que quedaron SIN DEFINIR. Se afirma el statu quo, no una regla: si mañana se define que
+   la venta con presupuesto sin actividades no comisiona —o comisiona como pasiva—, este test tiene
+   que fallar y cambiarse a mano. Es justamente lo que se quiere: que el cambio se vea. */
+assert.equal(
+  tasaComision(TASAS, 'CON PRESUPUESTO PREVIO', false),
+  4,
+  'PRESUPUESTO-VENTA: SIN DEFINIR, hoy sigue pagando la Activa como antes del cambio',
+)
+assert.equal(
+  tasaComision(TASAS, 'DIRECTA', true),
+  1.5,
+  'ACTIVIDADES-VENTA-DIRECTA: SIN DEFINIR, hoy sigue pagando la Pasiva como antes del cambio',
+)
+
+/* Y sin el dato de las actividades la tasa es la de siempre: es lo que hace que el cambio de forma
+   no mueva ningún monto mientras las dos combinaciones sigan sin definirse. */
 assert.equal(tasaComision(TASAS, 'CON PRESUPUESTO PREVIO'), 4, 'la Activa rige el presupuesto previo')
 assert.equal(tasaComision(TASAS, 'DIRECTA'), 1.5, 'la Pasiva rige la venta directa')
 // Sin configuración leída no se inventa ninguna tasa.

@@ -54,6 +54,9 @@
   font-weight: 500;
 }
 .factura-v2 .proforma-datos .rvalue {
+  /* Un flex item no se achica por debajo de su contenido salvo que se lo permita: sin esto, un
+     valor largo —el nombre de una actividad— estira el renglón y se sale de la ficha. */
+  min-width: 0;
   font-weight: 700;
   color: var(--f-text-main);
   text-align: right;
@@ -182,6 +185,9 @@
   margin-left: 2px;
 }
 .factura-v2 .rvalue {
+  /* Un flex item no se achica por debajo de su contenido salvo que se lo permita: sin esto, un
+     valor largo —el nombre de una actividad— estira el renglón y se sale de la ficha. */
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;

@@ -16,6 +16,12 @@ export function formatDate(date: Date): string {
 /** La emisión no se edita: siempre es el día en que se opera. */
 export const hoy = (): string => formatDate(new Date())
 
+/** La hora actual en HH:mm, que es como la toma el `input[type=time]`. */
+export const ahora = (): string => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 /** El mismo día, en yyyy-MM-dd: es el formato de las columnas date de Monday. */
 export function hoyIso(): string {
   const d = new Date()

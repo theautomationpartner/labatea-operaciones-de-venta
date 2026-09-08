@@ -20,9 +20,11 @@ import { aIso } from '@/lib/dates'
 import { comprobantesDeVenta, precioNetoUnitario, totalesComprobantes } from '@/lib/facturacion'
 import { comisionLinea, tasaComision, totalVentaOperacion } from '@/lib/selectors'
 import { lineasDeVenta } from '@/lib/lineasVenta'
-import { pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasoPrevioAEmision, pasosDe } from '@/lib/pasos'
+import { actividadesDeLaVenta } from '@/features/shared/useCrearVenta'
 import {
   actualizarCantVendida,
+  asociarActividades,
   crearComisiones,
   crearComprobantes,
   crearConsignacionesCYO,
@@ -234,6 +236,10 @@ export function FacturaView() {
           // Plazo de vencimiento del tablero de configuración, no un número escrito en la app.
           diasVencimiento: state.diasVencFactura,
           observaciones: factura.observaciones,
+          /* Con entrega SIMULTÁNEA la mercadería sale junto con el comprobante, y eso se deja
+             dicho en sus Observaciones. En VENTA PROFORMA la entrega la hereda de la proforma,
+             así que se toma del mismo lugar que usa la creación de la venta. */
+          tipoEntrega: tipoEntrega ?? state.proformaTipoEntrega ?? null,
           ventaId,
           // Entra sólo en el "Importe Bonif $" de cada línea, no en el precio del comprobante.
           descFormaPago,
@@ -466,14 +472,23 @@ export function FacturaView() {
       /* Si ya se creó (reintento tras un fallo de un secundario), no se vuelve a crear. */
       let vId = ventaId
       if (!vId) {
+        /* Qué actividades le tocan: las propias (DIRECTA) o las heredadas del presupuesto/proforma
+           que la originó (CON PRESUPUESTO PREVIO). Se resuelve ANTES de crear, para que entre en
+           la MISMA mutation junto al resto de la cabecera (ver `actividadesDeLaVenta`). */
+        const actividadesIds = await actividadesDeLaVenta(state)
         const creada = await crearVenta({
           clienteId: cliente.id,
           // Vendedor de la operación → columna Person del board de Ventas. Sin esto la venta nace
           // sin vendedor asignado (los efectos secundarios sí lo mandaban; la venta no).
           vendedorId: state.vendedor?.id ?? null,
           nombre: cliente.name,
-          tipoVenta: tipoVenta ?? 'DIRECTA',
-          tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
+          /* La VENTA PROFORMA HEREDA de la proforma su tipo de venta y su tipo de entrega: su
+             recorrido no tiene etapas donde configurarlos, así que `state.tipoVenta` y
+             `state.tipoEntrega` quedan en null y el `??` de abajo los resolvía a DIRECTA y
+             SIMULTANEA —convirtiendo una proforma POSTERIOR en una venta que descuenta stock
+             que no salió y no deja pendientes de entrega—. */
+          tipoVenta: tipoVenta ?? state.proformaTipoVenta ?? 'DIRECTA',
+          tipoEntrega: tipoEntrega ?? state.proformaTipoEntrega ?? 'SIMULTANEA',
           // El tipo de cobro sale de la forma de pago elegida, no de la condición del cliente.
           ...datosCobroVenta(formaPago, operacion),
           rentabilidad: rentabilidadVenta,
@@ -490,6 +505,13 @@ export function FacturaView() {
               ? state.entregaVenta.rutaId ?? undefined
               : undefined,
           lineas: productos,
+          /* Comprobantes ya emitidos. Sólo los usa la entrega SIMULTÁNEA, para estampar el número
+             del papel en el movimiento de stock de cada producto. */
+          facturaIds: factura.comprobantes.map((c) => c.id).filter(Boolean),
+          /* La proforma que originó la venta: se enlaza en "📈Proformas". Fuera de la VENTA
+             PROFORMA es null y no se manda. */
+          proformaId: state.proformaId,
+          actividadesIds,
         })
         if (creada.subitemsCreados !== productos.length) {
           setErrorVenta(
@@ -500,6 +522,19 @@ export function FacturaView() {
         }
         vId = creada.id
         dispatch({ type: 'setVentaId', value: vId })
+        /* Las actividades elegidas EN ESTA operación (no las heredadas) quedan asociadas a la
+           venta recién creada, y con eso dejan de ofrecerse en la próxima operación: una gestión
+           rinde UN documento. Las heredadas ya quedaron asociadas al presupuesto o a la proforma
+           que las originó; volver a asociarlas acá les pisaría esa relación. Fire-and-forget: la
+           venta ya está creada y correcta, y no puede quedar esperando por una relación. */
+        void asociarActividades(
+          state.actividadesDocumento.map((a) => a.id),
+          { ventaId: vId },
+        ).then((sinAsociar) => {
+          if (sinAsociar.length > 0) {
+            console.warn('[actividades] sin asociar a la venta: ' + sinAsociar.join(', '))
+          }
+        })
       }
       // Efectos secundarios: fire-and-forget. No se esperan; la ventana se cierra al toque.
       dispararEfectosSecundarios(vId)
@@ -512,9 +547,18 @@ export function FacturaView() {
     }
   }
 
-  const pasos = pasosDe(operacion, tipoVenta, tipoEntrega)
-  // El índice de "Emitir factura" corre según exista o no la etapa "Entrega de Mercadería".
-  const actualFactura = Math.max(pasos.indexOf('Emitir factura'), 0)
+  const pasos = pasosDe(operacion, tipoVenta, tipoEntrega, null, state.proformaTipoVenta)
+  /* La posición se busca por la CLAVE del paso, no por su etiqueta: buscar el texto ataba el
+     índice al rótulo, y desde que la etapa pasó a llamarse "Emitir y Enviar" el `indexOf`
+     devolvía −1 y la última etapa se marcaba como la primera. */
+  const actualFactura = indiceDePaso(
+    'factura',
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+    null,
+    state.proformaTipoVenta,
+  )
 
   return (
     <section className="view factura-v2 paso-layout">
@@ -561,10 +605,14 @@ export function FacturaView() {
       <footer className="page-footer">
         <button
           type="button"
-          className="btn-outline"
-          /* Con entrega POSTERIOR el paso anterior es "Entrega de Mercadería"; si no, el "Cobro". */
+          className="btn-volver"
+          /* El paso anterior depende del recorrido: la actividad cuando la venta la registra;
+             si no, "Entrega de Mercadería" con entrega POSTERIOR y el "Cobro" en el resto. */
           onClick={() =>
-            dispatch({ type: 'goto', paso: esEntregaPosterior ? 'entrega' : 'cobro' })
+            dispatch({
+              type: 'goto',
+              paso: pasoPrevioAEmision(operacion, tipoVenta, tipoEntrega, state.proformaTipoVenta),
+            })
           }
         >
           <i className="fas fa-arrow-left" /> Volver

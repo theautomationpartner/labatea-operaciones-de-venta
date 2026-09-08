@@ -1,4 +1,5 @@
 import { ENTREGAS } from '@/lib/pasos'
+import { claseCajaSelector, claseSelector } from '@/features/shared/faltaSeleccion'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { TipoEntrega, TipoVenta } from '@/types'
 
@@ -6,7 +7,7 @@ const TIPOS_VENTA: TipoVenta[] = ['CON PRESUPUESTO PREVIO', 'DIRECTA']
 
 /** Configuración exclusiva de VENTA. Nada viene preseleccionado. */
 export function VentaConfig() {
-  const { tipoVenta, tipoEntrega } = useApp()
+  const { tipoVenta, tipoEntrega, intentoAvanzar } = useApp()
   const dispatch = useDispatch()
 
   /* La entrega ANTERIOR es de uso EXCLUSIVO de la venta DIRECTA: una venta que nace de un
@@ -17,14 +18,14 @@ export function VentaConfig() {
 
   return (
     <div className="venta-cfg">
-      <div className="cfgbox">
+      <div className={claseCajaSelector(tipoVenta, intentoAvanzar)}>
         <div className="cfg-ic">
           <i className="fas fa-tag" />
         </div>
         <div className="cfg-c">
           <div className="cfg-l">Tipo de venta</div>
           <select
-            className={`cfg-sel ${tipoVenta ? '' : 'cfg-sel--ph'}`}
+            className={`cfg-sel ${claseSelector(tipoVenta)}`}
             value={tipoVenta ?? ''}
             onChange={(e) => dispatch({ type: 'setTipoVenta', value: e.target.value as TipoVenta })}
           >
@@ -38,7 +39,7 @@ export function VentaConfig() {
         </div>
       </div>
 
-      <div className="cfgbox">
+      <div className={claseCajaSelector(tipoEntrega, intentoAvanzar)}>
         <div className="cfg-ic">
           <i className="fas fa-truck" />
         </div>
@@ -46,7 +47,7 @@ export function VentaConfig() {
           <div className="cfg-l">Tipo de entrega</div>
           {/* CON PRESUPUESTO PREVIO no ofrece la entrega ANTERIOR: sólo posterior/simultánea. */}
           <select
-            className={`cfg-sel ${tipoEntrega ? '' : 'cfg-sel--ph'}`}
+            className={`cfg-sel ${claseSelector(tipoEntrega)}`}
             value={tipoEntrega ?? ''}
             disabled={!tipoVenta}
             onChange={(e) =>

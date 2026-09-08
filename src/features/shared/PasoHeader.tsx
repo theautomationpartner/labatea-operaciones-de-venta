@@ -27,16 +27,25 @@ interface PasoHeaderProps {
  * quedan bloqueados. El destino de cada índice sale de `pasosKeysDe` (mismo orden que las etiquetas).
  */
 export function PasoHeader({ pasos, actual = 0, children }: PasoHeaderProps) {
-  const { operacion, tipoVenta, tipoEntrega, remito, pasoMaxIdx } = useApp()
+  const { operacion, tipoVenta, tipoEntrega, remito, proformaTipoVenta, pasoMaxIdx } = useApp()
   const dispatch = useDispatch()
-  const claves = pasosKeysDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)
+  /* El tipo de venta de la PROFORMA elegida también moldea el recorrido: es lo que decide si la
+     venta con proforma registra actividad (ver `registraActividad`, en `lib/pasos`). */
+  const claves = pasosKeysDe(
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+    remito.tipoEmision,
+    proformaTipoVenta,
+  )
   const irAPaso = (i: number) => {
     const paso = claves[i]
     if (paso) dispatch({ type: 'goto', paso })
   }
   /* Sin `pasos` (paso inicial) se reservan las etapas de la operación que el usuario está por
      confirmar: así la barra que aparece al confirmar mide exactamente lo mismo que la reservada. */
-  const etapas = pasos ?? pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision)
+  const etapas =
+    pasos ?? pasosDe(operacion, tipoVenta, tipoEntrega, remito.tipoEmision, proformaTipoVenta)
 
   return (
     <header className="paso-header">

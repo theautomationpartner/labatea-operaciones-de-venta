@@ -6,7 +6,7 @@ import type { ListaPrecio, Producto } from '@/types'
 import {
   SIN_RESULTADOS,
   cerrado,
-  conElegido,
+  replegado,
   conPaginaSiguiente,
   conPrimeraPagina,
   cursorActual,
@@ -28,6 +28,15 @@ interface BuscadorProductoProps {
   /** true = precio con IVA (Consumidor Final/Monotributo); false = sin IVA (Resp. Inscripto). */
   conIva: boolean
   onSelect: (p: Producto) => void
+  /**
+   * Código del producto cargado AHORA en «Producto seleccionado». Es lo único que se marca en la
+   * lista, y por eso lo aporta el padre: el buscador no puede saberlo —el producto se descarga al
+   * agregarlo a la tabla, y ahí la marca tiene que irse—.
+   *
+   * Antes la marca salía de un Set que el propio buscador acumulaba, así que comparar tres
+   * productos antes de decidirse dejaba a los tres en gris para siempre.
+   */
+  codigoCargado?: string
   /** `v2` = barra ancha del paso de productos; por defecto, el campo con rótulo de siempre. */
   variante?: 'clasico' | 'v2'
   /**
@@ -52,6 +61,7 @@ export function BuscadorProducto({
   lista,
   conIva,
   onSelect,
+  codigoCargado,
   variante = 'clasico',
   onAviso,
 }: BuscadorProductoProps) {
@@ -80,7 +90,7 @@ export function BuscadorProducto({
    */
   const elegir = (p: Producto) => {
     onSelect(p)
-    setResultados((r) => conElegido(r, p))
+    setResultados((r) => replegado(r))
     setError('')
     onAviso?.('')
   }
@@ -170,7 +180,8 @@ export function BuscadorProducto({
     <div className="results results--paged">
       <div className="results-list">
         {actuales.map((p) => {
-          const elegido = resultados.elegidos.has(p.codigo)
+          // La fila marcada es UNA: la del producto que está cargado en este momento.
+          const elegido = !!codigoCargado && p.codigo === codigoCargado
           return (
             <div
               className={`ritem ${elegido ? 'ritem--elegido' : ''}`}

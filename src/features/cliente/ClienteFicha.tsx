@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { aplicaCredito, motivoCreditoIgnorado, tieneValoresCredito } from '@/lib/credito'
+import { clienteOperaACredito, motivoCreditoIgnorado, tieneValoresCredito } from '@/lib/credito'
 import { money } from '@/lib/format'
 import { creditoCliente } from '@/lib/selectors'
 import type { Cliente } from '@/types'
@@ -38,7 +38,11 @@ interface ClienteFichaProps {
 export function ClienteFicha({ cliente, cargando = false, children }: ClienteFichaProps) {
   const credito = cliente ? creditoCliente(cliente) : null
   const claseImporte = credito?.bloqueado ? 'v-gray' : ''
-  const rigeCredito = cliente ? aplicaCredito(cliente) : false
+  /* Predicado de nivel CLIENTE, no de la operación. La ficha se muestra en la selección de
+     cliente, cuando todavía no hay forma de pago elegida: con `aplicaCredito` —que SÍ mira la
+     operación— daría "no rige" siempre, y contradiría al `motivoCreditoIgnorado` de abajo, que
+     está construido sobre este mismo predicado. */
+  const rigeCredito = clienteOperaACredito(cliente)
   const muestraValores = cliente ? rigeCredito || tieneValoresCredito(cliente) : true
   const motivoIgnorado = cliente ? motivoCreditoIgnorado(cliente) : null
   const tieneRetenciones = !!cliente?.ret && cliente.ret.trim() !== '' && cliente.ret !== 'Ninguna'

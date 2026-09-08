@@ -5,7 +5,7 @@ import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { addDays } from '@/lib/dates'
-import { PASOS_PRESUPUESTO, indiceDePaso } from '@/lib/pasos'
+import { PASOS_PRESUPUESTO, indiceDePaso, pasoPrevioAEmision } from '@/lib/pasos'
 import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
 import {
@@ -38,6 +38,7 @@ export function EmisionView() {
     tipoVenta,
     tipoEntrega,
     descuentoPagoActivo,
+    actividadesDocumento,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
@@ -126,6 +127,8 @@ export function EmisionView() {
           /* Lo ÚNICO que hace el check: tilda la casilla del ítem que le pide al PDF incluir la
              leyenda de las formas de pago bonificadas. No baja ningún precio. */
           descuentoPagoAplicado: descuentoPagoActivo,
+          // La gestión comercial que originó el presupuesto: las tildadas en "Registrar Actividad".
+          actividadesIds: actividadesDocumento.map((a) => a.id),
         })
         if (creado.subitemsCreados !== lineas.length) {
           setError(
@@ -199,10 +202,17 @@ export function EmisionView() {
       <div className="footer-acts">
         <button
           type="button"
-          className="btn btn-out"
-          onClick={() => dispatch({ type: 'goto', paso: 'productos' })}
+          className="btn-volver"
+          /* No siempre se vuelve a los productos: el presupuesto registra actividad, y esa etapa
+             está entre medio (ver `pasoPrevioAEmision`). */
+          onClick={() =>
+            dispatch({
+              type: 'goto',
+              paso: pasoPrevioAEmision(operacion, tipoVenta, tipoEntrega),
+            })
+          }
         >
-          <i className="fas fa-arrow-left" /> Volver a paso anterior
+          <i className="fas fa-arrow-left" /> Volver
         </button>
         {/* Cierra el presupuesto y reinicia la app. Alcanza con el PDF EMITIDO: el envío al cliente
             es una gestión aparte y puede quedar pendiente. */}

@@ -508,13 +508,32 @@ const REGLAS_CLIENTE_OPERABLE = [
   `{column_id: "${COL.cliente.categoria}", compare_value: [${CATEGORIA_CLIENTE_INDEX}], operator: any_of}`,
 ].join(', ')
 
-/** Una consulta con nombre propio: `alias` la identifica en la respuesta. */
-const consultaPersonas = (alias: string, columna: string, valor: string): string => `
+/**
+ * Cómo se compara el término contra la columna.
+ *
+ * `contains_text` es por SUBCADENA y sirve para el nombre, donde buscar un pedazo es justamente lo
+ * que se quiere. `any_of` es la comparación EXACTA contra cualquiera de los valores que se le
+ * pasen: es la del código y la del CUIT, que son identificadores y no admiten parecidos.
+ */
+type Comparacion = 'contains_text' | 'any_of'
+
+/**
+ * Una consulta con nombre propio: `alias` la identifica en la respuesta.
+ *
+ * `valores` es una lista porque una misma búsqueda exacta puede tener más de una forma válida de
+ * escribirse —el CUIT vive en el tablero con y sin guiones— y `any_of` acepta todas de una.
+ */
+const consultaPersonas = (
+  alias: string,
+  columna: string,
+  valores: readonly string[],
+  comparacion: Comparacion,
+): string => `
   ${alias}: boards(ids: [${BOARDS.personas}]) {
     items_page(
       limit: ${TOPE_RESULTADOS},
       query_params: {rules: [
-        {column_id: "${columna}", compare_value: ["${valor}"], operator: contains_text},
+        {column_id: "${columna}", compare_value: [${valores.map((v) => `"${literal(v)}"`).join(', ')}], operator: ${comparacion}},
         ${REGLAS_CLIENTE_OPERABLE}
       ]}
     ) {
@@ -539,11 +558,15 @@ type RespuestaPersonas = Record<string, { items_page: { items: MondayItem[] } }[
  * Personas tiene ~3950 ítems, así que el 95% NUNCA llegaba a la app: buscar un cliente que existe
  * devolvía "no existe" según en qué posición del tablero hubiera caído.
  */
-async function buscarPersonas(porColumna: readonly { columna: string; valor: string }[]) {
-  const usables = porColumna.filter((x) => x.valor.trim() !== '')
+async function buscarPersonas(
+  porColumna: readonly { columna: string; valores: readonly string[]; comparacion: Comparacion }[],
+) {
+  const usables = porColumna
+    .map((x) => ({ ...x, valores: x.valores.map((v) => v.trim()).filter(Boolean) }))
+    .filter((x) => x.valores.length > 0)
   if (usables.length === 0) return []
   const data = await mondayApi<RespuestaPersonas>(
-    `query { ${usables.map((x, i) => consultaPersonas(`q${i}`, x.columna, literal(x.valor))).join('')} }`,
+    `query { ${usables.map((x, i) => consultaPersonas(`q${i}`, x.columna, x.valores, x.comparacion)).join('')} }`,
   )
   const vistos = new Set<string>()
   const items: MondayItem[] = []
@@ -558,8 +581,31 @@ async function buscarPersonas(porColumna: readonly { columna: string; valor: str
 }
 
 /**
- * Busca clientes por nombre, código de cliente o CUIT/CUIL (entero o parcial). Un término
- * numérico se busca a la vez por código y por CUIT; uno con letras, por nombre.
+ * Las formas válidas de escribir un mismo CUIT. En el tablero conviven los dos formatos —hay
+ * clientes con "30-70906788-1" y otros con "30709067881"—, y como la comparación es exacta hay que
+ * preguntar por ambas o se pierde la mitad del padrón según cómo lo hayan cargado.
+ *
+ * Con menos de once dígitos no se arma el formato con guiones: no es un CUIT, es un código.
+ */
+const CUIT_DIGITOS = 11
+const variantesCuit = (termino: string): string[] => {
+  const d = termino.replace(/\D/g, '')
+  if (!d) return []
+  const variantes = new Set([d, termino.trim()])
+  if (d.length === CUIT_DIGITOS) variantes.add(`${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`)
+  return [...variantes]
+}
+
+/**
+ * Busca clientes por nombre, código de cliente o CUIT/CUIL. Un término numérico se busca a la vez
+ * por código y por CUIT; uno con letras, por nombre.
+ *
+ * El nombre se busca por SUBCADENA —escribir un pedazo de la razón social es la forma normal de
+ * llegar a un cliente—, pero el código y el CUIT se comparan EXACTO. La subcadena ahí devolvía
+ * clientes sin relación con lo buscado: el código "7001" traía también al 2385, cuyo CUIT
+ * (30619677001) TERMINA en 7001. Un identificador o es el que se buscó o no lo es, y ofrecer dos
+ * clientes cuando se escribió uno solo es peor que no ofrecer ninguno: invita a elegir al que no
+ * era, y de ahí sale una venta facturada a otro.
  *
  * El filtro por categoría ("Cliente") y por estado (ACTIVO) se aplica sobre el resultado, que ya
  * viene acotado: un cliente inactivo no puede operar, así que la vista lo trata como inexistente.
@@ -572,9 +618,10 @@ export async function buscarClientes(termino: string): Promise<Cliente[]> {
     // Modo local: el mock es chico, así que se filtra en memoria como siempre.
     const activos = CLIENTES.filter((c) => c.activity === 'Activo')
     if (tipoBusqueda(t) === 'numero') {
+      // Exacto, igual que contra Monday: los dígitos del CUIT se comparan enteros, no por pedazos.
       const digitos = t.replace(/\D/g, '')
       return activos.filter(
-        (c) => norm(c.codigo).includes(norm(t)) || c.cuit.replace(/\D/g, '').includes(digitos),
+        (c) => norm(c.codigo) === norm(t) || c.cuit.replace(/\D/g, '') === digitos,
       )
     }
     return activos
@@ -584,15 +631,20 @@ export async function buscarClientes(termino: string): Promise<Cliente[]> {
       .map((x) => x.c)
   }
 
-  /* El CUIT se guarda SIN separadores ("30526228746"), así que se busca por sus dígitos: el
-     usuario puede escribirlo con guiones o sin ellos y da lo mismo. */
+  /* El código se compara tal como se escribió y también en dígitos pelados, por si vino con puntos
+     o espacios. El CUIT, por sus variantes de formato (ver `variantesCuit`). Escribir un CUIT con
+     guiones o sin ellos da lo mismo, y en las dos columnas la comparación es exacta. */
   const items =
     tipoBusqueda(t) === 'numero'
       ? await buscarPersonas([
-          { columna: COL.cliente.codigo, valor: t },
-          { columna: COL.cliente.cuit, valor: t.replace(/\D/g, '') },
+          {
+            columna: COL.cliente.codigo,
+            valores: [...new Set([t, t.replace(/\D/g, '')])],
+            comparacion: 'any_of',
+          },
+          { columna: COL.cliente.cuit, valores: variantesCuit(t), comparacion: 'any_of' },
         ])
-      : await buscarPersonas([{ columna: 'name', valor: t }])
+      : await buscarPersonas([{ columna: 'name', valores: [t], comparacion: 'contains_text' }])
 
   /* Sin filtros de acá: la categoría y el estado ACTIVO ya vienen aplicados en la consulta
      (`REGLAS_CLIENTE_OPERABLE`), así que lo que llega es directamente operable. */
@@ -1166,6 +1218,11 @@ export interface DatosPresupuesto {
    * no aplica ningún descuento por forma de pago a los productos.
    */
   descuentoPagoAplicado?: boolean
+  /**
+   * Actividades elegidas en la etapa "Registrar Actividad": la gestión comercial que originó este
+   * presupuesto. Se escriben en "🤖Actividades" (board_relation_mm6w6mra) al crearlo.
+   */
+  actividadesIds?: readonly string[]
 }
 
 /** dd/MM/yyyy → yyyy-MM-dd (formato que espera la columna date de Monday). */
@@ -1241,6 +1298,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     totalUsd,
     vendedor,
     descuentoPagoAplicado = false,
+    actividadesIds = [],
   } = datos
 
   const emision = fechaMonday(fechaEmision)
@@ -1262,6 +1320,11 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     /* Casilla de la leyenda de formas de pago del PDF: se tilda cuando el presupuesto salió con un
        descuento por forma de pago aplicado. Sin él va destildada (los precios son los de lista). */
     [COL.presupuesto.descuentoFormaPago]: { checked: descuentoPagoAplicado ? 'true' : 'false' },
+  }
+  // La gestión comercial que originó este presupuesto: sin actividades elegidas, no se manda.
+  const actividadesNum = actividadesIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+  if (actividadesNum.length > 0) {
+    cabecera[COL.presupuesto.actividades] = { item_ids: actividadesNum }
   }
   /* Rentabilidad forzada: todas las líneas afectadas llevan el mismo % (el del interruptor), que queda
      como rentabilidad del producto. Se toma de la primera línea forzada y va a "Rentabilidad Forzada %".
@@ -1495,7 +1558,11 @@ export interface PresupuestoVigente {
 const importeLinea = (p: PresupuestoProducto): number =>
   round2(p.total * p.precio * (1 - (p.descuento ?? 0) / 100))
 
-function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
+/**
+ * Un producto del presupuesto. `presupuestoItemId` es el ítem PADRE: se estampa en cada línea para
+ * que la venta sepa de qué presupuesto salió cada una, incluso cuando se arma mezclando varios.
+ */
+function mapPresupuestoProducto(sub: MondayItem, presupuestoItemId?: string): PresupuestoProducto {
   const c = byId(sub)
   const producto = c[COL.presupuestoSub.producto]?.linked_items?.[0]
   const prodCols = producto ? byId(producto) : {}
@@ -1549,6 +1616,7 @@ function mapPresupuestoProducto(sub: MondayItem): PresupuestoProducto {
     proveedorNombre: proveedor?.name ?? '',
     estadoUso: c[COL.presupuestoSub.estadoUso]?.text ?? '',
     subitemId: sub.id,
+    presupuestoId: presupuestoItemId,
     productoId: producto?.id,
     // Ítem de stock heredado del maestro al presupuestar: viaja a la venta CON PRESUPUESTO PREVIO.
     stockId: c[COL.presupuestoSub.stock]?.linked_items?.[0]?.id,
@@ -1655,7 +1723,7 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
 
   return (data.items ?? []).map((it) => {
     const c = byId(it)
-    const productos = (it.subitems ?? []).map(mapPresupuestoProducto)
+    const productos = (it.subitems ?? []).map((sub) => mapPresupuestoProducto(sub, it.id))
     return {
       id: it.id,
       nro: it.name,

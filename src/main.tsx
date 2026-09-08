@@ -12,6 +12,7 @@ import '@/styles/productos.css'
 import '@/styles/emision.css'
 import '@/styles/cobro.css'
 import '@/styles/factura.css'
+import '@/styles/actividad.css'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('No se encontró el nodo #root')

@@ -87,6 +87,9 @@ export function lineasDeVenta({
       iva: it.iva,
       // El ítem de stock viene del subelemento del presupuesto (heredado del maestro).
       stockId: it.stockId,
+      /* De qué presupuesto salió esta línea: la venta se enlaza a TODOS los que aportaron, y esa
+         lista se junta de acá porque una venta puede mezclar productos de varios. */
+      presupuestoId: it.presupuestoId,
     }))
   }
 

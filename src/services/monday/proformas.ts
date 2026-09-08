@@ -28,6 +28,15 @@ export interface ProformaVigente {
   importe: number
   /** "✋️Tipo De Vta" de la proforma (color_mm5142e4): define la tasa de comisión (Activa/Pasiva). */
   tipoVenta: TipoVenta
+  /**
+   * "🤖Tipo de Entrega" de la proforma (color_mm489k2j): cuándo sale la mercadería.
+   *
+   * La VENTA que nace de esta proforma tiene que heredarlo. NO es un detalle: de él dependen el
+   * movimiento de stock (la SIMULTÁNEA descuenta en el acto) y los pendientes de entrega (la
+   * POSTERIOR los crea). Una venta que dice "Simultánea" siendo posterior descuenta stock que no
+   * salió y no deja pendiente lo que hay que entregar.
+   */
+  tipoEntrega: TipoEntrega
   productos: PresupuestoProducto[]
 }
 
@@ -71,6 +80,15 @@ function mapProformaProducto(sub: MondayItem): PresupuestoProducto {
     ivaMonto: numCol(c[COL.proformaSub.iva]),
     totalLinea: numCol(c[COL.proformaSub.total]),
     productoId: producto?.id,
+    /* Ítem de "Stock y Movimientos" del producto, guardado en el subelemento al crear la proforma
+       (board_relation_mm5pz6kz). Es lo que hace que la VENTA sobre esta proforma pueda AFECTAR EL
+       STOCK: la entrega SIMULTÁNEA crea el movimiento de egreso y la POSTERIOR enlaza el pendiente
+       con su ítem de stock, y las dos filtran por `stockId`.
+
+       Se escribía al crear la proforma y no se volvía a leer acá, así que toda línea que venía de
+       una proforma llegaba a la venta sin él: el movimiento de stock se saltaba entero —la lista
+       filtrada quedaba vacía y la función retornaba sin hacer nada, en silencio—. */
+    stockId: c[COL.proformaSub.stock]?.linked_items?.[0]?.id,
     subitemId: sub.id,
   }
 }
@@ -127,6 +145,8 @@ async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaV
       rentabilidad: p.rent,
       importe: p.importe,
       tipoVenta: 'CON PRESUPUESTO PREVIO',
+      // Modo local: los presupuestos mock no tienen tipo de entrega propio.
+      tipoEntrega: 'SIMULTANEA',
       productos: p.productos,
     }))
   }
@@ -138,13 +158,13 @@ async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaV
     `query ($ids: [ID!]) {
       items(ids: $ids) {
         id name
-        column_values(ids: ["${COL.proforma.importe}","${COL.proforma.rentabilidad}","${COL.proforma.total}","${COL.proforma.tipoVenta}"]) {
+        column_values(ids: ["${COL.proforma.importe}","${COL.proforma.rentabilidad}","${COL.proforma.total}","${COL.proforma.tipoVenta}","${COL.proforma.tipoEntrega}"]) {
           id text
           ... on MirrorValue { display_value }
         }
         subitems {
           id name
-          column_values(ids: ["${COL.proformaSub.producto}","${COL.proformaSub.comisionable}","${COL.proformaSub.unidadMedida}","${COL.proformaSub.cantidad}","${COL.proformaSub.precioUnit}","${COL.proformaSub.descuento}","${COL.proformaSub.descFormaPago}","${COL.proformaSub.descProdMonto}","${COL.proformaSub.descFpMonto}","${COL.proformaSub.impBonificado}","${COL.proformaSub.iva}","${COL.proformaSub.total}","${COL.proformaSub.rentabilidad}","${COL.proformaSub.subtotal}"]) {
+          column_values(ids: ["${COL.proformaSub.producto}","${COL.proformaSub.stock}","${COL.proformaSub.comisionable}","${COL.proformaSub.unidadMedida}","${COL.proformaSub.cantidad}","${COL.proformaSub.precioUnit}","${COL.proformaSub.descuento}","${COL.proformaSub.descFormaPago}","${COL.proformaSub.descProdMonto}","${COL.proformaSub.descFpMonto}","${COL.proformaSub.impBonificado}","${COL.proformaSub.iva}","${COL.proformaSub.total}","${COL.proformaSub.rentabilidad}","${COL.proformaSub.subtotal}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on FormulaValue { display_value }
@@ -185,6 +205,7 @@ async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaV
       rentabilidad: num(c[COL.proforma.rentabilidad]?.text),
       importe,
       tipoVenta,
+      tipoEntrega: tipoEntregaDeLabel(valor(c[COL.proforma.tipoEntrega])),
       productos,
     }
   })
@@ -212,6 +233,26 @@ const PROFORMA_TIPO_ENTREGA_LABEL: Record<TipoEntrega, string> = {
   POSTERIOR: 'Posterior',
   ANTERIOR: 'Anterior',
   SIMULTANEA: 'Simultánea',
+}
+
+/**
+ * La vuelta: del label del board al tipo de entrega de la app. Se compara por prefijo y sin tildes
+ * porque la etiqueta viaja como texto ("Simultánea") y una tilde de más o de menos no puede
+ * cambiar el tipo de entrega de una venta.
+ *
+ * Lo desconocido cae en SIMULTANEA, que es el valor con el que nació el flujo, pero eso es un
+ * ÚLTIMO recurso: la proforma SIEMPRE trae su tipo, y llegar ací significa que la columna vino
+ * vacía o con una etiqueta nueva.
+ */
+const tipoEntregaDeLabel = (label: string): TipoEntrega => {
+  const l = label
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toUpperCase()
+  if (l.startsWith('POSTERIOR')) return 'POSTERIOR'
+  if (l.startsWith('ANTERIOR')) return 'ANTERIOR'
+  return 'SIMULTANEA'
 }
 /** "✋Tipo de Cobro": la proforma es siempre contado → "Simultaneo" (grafía del board). */
 const PROFORMA_TIPO_COBRO_SIMULTANEO = 'Simultaneo'
@@ -250,6 +291,13 @@ export interface DatosProforma {
   /** Tasa de cambio del dólar usada en la operación. Se registra a nivel ítem (auditoría). */
   tasaCambio?: number | null
   lineas: LineaVenta[]
+  /**
+   * Actividades a heredar de los presupuestos que originaron esta venta, SÓLO cuando es CON
+   * PRESUPUESTO PREVIO (ver `getActividadesDePresupuestos`). Una proforma DIRECTA nace sin
+   * actividad propia —esa se elige recién en "Registrar Actividad", en la venta que la use—, así
+   * que llega vacío. Se escriben en "🤖Actividades" (board_relation_mm6zc4fa) al crearla.
+   */
+  actividadesIds?: readonly string[]
 }
 
 /** Alícuota de IVA por defecto cuando el producto no trae la suya. */
@@ -280,6 +328,7 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
     descFormaPago = 0,
     tasaCambio,
     lineas,
+    actividadesIds = [],
   } = datos
 
   /* Valores por línea (mismas fórmulas que la tabla de la factura proforma), calculados una vez:
@@ -319,6 +368,11 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
   const personaVendedor = personCol(vendedorId)
   if (personaVendedor) cabecera[COL.proforma.vendedor] = personaVendedor
+  // Heredadas del/de los presupuestos de origen (sólo CON PRESUPUESTO PREVIO); vacío en DIRECTA.
+  const actividadesNum = actividadesIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+  if (actividadesNum.length > 0) {
+    cabecera[COL.proforma.actividades] = { item_ids: actividadesNum }
+  }
 
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {

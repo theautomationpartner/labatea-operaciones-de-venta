@@ -1,14 +1,18 @@
 /** Estado único del flujo de operaciones y su reducer. Sin dependencias de React. */
 import { DIAS_VENC_FACTURA_MOCK, DIAS_VIGENCIA_INICIAL } from '@/data/mock'
-import { hoy } from '@/lib/dates'
+import { ahora, hoy } from '@/lib/dates'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
-import { pasoDeProductos, pasosKeysDe } from '@/lib/pasos'
+import { pasoDeProductos, pasoInicialDe, pasosKeysDe } from '@/lib/pasos'
 import { productoConPrecio } from '@/lib/precios'
 import { aceptaRentabForzada } from '@/lib/selectors'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
+  ActividadListada,
+  ActividadProyectada,
+  ActividadState,
+  ContactoElegido,
   Cliente,
   CobroState,
   ComisionesVenta,
@@ -34,6 +38,7 @@ import type {
   ResponsableEntrega,
   TipoEmisionRemito,
   TipoEntrega,
+  TipoOperacionActividad,
   TipoVenta,
   UsuarioActual,
   Vendedor,
@@ -123,6 +128,29 @@ export interface AppState {
    *  Pasiva). null fuera de la VENTA PROFORMA. */
   proformaTipoVenta: TipoVenta | null
   /**
+   * Tipo de ENTREGA de la proforma elegida (VENTA PROFORMA). La venta que nace de ella lo hereda.
+   *
+   * El recorrido de la VENTA PROFORMA no configura la entrega —no tiene esa etapa—, así que sin
+   * este dato la venta caía en el `?? 'SIMULTANEA'` del cierre: una proforma POSTERIOR generaba una
+   * venta simultánea, que descuenta stock que no salió y no deja pendientes de entrega.
+   */
+  proformaTipoEntrega: TipoEntrega | null
+  /**
+   * El usuario intentó avanzar de etapa y faltó configurar algo.
+   *
+   * Existe para UNA cosa: que los selectores de configuración —tipo de venta, tipo de entrega,
+   * forma de pago, tipo de operación, "la venta es…"— se pinten en rojo cuando son el motivo por
+   * el que no se avanza. Antes el aviso los NOMBRABA en una ventana y el usuario tenía que
+   * encontrarlos en la pantalla; ahora, además, se le señalan.
+   *
+   * Vive en el estado y no en cada vista porque el que frena y el que se pinta son componentes
+   * distintos: el botón de continuar está en el pie de la etapa y los selectores, arriba.
+   *
+   * NO hace falta apagarlo al completar el dato: la marca se calcula como "se intentó avanzar Y
+   * este campo sigue vacío" (ver `faltaSeleccion`), así que se apaga sola al elegir.
+   */
+  intentoAvanzar: boolean
+  /**
    * Éxito PERSISTENTE de la etapa de emisión: el documento (presupuesto/remito) ya se emitió con
    * éxito en esta operación. Evita re-disparar la mutación irreversible al volver con el stepper.
    * (La factura de venta usa `factura.comprobantes`, que ya persiste su emisión.)
@@ -157,6 +185,20 @@ export interface AppState {
 
   /* Operación REMITO */
   remito: RemitoState
+
+  /* Operación REGISTRO DE ACTIVIDADES */
+  actividad: ActividadState
+
+  /**
+   * Etapa "Registrar Actividad" de la VENTA y el PRESUPUESTO: las actividades YA cargadas en el
+   * tablero que originaron el documento. No se editan acá —se eligen—, y al emitirlo quedan
+   * imputadas a él (ver `imputarActividades`).
+   *
+   * Vive fuera de `actividad` a propósito: eso es el formulario de la operación de actividades, y
+   * esto es una elección sobre lo que ya existe. Mezclarlos ataría dos cosas que cambian por
+   * motivos distintos.
+   */
+  actividadesDocumento: ActividadListada[]
 }
 
 const envioInicial: EnvioState = {
@@ -178,6 +220,33 @@ const remitoInicial: RemitoState = {
   remitoId: null,
   emitido: false,
   devolucionRegistrada: false,
+}
+
+const proyectadaInicial: ActividadProyectada = {
+  tipo: null,
+  fecha: '',
+  /* La hora sí arranca puesta: la fecha de la próxima gestión hay que elegirla —no hay una
+     razonable por defecto—, pero la hora del día sí, y es un campo menos que completar. */
+  hora: ahora(),
+  resolucion: '',
+}
+
+/* La actividad arranca con la fecha de HOY —es el caso normal: se carga lo que se acaba de
+   hacer— y sin estado elegido: pendiente o completada es una decisión, no un valor por defecto. */
+const actividadInicial: ActividadState = {
+  tipoOperacion: null,
+  tipo: null,
+  fecha: hoy(),
+  hora: ahora(),
+  estado: null,
+  resolucion: '',
+  cargarFutura: false,
+  proyectada: proyectadaInicial,
+  contactos: [],
+  pendientes: [],
+  actividadId: null,
+  proyectadaId: null,
+  completadas: false,
 }
 
 const cobroInicial: CobroState = {
@@ -233,6 +302,8 @@ export const initialState: AppState = {
   proformaId: null,
   proformaImporte: null,
   proformaTipoVenta: null,
+  proformaTipoEntrega: null,
+  intentoAvanzar: false,
   documentoEmitido: false,
   documentoEnviado: false,
   nroPresupuesto: null,
@@ -265,6 +336,8 @@ export const initialState: AppState = {
   },
 
   remito: remitoInicial,
+  actividad: actividadInicial,
+  actividadesDocumento: [],
 }
 
 /**
@@ -312,7 +385,15 @@ export type Action =
   | { type: 'setComisiones'; value: ComisionesVenta }
   | { type: 'setPresupuestoId'; value: string | null }
   | { type: 'setVentaId'; value: string | null }
-  | { type: 'setProformaId'; value: string | null; importe?: number | null; tipoVenta?: TipoVenta | null }
+  | {
+      type: 'setProformaId'
+      value: string | null
+      importe?: number | null
+      tipoVenta?: TipoVenta | null
+      tipoEntrega?: TipoEntrega | null
+    }
+  /** Se intentó avanzar sin la configuración completa: enciende la marca de los selectores. */
+  | { type: 'intentoAvanzar' }
   | { type: 'setDocumentoEmitido'; value: boolean }
   | { type: 'setDocumentoEnviado'; value: boolean }
   | { type: 'setNroPresupuesto'; value: string | null }
@@ -364,6 +445,21 @@ export type Action =
   | { type: 'setRemitoCreado'; value: string | null }
   | { type: 'emitirRemito' }
   | { type: 'registrarDevolucion' }
+  /** Qué se viene a hacer en la etapa 2 de REGISTRO DE ACTIVIDADES. */
+  | { type: 'setTipoOperacionActividad'; value: TipoOperacionActividad }
+  | { type: 'setActividad'; patch: Partial<ActividadState> }
+  | { type: 'setActividadProyectada'; patch: Partial<ActividadProyectada> }
+  /** Confirma los contactos tildados: se SUMAN a los que ya estaban, sin repetir. */
+  | { type: 'agregarContactosActividad'; contactos: ContactoElegido[] }
+  /** Saca un contacto ya confirmado. Es la única forma de deshacer una confirmación. */
+  | { type: 'quitarContactoActividad'; itemId: string }
+  /** Tilda o destilda una actividad PENDIENTE para pasarla a "Completado". */
+  | { type: 'togglePendienteActividad'; actividad: ActividadListada }
+  | { type: 'actividadRegistrada'; actividadId: string; proyectadaId: string | null }
+  /** Las pendientes elegidas ya se cerraron en el board: cierra la operación. */
+  | { type: 'actividadesCompletadas' }
+  /** Tilda o destilda una actividad del tablero para el documento en curso. */
+  | { type: 'toggleActividadDocumento'; actividad: ActividadListada }
 
 const nuevoId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -428,7 +524,15 @@ function pasoDelModo(
   tipoVenta: TipoVenta | null,
   tipoEntrega: TipoEntrega | null,
 ): Paso {
-  if (paso === 'inicio' || paso === 'cliente') return paso
+  if (paso === 'inicio') return paso
+  /* Las tres primeras etapas se corresponden entre sí, pero no se llaman igual: las operaciones de
+     venta abren en 'cliente' y REGISTRO DE ACTIVIDADES en 'actividad-persona', que es su propia
+     selección de Persona. Se contesta con el arranque de la operación destino, que es justamente
+     eso (ver `pasoInicialDe`). Sin esto se caía en un paso de otra operación —la selección de
+     productos sin cliente, o la vista del cliente en una operación que no la tiene—. */
+  if (paso === 'cliente' || paso === 'actividad' || paso === 'actividad-persona') {
+    return pasoInicialDe(operacion)
+  }
   return pasoDeProductos(operacion, tipoVenta, tipoEntrega)
 }
 
@@ -470,10 +574,14 @@ export function reducer(state: AppState, action: Action): AppState {
         state.tipoVenta,
         state.tipoEntrega,
         state.remito.tipoEmision,
+        state.proformaTipoVenta,
       )
       const idx = keys.indexOf(action.paso)
       const pasoMaxIdx = idx >= 0 ? Math.max(state.pasoMaxIdx, idx) : state.pasoMaxIdx
-      return { ...state, paso: action.paso, pasoMaxIdx }
+      /* Cambiar de etapa apaga la marca de "falta configurar": lo que se señalaba era de la etapa
+         que se está dejando, y arrastrarla haría que la siguiente abriera con campos en rojo que
+         el usuario todavía no tuvo oportunidad de completar. */
+      return { ...state, paso: action.paso, pasoMaxIdx, intentoAvanzar: false }
     }
 
     case 'setOperacion': {
@@ -509,7 +617,8 @@ export function reducer(state: AppState, action: Action): AppState {
         usuarioActual: state.usuarioActual,
         tasaCambio: state.tasaCambio,
         operacion: action.operacion,
-        paso: 'cliente',
+        // Cada operación arranca en SU primera etapa: la actividad no empieza eligiendo cliente.
+        paso: pasoInicialDe(action.operacion),
       }
 
     case 'setVendedor':
@@ -543,8 +652,12 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         cliente: action.cliente,
-        // Otro cliente reinicia la transacción: progreso del stepper y banderas de éxito.
-        pasoMaxIdx: 0,
+        /* Otro cliente reinicia la transacción: progreso del stepper y banderas de éxito.
+
+           REGISTRO DE ACTIVIDADES es la excepción: ahí la Persona se elige en la SEGUNDA etapa, con la
+           actividad ya cargada, así que bajar el progreso a 0 dejaría trabado el paso en el que
+           se está parado. Lo suyo se reinicia igual, pero abajo (`actividad`). */
+        pasoMaxIdx: state.operacion === 'REGISTRO DE ACTIVIDADES' ? state.pasoMaxIdx : 0,
         documentoEmitido: false,
         documentoEnviado: false,
         lineas: [],
@@ -556,6 +669,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ventaId: null,
         // La proforma emitida también es del cliente anterior.
         proformaId: null,
+        proformaTipoEntrega: null,
         proformaImporte: null,
         proformaTipoVenta: null,
         log: null,
@@ -570,6 +684,13 @@ export function reducer(state: AppState, action: Action): AppState {
         entregaVenta: entregaVentaInicial,
         // El remito también parte de datos del cliente: se reinicia salvo el tipo de emisión.
         remito: { ...remitoInicial, tipoEmision: state.remito.tipoEmision },
+        /* Los contactos tildados NO se borran al cambiar de Persona: la etapa 1 de REGISTRO DE
+           ACTIVIDADES deja mezclar contactos de varios clientes —se busca uno, se tildan los
+           suyos, se busca otro y se suman los de ese—, y cada contacto ya sabe de qué Persona
+           salió (ver `ContactoElegido`). Lo cargado en la etapa 2 tampoco se toca: buscar otra
+           Persona para sumarle contactos no puede deshacer lo que ya se decidió sobre ella. */
+        // Las actividades asociadas eran las del documento del cliente anterior.
+        actividadesDocumento: [],
       }
 
     // Tipo de venta y de entrega reordenan el flujo de VENTA: hay que reubicar el paso.
@@ -668,14 +789,19 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, ventaId: action.value }
 
     case 'setProformaId':
-      // La VENTA PROFORMA manda el importe total y el tipo de venta de la proforma elegida (para el
-      // "Importe Total $" y la tasa de comisión); el resto de los flujos no los pasan y quedan null.
+      /* La VENTA PROFORMA manda lo que la venta hereda de la proforma elegida: el importe total
+         ("Importe Total $"), el tipo de venta (tasa de comisión) y el tipo de ENTREGA (movimiento
+         de stock y pendientes). El resto de los flujos no los pasa y quedan null. */
       return {
         ...state,
         proformaId: action.value,
         proformaImporte: action.importe ?? null,
         proformaTipoVenta: action.tipoVenta ?? null,
+        proformaTipoEntrega: action.tipoEntrega ?? null,
       }
+
+    case 'intentoAvanzar':
+      return { ...state, intentoAvanzar: true }
 
     case 'setDocumentoEmitido':
       return { ...state, documentoEmitido: action.value }
@@ -702,6 +828,9 @@ export function reducer(state: AppState, action: Action): AppState {
         tasaCambio: state.tasaCambio,
         // Nueva operación: el vendedor vuelve al del usuario logueado (default por RBAC).
         vendedor: vendedorPorDefecto(state.vendedores, state.usuarioActual),
+        /* La fecha y la hora por defecto se recalculan: `initialState` las congela en el momento
+           en que se cargó la app, y la siguiente actividad se registra cuando se registra. */
+        actividad: { ...actividadInicial, fecha: hoy(), hora: ahora() },
       }
 
     case 'addFiltro': {
@@ -1137,6 +1266,114 @@ export function reducer(state: AppState, action: Action): AppState {
        de acá la operación entera queda en solo lectura (ver `hayDocumentoEmitido`). */
     case 'registrarDevolucion':
       return { ...state, remito: { ...state.remito, devolucionRegistrada: true } }
+
+    /* Las dos ramas de la etapa 2 son excluyentes, y lo que queda escondido no puede viajar a
+       Monday: al volver a "REGISTRAR NUEVA ACTIVIDAD" se sueltan las pendientes tildadas. El
+       formulario, en cambio, se conserva —nadie lo lee mientras se completan pendientes—, así que
+       ir a mirar la lista y volver no borra lo que se venía tipeando. */
+    case 'setTipoOperacionActividad':
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          tipoOperacion: action.value,
+          pendientes:
+            action.value === 'COMPLETAR ACTIVIDAD PENDIENTE' ? state.actividad.pendientes : [],
+        },
+      }
+
+    /* Un cambio en la actividad puede APAGAR ramas del formulario, y lo que se había cargado en
+       ellas no puede quedar escondido esperando para viajar a Monday: al volver a "Pendiente" se
+       borran la resolución y la actividad proyectada, y al apagar el interruptor de la futura se
+       borra la proyectada. Lo que no se ve, no se guarda. */
+    case 'setActividad': {
+      const actividad = { ...state.actividad, ...action.patch }
+      const vuelveAPendiente = action.patch.estado === 'Pendiente'
+      const apagaFutura = action.patch.cargarFutura === false || vuelveAPendiente
+      return {
+        ...state,
+        actividad: {
+          ...actividad,
+          resolucion: vuelveAPendiente ? '' : actividad.resolucion,
+          cargarFutura: vuelveAPendiente ? false : actividad.cargarFutura,
+          proyectada: apagaFutura ? proyectadaInicial : actividad.proyectada,
+        },
+      }
+    }
+
+    case 'setActividadProyectada':
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          proyectada: { ...state.actividad.proyectada, ...action.patch },
+        },
+      }
+
+    /* Los confirmados se SUMAN, nunca se pisan: la etapa deja ir y venir entre clientes, y un
+       reemplazo borraría lo elegido en el anterior. Se descartan los repetidos porque al volver a
+       una Persona ya cargada sus contactos siguen a la vista (tildados y bloqueados). */
+    case 'agregarContactosActividad': {
+      const yaEstan = new Set(state.actividad.contactos.map((c) => c.itemId))
+      const nuevos = action.contactos.filter((c) => !yaEstan.has(c.itemId))
+      if (nuevos.length === 0) return state
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          contactos: [...state.actividad.contactos, ...nuevos],
+        },
+      }
+    }
+
+    case 'quitarContactoActividad':
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          contactos: state.actividad.contactos.filter((c) => c.itemId !== action.itemId),
+        },
+      }
+
+    case 'togglePendienteActividad': {
+      const ya = state.actividad.pendientes.some((a) => a.id === action.actividad.id)
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          pendientes: ya
+            ? state.actividad.pendientes.filter((a) => a.id !== action.actividad.id)
+            : [...state.actividad.pendientes, action.actividad],
+        },
+      }
+    }
+
+    /* Las pendientes ya quedaron en "Completado" en el board. Como con `actividadRegistrada`, la
+       marca es lo que impide que un segundo click las vuelva a cerrar. */
+    case 'actividadesCompletadas':
+      return { ...state, actividad: { ...state.actividad, completadas: true } }
+
+    case 'toggleActividadDocumento': {
+      const ya = state.actividadesDocumento.some((a) => a.id === action.actividad.id)
+      return {
+        ...state,
+        actividadesDocumento: ya
+          ? state.actividadesDocumento.filter((a) => a.id !== action.actividad.id)
+          : [...state.actividadesDocumento, action.actividad],
+      }
+    }
+
+    /* Las actividades ya están creadas en Monday. Guardar sus ids es lo que impide que un segundo
+       click en "Finalizar Operación" cree todo de nuevo. */
+    case 'actividadRegistrada':
+      return {
+        ...state,
+        actividad: {
+          ...state.actividad,
+          actividadId: action.actividadId,
+          proyectadaId: action.proyectadaId,
+        },
+      }
 
     default:
       return state

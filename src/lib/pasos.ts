@@ -1,4 +1,11 @@
-import type { Operacion, Paso, TipoEmisionRemito, TipoEntrega, TipoVenta } from '@/types'
+import type {
+  Operacion,
+  Paso,
+  TipoEmisionRemito,
+  TipoEntrega,
+  TipoOperacionActividad,
+  TipoVenta,
+} from '@/types'
 
 /**
  * Nombres de las etapas del stepper. Son los MISMOS en todas las operaciones: una etapa que hace
@@ -24,6 +31,22 @@ export const ETAPA = {
   /** DEVOLUCION: reemplaza a la entrega. No sale mercadería, se imputa la que vuelve. */
   imputacion: 'Imputación de Remitos',
   emitir: 'Emitir y Enviar',
+  /**
+   * VENTA / PRESUPUESTO · la gestión que originó el documento. En esas operaciones la etapa se
+   * llama siempre así; en REGISTRO DE ACTIVIDADES el rótulo lo decide el tipo de operación elegido
+   * (ver `rotuloEtapaActividad`).
+   */
+  actividad: 'Registrar Actividad',
+  /** REGISTRO DE ACTIVIDADES · se carga una gestión que todavía no estaba en el tablero. */
+  actividadNueva: 'Registrar Nueva Actividad',
+  /** REGISTRO DE ACTIVIDADES · se cierran gestiones que ya estaban agendadas. */
+  actividadCompletar: 'Completar Actividad Pendiente',
+  /**
+   * REGISTRO DE ACTIVIDADES · a quién se le asienta. NO se llama "Seleccionar Cliente" como en el resto:
+   * acá se elige una Persona del CRM —no necesariamente alguien a quien se le vende— y con ella
+   * viajan sus contactos, que es la mitad del trabajo de la etapa.
+   */
+  persona: 'Seleccionar Persona',
 } as const
 
 export const PASOS_PRESUPUESTO = [ETAPA.cliente, ETAPA.productos, ETAPA.emitir] as const
@@ -67,6 +90,27 @@ export const PASOS_REMITO_DEVOLUCION = [
 ] as const
 
 /**
+ * REGISTRO DE ACTIVIDADES: dos etapas, y en este orden. Primero se eligen la Persona y sus
+ * contactos, y recién después se dice qué se hace con ellos: cargar una gestión nueva, o cerrar
+ * alguna de las que ya tienen pendientes. La segunda etapa depende de la primera —la lista de
+ * pendientes se arma con lo elegido ahí—, así que la operación arranca eligiendo cliente como
+ * todas las demás.
+ */
+export const PASOS_ACTIVIDAD = [ETAPA.persona, ETAPA.actividad] as const
+
+/**
+ * Cómo se llama la segunda etapa de REGISTRO DE ACTIVIDADES: son dos trabajos distintos, y la
+ * etapa se nombra por el que se eligió. Sin elegir todavía queda el rótulo genérico, que es lo que
+ * el stepper muestra al entrar.
+ */
+export const rotuloEtapaActividad = (tipo: TipoOperacionActividad | null): string =>
+  tipo === 'REGISTRAR NUEVA ACTIVIDAD'
+    ? ETAPA.actividadNueva
+    : tipo === 'COMPLETAR ACTIVIDAD PENDIENTE'
+      ? ETAPA.actividadCompletar
+      : ETAPA.actividad
+
+/**
  * La entrega ANTERIOR parte de un remito ya emitido, no del catálogo ni del presupuesto:
  * la mercadería salió antes de la factura, así que lo que se carga son sus pendientes de
  * facturar. Vale para los dos tipos de venta, directa o con presupuesto previo.
@@ -80,9 +124,11 @@ export const esFlujoRemito = (tipoEntrega: TipoEntrega | null): boolean =>
  */
 export function pasosDe(
   operacion: Operacion | null,
-  _tipoVenta: TipoVenta | null,
+  tipoVenta: TipoVenta | null,
   tipoEntrega: TipoEntrega | null,
   tipoEmision: TipoEmisionRemito | null = null,
+  tipoVentaProforma: TipoVenta | null = null,
+  tipoOperacionActividad: TipoOperacionActividad | null = null,
 ): readonly string[] {
   /* ANTERIOR y POSTERIOR recorren las MISMAS cuatro etapas: el tipo de emisión sólo decide de
      dónde salen los productos. La DEVOLUCION sí cambia el recorrido: son tres etapas y la última
@@ -90,17 +136,117 @@ export function pasosDe(
   if (operacion === 'REMITO') {
     return tipoEmision === 'DEVOLUCION' ? PASOS_REMITO_DEVOLUCION : PASOS_REMITO_OPERACION
   }
-  // La VENTA PROFORMA tiene un recorrido fijo de cuatro pasos: no configura venta ni entrega.
-  if (operacion === 'VENTA PROFORMA') return PASOS_VENTA
-  if (operacion !== 'VENTA') return PASOS_PRESUPUESTO
-  if (esFlujoRemito(tipoEntrega)) return PASOS_REMITO
-  // VENTA estándar: la etapa "Entrega de Mercadería" SÓLO aparece con entrega POSTERIOR.
-  return tipoEntrega === 'POSTERIOR' ? PASOS_VENTA_ENTREGA : PASOS_VENTA
+  /* La segunda etapa cambia de nombre con lo que se eligió hacer en ella; las CLAVES no cambian
+     (ver `pasosKeysDe`), así que el stepper sigue navegando igual. */
+  if (operacion === 'REGISTRO DE ACTIVIDADES') {
+    return [ETAPA.persona, rotuloEtapaActividad(tipoOperacionActividad)]
+  }
+  const base =
+    // La VENTA PROFORMA tiene un recorrido fijo: no configura tipo de venta ni de entrega.
+    operacion === 'VENTA PROFORMA'
+      ? PASOS_VENTA
+      : operacion !== 'VENTA'
+        ? PASOS_PRESUPUESTO
+        : esFlujoRemito(tipoEntrega)
+          ? PASOS_REMITO
+          : // VENTA estándar: "Entrega de Mercadería" SÓLO aparece con entrega POSTERIOR.
+            tipoEntrega === 'POSTERIOR'
+            ? PASOS_VENTA_ENTREGA
+            : PASOS_VENTA
+  return registraActividad(operacion, tipoVenta, tipoVentaProforma)
+    ? conActividad(base, ETAPA.actividad)
+    : base
 }
 
-/** Tras el "Cobro": si la entrega es POSTERIOR pasa por "Entrega de Mercadería"; si no, va a factura. */
-export const pasoTrasCobro = (tipoEntrega: TipoEntrega | null): Paso =>
-  tipoEntrega === 'POSTERIOR' ? 'entrega' : 'factura'
+/**
+ * ¿El recorrido incluye "Registrar Actividad" antes de emitir?
+ *
+ * La gestión comercial se registra UNA vez, y la registra el documento que la origina:
+ *   · PRESUPUESTAR: siempre. El presupuesto nace de una gestión con el cliente.
+ *   · VENTA: sólo la DIRECTA. La que viene CON PRESUPUESTO PREVIO ya tiene su actividad, cargada
+ *     al emitir ese presupuesto; volver a pedirla duplicaría el asiento en el tablero.
+ *   · VENTA PROFORMA: el mismo criterio, mirando el tipo de venta de la PROFORMA elegida.
+ *   · REMITO y REGISTRO DE ACTIVIDADES: no. El remito no origina una gestión, y la operación de
+ *     actividades ES la gestión.
+ */
+export function registraActividad(
+  operacion: Operacion | null,
+  tipoVenta: TipoVenta | null,
+  tipoVentaProforma: TipoVenta | null = null,
+): boolean {
+  if (operacion === 'PRESUPUESTAR') return true
+  if (operacion === 'VENTA') return tipoVenta === 'DIRECTA'
+  if (operacion === 'VENTA PROFORMA') return tipoVentaProforma === 'DIRECTA'
+  return false
+}
+
+/** Mete "Registrar Actividad" JUSTO ANTES de la última etapa, que es siempre la emisión. */
+function conActividad<T>(pasos: readonly T[], etapa: T): readonly T[] {
+  return [...pasos.slice(0, -1), etapa, pasos[pasos.length - 1]]
+}
+
+/** La etapa final de cada operación: donde se emite y se envía el documento. */
+export const pasoDeEmision = (operacion: Operacion | null): Paso =>
+  operacion === 'PRESUPUESTAR' ? 'emision' : 'factura'
+
+/**
+ * Adónde se va al terminar la etapa anterior a la emisión (productos, cobro o entrega): a registrar
+ * la actividad si el recorrido la tiene, o directo a emitir si no.
+ */
+export const pasoAntesDeEmitir = (
+  operacion: Operacion | null,
+  tipoVenta: TipoVenta | null,
+  tipoVentaProforma: TipoVenta | null = null,
+): Paso =>
+  registraActividad(operacion, tipoVenta, tipoVentaProforma)
+    ? 'venta-actividad'
+    : pasoDeEmision(operacion)
+
+/**
+ * De qué etapa se viene al entrar a "Registrar Actividad": la última antes de ella. Es el destino
+ * del botón "Volver".
+ */
+export const pasoPrevioAActividad = (
+  operacion: Operacion | null,
+  tipoVenta: TipoVenta | null,
+  tipoEntrega: TipoEntrega | null,
+): Paso => {
+  // El presupuesto no tiene cobro: viene derecho de la selección de productos.
+  if (operacion === 'PRESUPUESTAR') return pasoDeProductos(operacion, tipoVenta, tipoEntrega)
+  return tipoEntrega === 'POSTERIOR' ? 'entrega' : 'cobro'
+}
+
+/**
+ * De qué etapa se VIENE al entrar a la emisión: el destino del botón "Volver" de la última etapa.
+ *
+ * Es el espejo de `pasoAntesDeEmitir`, y por eso vive acá y no escrito a mano en cada vista: la
+ * emisión de PRESUPUESTO volvía fija a "Seleccionar Productos" y se saltaba "Registrar Actividad",
+ * que en ese recorrido está justo en el medio. Con la regla en un solo lugar, sumar o sacar la
+ * etapa vale para las tres operaciones que la tienen a la vez.
+ */
+export const pasoPrevioAEmision = (
+  operacion: Operacion | null,
+  tipoVenta: TipoVenta | null,
+  tipoEntrega: TipoEntrega | null,
+  tipoVentaProforma: TipoVenta | null = null,
+): Paso =>
+  registraActividad(operacion, tipoVenta, tipoVentaProforma)
+    ? 'venta-actividad'
+    : pasoPrevioAActividad(operacion, tipoVenta, tipoEntrega)
+
+/**
+ * Tras el "Cobro": si la entrega es POSTERIOR pasa por "Entrega de Mercadería"; si no, sigue con lo
+ * que venga antes de emitir (la actividad, o la emisión misma).
+ */
+export const pasoTrasCobro = (
+  tipoEntrega: TipoEntrega | null,
+  operacion: Operacion | null = null,
+  tipoVenta: TipoVenta | null = null,
+  tipoVentaProforma: TipoVenta | null = null,
+): Paso =>
+  tipoEntrega === 'POSTERIOR'
+    ? 'entrega'
+    : pasoAntesDeEmitir(operacion, tipoVenta, tipoVentaProforma)
 
 /**
  * Claves de `Paso` en el MISMO orden que las etiquetas de `pasosDe`: mapea el índice del stepper
@@ -112,6 +258,7 @@ export function pasosKeysDe(
   tipoVenta: TipoVenta | null,
   tipoEntrega: TipoEntrega | null,
   tipoEmision: TipoEmisionRemito | null = null,
+  tipoVentaProforma: TipoVenta | null = null,
 ): readonly Paso[] {
   if (operacion === 'REMITO') {
     // ANTERIOR y POSTERIOR comparten claves; la DEVOLUCION cierra en su propia etapa.
@@ -119,13 +266,23 @@ export function pasosKeysDe(
       ? ['cliente', 'remito-productos', 'remito-devolucion']
       : ['cliente', 'remito-productos', 'remito-envio', 'remito-emision']
   }
-  if (operacion === 'VENTA PROFORMA') return ['cliente', 'venta-proforma', 'cobro', 'factura']
-  if (operacion !== 'VENTA') return ['cliente', 'productos', 'emision'] // PRESUPUESTAR
+  if (operacion === 'REGISTRO DE ACTIVIDADES') return ['actividad-persona', 'actividad']
   const prod = pasoDeProductos(operacion, tipoVenta, tipoEntrega)
-  if (esFlujoRemito(tipoEntrega)) return ['cliente', 'remito', 'cobro', 'factura']
-  return tipoEntrega === 'POSTERIOR'
-    ? ['cliente', prod, 'cobro', 'entrega', 'factura']
-    : ['cliente', prod, 'cobro', 'factura']
+  const base: readonly Paso[] =
+    operacion === 'VENTA PROFORMA'
+      ? ['cliente', 'venta-proforma', 'cobro', 'factura']
+      : operacion !== 'VENTA'
+        ? ['cliente', 'productos', 'emision'] // PRESUPUESTAR
+        : esFlujoRemito(tipoEntrega)
+          ? ['cliente', 'remito', 'cobro', 'factura']
+          : tipoEntrega === 'POSTERIOR'
+            ? ['cliente', prod, 'cobro', 'entrega', 'factura']
+            : ['cliente', prod, 'cobro', 'factura']
+  /* La misma inserción que en `pasosDe`, en la misma posición: las dos listas TIENEN que quedar
+     alineadas índice por índice, o el stepper navegaría a una etapa distinta de la que muestra. */
+  return registraActividad(operacion, tipoVenta, tipoVentaProforma)
+    ? conActividad(base, 'venta-actividad')
+    : base
 }
 
 /**
@@ -145,8 +302,11 @@ export function indiceDePaso(
   tipoVenta: TipoVenta | null,
   tipoEntrega: TipoEntrega | null,
   tipoEmision: TipoEmisionRemito | null = null,
+  tipoVentaProforma: TipoVenta | null = null,
 ): number {
-  const i = pasosKeysDe(operacion, tipoVenta, tipoEntrega, tipoEmision).indexOf(paso)
+  const i = pasosKeysDe(operacion, tipoVenta, tipoEntrega, tipoEmision, tipoVentaProforma).indexOf(
+    paso,
+  )
   return i >= 0 ? i : 0
 }
 
@@ -156,6 +316,10 @@ export function pasoDeProductos(
   tipoVenta: TipoVenta | null,
   tipoEntrega: TipoEntrega | null,
 ): Paso {
+  /* REGISTRO DE ACTIVIDADES no tiene productos, pero sí un paso 2: la actividad. Se contesta con
+     él para que cambiar de operación a mitad de camino caiga en una etapa de ESTE recorrido y no
+     en una de otra operación. */
+  if (operacion === 'REGISTRO DE ACTIVIDADES') return 'actividad'
   if (operacion === 'REMITO') return 'remito-productos'
   // La VENTA PROFORMA arma la venta a partir de las proformas del cliente.
   if (operacion === 'VENTA PROFORMA') return 'venta-proforma'
@@ -187,4 +351,16 @@ export const OPERACIONES: readonly Operacion[] = [
   'VENTA',
   'VENTA PROFORMA',
   'REMITO',
+  'REGISTRO DE ACTIVIDADES',
 ]
+
+/**
+ * Primera etapa de la operación, la que sigue al "Confirmar" del inicio.
+ *
+ * Todas abren eligiendo cliente. REGISTRO DE ACTIVIDADES también, pero con SU vista: ahí se elige
+ * una Persona del CRM y sus contactos, no un cliente al que facturarle (ver `PASOS_ACTIVIDAD`).
+ * Vive acá —y no repetido en cada vista— porque el arranque de una operación es parte de su
+ * recorrido.
+ */
+export const pasoInicialDe = (operacion: Operacion | null): Paso =>
+  operacion === 'REGISTRO DE ACTIVIDADES' ? 'actividad-persona' : 'cliente'

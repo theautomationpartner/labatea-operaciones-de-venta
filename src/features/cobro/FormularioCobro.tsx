@@ -1,9 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { AvisoModal } from '@/components/ui/AvisoModal'
 import {
   CUIT_TRAMOS,
   FORMAS_PAGO,
   MSG_CHEQUE_CLIENTE_NO,
+  identidadMovimiento,
+  movimientoRepetido,
   MSG_CHEQUE_FECHA_PAGO,
+  MSG_MOVIMIENTO_REPETIDO,
+  tituloChequeDuplicado,
   MSG_CHEQUE_VENCIDO,
   validarCuitEmisor,
   cuitCompleto,
@@ -22,6 +27,7 @@ import {
 import { aIso, desdeIso } from '@/lib/dates'
 import { formatearImporteAR, importeATexto, money, round2 } from '@/lib/format'
 import type { DatosComprobante } from '@/services/make'
+import { chequeDuplicado } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { CuentaPropia, FormaPago, FormatoCheque, MovimientoPago } from '@/types'
 import { BancoEmisorSelect } from './BancoEmisorSelect'
@@ -296,6 +302,11 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
   const [estadoCuit, setEstadoCuit] = useState<EstadoCuit>('pendiente')
   // Recién al intentar agregar se muestran los errores: no se reta al usuario mientras carga.
   const [intento, setIntento] = useState(false)
+  /* Consulta del padrón de cheques EN CURSO. Tapa el "+ Agregar" mientras dura: el alta depende de
+     lo que conteste Monday, y dejar el botón como si nada invita a clickearlo dos veces. */
+  const [validando, setValidando] = useState(false)
+  /** Cheque que YA está en el padrón de este cliente. Con esto cargado se muestra la ventana. */
+  const [duplicado, setDuplicado] = useState<{ cuit: string; numero: string } | null>(null)
   /* Ya corrió una lectura sobre este borrador y algo entró. A partir de ahí los campos obligatorios
      que quedaron vacíos se marcan solos: son justamente los que el documento no traía, y esperar al
      clic en "+ Agregar" para decirlo esconde el único trabajo que quedó por hacer. */
@@ -438,6 +449,16 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     vencTarjeta: esTarjeta && !borrador.vencimientoTarjeta,
     acreditacion: esTarjeta && !borrador.cuentaPropiaId,
   }
+  /* Ese MISMO movimiento ya está en la tabla. Se marca sobre su identificador —nro de cheque,
+     de transferencia, de cupón o de certificado—, que es el campo que hay que corregir. El control
+     contra Monday es OTRO y corre al agregar: acá sólo se mira lo que está en pantalla, que ninguna
+     consulta puede ver porque todavía no se guardó. */
+  const repetido = movimientoRepetido(
+    cobro.movimientos.map((m) => m),
+    borrador,
+  )
+  const campoRepetido = repetido ? identidadMovimiento(borrador)?.campo : undefined
+  if (campoRepetido) faltantes[campoRepetido] = true
   const completo = !Object.values(faltantes).some(Boolean)
 
   /* Un campo se marca en rojo al intentar agregar y, además, cuando una lectura ya corrió y no lo
@@ -446,8 +467,18 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
   const mal = (campo: string) =>
     (intento || (revisarLectura && !AJENOS_A_LA_LECTURA.has(campo))) && faltantes[campo]
 
-  /** Qué decir debajo de un campo vacío, según por qué se lo está reclamando. */
-  const textoFalta = (especifico: string) => (intento ? especifico : MSG_FALTA_LECTURA)
+  /**
+   * Qué decir debajo de un campo vacío, según por qué se lo está reclamando.
+   *
+   * El duplicado gana sobre cualquier otro reclamo: el campo NO está vacío —está repetido—, y
+   * pedir que se complete algo que ya tiene valor manda a buscar un problema que no existe.
+   */
+  const textoFalta = (especifico: string, campo?: string) =>
+    campo && campo === campoRepetido
+      ? MSG_MOVIMIENTO_REPETIDO
+      : intento
+        ? especifico
+        : MSG_FALTA_LECTURA
 
   /**
    * Campos que SÍ se leyeron pero cuyo valor no cumple una regla: el vencimiento del cheque, que
@@ -469,9 +500,33 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
         .map(([, rotulo]) => rotulo)
     : []
 
-  const agregar = () => {
+  const agregar = async () => {
     setIntento(true)
-    if (!completo || bloqueado) return
+    if (!completo || bloqueado || validando) return
+
+    /* CHEQUE: antes de cargarlo se pregunta si este cliente ya entregó ese mismo cheque en otra
+       operación. El control de más arriba sólo ve la tabla de esta pantalla; el duplicado típico no
+       es cargarlo dos veces acá sino volver a presentar mañana uno que ya se recibió.
+
+       Si la consulta falla NO se agrega: dejar entrar un cheque sin haber podido comprobarlo es
+       justo lo que este control existe para evitar, y el error de Monday ya se avisa por su
+       ventana global. */
+    if (esCheque) {
+      setValidando(true)
+      try {
+        const yaEsta = await chequeDuplicado(cliente?.id, borrador.cuitEmisor, borrador.numeroCheque)
+        if (yaEsta) {
+          setDuplicado({
+            cuit: borrador.cuitEmisor ?? '',
+            numero: (borrador.numeroCheque ?? '').trim(),
+          })
+          return
+        }
+      } finally {
+        setValidando(false)
+      }
+    }
+
     dispatch({ type: 'agregarMovimientoPago', movimiento: borrador })
     /* El formulario queda limpio para el próximo movimiento pero SIGUE en el mismo medio de cobro:
        quien está cargando tres retenciones no eligió "Retencion IVA" para que el selector le vuelva
@@ -503,6 +558,25 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
   }
 
   /**
+   * Saca el comprobante Y vacía los campos del medio.
+   *
+   * Las dos cosas juntas a propósito: casi todo lo que hay cargado salió de ese documento, y
+   * dejarlo después de quitarlo es peor que no tenerlo —se registra igual, nadie lo vuelve a
+   * mirar, y ya no hay papel contra el cual verificarlo—. Lo que se conserva es la decisión del
+   * usuario: el MEDIO de cobro elegido, y en la tarjeta el importe sugerido, que no sale del cupón
+   * sino de cuánto falta para cerrar el cobro.
+   */
+  const quitarArchivo = () => {
+    const importe = esTarjeta ? importeSugeridoTarjeta(cantPagos, tarjetasCargadas, diferencia) : 0
+    setBorrador((b) => ({ ...BORRADOR_VACIO, formaPago: b.formaPago, importe }))
+    setImporteTexto(importe > 0 ? importeATexto(importe) : '')
+    setRevisarLectura(false)
+    setIntento(false)
+    // El próximo comprobante trae su propio CUIT: el veredicto no se hereda.
+    setEstadoCuit('pendiente')
+  }
+
+  /**
    * Toma el comprobante. Se guarda el archivo además del nombre: el nombre es lo que se muestra,
    * pero la columna `file` del recibo sólo se completa subiendo el binario.
    *
@@ -511,12 +585,11 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
    * este —el año de un certificado con el número de otro—, y encima daría por completo un campo que
    * nadie leyó del papel que finalmente se adjunta.
    *
-   * QUITAR el comprobante no borra nada: ahí no viene ninguna lectura a rellenar los campos, y
-   * llevarse puesto lo que el usuario venía cargando a mano sería una sorpresa desagradable.
+   * Quitarlo hace lo MISMO pero sin archivo (ver `quitarArchivo`).
    */
   const tomarArchivo = (f: File | null) => {
     if (!f) {
-      setBorrador((b) => ({ ...b, comprobanteNombre: '', comprobanteArchivo: null }))
+      quitarArchivo()
       return
     }
     /* Con qué importe queda el formulario limpio: cero, salvo en la TARJETA, donde el importe no
@@ -698,7 +771,11 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
            único que puede mostrarlo sin cambiarle el alto al bloque. */
         error={error}
         deshabilitado={bloqueado}
+        cliente={
+          cliente ? { id: cliente.id, nombre: cliente.name, cuit: cliente.cuit ?? '' } : null
+        }
         onArchivo={tomarArchivo}
+        onQuitar={quitarArchivo}
         onDatos={aplicarDatos}
       />
     </div>
@@ -782,14 +859,46 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
      mismo botón entre renders en lugar de recrearlo (y perderle el foco). */
   const botonAgregar = () => (
     <div className="cobro-form-campo cobro-form-campo--val cobro-form-campo--accion">
-      <button type="button" className="cobro-btn cobro-btn--primary" onClick={agregar}>
-        <i className="fas fa-plus" /> Agregar
+      {/* Mientras se consulta el padrón el botón LO DICE y no se puede volver a apretar: la
+          consulta tarda, y un botón que sigue diciendo "+ Agregar" invita a clickearlo de nuevo. */}
+      <button
+        type="button"
+        className="cobro-btn cobro-btn--primary"
+        onClick={() => void agregar()}
+        disabled={validando}
+      >
+        {validando ? (
+          <>
+            <span className="cobro-btn-spin" aria-hidden="true" /> Validando
+          </>
+        ) : (
+          <>
+            <i className="fas fa-plus" /> Agregar
+          </>
+        )}
       </button>
     </div>
   )
 
   return (
     <fieldset className="cobro-form" disabled={bloqueado}>
+      {/* Cheque que este cliente YA entregó. Va en ventana y no debajo de un campo porque no lo
+          dice la pantalla: sale del padrón de cheques en cartera, y el vendedor necesita los tres
+          datos —cliente, CUIT y número— para ir a buscar el papel entre los que tiene en la mano. */}
+      {duplicado && (
+        <AvisoModal
+          titulo={tituloChequeDuplicado(borrador.formatoCheque)}
+          onClose={() => setDuplicado(null)}
+        >
+          Detectamos que ya existe un recibo registrado para el cliente{' '}
+          <strong>{cliente?.name ?? 'seleccionado'}</strong> con el CUIT{' '}
+          <strong>{duplicado.cuit}</strong> y número de cheque{' '}
+          <strong>{duplicado.numero}</strong>.
+          <br />
+          <br />
+          Ingresá otro cheque.
+        </AvisoModal>
+      )}
       <div className="cobro-form-campo cobro-form-campo--val cobro-form-campo--forma">
         <label htmlFor="cobro-forma">Seleccionar Medio de Cobro</label>
         <select
@@ -871,7 +980,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                 />
                 {mal('numeroCheque') && (
                   <span className="cobro-in-err" role="alert">
-                    {textoFalta('Ingresá el número')}
+                    {textoFalta('Ingresá el número', 'numeroCheque')}
                   </span>
                 )}
               </div>
@@ -1026,7 +1135,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                 />
                 {mal('nroCompTransf') && (
                   <span className="cobro-in-err" role="alert">
-                    {textoFalta('Ingresá el número')}
+                    {textoFalta('Ingresá el número', 'nroCompTransf')}
                   </span>
                 )}
               </div>
@@ -1116,7 +1225,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                 />
                 {mal('nroCompRet') && (
                   <span className="cobro-in-err" role="alert">
-                    {textoFalta('Ingresá el número')}
+                    {textoFalta('Ingresá el número', 'nroCompRet')}
                   </span>
                 )}
               </div>
@@ -1212,13 +1321,22 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                 el dato del mismo papel que se adjunta al lado. */}
               <div className="cobro-form-campo cobro-form-campo--val cobro-campo--nrocupon">
                 <label htmlFor="cobro-tarj-cupon">Nro Cupon</label>
+                {/* NO es obligatorio —un cupón puede cargarse después—, así que lo único que se
+                    marca acá es el cupón REPETIDO: si ese número ya está en la tabla, el
+                    movimiento no entra y hay que decir por qué. */}
                 <input
                   id="cobro-tarj-cupon"
-                  className="cobro-in"
+                  className={`cobro-in ${campoRepetido === 'numeroCupon' ? 'cobro-in--error' : ''}`}
                   autoComplete="off"
+                  aria-invalid={campoRepetido === 'numeroCupon' || undefined}
                   value={borrador.numeroCupon ?? ''}
                   onChange={(e) => setBorrador({ ...borrador, numeroCupon: e.target.value })}
                 />
+                {campoRepetido === 'numeroCupon' && (
+                  <span className="cobro-in-err" role="alert">
+                    {MSG_MOVIMIENTO_REPETIDO}
+                  </span>
+                )}
               </div>
 
               {/* BANCO DE ACREDITACIÓN: dónde entra la plata (cuentas propias de La Batea). */}

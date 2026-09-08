@@ -1,22 +1,23 @@
 import { EMISIONES_REMITO, EMISION_REMITO_LABEL } from '@/lib/pasos'
+import { claseCajaSelector, claseSelector } from '@/features/shared/faltaSeleccion'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { TipoEmisionRemito } from '@/types'
 
 /** Configuración exclusiva de REMITO: el tipo de emisión define de dónde salen los productos. */
 export function RemitoConfig() {
-  const { remito } = useApp()
+  const { remito, intentoAvanzar } = useApp()
   const dispatch = useDispatch()
 
   return (
     <div className="venta-cfg">
-      <div className="cfgbox">
+      <div className={claseCajaSelector(remito.tipoEmision, intentoAvanzar)}>
         <div className="cfg-ic">
           <i className="fas fa-truck-ramp-box" />
         </div>
         <div className="cfg-c">
           <div className="cfg-l">La venta es...</div>
           <select
-            className={`cfg-sel ${remito.tipoEmision ? '' : 'cfg-sel--ph'}`}
+            className={`cfg-sel ${claseSelector(remito.tipoEmision)}`}
             value={remito.tipoEmision ?? ''}
             onChange={(e) =>
               dispatch({

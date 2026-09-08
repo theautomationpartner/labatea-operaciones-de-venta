@@ -21,9 +21,12 @@ export interface ResultadosBusqueda {
   pagina: number
   /** Visibilidad de la lista. Sólo la bajan una búsqueda nueva, el botón de cierre o el click afuera. */
   abierto: boolean
-  /** Códigos ya elegidos en esta búsqueda. Sólo alimentan el feedback visual de la fila. */
-  elegidos: ReadonlySet<string>
 }
+
+/* Acá NO se guarda qué fila va marcada como "Seleccionado". Esa marca es del producto cargado
+   AHORA en «Producto seleccionado», y la aporta el padre. Cuando vivía en este estado se
+   ACUMULABA —era un Set de todo lo que se hubiera elegido en la búsqueda—, así que comparar tres
+   productos antes de decidirse dejaba a los tres en gris, con cara de "ya no se pueden tomar". */
 
 /** Sin búsqueda activa: es también el estado al que se vuelve al cerrar o al buscar de nuevo. */
 export const SIN_RESULTADOS: ResultadosBusqueda = {
@@ -31,30 +34,26 @@ export const SIN_RESULTADOS: ResultadosBusqueda = {
   cursores: [],
   pagina: 0,
   abierto: false,
-  elegidos: new Set(),
 }
 
-/** Primera página de una búsqueda nueva: reinicia todo, incluido lo ya elegido. */
+/** Primera página de una búsqueda nueva: reinicia la paginación entera. */
 export const conPrimeraPagina = (pagina: PaginaProductos): ResultadosBusqueda => ({
   paginas: [pagina.productos],
   cursores: [pagina.cursor],
   pagina: 0,
   abierto: true,
-  elegidos: new Set(),
 })
 
 /**
- * Selección de un producto: se elige de a uno. La lista se repliega para despejar el paso
- * siguiente, pero la paginación queda intacta —mismas páginas, misma página actual, mismo
- * cursor— para poder volver a abrirla. El código se marca como ya elegido.
+ * Se eligió un producto: la lista se REPLIEGA para despejar el paso siguiente, pero la paginación
+ * queda intacta —mismas páginas, misma página actual, mismo cursor— para poder volver a abrirla.
+ *
+ * No recibe el producto: cuál se eligió no es asunto de este estado (ver el comentario del
+ * `ResultadosBusqueda`). Lo único que pasa acá es que la lista se cierra.
  */
-export const conElegido = (
-  estado: ResultadosBusqueda,
-  producto: Producto,
-): ResultadosBusqueda => ({
+export const replegado = (estado: ResultadosBusqueda): ResultadosBusqueda => ({
   ...estado,
   abierto: false,
-  elegidos: new Set([...estado.elegidos, producto.codigo]),
 })
 
 /**

@@ -31,6 +31,7 @@ import {
   VENTA_ENTREGA_INDEX,
   VENTA_TIPO_INDEX,
 } from './columns'
+import { leerNroComprobanteFactura } from './facturacion'
 import { byId, numCol, valor, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -82,6 +83,14 @@ export interface LineaVenta {
   iva?: number
   /** ID del ítem de "Stock y Movimientos" del producto. Enlaza el subítem y afecta el stock. */
   stockId?: string
+  /**
+   * Ítem del PRESUPUESTO del que salió esta línea (venta CON PRESUPUESTO PREVIO).
+   *
+   * Va por línea y no a nivel de la venta porque una venta puede armarse con líneas de VARIOS
+   * presupuestos: tres productos de uno, dos de otro. Al crearla se juntan los distintos y se
+   * enlazan todos (ver `presupuestosDeLasLineas`).
+   */
+  presupuestoId?: string
   /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Sólo lo
    *  traen las líneas de la venta DIRECTA cuyos productos son "Con Rentab Forzada" y se aplicó. */
   notaCreditoComision?: number
@@ -115,8 +124,27 @@ export interface DatosVenta {
   /** Ruta de entrega confirmada (sólo La Batea). Se linkea en la venta y baja a los pendientes. */
   rutaId?: string
   lineas: LineaVenta[]
+  /**
+   * Ítems de facturación ya emitidos para esta venta. Sólo se usan con entrega SIMULTÁNEA: de ahí
+   * sale el número del comprobante que se estampa en cada movimiento de stock (ver
+   * `leerNroComprobanteFactura`). En las otras entregas la mercadería no sale con la factura, así
+   * que no hay comprobante que nombrar y no se leen.
+   */
+  facturaIds?: readonly string[]
+  /**
+   * Ítem de la PROFORMA que originó esta venta (sólo en VENTA PROFORMA). Se enlaza en "📈Proformas"
+   * para que la venta diga de qué proforma salió sin rastrearla por cliente y fecha.
+   */
+  proformaId?: string | null
   /** Sin uso todavía: la columna "✋Entrega" del board queda para una etapa posterior. */
   moneda?: Moneda
+  /**
+   * Actividades que originaron esta venta. DIRECTA: las elegidas en "Registrar Actividad" de esta
+   * operación. CON PRESUPUESTO PREVIO: las heredadas de los presupuestos que aportaron algún
+   * producto (ver `getActividadesDePresupuestos`); esta venta no tiene esa etapa propia. Se
+   * escriben en "🤖Actividades" (board_relation_mm6wb3hw) al crearla.
+   */
+  actividadesIds?: readonly string[]
 }
 
 export interface VentaCreada {
@@ -141,7 +169,8 @@ const indiceTipoEntrega = (t: TipoEntrega): number =>
  * Columnas de un producto de la venta. El subtotal es fórmula del board: no se manda.
  * Con entrega SIMULTÁNEA la mercadería sale junto con la venta, así que lo vendido se asienta
  * también como cantidad entregada y la línea queda en "100% Entregada" (por índice). Con entrega
- * POSTERIOR nada salió todavía, así que la línea nace "0% Entregada" (índice 2 de color_mm5bhha).
+ * POSTERIOR nada salió todavía, así que la línea nace "0% Entregada" (índice 2 de color_mm5bhha) y
+ * con "Cant Entregada Posterior" en CERO, que es de donde arrancan a sumar los remitos.
  * En la entrega ANTERIOR la mercadería ya salió por remito: lo vendido se asienta como "Cant
  * Entregada Anterior" (numeric_mm54vcmr).
  */
@@ -196,7 +225,12 @@ const columnasLinea = (
     cv[COL.ventaSub.cantEntregadaSimult] = String(l.cantidad)
     cv[COL.ventaSub.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.totalmenteEntregada }
   } else if (entregaPosterior) {
-    // Entrega POSTERIOR: la mercadería todavía no salió, la línea nace "0% Entregada" (índice 2).
+    /* Entrega POSTERIOR: la mercadería todavía no salió, la línea nace "0% Entregada" (índice 2) y
+       con CERO entregado. El cero se manda explícitamente en vez de dejar la columna vacía: es la
+       que van sumando los remitos posteriores (ver `cantEntregadaPosterior` más abajo), y una
+       columna en blanco y una en cero no se leen igual —en blanco parece que el dato falta, no que
+       todavía no se entregó nada—. */
+    cv[COL.ventaSub.cantEntregadaPosterior] = '0'
     cv[COL.ventaSub.estadoEntrega] = { index: VENTA_ENTREGA_ESTADO_INDEX.sinEntregar }
   } else if (entregaAnterior) {
     // Entrega ANTERIOR: la mercadería ya se entregó por remito; lo vendido = cantidad entregada anterior,
@@ -247,6 +281,7 @@ async function crearPendientesEntrega(
   clienteId: string | undefined,
   lineas: LineaVentaCreada[],
   rutaId?: string,
+  nroFactura = '',
 ): Promise<void> {
   const conProd = lineas.filter((l) => l.productoId && l.cantidad > 0)
   if (conProd.length === 0) return
@@ -277,6 +312,10 @@ async function crearPendientesEntrega(
       cv[COL.pendienteEntregaItem.ventaSubelemento] = { item_ids: [Number(l.ventaSubitemId)] }
     }
     if (estadoIdx != null) cv[COL.pendienteEntregaItem.estado] = { index: estadoIdx }
+    /* Contra qué factura va a salir la mercadería. SÓLO si hay número: lo completa la emisión
+       electrónica después de crear el ítem de facturación, y una columna en blanco dice la verdad
+       —todavía no se emitió— mientras que un texto vacío escrito a propósito no agrega nada. */
+    if (nroFactura) cv[COL.pendienteEntregaItem.nroFactura] = nroFactura
     /* Nombre del ítem pendiente: el MISMO texto del subelemento de la venta que se enlaza en
        board_relation_mm5pcdfj (l.ventaSubitemId), que se creó con l.nombre. Así el pendiente no
        queda con un nombre genérico y coincide con la línea vendida que representa. */
@@ -337,6 +376,7 @@ export async function leerIdVenta(itemId: string): Promise<string> {
 async function crearMovimientosStockSimultanea(
   lineas: LineaVentaCreada[],
   ventaItemId: string,
+  nroComprobante: string,
 ): Promise<void> {
   const conStock = lineas.filter((l) => l.stockId && l.cantidad > 0)
   if (conStock.length === 0) return
@@ -354,6 +394,11 @@ async function crearMovimientosStockSimultanea(
       [COL.stockMovSub.fecha]: { date: fecha },
     }
     if (idx != null) cv[COL.stockMovSub.estado] = { index: idx }
+    /* Con qué comprobante salió la mercadería, en la MISMA columna donde el remito pone su número
+       de hoja. SÓLO si hay número: la emisión electrónica lo completa después de crear el ítem de
+       facturación, y una columna en blanco dice la verdad —todavía no se emitió— mientras que un
+       texto vacío escrito a propósito no agrega nada. */
+    if (nroComprobante) cv[COL.stockMovSub.comprobante] = nroComprobante
     variables[`s${i}`] = l.stockId
     /* «ID VTA - Producto». Si el tablero todavía no asignó el ID, el movimiento se crea igual con
        el nombre del producto solo: perder la trazabilidad del nombre es mejor que no descontar. */
@@ -369,6 +414,20 @@ async function crearMovimientosStockSimultanea(
  * Crea la venta con todos sus productos. Lanza si la cabecera falla; si fallan subelementos,
  * devuelve cuántos se crearon para que la vista decida (y no avance).
  */
+/**
+ * Los ítems de presupuesto que aportaron líneas, SIN REPETIR y como números.
+ *
+ * Sin repetir porque la relación enlaza presupuestos, no líneas: cinco productos del mismo
+ * presupuesto son UN enlace. Como números porque un `item_ids` de strings no engancha nada.
+ */
+const presupuestosDeLasLineas = (lineas: readonly LineaVenta[]): number[] => [
+  ...new Set(
+    lineas
+      .map((l) => Number(l.presupuestoId))
+      .filter((n) => Number.isFinite(n) && n > 0),
+  ),
+]
+
 export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   const {
     clienteId,
@@ -383,6 +442,9 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     responsableEntrega,
     rutaId,
     lineas,
+    facturaIds,
+    proformaId,
+    actividadesIds = [],
   } = datos
 
   /* Totales de la venta a nivel ítem: descuento total (suma de importes bonificados), IVA total y
@@ -491,6 +553,24 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   if (rutaId && Number.isFinite(Number(rutaId))) {
     cabecera[COL.venta.ruta] = { item_ids: [Number(rutaId)] }
   }
+  /* Los PRESUPUESTOS que aportaron líneas a esta venta, sin repetir y en el orden en que
+     aparecieron. Se juntan de las líneas y no de una selección única porque la venta CON
+     PRESUPUESTO PREVIO se arma tomando productos de varios presupuestos a la vez. */
+  const presupuestos = presupuestosDeLasLineas(lineas)
+  if (presupuestos.length > 0) {
+    cabecera[COL.venta.presupuestos] = { item_ids: presupuestos }
+  }
+  /* La PROFORMA que originó la venta (sólo VENTA PROFORMA). Se manda como relación de tablero, con
+     el id numérico: un id vacío o no numérico no se manda —una relación con `item_ids: []` no dice
+     "sin proforma", dice "se intentó enlazar y no se pudo"—. */
+  if (proformaId && Number.isFinite(Number(proformaId))) {
+    cabecera[COL.venta.proforma] = { item_ids: [Number(proformaId)] }
+  }
+  // La gestión comercial que originó esta venta (propia o heredada): sin ninguna, no se manda.
+  const actividadesNum = actividadesIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+  if (actividadesNum.length > 0) {
+    cabecera[COL.venta.actividades] = { item_ids: actividadesNum }
+  }
 
   const creado = await mondayApi<{ create_item: { id: string } }>(
     `mutation ($boardId: ID!, $name: String!, $cv: JSON!) {
@@ -552,11 +632,24 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
          puede largarse en paralelo. El error se traga igual (best-effort): la venta ya está creada
          y no se invalida porque falle el movimiento de stock. */
   if (tipoEntrega === 'POSTERIOR') {
-    void crearPendientesEntrega(clienteId, lineasConSub, rutaId).catch(() => {
-      /* La creación de pendientes de entrega es best-effort y desacoplada. */
-    })
+    /* El pendiente lleva el "🤖Nro Factura" —el MISMO valor que el movimiento de stock de la
+       venta simultánea, "N° Factura - N° Comprobante"—: la mercadería va a salir por remito semanas
+       después, y ahí hace falta saber contra qué comprobante sale sin subir hasta la venta.
+       La lectura va DENTRO de la cadena diferida para no demorar el cierre de la operación; sin
+       número, el pendiente se crea igual y esa columna queda en blanco. */
+    void leerNroComprobanteFactura(facturaIds ?? [])
+      .catch(() => '')
+      .then((nro) => crearPendientesEntrega(clienteId, lineasConSub, rutaId, nro))
+      .catch(() => {
+        /* La creación de pendientes de entrega es best-effort y desacoplada. */
+      })
   } else if (tipoEntrega === 'SIMULTANEA') {
-    await crearMovimientosStockSimultanea(lineasConSub, itemId).catch(() => {
+    /* El número del comprobante se lee SÓLO acá: es la única entrega en la que la mercadería sale
+       junto con la factura, y por lo tanto la única en la que el movimiento de stock tiene un
+       comprobante que nombrar. Si la lectura falla o todavía no hay número, el movimiento se crea
+       igual y sin esa columna: descontar el stock importa más que anotar de qué papel salió. */
+    const nroComprobante = await leerNroComprobanteFactura(facturaIds ?? []).catch(() => '')
+    await crearMovimientosStockSimultanea(lineasConSub, itemId, nroComprobante).catch(() => {
       /* El movimiento de stock es best-effort: no puede tumbar una venta ya registrada. */
     })
   }

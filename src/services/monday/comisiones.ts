@@ -6,11 +6,12 @@
  *   1) se filtran SÓLO las líneas comisionables; si no queda ninguna, se aborta en silencio;
  *   2) se crea el ítem padre de la comisión y, recién con su id, el bulk de subítems.
  *
- * Ya NO hay comisión por producto: la tasa es ÚNICA por tipo de venta y sale del tablero de
- * configuración ("Comision por Venta": Activa = CON PRESUPUESTO PREVIO, Pasiva = DIRECTA). El
- * producto sólo decide si comisiona, y eso ya viene resuelto en la línea —del Maestro en la venta
- * DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO—, así que este servicio no
- * vuelve a consultar el Maestro.
+ * Ya NO hay comisión por producto: la tasa es ÚNICA para toda la venta, sale del tablero de
+ * configuración ("Comision por Venta": Activa / Pasiva) y la elige la COMBINACIÓN de venta —tipo
+ * de venta más si la cadena tiene actividades linkeadas—, no el tipo de venta solo (ver
+ * `tasaComision`). El producto sólo decide si comisiona, y eso ya viene resuelto en la línea —del
+ * Maestro en la venta DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO—, así
+ * que este servicio no vuelve a consultar el Maestro.
  */
 import { round2 } from '@/lib/format'
 import { comisionLinea, tasaComision } from '@/lib/selectors'

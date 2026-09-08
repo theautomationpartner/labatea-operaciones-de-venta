@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { indiceDePaso, pasosDe } from '@/lib/pasos'
+import { indiceDePaso, pasoAntesDeEmitir, pasosDe } from '@/lib/pasos'
 import { esAdministrador, puedeEditarPrecio, usuarioDeLaOperacion } from '@/lib/permisos'
 import { clienteLlevaIva, productoConPrecio } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
+import { creditoDeOperacion } from '@/lib/credito'
 import {
   comisionLineas,
   impactoCredito,
@@ -99,9 +100,13 @@ export function ProductosView() {
     () => (esVenta ? comisionLineas(lineas, comisiones, tipoVenta ?? 'DIRECTA', descFormaPago) : 0),
     [esVenta, lineas, comisiones, tipoVenta, descFormaPago],
   )
+  /* El impacto se mide contra LA OPERACIÓN: una venta de contado o con tarjeta no consume línea
+     aunque el cliente opere a cuenta corriente (ver `aplicaCredito`). */
+  const opCredito = creditoDeOperacion(state)
   const credito = useMemo(
-    () => impactoCredito(cliente, importeCredito),
-    [cliente, importeCredito],
+    () => impactoCredito(cliente, importeCredito, opCredito),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cliente, importeCredito, opCredito.operacion, opCredito.formaPago, opCredito.tipoEntrega],
   )
   const filas = useMemo<FilaProducto[]>(
     () =>
@@ -201,6 +206,9 @@ export function ProductosView() {
               lista={cliente.list ?? 'L1'}
               conIva={conIva}
               onSelect={elegir}
+              /* La fila marcada en la lista es la del producto cargado ahora, no un historial de lo
+                 que se fue eligiendo: al agregarlo a la tabla se descarga y la marca se va sola. */
+              codigoCargado={seleccionado?.codigo}
               variante="v2"
               onAviso={setAvisoBusqueda}
             />
@@ -278,7 +286,7 @@ export function ProductosView() {
       <footer className="page-footer">
         <button
           type="button"
-          className="btn-outline"
+          className="btn-volver"
           onClick={() => dispatch({ type: 'goto', paso: 'cliente' })}
         >
           <i className="fas fa-arrow-left" /> Volver
@@ -296,6 +304,8 @@ export function ProductosView() {
                 }
                 // La forma de pago define el ramal del cobro: es obligatoria para avanzar.
                 if (!formaPago) {
+                  // Se señala el selector además de explicarlo en la ventana.
+                  dispatch({ type: 'intentoAvanzar' })
                   setAviso({
                     titulo: 'Falta la forma de pago',
                     texto:
@@ -310,10 +320,13 @@ export function ProductosView() {
               /* PRESUPUESTO: avanzar a emisión es una transición local y silenciosa. El ítem NO se
                  crea acá: nace al hacer click en "Emitir Presupuesto". Sin queries ni modales. */
               if (lineas.length === 0) return
-              dispatch({ type: 'goto', paso: 'emision' })
+              /* El presupuesto SIEMPRE registra su actividad antes de emitir (ver
+                 `registraActividad`); el helper deja la decisión en un solo lugar. */
+              dispatch({ type: 'goto', paso: pasoAntesDeEmitir(operacion, tipoVenta) })
             }}
           >
-            {esVenta ? 'Continuar a cobro' : 'Continuar a emisión'}{' '}
+            {/* El presupuesto ya no salta directo a emitir: primero registra su actividad. */}
+            {esVenta ? 'Continuar a cobro' : 'Continuar a registrar actividad'}{' '}
             <i className="fas fa-chevron-right" />
           </button>
         </div>
