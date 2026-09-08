@@ -264,12 +264,18 @@ assert.equal(timeline[2].act, 'act-llamada', 'y la que ya estaba se reutiliza')
 const [aLaBatea, aCampoSur] = timeline
 assert.equal(aLaBatea.item, '555', 'el timeline item se crea SOBRE la Persona')
 assert.equal(aCampoSur.item, '666')
+/* El template es `TIPO - FECHA - CONTACTOS`. La Persona NO entra: tiene su propia columna, que la
+   sincronización completa sola, y cada ítem lleva los contactos de LA SUYA. */
 assert.equal(
   aLaBatea.title,
-  `Visita al Campo - ${HOY} - 7001 - La Batea S.A - Juan Pérez`,
+  `Visita al Campo - ${HOY} - Juan Pérez`,
   'el título sale del template, con SUS contactos: el ítem es de esta Persona',
 )
-assert.equal(aCampoSur.title, `Visita al Campo - ${HOY} - 7002 - Campo Sur - Ana Gómez`)
+assert.equal(aCampoSur.title, `Visita al Campo - ${HOY} - Ana Gómez`)
+assert.ok(
+  !aLaBatea.title.includes('La Batea') && !aCampoSur.title.includes('Campo Sur'),
+  'el nombre del cliente ya no se mapea al nombre del ítem',
+)
 assert.equal(aLaBatea.content, 'Pidió cotización de fertilizante', 'la resolución se lee en el widget')
 
 /* El timestamp lleva la fecha Y LA HORA que cargó el usuario, en su huso: el widget ubica la
@@ -292,7 +298,7 @@ const [pLaBatea, pCampoSur] = parches
 assert.equal(pLaBatea.id, '1000', 'se parchea el ítem que apareció, no otro')
 assert.equal(
   pLaBatea.cv.name,
-  `Visita al Campo - ${HOY} - 7001 - La Batea S.A - Juan Pérez`,
+  `Visita al Campo - ${HOY} - Juan Pérez`,
   'el nombre que arma la sincronización ("<Persona>  -  <Tipo>") se reemplaza por el de la app',
 )
 /* El label del board es "Completado", NO "Completada" como se lee en la pantalla. Con el texto de
@@ -316,7 +322,7 @@ assert.ok(
 
 /* La proyectada nace PENDIENTE, con SU tipo y SU fecha, y a la misma gente. */
 const [, , tlFutura] = timeline
-assert.equal(tlFutura.title, `Llamada telefónica - ${EN_UNA_SEMANA} - 7001 - La Batea S.A - Juan Pérez`)
+assert.equal(tlFutura.title, `Llamada telefónica - ${EN_UNA_SEMANA} - Juan Pérez`)
 assert.equal(tlFutura.content, null, 'todavía no hay nada que resolver')
 assert.deepEqual(parches[2].cv[COL.actividad.estado], { label: 'Pendiente' })
 assert.deepEqual(parches[2].cv[COL.actividad.contactos], { item_ids: [11] }, 'hereda los contactos')
@@ -341,8 +347,8 @@ const sola = await registrarActividad(
 )
 assert.equal(timeline.length, 1, 'sin futura agendada, un solo asiento')
 assert.equal(sola.proyectadaId, null)
-/* Sin contactos, el nombre no arrastra un separador colgando al final. */
-assert.equal(timeline[0].title, `Llamada telefónica - ${HOY} - 7001 - La Batea S.A`)
+/* Sin contactos no queda un separador colgando: el tramo vacío se descarta antes de unir. */
+assert.equal(timeline[0].title, `Llamada telefónica - ${HOY}`)
 assert.ok(
   !(COL.actividad.contactos in parches[0].cv),
   'sin contactos tildados la columna no se escribe: vacía no es un dato',
@@ -646,7 +652,9 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
                   name: 'Llamar a Ana',
                   column_values: [
                     { id: COL.actividad.tipo, text: 'Visita al Campo' },
-                    { id: COL.actividad.fecha, text: '2026-03-02' },
+                    /* "✋Fecha Act" guarda fecha Y hora, así que su texto viene con la hora
+                       pegada: es el caso real, y el que rompía la conversión. */
+                    { id: COL.actividad.fecha, text: '2026-03-02 09:45' },
                     { id: COL.actividad.estado, text: 'Pendiente' },
                     { id: COL.actividad.resolucion, text: '' },
                     { id: COL.actividad.persona, text: '', linked_item_ids: ['555'] },
@@ -666,7 +674,11 @@ const pendientes = await getActividadesPendientes()
 assert.equal(pendientes.length, 1)
 assert.deepEqual(pendientes[0].personaIds, ['555'], 'las relaciones viajan con la actividad')
 assert.deepEqual(pendientes[0].contactosIds, ['11', '22'])
-assert.equal(pendientes[0].fecha, '02/03/2026', 'la fecha se lee en el formato de la app')
+assert.equal(
+  pendientes[0].fecha,
+  '02/03/2026',
+  'la fecha se lista SIN la hora: la gestión se ubica por su día',
+)
 assert.equal(pendientes[0].tipo, 'Visita al Campo', 'el tipo sale de su columna, no del nombre')
 assert.deepEqual(
   pendientes[0].contactos,
@@ -725,6 +737,20 @@ assert.deepEqual(
   filtrarPendientesDe(universo, [], ['11']),
   [],
   'sin Persona elegida no se ofrece ninguna',
+)
+
+/* Con `null` en los contactos NO se recorta por contacto: es COMPLETAR ACTIVIDAD PENDIENTE, donde
+   la etapa 1 pide sólo el cliente. Se ofrecen todas las pendientes de la firma —filtrar por una
+   lista vacía las escondería a todas, que es justo lo contrario de lo que hay que mostrar—. */
+assert.deepEqual(
+  filtrarPendientesDe(universo, ['555'], null).map((a) => a.id),
+  ['propia', 'otro-contacto', 'sin-contactos'],
+  'sin contactos elegidos se ofrecen TODAS las de la firma',
+)
+assert.deepEqual(
+  filtrarPendientesDe(universo, ['555'], []).map((a) => a.id),
+  ['sin-contactos'],
+  'y una lista vacía sí recorta: no es lo mismo "no filtrar" que "ningún contacto elegido"',
 )
 assert.deepEqual(
   filtrarPendientesDe(universo, ['555', '666'], ['11', '99']).map((a) => a.id),

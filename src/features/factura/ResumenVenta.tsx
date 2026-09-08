@@ -1,13 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { ActividadesDelDocumento } from '@/features/actividad/ActividadesDelDocumento'
-import { documentoDeVentaItem } from '@/lib/selectors'
 import { money } from '@/lib/format'
-import { registraActividad } from '@/lib/pasos'
-import {
-  getActividadesHeredadasDePresupuestos,
-  getActividadesHeredadasDeProforma,
-} from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { ActividadListada, Cliente } from '@/types'
 
@@ -19,8 +13,14 @@ interface ResumenVentaProps {
   cantidadFacturas: number
   /** Total (en pesos) que se va a facturar: la suma de los comprobantes de la operación. */
   totalAFacturar: number
-  /** Comisión del vendedor por esta venta, en pesos. Es la misma que se registra en el board. */
-  comision: number
+  /**
+   * Comisión del vendedor por esta venta, en pesos. Es la misma que se registra en el board.
+   * `null` mientras no se sepa: la tasa depende de las actividades de la cadena, y un número antes
+   * de resolverlas sería el equivocado (ver `tasaComision`).
+   */
+  comision: number | null
+  /** Las actividades de la cadena de la venta, ya resueltas por quien la arma (`FacturaView`). */
+  actividades: ActividadListada[]
   /** Comprobantes ya escritos en el board: con alguno, no se vuelve a emitir. */
   emitidos: number
   emitiendo: boolean
@@ -64,51 +64,19 @@ export function ResumenVenta({
   cantidadFacturas,
   totalAFacturar,
   comision,
+  actividades,
   emitidos,
   emitiendo,
   onEmitir,
 }: ResumenVentaProps) {
-  const {
-    vendedor,
-    fechaEmision,
-    factura,
-    operacion,
-    tipoVenta,
-    proformaTipoVenta,
-    proformaId,
-    ventaItems,
-    actividadesDocumento,
-  } = useApp()
+  const { vendedor, fechaEmision, factura } = useApp()
   const dispatch = useDispatch()
   const yaEmitido = emitidos > 0
   const rotuloFacturas = cantidadFacturas === 1 ? 'una factura' : `${cantidadFacturas} facturas`
 
-  /* La gestión comercial de la venta. DIRECTA (y proforma DIRECTA): las tildadas en "Registrar
-     Actividad" de esta operación, ya en `actividadesDocumento`. CON PRESUPUESTO PREVIO —que no
-     tiene esa etapa— las hereda de los presupuestos que aportaron algún producto, o de la
-     proforma si viene de una VENTA PROFORMA armada con presupuestos previos: se traen acá para
-     mostrarlas, con el MISMO criterio que usará `useCrearVenta` al escribirlas en el ítem. */
-  const propiaActividad = registraActividad(operacion, tipoVenta, proformaTipoVenta)
-  const [heredadas, setHeredadas] = useState<ActividadListada[]>([])
-  useEffect(() => {
-    if (propiaActividad) return
-    let vivo = true
-    const traer =
-      operacion === 'VENTA PROFORMA' && proformaTipoVenta === 'CON PRESUPUESTO PREVIO'
-        ? proformaId
-          ? getActividadesHeredadasDeProforma(proformaId)
-          : Promise.resolve([])
-        : getActividadesHeredadasDePresupuestos(
-            [...new Set(ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
-          )
-    traer.then((as) => {
-      if (vivo) setHeredadas(as)
-    })
-    return () => {
-      vivo = false
-    }
-  }, [propiaActividad, operacion, proformaTipoVenta, proformaId, ventaItems])
-  const actividadesAMostrar = propiaActividad ? actividadesDocumento : heredadas
+  /* La gestión comercial de la venta llega RESUELTA desde afuera (`useActividadesDeLaVenta`). No
+     se busca acá porque el mismo dato decide la comisión: con dos consultas separadas, el número
+     que se muestra y el que se registra podían salir de respuestas distintas. */
 
   return (
     <div className="card card--flush resumen-venta">
@@ -154,10 +122,17 @@ export function ResumenVenta({
           presupuesto, pero el campo se muestra igual—. */}
       <div className="rgroup resumen-comision">
         <Fila label="Actividades">
-          <ActividadesDelDocumento actividades={actividadesAMostrar} />
+          <ActividadesDelDocumento actividades={actividades} />
         </Fila>
+        {/* Mientras la cadena de actividades no esté resuelta no hay tasa, así que tampoco hay
+            número: va el mismo skeleton que el resto de la app en vez de un importe que va a
+            cambiar solo. */}
         <Fila label="Comision x Venta" requerido={false} tono="verde">
-          {money(comision)}
+          {comision === null ? (
+            <span className="skeleton skeleton--linea skeleton--corto" />
+          ) : (
+            money(comision)
+          )}
         </Fila>
       </div>
 

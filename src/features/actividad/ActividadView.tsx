@@ -57,7 +57,7 @@ function personasConSusContactos(contactos: readonly ContactoElegido[]): Persona
  *     ya tenía agendadas y se eligen cuáles pasan a "Completado".
  */
 export function ActividadView() {
-  const { operacion, tipoVenta, tipoEntrega, remito, actividad, vendedor } = useApp()
+  const { operacion, tipoVenta, tipoEntrega, remito, actividad, cliente, vendedor } = useApp()
   const dispatch = useDispatch()
   // Qué falta para poder cerrar. Se arma al intentar finalizar, no mientras se completa.
   const [faltantes, setFaltantes] = useState<string[] | null>(null)
@@ -108,12 +108,13 @@ export function ActividadView() {
      reinicia la app, así que un aviso en la etapa sería un elemento que aparece para nadie. */
   const yaCerrada = actividad.actividadId !== null || actividad.completadas
 
-  /* De qué gente son las pendientes que se ofrecen: las Personas y los contactos tildados en la
-     etapa 1. Se recalcula en cada render a propósito —la lista tope es de 100 ítems—, así volver
-     atrás a sumar un cliente se refleja acá sin volver a consultar el tablero. */
-  const personaIds = [...new Set(actividad.contactos.map((c) => c.personaId))]
-  const contactosIds = actividad.contactos.map((c) => c.itemId)
-  const pendientesDeLaGente = filtrarPendientesDe(pendientes, personaIds, contactosIds)
+  /* De quién son las pendientes que se ofrecen. COMPLETAR pide sólo el cliente en la etapa 1
+     (ver `ActividadPersonaView`), así que son TODAS las de esa firma: sin contactos elegidos, no
+     hay con qué recortar y filtrar por una lista vacía las escondería a todas.
+
+     Se recalcula en cada render a propósito —la lista tope es de 100 ítems—, así volver atrás a
+     cambiar de cliente se refleja acá sin volver a consultar el tablero. */
+  const pendientesDeLaGente = filtrarPendientesDe(pendientes, cliente ? [cliente.id] : [], null)
 
   const finalizar = async () => {
     if (guardando || yaCerrada) return

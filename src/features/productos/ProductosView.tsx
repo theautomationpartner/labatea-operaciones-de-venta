@@ -97,7 +97,10 @@ export function ProductosView() {
   /* Comisión de la venta DIRECTA: la tasa "Pasiva" del tablero de configuración aplicada al neto
      —sin IVA y con el descuento total— de cada producto comisionable. El presupuesto no liquida. */
   const comision = useMemo(
-    () => (esVenta ? comisionLineas(lineas, comisiones, tipoVenta ?? 'DIRECTA', descFormaPago) : 0),
+    /* `false` en las actividades, y no es un olvido: acá la venta se arma desde el catálogo, o sea
+       DIRECTA, y las cuatro combinaciones de la DIRECTA pagan la Pasiva (ver `tasaComision`). */
+    () =>
+      esVenta ? comisionLineas(lineas, comisiones, tipoVenta ?? 'DIRECTA', descFormaPago, false) : 0,
     [esVenta, lineas, comisiones, tipoVenta, descFormaPago],
   )
   /* El impacto se mide contra LA OPERACIÓN: una venta de contado o con tarjeta no consume línea

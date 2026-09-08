@@ -1,10 +1,10 @@
 /**
- * REGISTRO DE ACTIVIDADES · el formulario CRECE con las respuestas, y lo que se pliega se BORRA.
+ * REGISTRO DE ACTIVIDADES · el formulario CRECE con las respuestas, y lo que se pliega NO se borra.
  *
- * Son las dos mitades de la misma decisión: la resolución sólo existe con la actividad completada,
- * y la actividad proyectada sólo con el interruptor encendido. Si al plegar quedara el dato vivo en
- * el estado, terminaría viajando a Monday sin que nadie lo haya visto en pantalla —una resolución
- * de una actividad que se marcó como pendiente, o una actividad futura que se decidió no agendar—.
+ * Plegar esconde campos; no tira lo que el usuario escribió. Lo que impide que un dato escondido
+ * viaje a Monday es la condición con la que se crea la actividad futura —actividad completada Y
+ * interruptor encendido, o sea exactamente lo que se ve en pantalla—, no vaciar el formulario a
+ * espaldas de quien lo llenó.
  *
  * No hay runner de DOM en el proyecto, así que se renderiza con `react-dom/server`, que ya es
  * dependencia. Los efectos NO corren en el render de servidor, así que nada pega contra Monday.
@@ -16,9 +16,11 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ActividadView } from '@/features/actividad/ActividadView'
 import { TablaActividades } from '@/features/actividad/TablaActividades'
+import { ActividadPersonaView } from '@/features/actividad/ActividadPersonaView'
 import { SelectorTipoOperacion } from '@/features/actividad/SelectorTipoOperacion'
 import { TablaContactos } from '@/features/actividad/TablaContactos'
 import { TablaContactosElegidos } from '@/features/actividad/TablaContactosElegidos'
+import { hayProyectada } from '@/lib/actividad'
 import { initialState, reducer, type AppState } from '@/state/appState'
 import { DispatchContext, StateContext } from '@/state/context'
 import type { Cliente, Contacto, Vendedor } from '@/types'
@@ -156,8 +158,9 @@ assert.ok(!htmlFutura.includes('Fecha de Notificación'), 'la fecha de notificac
 assert.ok(!htmlFutura.includes('actp-desc'), 'ni la descripción: el nombre del ítem se arma solo')
 assert.ok(!htmlFutura.includes('act-desc'), 'tampoco la de la actividad principal')
 
-/* ---------- Lo que se pliega, se borra ----------
-   Es lo que impide que un dato invisible viaje a Monday. */
+/* ---------- El formulario NO borra nada de lo que se cargó ----------
+   Plegar un bloque esconde campos; no los vacía. Lo que el usuario escribió es suyo, y contestar
+   otra cosa más arriba no puede hacérselo perder. */
 const cargada = reducer(
   reducer(conFutura, { type: 'setActividad', patch: { resolucion: 'Se cerró el pedido' } }),
   { type: 'setActividadProyectada', patch: { tipo: 'Llamada telefónica' } },
@@ -166,13 +169,26 @@ assert.equal(cargada.actividad.resolucion, 'Se cerró el pedido')
 assert.equal(cargada.actividad.proyectada.tipo, 'Llamada telefónica')
 
 const sinFutura = reducer(cargada, { type: 'setActividad', patch: { cargarFutura: false } })
-assert.equal(sinFutura.actividad.proyectada.tipo, null, 'al apagar el interruptor, la proyectada se borra')
-assert.equal(sinFutura.actividad.resolucion, 'Se cerró el pedido', 'pero la resolución sigue: se sigue viendo')
+assert.equal(sinFutura.actividad.resolucion, 'Se cerró el pedido', 'la resolución sigue')
+assert.equal(
+  sinFutura.actividad.proyectada.tipo,
+  'Llamada telefónica',
+  'y la proyectada también: apagar el interruptor la esconde, no la tira',
+)
 
 const vueltaAPendiente = reducer(cargada, { type: 'setActividad', patch: { estado: 'Pendiente' } })
-assert.equal(vueltaAPendiente.actividad.resolucion, '', 'volver a pendiente borra la resolución')
-assert.equal(vueltaAPendiente.actividad.cargarFutura, false, 'y apaga el interruptor')
-assert.equal(vueltaAPendiente.actividad.proyectada.tipo, null, 'y borra la proyectada')
+assert.equal(
+  vueltaAPendiente.actividad.resolucion,
+  'Se cerró el pedido',
+  'contestar "Pendiente" NO borra la resolución: se sigue viendo, y es del usuario',
+)
+assert.equal(vueltaAPendiente.actividad.proyectada.tipo, 'Llamada telefónica', 'ni la proyectada')
+
+/* Lo que impide que un dato escondido viaje a Monday no es borrarlo, sino la condición con la que
+   se crea la actividad futura: hace falta la actividad COMPLETADA y el interruptor encendido. */
+assert.equal(hayProyectada(vueltaAPendiente.actividad), false, 'pendiente: no se agenda ninguna')
+assert.equal(hayProyectada(sinFutura.actividad), false, 'interruptor apagado: tampoco')
+assert.equal(hayProyectada(cargada.actividad), true, 'las dos condiciones juntas: ahí sí')
 
 /* ---------- Mezclar contactos de varias Personas ----------
    La etapa 1 deja buscar un cliente, tildar los suyos, CONFIRMARLOS, buscar otro y sumar los de
@@ -396,6 +412,45 @@ assert.ok(
   'el reclamo aparece recién con la Persona elegida: antes no hay nada que tildar',
 )
 
+/* ---------- La etapa 1 pide distinto según la rama ----------
+   Registrar una actividad nueva necesita los contactos: son los que se asientan en el ítem que se
+   va a crear. Completar pendientes no crea nada —cierra gestiones que ya existen, con la gente que
+   ya tienen cargada—, así que ahí la etapa se reduce a elegir la firma. */
+const etapa1 = (tipo: 'REGISTRAR NUEVA ACTIVIDAD' | 'COMPLETAR ACTIVIDAD PENDIENTE') =>
+  renderToStaticMarkup(
+    createElement(
+      StateContext.Provider,
+      {
+        value: reducer(
+          reducer(
+            { ...initialState, vendedor, operacion: 'REGISTRO DE ACTIVIDADES' },
+            { type: 'goto', paso: 'actividad-persona' },
+          ),
+          { type: 'setTipoOperacionActividad', value: tipo },
+        ),
+      },
+      createElement(
+        DispatchContext.Provider,
+        { value: () => {} },
+        createElement(ActividadPersonaView),
+      ),
+    ),
+  )
+
+const paraNueva = etapa1('REGISTRAR NUEVA ACTIVIDAD')
+assert.ok(paraNueva.includes('Contactos de la Persona'), 'la nueva pide los contactos')
+assert.ok(paraNueva.includes('Contactos seleccionados'), 'y muestra los confirmados')
+
+const paraCompletar = etapa1('COMPLETAR ACTIVIDAD PENDIENTE')
+assert.ok(paraCompletar.includes('Tipo de Operación'), 'el selector sigue estando')
+assert.ok(paraCompletar.includes('Buscar cliente'), 'y el buscador de la firma también')
+assert.ok(!paraCompletar.includes('Contactos de la Persona'), 'completar NO pide contactos')
+assert.ok(!paraCompletar.includes('Contactos seleccionados'), 'ni muestra la tabla de elegidos')
+assert.ok(
+  paraCompletar.includes('actividades pendientes vas a completar'),
+  'y el título de la etapa lo dice',
+)
+
 /* ---------- La tabla de CONFIRMADOS: la selección de verdad, de todas las Personas ---------- */
 const elegidos = renderToStaticMarkup(
   createElement(TablaContactosElegidos, {
@@ -472,6 +527,40 @@ assert.ok(sinElegir.includes('Llamada telefónica - Simón Paz'), 'falta el rót
 assert.ok(!sinElegir.includes('07/09/2026'), 'y NO se repite la fecha, que tiene su columna')
 assert.ok(sinElegir.includes('+'), 'el segundo contacto queda detrás del "+"')
 assert.ok(sinElegir.includes('Ana Gómez'), 'y el hover los muestra a los dos')
+
+/* La columna de contactos: con quiénes se hizo cada gestión. Se leen DOS y el resto va detrás del
+   "+", con la lista completa en el `title`. */
+assert.ok(sinElegir.includes('<th>Contactos</th>'), 'falta la columna de contactos')
+assert.ok(sinElegir.includes('Simón Paz, Ana Gómez'), 'los dos primeros se leen, separados por coma')
+
+const conTres = renderToStaticMarkup(
+  createElement(TablaActividades, {
+    actividades: [{ ...actividad, contactos: ['Simón Paz', 'Ana Gómez', 'Luis Díaz'] }],
+    elegidas: [],
+    cargando: false,
+    onToggle: () => {},
+  }),
+)
+assert.ok(conTres.includes('Simón Paz, Ana Gómez'), 'se siguen leyendo dos')
+assert.ok(conTres.includes('Luis Díaz'), 'y el tercero está en el hover')
+const titulo = /title="([^"]*)"/.exec(conTres)?.[1] ?? ''
+assert.deepEqual(
+  titulo.split('\n'),
+  ['Simón Paz', 'Ana Gómez', 'Luis Díaz'],
+  'el `title` trae la lista entera, uno por renglón',
+)
+
+/* Sin contactos cargados, la celda no queda vacía: va el guión, como el resto de los datos que el
+   board no tiene. */
+const sinContactos = renderToStaticMarkup(
+  createElement(TablaActividades, {
+    actividades: [{ ...actividad, contactos: [] }],
+    elegidas: [],
+    cargando: false,
+    onToggle: () => {},
+  }),
+)
+assert.ok(sinContactos.includes('—'), 'sin contactos, guión')
 
 console.log('OK · TablaActividades: opcional en las tres operaciones (presupuesto, venta, venta con proforma)')
 

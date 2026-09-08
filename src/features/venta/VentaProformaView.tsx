@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
+import { useActividadesDeLaVenta } from '@/features/shared/useActividadesDeLaVenta'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
@@ -92,9 +93,14 @@ export function VentaProformaView() {
      lookup_mm5zgkdr) y su descuento por forma de pago por línea. La tasa la define el TIPO DE VENTA
      de la proforma (Activa = C/Presup Previo, Pasiva = Directa) — la misma que usa la registración. */
   const tipo = proformaSel?.tipoVenta ?? tipoVenta ?? 'DIRECTA'
+  /* La Activa es sólo para la cadena completa —actividades → presupuesto → venta—, así que también
+     hace falta saber si la proforma elegida arrastra actividades (ver `tasaComision`). */
+  const { actividades } = useActividadesDeLaVenta()
+  const conActividades = actividades.length > 0
   const resumen = useMemo(
-    () => resumenVenta(ventaItems, cliente, tipo, 0, comisiones),
-    [ventaItems, cliente, tipo, comisiones],
+    // `undefined` en el crédito: rige el default, este resumen no evalúa línea.
+    () => resumenVenta(ventaItems, cliente, tipo, 0, comisiones, undefined, conActividades),
+    [ventaItems, cliente, tipo, comisiones, conActividades],
   )
   // El IMPORTE TOTAL se toma de la proforma elegida (su columna Total), no del recálculo.
   const importeProforma = proformaSel?.importe ?? 0

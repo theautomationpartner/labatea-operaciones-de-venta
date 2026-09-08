@@ -44,6 +44,12 @@ export interface DatosComision {
   /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
   vendedorId?: string | null
   tipoVenta: TipoVenta
+  /**
+   * La cadena de esta venta tiene actividades linkeadas. Junto con el tipo de venta define la
+   * COMBINACIÓN, y con ella la tasa: la Activa es sólo para ACTIVIDADES-PRESUPUESTO-VENTA (ver
+   * `tasaComision`). Sale de las mismas actividades que se enlazan al ítem de la venta.
+   */
+  conActividades: boolean
   /** Tasas del tablero de configuración: de acá sale el % que se escribe en cada subítem. */
   comisiones: ComisionesVenta
   /** Tipo de cobro de la operación: define el monto pendiente (POSTERIOR = total; SIMULTANEO = 0). */
@@ -68,6 +74,7 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
     clienteId,
     vendedorId,
     tipoVenta,
+    conActividades,
     comisiones,
     tipoPago,
     importeTotalVenta,
@@ -83,8 +90,8 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
   const comisionables = lineas.filter((l) => l.productoId && l.cantidad > 0 && l.comisionable)
   if (comisionables.length === 0) return
 
-  // Una sola tasa para toda la venta, según su tipo. Es la que se asienta en cada subítem.
-  const pctComision = tasaComision(comisiones, tipoVenta)
+  // Una sola tasa para toda la venta, según su COMBINACIÓN. Es la que se asienta en cada subítem.
+  const pctComision = tasaComision(comisiones, tipoVenta, conActividades)
   /* Comisión FINAL de la venta: la tasa sobre el neto de cada línea comisionable. Es exactamente
      el número que el vendedor vio en el resumen, calculado con el mismo helper. */
   const comisionTotal = round2(

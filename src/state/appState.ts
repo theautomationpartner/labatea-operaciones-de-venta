@@ -1282,24 +1282,17 @@ export function reducer(state: AppState, action: Action): AppState {
         },
       }
 
-    /* Un cambio en la actividad puede APAGAR ramas del formulario, y lo que se había cargado en
-       ellas no puede quedar escondido esperando para viajar a Monday: al volver a "Pendiente" se
-       borran la resolución y la actividad proyectada, y al apagar el interruptor de la futura se
-       borra la proyectada. Lo que no se ve, no se guarda. */
-    case 'setActividad': {
-      const actividad = { ...state.actividad, ...action.patch }
-      const vuelveAPendiente = action.patch.estado === 'Pendiente'
-      const apagaFutura = action.patch.cargarFutura === false || vuelveAPendiente
-      return {
-        ...state,
-        actividad: {
-          ...actividad,
-          resolucion: vuelveAPendiente ? '' : actividad.resolucion,
-          cargarFutura: vuelveAPendiente ? false : actividad.cargarFutura,
-          proyectada: apagaFutura ? proyectadaInicial : actividad.proyectada,
-        },
-      }
-    }
+    /* El formulario NO borra nada de lo que el usuario cargó. Antes, contestar "Pendiente" vaciaba
+       la resolución y la actividad proyectada, y apagar el interruptor vaciaba la proyectada: era un
+       resguardo de cuando la resolución sólo existía con la actividad completada —lo que se plegaba
+       se borraba, para que un dato invisible no viajara a Monday—. Hoy la resolución se ve siempre,
+       así que borrarla es tirar trabajo del usuario sin motivo.
+
+       Y el resguardo ya no hace falta para la proyectada: no se crea por tener datos cargados, sino
+       cuando `hayProyectada` da verdadero (actividad completada Y interruptor encendido), que es
+       exactamente lo que se ve en pantalla. Lo que quede escondido no viaja igual. */
+    case 'setActividad':
+      return { ...state, actividad: { ...state.actividad, ...action.patch } }
 
     case 'setActividadProyectada':
       return {

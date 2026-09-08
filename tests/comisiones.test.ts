@@ -32,11 +32,25 @@ assert.equal(combinacionDeVenta('CON PRESUPUESTO PREVIO', false), 'PRESUPUESTO-V
 assert.equal(combinacionDeVenta('DIRECTA', true), 'ACTIVIDADES-VENTA-DIRECTA')
 assert.equal(combinacionDeVenta('DIRECTA', false), 'VENTA-DIRECTA')
 
-/* Las DOS definidas por negocio. Son las que no se pueden tocar sin una decisión nueva. */
+/* La Activa la paga UNA sola combinación: la cadena completa. */
 assert.equal(
   tasaComision(TASAS, 'CON PRESUPUESTO PREVIO', true),
   4,
   'ACTIVIDADES-PRESUPUESTO-VENTA: la cadena completa paga la Activa',
+)
+
+/* Las otras TRES pagan la Pasiva: sin alguno de los eslabones no hubo la gestión que la tasa alta
+   remunera. La que cambió es PRESUPUESTO-VENTA —antes, tener presupuesto previo alcanzaba para la
+   Activa—, y es justamente el caso que este test tiene que dejar clavado. */
+assert.equal(
+  tasaComision(TASAS, 'CON PRESUPUESTO PREVIO', false),
+  1.5,
+  'PRESUPUESTO-VENTA: un presupuesto SIN actividades ya no alcanza para la Activa',
+)
+assert.equal(
+  tasaComision(TASAS, 'DIRECTA', true),
+  1.5,
+  'ACTIVIDADES-VENTA-DIRECTA: sin presupuesto en el medio, la Pasiva',
 )
 assert.equal(
   tasaComision(TASAS, 'DIRECTA', false),
@@ -44,26 +58,8 @@ assert.equal(
   'VENTA-DIRECTA: sin presupuesto ni gestión previa, la Pasiva',
 )
 
-/* Las DOS que quedaron SIN DEFINIR. Se afirma el statu quo, no una regla: si mañana se define que
-   la venta con presupuesto sin actividades no comisiona —o comisiona como pasiva—, este test tiene
-   que fallar y cambiarse a mano. Es justamente lo que se quiere: que el cambio se vea. */
-assert.equal(
-  tasaComision(TASAS, 'CON PRESUPUESTO PREVIO', false),
-  4,
-  'PRESUPUESTO-VENTA: SIN DEFINIR, hoy sigue pagando la Activa como antes del cambio',
-)
-assert.equal(
-  tasaComision(TASAS, 'DIRECTA', true),
-  1.5,
-  'ACTIVIDADES-VENTA-DIRECTA: SIN DEFINIR, hoy sigue pagando la Pasiva como antes del cambio',
-)
-
-/* Y sin el dato de las actividades la tasa es la de siempre: es lo que hace que el cambio de forma
-   no mueva ningún monto mientras las dos combinaciones sigan sin definirse. */
-assert.equal(tasaComision(TASAS, 'CON PRESUPUESTO PREVIO'), 4, 'la Activa rige el presupuesto previo')
-assert.equal(tasaComision(TASAS, 'DIRECTA'), 1.5, 'la Pasiva rige la venta directa')
 // Sin configuración leída no se inventa ninguna tasa.
-assert.equal(tasaComision({ activa: 0, pasiva: 0 }, 'DIRECTA'), 0, 'sin config, 0%')
+assert.equal(tasaComision({ activa: 0, pasiva: 0 }, 'DIRECTA', false), 0, 'sin config, 0%')
 
 // ---------- MÓDULO 3: sólo comisiona el producto marcado ----------
 assert.equal(comisionLinea(100_000, true, 4), 4000, 'comisionable: neto × tasa')
@@ -79,8 +75,18 @@ const linea = (comisionable: boolean, cantidad = 1, descuento = 0): LineaPresupu
 
 // Sin descuentos: 100.000 × 1,5% (DIRECTA).
 assert.equal(comisionLineas([linea(true)], TASAS, 'DIRECTA'), 1500, 'directa: 1,5% del neto')
-// La misma línea con presupuesto previo paga la tasa Activa.
-assert.equal(comisionLineas([linea(true)], TASAS, 'CON PRESUPUESTO PREVIO'), 4000, 'activa: 4%')
+/* La misma línea con presupuesto previo Y actividades paga la tasa Activa; sin actividades, la
+   Pasiva, aunque haya presupuesto de por medio. */
+assert.equal(
+  comisionLineas([linea(true)], TASAS, 'CON PRESUPUESTO PREVIO', 0, true),
+  4000,
+  'activa: 4% con la cadena completa',
+)
+assert.equal(
+  comisionLineas([linea(true)], TASAS, 'CON PRESUPUESTO PREVIO', 0, false),
+  1500,
+  'sin actividades linkeadas, el presupuesto previo paga la Pasiva',
+)
 // El producto no comisionable no suma, aunque haya tasa.
 assert.equal(comisionLineas([linea(false)], TASAS, 'DIRECTA'), 0, 'sin "SI" no hay comisión')
 
@@ -111,10 +117,17 @@ assert.equal(
 const item = (comisionable: boolean, desc = 0): VentaItem =>
   ({ uid: 'u', precio: 100_000, aVender: 1, desc, rent: 40, iva: 21, comisionable }) as VentaItem
 
+/* El 7º argumento es "la cadena tiene actividades linkeadas"; el 6º (crédito) va en `undefined`
+   para que rija su default. Con actividades, el resumen aplica la Activa. */
 assert.equal(
-  resumenVenta([item(true)], null, 'CON PRESUPUESTO PREVIO', 0, TASAS).comision,
+  resumenVenta([item(true)], null, 'CON PRESUPUESTO PREVIO', 0, TASAS, undefined, true).comision,
   4000,
-  'el resumen de la venta aplica la tasa Activa',
+  'el resumen de la venta aplica la tasa Activa con la cadena completa',
+)
+assert.equal(
+  resumenVenta([item(true)], null, 'CON PRESUPUESTO PREVIO', 0, TASAS, undefined, false).comision,
+  1500,
+  'y la Pasiva cuando el presupuesto no trae actividades',
 )
 assert.equal(
   resumenVenta([item(false)], null, 'CON PRESUPUESTO PREVIO', 0, TASAS).comision,
@@ -128,4 +141,4 @@ assert.equal(
   'sin configuración leída, la comisión es 0',
 )
 
-console.log('OK · comisiones por tasa única, según tipo de venta y producto comisionable')
+console.log('OK · comisiones: una tasa por COMBINACIÓN de venta, sobre el neto del producto comisionable')

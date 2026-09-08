@@ -12,8 +12,13 @@ import { TablaContactos } from './TablaContactos'
 import { TablaContactosElegidos } from './TablaContactosElegidos'
 
 /**
- * REGISTRO DE ACTIVIDADES · etapa 1. A qué Persona —o Personas— involucra la gestión y con cuáles
- * de sus contactos.
+ * REGISTRO DE ACTIVIDADES · etapa 1. A qué Persona —o Personas— involucra la gestión y, cuando se
+ * viene a cargar una actividad nueva, con cuáles de sus contactos.
+ *
+ * Los contactos se piden SÓLO para REGISTRAR NUEVA ACTIVIDAD: son los que se asientan en el ítem
+ * que se va a crear. COMPLETAR ACTIVIDAD PENDIENTE no crea nada —cierra gestiones que ya existen,
+ * con la gente que ya tienen cargada—, así que ahí la etapa pide únicamente el cliente y sus
+ * pendientes se listan enteras.
  *
  * Va PRIMERA porque la etapa 2 depende de lo que se elija acá: con esta gente se arma la actividad
  * nueva, y con esta gente se busca qué tiene pendiente en el tablero (ver `ActividadView`). Por eso
@@ -59,6 +64,10 @@ export function ActividadPersonaView() {
   useEffect(() => {
     if (estadoBusqueda === 'no-encontrado') setAvisoNoEncontrado(true)
   }, [estadoBusqueda])
+  /* Completar pendientes no pide contactos: la etapa se reduce a elegir la firma. Lo que ya se
+     hubiera confirmado NO se borra —se puede volver a "REGISTRAR NUEVA ACTIVIDAD" y ahí sí sirve—,
+     simplemente no se muestra ni se reclama. */
+  const soloCliente = actividad.tipoOperacion === 'COMPLETAR ACTIVIDAD PENDIENTE'
 
   /* Contactos de la Persona elegida. La consulta está cacheada por persona (ver
      `getContactosCliente`), así que volver con el stepper no vuelve a pegarle a Monday. El
@@ -70,7 +79,8 @@ export function ActividadPersonaView() {
        vuelve a aparecer en su lista, ya marcado: es una búsqueda nueva, no la misma visita. */
     setTildados([])
     setConfirmadosAhora([])
-    if (!cliente) return
+    // Completar pendientes no muestra los contactos: no hay por qué ir a buscarlos.
+    if (!cliente || soloCliente) return
     let vivo = true
     const id = cliente.id
     getContactosCliente(id, 'Actividad')
@@ -86,7 +96,7 @@ export function ActividadPersonaView() {
     return () => {
       vivo = false
     }
-  }, [cliente, dispatch])
+  }, [cliente, soloCliente, dispatch])
 
   /* La lista es SIEMPRE la del cliente en pantalla: mientras la suya no esté resuelta, está
      vacía y en "buscando". Nunca se ven los contactos de otra Persona, ni por un frame. */
@@ -106,18 +116,23 @@ export function ActividadPersonaView() {
     remito.tipoEmision,
   )
 
-  /* Los dos datos de la etapa. Sin contactos no se avanza —la actividad es una gestión CON
-     alguien, y de ellos salen tanto las Personas del asiento como la lista de pendientes—, y sin
-     tipo de operación la etapa 2 no sabría qué desplegar. */
+
+  /* Qué pide la etapa. El tipo de operación, siempre —sin él la etapa 2 no sabría qué desplegar—;
+     y después, según la rama: completar pendientes pide la firma, registrar una nueva pide además
+     los contactos con los que se hizo la gestión. */
   const continuar = () => {
     const faltan: string[] = []
-    if (actividad.contactos.length === 0) {
-      faltan.push('Contactos con los que se hizo (o se va a hacer) la actividad')
-    }
-    /* Tildar no es elegir: lo que no se confirmó no está en la selección y se perdería al avanzar.
-       Se avisa en vez de confirmarlo solo, que sería decidir por el usuario. */
-    if (tildados.length > 0) {
-      faltan.push('Confirmá los contactos que tildaste, o destildalos para dejarlos afuera')
+    if (soloCliente) {
+      if (!cliente) faltan.push('Persona a la que se le completan las actividades pendientes')
+    } else {
+      if (actividad.contactos.length === 0) {
+        faltan.push('Contactos con los que se hizo (o se va a hacer) la actividad')
+      }
+      /* Tildar no es elegir: lo que no se confirmó no está en la selección y se perdería al
+         avanzar. Se avisa en vez de confirmarlo solo, que sería decidir por el usuario. */
+      if (tildados.length > 0) {
+        faltan.push('Confirmá los contactos que tildaste, o destildalos para dejarlos afuera')
+      }
     }
     if (!actividad.tipoOperacion) faltan.push('Tipo de Operación')
     if (faltan.length > 0) {
@@ -150,10 +165,14 @@ export function ActividadPersonaView() {
     setConfirmadosAhora((ids) => [...ids, ...tildados])
     setTildados([])
   }
-  /* Por qué todavía no se puede avanzar. Alcanza con que haya UN contacto tildado —de la Persona
-     que sea—: cada uno trae la suya, y la actividad se asienta a todas. */
-  const motivoBloqueo =
-    actividad.contactos.length === 0
+  /* Por qué todavía no se puede avanzar. Para registrar una nueva alcanza con que haya UN contacto
+     confirmado —de la Persona que sea—: cada uno trae la suya, y la actividad se asienta a todas.
+     Para completar pendientes, con la firma basta. */
+  const motivoBloqueo = soloCliente
+    ? personaLista
+      ? undefined
+      : 'Buscá la Persona cuyas actividades pendientes vas a completar'
+    : actividad.contactos.length === 0
       ? personaLista
         ? 'Tildá al menos un contacto y confirmalo para poder continuar'
         : 'Buscá una Persona y confirmá sus contactos para poder continuar'
@@ -183,7 +202,11 @@ export function ActividadPersonaView() {
         <PasoTitulo
           numero={numero + 1}
           titulo="Seleccionar Persona"
-          descripcion="Busca la firma a la que se le asienta la actividad y selecciona los contactos involucrados"
+          descripcion={
+            soloCliente
+              ? 'Busca la firma cuyas actividades pendientes vas a completar'
+              : 'Busca la firma a la que se le asienta la actividad y selecciona los contactos involucrados'
+          }
         />
 
         <SelectorTipoOperacion />
@@ -212,32 +235,37 @@ export function ActividadPersonaView() {
         </div>
 
 {/* Arriba, los contactos de la Persona que está en pantalla: se tildan y se confirman.
-            Abajo, la selección de verdad, que acumula los de todas las Personas. */}
-        <TablaContactos
-          contactos={contactosDelCliente}
-          tildados={tildados}
-          yaElegidos={actividad.contactos.map((c) => c.itemId)}
-          cargando={cargandoContactos}
-          sinPersona={!personaLista}
-          /* La Persona SÍ tiene contactos, pero ya están todos en la selección: es distinto de no
-             tener ninguno cargado en el tablero, y la tabla lo dice distinto. */
-          todosElegidos={traidos.length > 0 && contactosDelCliente.length === 0}
-          faltan={actividad.contactos.length === 0}
-          onToggle={(c) =>
-            setTildados((ids) =>
-              ids.includes(c.itemId as string)
-                ? ids.filter((id) => id !== c.itemId)
-                : [...ids, c.itemId as string],
-            )
-          }
-          onTodos={(elegibles) => setTildados(elegibles.map((c) => c.itemId as string))}
-          onConfirmar={confirmar}
-        />
+            Abajo, la selección de verdad, que acumula los de todas las Personas. Las dos son de la
+            rama que CREA la actividad; completar pendientes no las necesita. */}
+        {!soloCliente && (
+          <>
+          <TablaContactos
+            contactos={contactosDelCliente}
+            tildados={tildados}
+            yaElegidos={actividad.contactos.map((c) => c.itemId)}
+            cargando={cargandoContactos}
+            sinPersona={!personaLista}
+            /* La Persona SÍ tiene contactos, pero ya están todos en la selección: es distinto de no
+               tener ninguno cargado en el tablero, y la tabla lo dice distinto. */
+            todosElegidos={traidos.length > 0 && contactosDelCliente.length === 0}
+            faltan={actividad.contactos.length === 0}
+            onToggle={(c) =>
+              setTildados((ids) =>
+                ids.includes(c.itemId as string)
+                  ? ids.filter((id) => id !== c.itemId)
+                  : [...ids, c.itemId as string],
+              )
+            }
+            onTodos={(elegibles) => setTildados(elegibles.map((c) => c.itemId as string))}
+            onConfirmar={confirmar}
+          />
 
-        <TablaContactosElegidos
-          contactos={actividad.contactos}
-          onQuitar={(itemId) => dispatch({ type: 'quitarContactoActividad', itemId })}
-        />
+          <TablaContactosElegidos
+            contactos={actividad.contactos}
+            onQuitar={(itemId) => dispatch({ type: 'quitarContactoActividad', itemId })}
+          />
+          </>
+        )}
 
         <div className="actions-footer">
           {motivoBloqueo ? (

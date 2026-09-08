@@ -133,11 +133,27 @@ export interface ResumenActividades {
  * esconde varias, que si no no se sabe si falta una o cinco.
  */
 export function resumenActividades(actividades: readonly ActividadListada[]): ResumenActividades {
-  const nombres = actividades.map((a) => a.nombre.trim()).filter(Boolean)
+  return condensarNombres(actividades.map((a) => a.nombre))
+}
+
+/**
+ * Una lista de nombres que no entra en un renglón: se muestran los primeros y el resto queda
+ * detrás de un "+", con la lista completa en el `title`.
+ *
+ * `visibles` decide cuántos se leen. Es 1 donde el renglón es angosto —la clave "Actividades" de
+ * un resumen— y 2 en una celda de tabla, que tiene más aire. El "+" va SIN número cuando esconde
+ * uno solo ("Juan, Ana, +") y con la cantidad cuando esconde varios ("Juan, Ana, +3"): con un solo
+ * escondido el número no agrega nada, y con varios sí, porque si no no se sabe si falta uno o cinco.
+ */
+export function condensarNombres(
+  nombres: readonly string[],
+  visibles = 1,
+): ResumenActividades {
+  const limpios = nombres.map((n) => n.trim()).filter(Boolean)
   return {
-    visible: nombres[0] ?? '',
-    ocultas: Math.max(nombres.length - 1, 0),
-    titulo: nombres.join('\n'),
+    visible: limpios.slice(0, visibles).join(', '),
+    ocultas: Math.max(limpios.length - visibles, 0),
+    titulo: limpios.join('\n'),
   }
 }
 

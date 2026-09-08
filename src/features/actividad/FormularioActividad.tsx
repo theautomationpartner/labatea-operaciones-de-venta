@@ -193,10 +193,14 @@ function BloqueCompletada({
  * la etapa "Registrar Actividad" de la venta y el presupuesto—, porque es exactamente el mismo
  * asiento. Lo que cambia en cada una es el marco: el encabezado del paso y adónde lleva el botón.
  *
- * El formulario CRECE con las respuestas y se PLIEGA con la misma animación. Lo que se pliega se
- * borra del estado (ver el reducer) —un dato escondido no puede terminar viajando a Monday sin que
- * nadie lo vea—, así que el bloque que se va se dibuja desde una COPIA congelada: de otro modo se
- * vaciaría a la vista antes de terminar de irse.
+ * El formulario CRECE con las respuestas y se PLIEGA con la misma animación. Plegar ESCONDE, no
+ * borra: lo que el usuario cargó queda en el estado (ver el reducer), y lo que impide que un dato
+ * escondido viaje a Monday es la condición con la que se crea la actividad futura (`hayProyectada`),
+ * no vaciar el formulario a sus espaldas.
+ *
+ * Aun así el bloque que se va se dibuja desde una COPIA congelada: mientras se pliega, la respuesta
+ * de arriba ya cambió, y sin la copia el contenido se reacomodaría a la vista antes de terminar de
+ * irse.
  */
 export function FormularioActividad() {
   const { actividad } = useApp()

@@ -140,7 +140,15 @@ const customActivitiesMemo = memoGlobal(async (): Promise<Map<string, string>> =
   const data = await mondayApi<{ custom_activity: { id: string; name: string }[] }>(
     `query { custom_activity { id name } }`,
   )
-  return new Map(data.custom_activity.map((c) => [normalizar(c.name), c.id]))
+  /* Gana la PRIMERA de cada nombre, no la última: la cuenta puede tener duplicados —dos "Visita al
+     Campo" con distinto ícono y color— y un `Map` armado al derecho se queda con la que la API
+     devuelva última, que no es una elección, es el orden del servidor. */
+  const porNombre = new Map<string, string>()
+  for (const c of data.custom_activity) {
+    const clave = normalizar(c.name)
+    if (!porNombre.has(clave)) porNombre.set(clave, c.id)
+  }
+  return porNombre
 })
 
 /**
@@ -154,6 +162,9 @@ const customActivitiesMemo = memoGlobal(async (): Promise<Map<string, string>> =
  */
 async function idDeTipo(tipo: TipoActividad): Promise<string> {
   const existentes = await customActivitiesMemo()
+  /* Con dos custom activities del mismo nombre en la cuenta gana la PRIMERA, siempre la misma
+     (ver `customActivitiesMemo`): elegir según el orden en que las devuelva la API haría que la
+     misma actividad entrara con un color distinto de un día para el otro. */
   const ya = existentes.get(normalizar(tipo))
   if (ya) return ya
   const { icono, color } = ESTILO_TIPO[tipo]
@@ -168,12 +179,16 @@ async function idDeTipo(tipo: TipoActividad): Promise<string> {
 }
 
 /**
- * El nombre del ítem: `TIPO - FECHA - PERSONA - CONTACTOS`.
+ * El nombre del ítem: `TIPO - FECHA - CONTACTOS`.
  *
  * No lo escribe nadie a mano, y tampoco sirve el que arma la sincronización ("<Persona>  -  <Tipo>",
  * sin fecha ni contactos): se arma con lo que la operación ya sabe, así todas las actividades se
  * nombran igual y la grilla del board se puede leer y ordenar. Los contactos van por su nombre
  * (Nombre + Apellido, como los muestra la tabla de la etapa 1), separados por coma.
+ *
+ * La Persona NO entra en el nombre: tiene su propia columna ("✋Personas"), que la sincronización
+ * completa sola, y repetirla acá gastaba la mitad del renglón en un dato que la grilla ya muestra
+ * al lado.
  *
  * Un tramo vacío no deja un separador colgando: se descarta antes de unir. Y se recorta al final
  * porque Monday acepta nombres largos pero la grilla no los muestra enteros.
@@ -184,7 +199,7 @@ function nombreDe(tipo: TipoActividad, fecha: string, persona: PersonaActividad)
     .map((c) => c.nombre.trim())
     .filter(Boolean)
     .join(', ')
-  const tramos = [tipo, fecha, persona.nombre.trim(), contactos].filter(Boolean)
+  const tramos = [tipo, fecha, contactos].filter(Boolean)
   const limpio = tramos.join(' - ').replace(/\s+/g, ' ')
   return limpio.length > NOMBRE_MAX ? `${limpio.slice(0, NOMBRE_MAX - 1)}…` : limpio
 }
@@ -511,7 +526,17 @@ interface MondayItemActividad {
  */
 const COLUMNAS_LISTADO = `"${COL.actividad.tipo}","${COL.actividad.fecha}","${COL.actividad.estado}","${COL.actividad.resolucion}","${COL.actividad.contactos}"`
 
-/** La fecha viene en ISO (yyyy-MM-dd) y la app trabaja en dd/MM/yyyy. */
+/**
+ * El DÍA de la actividad, en dd/MM/yyyy.
+ *
+ * "✋Fecha Act" es una columna de fecha CON hora, así que su texto viene como "2026-09-15 10:30".
+ * `desdeIso` parte por guiones y con la hora pegada devolvía "15 10:30/09/2026": se corta en el
+ * espacio antes de convertir. La hora no se lista en ninguna tabla —la gestión se ubica por su
+ * día—, y el asiento sí la lleva (ver `aTimestamp`), que es donde importa.
+ */
+const soloFecha = (texto: string): string => desdeIso(texto.split(' ')[0] ?? '')
+
+/** La fecha viene en ISO (yyyy-MM-dd, con hora) y la app trabaja en dd/MM/yyyy. */
 function mapActividadListada(item: MondayItemActividad): ActividadListada {
   const porId = Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? '']))
   return {
@@ -520,7 +545,7 @@ function mapActividadListada(item: MondayItemActividad): ActividadListada {
     tipo: porId[COL.actividad.tipo] ?? '',
     // Los nombres se resuelven aparte, en una sola consulta para todas (ver `listarActividades`).
     contactos: [],
-    fecha: desdeIso(porId[COL.actividad.fecha] ?? ''),
+    fecha: soloFecha(porId[COL.actividad.fecha] ?? ''),
     estado: porId[COL.actividad.estado] ?? '',
     resolucion: porId[COL.actividad.resolucion] ?? '',
   }
@@ -706,27 +731,32 @@ export async function getActividadesPendientes(): Promise<ActividadPendiente[]> 
 export const actividadesPendientesEnCache = (): ActividadPendiente[] | null => pendientesResueltas
 
 /**
- * Las pendientes que le corresponden a lo elegido en la etapa 1: las de esas Personas, y de ellas
- * las que involucran a alguno de los contactos tildados.
+ * Las pendientes que le corresponden a lo elegido en la etapa 1: las de esas Personas y, si se
+ * eligieron contactos, las que involucran a alguno de ellos.
  *
- * Las dos condiciones, en ese orden:
+ * Las condiciones, en ese orden:
  *   1. La actividad tiene que estar asentada a alguna de las Personas elegidas. Sin esto se
  *      estarían ofreciendo para cerrar gestiones de terceros.
  *   2. De las que quedan, se descartan las que involucran SÓLO a contactos que no se tildaron: se
  *      eligió cerrar lo de esta gente, no todo lo de la firma. Una actividad SIN contactos
  *      cargados sí se ofrece —es lo normal en las que vienen de antes de esta operación—, porque
  *      descartarla sería esconderla por un dato que el board nunca tuvo.
+ *
+ * `contactosIds` en `null` apaga la segunda condición: es el caso de COMPLETAR ACTIVIDAD
+ * PENDIENTE, donde la etapa 1 pide sólo el cliente. Ahí se ofrecen TODAS las pendientes de la
+ * firma; filtrar por una lista de contactos vacía las escondería a todas.
  */
 export function filtrarPendientesDe(
   actividades: readonly ActividadPendiente[],
   personaIds: readonly string[],
-  contactosIds: readonly string[],
+  contactosIds: readonly string[] | null,
 ): ActividadPendiente[] {
   const personas = new Set(personaIds)
-  const contactos = new Set(contactosIds)
   if (personas.size === 0) return []
+  const contactos = contactosIds && new Set(contactosIds)
   return actividades.filter((a) => {
     if (!a.personaIds.some((id) => personas.has(id))) return false
+    if (!contactos) return true
     return a.contactosIds.length === 0 || a.contactosIds.some((id) => contactos.has(id))
   })
 }
@@ -845,16 +875,48 @@ export async function getActividadesPorId(ids: readonly string[]): Promise<Activ
   return listarActividades(data.items)
 }
 
+/* Memo por CLAVE para las heredadas. Son dos consultas encadenadas y las miran varios lugares a
+   la vez —el resumen de la venta, el del remito y el cálculo de la comisión—, así que sin esto la
+   misma pregunta viaja tres veces. La clave es el conjunto de documentos, no el cliente: la
+   respuesta cambia cuando cambia QUÉ presupuestos aportan a la venta. Se vacía con el resto al
+   cambiar de operación. */
+const heredadasCache = new Map<string, Promise<ActividadListada[]>>()
+registrarLimpieza(() => heredadasCache.clear())
+
+function heredadasMemo(clave: string, traer: () => Promise<ActividadListada[]>) {
+  let pendiente = heredadasCache.get(clave)
+  if (!pendiente) {
+    // Un fallo NO se cachea: se descarta la entrada para poder reintentar.
+    pendiente = traer().catch((e) => {
+      heredadasCache.delete(clave)
+      throw e
+    })
+    heredadasCache.set(clave, pendiente)
+  }
+  return pendiente
+}
+
 /**
  * Las actividades COMPLETAS ya conectadas a uno o más presupuestos: lo mismo que
- * `getActividadesDePresupuestos`, pero con el registro entero (para mostrarlas en un resumen,
- * no sólo para escribir la relación).
+ * `getActividadesDePresupuestos`, pero con el registro entero (para mostrarlas en un resumen y para
+ * decidir la tasa de comisión, no sólo para escribir la relación).
  */
 export const getActividadesHeredadasDePresupuestos = (
   presupuestoIds: readonly string[],
-): Promise<ActividadListada[]> => getActividadesDePresupuestos(presupuestoIds).then(getActividadesPorId)
+): Promise<ActividadListada[]> => {
+  const ids = [...new Set(presupuestoIds)].filter(Boolean).sort()
+  if (ids.length === 0) return Promise.resolve([])
+  return heredadasMemo(`presup:${ids.join(',')}`, () =>
+    getActividadesDePresupuestos(ids).then(getActividadesPorId),
+  )
+}
 
 /** Igual que arriba, pero heredadas de una proforma (ver `getActividadesDeProforma`). */
 export const getActividadesHeredadasDeProforma = (
   proformaId: string,
-): Promise<ActividadListada[]> => getActividadesDeProforma(proformaId).then(getActividadesPorId)
+): Promise<ActividadListada[]> =>
+  proformaId
+    ? heredadasMemo(`proforma:${proformaId}`, () =>
+        getActividadesDeProforma(proformaId).then(getActividadesPorId),
+      )
+    : Promise.resolve([])

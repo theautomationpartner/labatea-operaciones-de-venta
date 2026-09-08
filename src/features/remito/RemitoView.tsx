@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
+import { useActividadesDeLaVenta } from '@/features/shared/useActividadesDeLaVenta'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
@@ -92,19 +93,25 @@ export function RemitoView() {
     [formaPago, descuentosPago],
   )
 
+  /* La tasa sale de la COMBINACIÓN de la venta, no sólo de su tipo: la Activa es para la cadena
+     completa (actividades → presupuesto → venta) y todo lo demás paga la Pasiva. Las actividades de
+     una venta CON PRESUPUESTO PREVIO se heredan de sus presupuestos, así que hay que resolverlas
+     (la consulta está cacheada y la comparten el resumen de la venta y el cálculo final). */
+  const { actividades } = useActividadesDeLaVenta()
+  const conActividades = actividades.length > 0
   // El descuento por remito ya no aplica: la lista aplana varios remitos en una sola factura. La
-  // comisión usa la tasa del tipo de venta (pasiva en la DIRECTA), sólo los productos comisionables,
-  // y su base es el importe GRAVADO (con el descuento por forma de pago aplicado, sin IVA).
+  // comisión toma sólo los productos comisionables, y su base es el importe GRAVADO (con el
+  // descuento por forma de pago aplicado, sin IVA).
   const resumen = useMemo(
     () =>
       resumenFactura(
         facturaItems,
         cliente,
         0,
-        tasaComision(comisiones, tipoVenta ?? 'DIRECTA'),
+        tasaComision(comisiones, tipoVenta ?? 'DIRECTA', conActividades),
         descFormaPago,
       ),
-    [facturaItems, cliente, comisiones, tipoVenta, descFormaPago],
+    [facturaItems, cliente, comisiones, tipoVenta, descFormaPago, conActividades],
   )
   // La factura consume línea: no se avanza si el cliente no la tiene disponible.
   const bloqueo = useBloqueoCredito(resumen.neto)

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { etiquetaActividad } from '@/lib/actividad'
+import { condensarNombres, etiquetaActividad } from '@/lib/actividad'
 import type { ActividadListada } from '@/types'
 
 interface TablaActividadesProps {
@@ -104,6 +104,7 @@ export function TablaActividades({
             <tr>
               <th className="act-tabla-chk" />
               <th>Actividad</th>
+              <th>Contactos</th>
               <th>Fecha</th>
               <th>Estado</th>
               <th>Resolución / Observaciones</th>
@@ -112,7 +113,7 @@ export function TablaActividades({
           <tbody>
             {cargando && (
               <tr className="act-tabla-fila--skeleton">
-                <td className="act-tabla-cargando" colSpan={5}>
+                <td className="act-tabla-cargando" colSpan={6}>
                   <i className="fas fa-spinner fa-spin" /> {buscando}
                 </td>
               </tr>
@@ -120,7 +121,7 @@ export function TablaActividades({
 
             {!cargando && actividades.length === 0 && (
               <tr className="act-tabla-vacia">
-                <td colSpan={5}>{vacio}</td>
+                <td colSpan={6}>{vacio}</td>
               </tr>
             )}
 
@@ -130,6 +131,9 @@ export function TablaActividades({
                 /* El rótulo es el TIPO y con quién se hizo; la fecha y el estado ya tienen su
                    propia columna, y la Persona es la que se eligió en la etapa anterior. */
                 const etiqueta = etiquetaActividad(a)
+                /* Con quiénes se hizo la gestión. Se leen dos y el resto va detrás del "+": son
+                   nombres largos y una celda no puede crecer sin desarmar la fila. */
+                const contactos = condensarNombres(a.contactos, 2)
                 return (
                   <tr
                     key={a.id}
@@ -163,6 +167,21 @@ export function TablaActividades({
                           </span>
                         )}
                       </span>
+                    </td>
+                    {/* La lista entera en el `title`: pasar el mouse alcanza para verla. */}
+                    <td className="act-tabla-dato" title={contactos.titulo || undefined}>
+                      {contactos.visible ? (
+                        <span className="act-resumen">
+                          <span className="act-resumen-nom">{contactos.visible}</span>
+                          {contactos.ocultas > 0 && (
+                            <span className="act-resumen-mas">
+                              , +{contactos.ocultas > 1 ? contactos.ocultas : ''}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="act-tabla-dato act-tabla-fecha">{a.fecha || '—'}</td>
                     <td>

@@ -59,21 +59,17 @@ export const combinacionDeVenta = (
  * Qué tasa le toca a cada combinación. Las cuatro juntas y a la vista porque son la regla entera:
  * repartidas en condicionales, cambiar una obliga a releer todas para saber qué se rompió.
  *
- * DEFINIDAS por negocio:
- *   · ACTIVIDADES-PRESUPUESTO-VENTA → Activa. La venta nace de un presupuesto que a su vez nace de
- *     una gestión registrada: es la cadena completa, y es la que paga la tasa alta.
- *   · VENTA-DIRECTA → Pasiva. Entró sin presupuesto y sin gestión previa.
+ * La Activa la paga UNA sola combinación: ACTIVIDADES-PRESUPUESTO-VENTA, la cadena completa —una
+ * gestión registrada que produjo un presupuesto, y un presupuesto que se convirtió en venta—. Todo
+ * lo demás paga la Pasiva: sin alguno de esos eslabones no hubo la gestión que la tasa alta
+ * remunera.
  *
- * SIN DEFINIR todavía (PRESUPUESTO-VENTA y ACTIVIDADES-VENTA-DIRECTA): quedan con el mismo valor
- * que tenían antes de partir la regla en cuatro —la venta con presupuesto previo pagaba Activa y
- * la directa, Pasiva—, así que hoy nada cambia de monto. NO es una decisión de negocio: es el
- * statu quo esperando la definición. Cuando llegue, se cambia acá y en ningún otro lado; ojo con
- * que ahí `conActividades` pasa a importar de verdad y hay que hacérselo llegar a los que hoy no
- * lo mandan (ver el comentario de `tasaComision`).
+ * OJO con PRESUPUESTO-VENTA: paga Pasiva. Un presupuesto SIN actividades linkeadas ya no alcanza
+ * para la Activa, que es lo que hacía antes de partir la regla en cuatro.
  */
 const TASA_POR_COMBINACION: Record<CombinacionVenta, keyof ComisionesVenta> = {
   'ACTIVIDADES-PRESUPUESTO-VENTA': 'activa',
-  'PRESUPUESTO-VENTA': 'activa',
+  'PRESUPUESTO-VENTA': 'pasiva',
   'ACTIVIDADES-VENTA-DIRECTA': 'pasiva',
   'VENTA-DIRECTA': 'pasiva',
 }
@@ -82,15 +78,15 @@ const TASA_POR_COMBINACION: Record<CombinacionVenta, keyof ComisionesVenta> = {
  * Tasa de comisión que rige la operación. Es una sola para toda la venta; el producto sólo decide
  * si comisiona o no.
  *
- * `conActividades` viene en `false` por defecto porque HOY no cambia ningún monto: las dos
- * combinaciones que dependen de él resuelven igual que sus pares (ver `TASA_POR_COMBINACION`). El
- * día que se definan, quien llame tiene que mandar el dato de verdad —lo sabe `actividadesDeLaVenta`,
- * que es asíncrono— y este default deja de ser inocuo.
+ * `conActividades` NO tiene default a propósito: define plata. Quien calcula una comisión tiene que
+ * contestar si la cadena de esta venta tiene una gestión registrada, y un default lo dejaría
+ * contestando "no" sin enterarse —que en la venta CON PRESUPUESTO PREVIO es la diferencia entre la
+ * Activa y la Pasiva—. El dato lo resuelve `useActividadesDeLaVenta`.
  */
 export const tasaComision = (
   comisiones: ComisionesVenta,
   tipoVenta: TipoVenta,
-  conActividades = false,
+  conActividades: boolean,
 ): number => comisiones[TASA_POR_COMBINACION[combinacionDeVenta(tipoVenta, conActividades)]]
 
 /**
@@ -386,8 +382,10 @@ export function comisionLineas(
   comisiones: ComisionesVenta,
   tipoVenta: TipoVenta,
   descFormaPago = 0,
+  /** La cadena de la venta tiene actividades linkeadas (ver `tasaComision`). */
+  conActividades = false,
 ): number {
-  const tasa = tasaComision(comisiones, tipoVenta)
+  const tasa = tasaComision(comisiones, tipoVenta, conActividades)
   return round2(
     lineas.reduce(
       (acc, l) =>
@@ -527,6 +525,8 @@ export function resumenVenta(
    * llamador que se olvide de pasarlo no dispara bloqueos que nadie decidió.
    */
   credito: OperacionCredito = SIN_CREDITO,
+  /** La cadena de la venta tiene actividades linkeadas: decide Activa vs Pasiva (`tasaComision`). */
+  conActividades = false,
 ): ResumenVenta {
   /* El descuento por forma de pago (pronto pago) se compone EN CASCADA con el de cada línea: baja
      el neto y la rentabilidad igual que en la venta DIRECTA. La VENTA sobre PROFORMA trae su propio
@@ -547,10 +547,10 @@ export function resumenVenta(
     0,
   )
 
-  /* Comisión: SÓLO los productos comisionables, con la tasa ÚNICA que rige el tipo de venta
-     (Activa = CON PRESUPUESTO PREVIO, Pasiva = DIRECTA). La base es el neto de la línea: sin IVA
-     y con el descuento total ya aplicado. */
-  const tasa = tasaComision(comisiones, tipoVenta)
+  /* Comisión: SÓLO los productos comisionables, con la tasa ÚNICA que rige la COMBINACIÓN de la
+     venta (ver `TASA_POR_COMBINACION`). La base es el neto de la línea: sin IVA y con el descuento
+     total ya aplicado. */
+  const tasa = tasaComision(comisiones, tipoVenta, conActividades)
   const comision = round2(
     items.reduce(
       (acc, it) => acc + comisionLinea(importeItem(it), it.comisionable === true, tasa),

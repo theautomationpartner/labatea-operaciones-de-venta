@@ -35,6 +35,7 @@ import {
   registrarFacturacionVtasPend,
   vincularVentaAComprobantes,
 } from '@/services/monday'
+import { useActividadesDeLaVenta } from '@/features/shared/useActividadesDeLaVenta'
 import { useApp, useDispatch } from '@/state/hooks'
 import { ComprobantesAGenerar } from './ComprobantesAGenerar'
 import { ResumenVenta } from './ResumenVenta'
@@ -116,19 +117,41 @@ export function FacturaView() {
     [productos, descFormaPago],
   )
 
-  /* Comisión del vendedor por esta venta: la tasa que rige su tipo de venta sobre el neto de cada
-     producto comisionable. Es el importe que se muestra antes de emitir y el que se registra. */
+  /* Las actividades de la cadena de esta venta: se muestran en el resumen y, sobre todo, deciden
+     si la comisión es Activa o Pasiva. Se resuelven acá —y no en `ResumenVenta`— para que el
+     número que se ve y el que se registra salgan del MISMO dato. */
+  const { actividades: actividadesVenta, cargando: cargandoActividades } = useActividadesDeLaVenta()
+  const conActividades = actividadesVenta.length > 0
+
+  /* Comisión del vendedor por esta venta: la tasa que rige su combinación sobre el neto de cada
+     producto comisionable. Es el importe que se muestra antes de emitir y el que se registra.
+
+     `null` mientras las actividades no estén resueltas: en la venta CON PRESUPUESTO PREVIO son las
+     que deciden la tasa, y mostrar un número antes de saberlas es mostrar el equivocado y
+     corregirlo a la vista del vendedor. */
   const comisionVenta = useMemo(() => {
-    /* VENTA PROFORMA: la tasa la define el tipo de venta de la proforma elegida (Activa/Pasiva); el
-       resto usa el tipo de la operación. Así la comisión registrada coincide con la mostrada. */
-    const tasa = tasaComision(state.comisiones, state.proformaTipoVenta ?? tipoVenta ?? 'DIRECTA')
+    if (cargandoActividades) return null
+    /* VENTA PROFORMA: la tasa la define el tipo de venta de la proforma elegida; el resto usa el
+       tipo de la operación. Así la comisión registrada coincide con la mostrada. */
+    const tasa = tasaComision(
+      state.comisiones,
+      state.proformaTipoVenta ?? tipoVenta ?? 'DIRECTA',
+      conActividades,
+    )
     return round2(
       lineasComision.reduce(
         (acc, l) => acc + comisionLinea(l.neto, l.comisionable === true, tasa),
         0,
       ),
     )
-  }, [lineasComision, state.comisiones, tipoVenta, state.proformaTipoVenta])
+  }, [
+    lineasComision,
+    state.comisiones,
+    tipoVenta,
+    state.proformaTipoVenta,
+    conActividades,
+    cargandoActividades,
+  ])
 
   // Comprobantes ya escritos en el board, indexados por la clave del grupo que los originó.
   const emitidos = useMemo(
@@ -279,8 +302,11 @@ export function FacturaView() {
       importeTotalVenta: totalVenta,
       fecha: aIso(fechaEmision),
       pendienteCobroId,
-      // Tasas del tablero: una sola por tipo de venta, la misma que se muestra en el resumen.
+      // Tasas del tablero: una sola por venta, la misma que se muestra en el resumen.
       comisiones: state.comisiones,
+      /* Lo que decide Activa vs Pasiva. Sale de las MISMAS actividades que se enlazan al ítem de la
+         venta, así el % registrado es el que el vendedor vio antes de emitir. */
+      conActividades,
       // Las MISMAS líneas (con su neto) que alimentan la métrica "Comision x Venta" del resumen.
       lineas: lineasComision.map((l) => ({
         productoId: l.productoId,
@@ -577,6 +603,7 @@ export function FacturaView() {
           cantidadFacturas={comprobantes.length}
           totalAFacturar={totalFacturado}
           comision={comisionVenta}
+          actividades={actividadesVenta}
           emitidos={factura.comprobantes.length}
           emitiendo={emitiendo}
           onEmitir={emitir}
