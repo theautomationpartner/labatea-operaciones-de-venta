@@ -762,25 +762,6 @@
 
 /* ===== Estado vacío: cajas quietas que preservan el layout (mismo criterio que la ficha del
    cliente: sin animación ni parpadeo). ===== */
-.actividad-v2 .skeleton {
-  display: block;
-  background: #eef1f6;
-  border-radius: 6px;
-}
-.actividad-v2 .skeleton--linea {
-  height: 14px;
-  margin-bottom: 10px;
-}
-.actividad-v2 .skeleton--corto {
-  width: 90px;
-}
-.actividad-v2 .skeleton--titulo {
-  height: 22px;
-  width: 220px;
-}
-.actividad-v2 .skeleton--medio {
-  width: 260px;
-}
 .actividad-v2 .skeleton--badge {
   display: inline-block;
   height: 18px;

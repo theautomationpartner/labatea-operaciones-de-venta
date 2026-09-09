@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
-import { useActividadesDeLaVenta } from '@/features/shared/useActividadesDeLaVenta'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
@@ -91,15 +90,13 @@ export function VentaView() {
 
   // Sólo se llega acá con la venta configurada como CON PRESUPUESTO PREVIO.
   const tipo = tipoVenta ?? 'CON PRESUPUESTO PREVIO'
-  /* La comisión que se muestra acá tiene que ser la MISMA que se registra al cerrar, y eso depende
-     de si los presupuestos elegidos traen actividades: sólo la cadena completa paga la Activa (ver
-     `tasaComision`). La consulta está cacheada por conjunto de presupuestos. */
-  const { actividades } = useActividadesDeLaVenta()
-  const conActividades = actividades.length > 0
+  /* Sin `conActividades`: esta pantalla ya no muestra la comisión —se mudó al resumen de la última
+     etapa—, así que no hace falta resolver la cadena de actividades para pintarla. Si algún día
+     vuelve a mostrarse acá, hay que pasarle el dato (ver `tasaComision`): sin él la tasa cae en la
+     Pasiva sin avisar. */
   const resumen = useMemo(
-    // `undefined` en el crédito: rige el default, este resumen no evalúa línea.
-    () => resumenVenta(ventaItems, cliente, tipo, descFormaPago, comisiones, undefined, conActividades),
-    [ventaItems, cliente, tipo, descFormaPago, comisiones, conActividades],
+    () => resumenVenta(ventaItems, cliente, tipo, descFormaPago, comisiones),
+    [ventaItems, cliente, tipo, descFormaPago, comisiones],
   )
   // Venta: bloqueante. No se avanza al cierre si el cliente está bloqueado o la venta se pasa de
   // su línea; el aviso salta al hacer click en "Continuar a cobro".

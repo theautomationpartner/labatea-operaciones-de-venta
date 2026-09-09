@@ -1315,3 +1315,30 @@ td {
   font-size: 13px;
   color: #667085;
 }
+
+/* ===== Skeleton: cajas quietas que preservan el layout mientras se resuelve un dato =====
+   SIN namespace. Nacieron duplicadas en `.cliente-v2` y `.actividad-v2` con reglas idénticas, y
+   esa duplicación se notó cuando el resumen de la venta —que vive en `.factura-v2`— las usó para
+   la comisión: el span salía sin estilos, o sea sin fondo ni tamaño, y el renglón se veía VACÍO.
+   Un placeholder invisible es peor que no tener placeholder: parece que el dato no existe.
+
+   Sin animación ni parpadeo, a propósito: marcan un hueco, no piden atención. */
+.skeleton {
+  display: block;
+  background: #eef1f6;
+  border-radius: 6px;
+}
+.skeleton--linea {
+  height: 14px;
+  margin-bottom: 10px;
+}
+.skeleton--corto {
+  width: 90px;
+}
+.skeleton--titulo {
+  height: 22px;
+  width: 220px;
+}
+.skeleton--medio {
+  width: 260px;
+}

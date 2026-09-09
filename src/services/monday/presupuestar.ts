@@ -1782,7 +1782,7 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
     `query ($ids: [ID!]) {
       items(ids: $ids) {
         id name
-        column_values(ids: ["${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
+        column_values(ids: ["${COL.presupuesto.pulseId}","${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
           column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.descTotal}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
@@ -1810,7 +1810,14 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
     const productos = (it.subitems ?? []).map((sub) => mapPresupuestoProducto(sub, it.id))
     return {
       id: it.id,
-      nro: it.name,
+      /* El ID del presupuesto sale de su columna "🤖ID Presup" y NO del nombre del ítem. El nombre
+         no tiene un formato fijo —conviven "PRESUP-083 02 September 2026" y "PRESUP-084 - 7001 - La
+         Batea S.A TEST - 04/09/2026"—, así que recortarlo sería adivinar dónde termina el ID. La
+         columna trae exactamente "PRESUP-084", que es lo único que la card necesita mostrar.
+
+         Si todavía no está asignada se cae al nombre: es preferible una card con el nombre largo a
+         una sin identificación. */
+      nro: (c[COL.presupuesto.pulseId]?.text ?? '').trim() || it.name,
       vigencia: c[COL.presupuesto.vigencia]?.text ?? '',
       vencimiento: c[COL.presupuesto.fechaVencimiento]?.text ?? '',
       rentabilidad: num(c[COL.presupuesto.rentabilidad]?.text),

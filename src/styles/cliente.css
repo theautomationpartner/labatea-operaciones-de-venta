@@ -475,28 +475,9 @@
 
 /* ===== Estado vacío (sin cliente): cajas quietas que preservan layout, bordes y tamaños.
    SIN animación ni parpadeo: son contenedores estáticos esperando la información. ===== */
-.cliente-v2 .skeleton {
-  display: block;
-  background: #eef1f6;
-  border-radius: 6px;
-}
 .cliente-v2 .skeleton--valor {
   height: 24px;
   width: 130px;
-}
-.cliente-v2 .skeleton--linea {
-  height: 14px;
-  margin-bottom: 10px;
-}
-.cliente-v2 .skeleton--corto {
-  width: 90px;
-}
-.cliente-v2 .skeleton--titulo {
-  height: 22px;
-  width: 220px;
-}
-.cliente-v2 .skeleton--medio {
-  width: 260px;
 }
 .cliente-v2 .skeleton--badge {
   display: inline-block;

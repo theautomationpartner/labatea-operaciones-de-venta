@@ -66,12 +66,10 @@ export function ResumenVentaCard({ resumen, ocultarSubtotal = false, totalOverri
             <span>TOTAL</span>
             <span>{money(totalOverride ?? resumen.total + resumen.iva)}</span>
           </div>
-          {/* Comisión total (dinámica). DEBAJO del total, SIEMPRE visible (aunque sea 0) para
-              mantener la métrica estandarizada. */}
-          <div className="sub-row">
-            <span>Comisión ($)</span>
-            <span>{money(resumen.comision)}</span>
-          </div>
+          {/* La comisión NO va acá: vive en el "Resumen de la venta" de la última etapa
+              (`ResumenVenta`), que es donde se resuelve la cadena de actividades que decide si es
+              Activa o Pasiva. Mostrarla también en esta caja obligaba a calcularla dos veces, y
+              acá —antes de esa etapa— el dato todavía no está completo. */}
         </div>
       </div>
 

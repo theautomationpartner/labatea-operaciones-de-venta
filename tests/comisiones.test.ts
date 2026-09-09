@@ -12,6 +12,7 @@
  * Se corre con esbuild + node (`npm run test:comisiones`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { netoLinea } from '@/lib/descuentos'
 import {
   combinacionDeVenta,
@@ -141,4 +142,48 @@ assert.equal(
   'sin configuración leída, la comisión es 0',
 )
 
+/* ==========================================================================================
+   El CABLEADO: que la tasa que se muestra y la que se registra salgan del mismo dato.
+   ==========================================================================================
+   La regla es pura y está probada arriba, pero no sirve de nada si la vista no le pasa el dato
+   verdadero. Se afirma sobre el CÓDIGO FUENTE —como el test del stepper— porque el fallo posible
+   es que alguien deje de pasar `conActividades`: es un booleano con valor por defecto en varios
+   selectores, así que se cae al silencioso "no hay actividades" (o sea, Pasiva) sin romper nada
+   que el typecheck mire. */
+const factura = readFileSync('src/features/factura/FacturaView.tsx', 'utf8')
+assert.ok(
+  factura.includes('useActividadesDeLaVenta()'),
+  'FacturaView tiene que resolver las actividades de la cadena para saber qué tasa rige',
+)
+assert.ok(
+  /const conActividades = actividadesVenta\.length > 0/.test(factura),
+  'y de ahí sale `conActividades`',
+)
+assert.ok(
+  /tasaComision\(\s*state\.comisiones,[\s\S]{0,120}?conActividades,/.test(factura),
+  'la comisión que se MUESTRA se calcula con ese dato',
+)
+assert.ok(
+  /conActividades,/.test(factura.slice(factura.indexOf('crearComisiones('))),
+  'y la que se REGISTRA en el board va con el mismo, no con un default',
+)
+
+/* El skeleton de "Comision x Venta" tiene que existir en el namespace donde se dibuja. Vivía
+   duplicado en `.cliente-v2` y `.actividad-v2`, así que en `.factura-v2` el span salía sin estilos
+   —sin fondo ni tamaño— y el renglón se veía VACÍO: el vendedor no veía ninguna comisión. */
+const componentes = readFileSync('src/styles/components.css', 'utf8')
+for (const clase of ['.skeleton {', '.skeleton--linea {', '.skeleton--corto {']) {
+  assert.ok(componentes.includes(clase), `${clase} tiene que ser global, no de un namespace`)
+}
+for (const [archivo, ns] of [
+  ['src/styles/cliente.css', '.cliente-v2'],
+  ['src/styles/actividad.css', '.actividad-v2'],
+] as const) {
+  assert.ok(
+    !readFileSync(archivo, 'utf8').includes(`${ns} .skeleton {`),
+    `${archivo}: la copia namespaceada del skeleton tiene que quedar UNA sola, global`,
+  )
+}
+
 console.log('OK · comisiones: una tasa por COMBINACIÓN de venta, sobre el neto del producto comisionable')
+console.log('OK · el cableado: la vista resuelve las actividades y con ellas calcula y registra la tasa')
