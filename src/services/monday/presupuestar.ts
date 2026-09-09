@@ -531,53 +531,129 @@ const consultaPersonas = (
 ): string => `
   ${alias}: boards(ids: [${BOARDS.personas}]) {
     items_page(
-      limit: ${TOPE_RESULTADOS},
+      limit: ${PAGINA},
       query_params: {rules: [
         {column_id: "${columna}", compare_value: [${valores.map((v) => `"${literal(v)}"`).join(', ')}], operator: ${comparacion}},
         ${REGLAS_CLIENTE_OPERABLE}
       ]}
     ) {
+      cursor
       items { ${CAMPOS_CLIENTE} }
     }
   }`
 
-/** Tope de coincidencias por columna. Sobra: si una búsqueda trae tantas, hay que afinarla. */
-const TOPE_RESULTADOS = 50
+/** La página SIGUIENTE de una consulta ya abierta. El cursor la identifica; las reglas ya viajaron. */
+const consultaSiguiente = (alias: string, cursor: string): string => `
+  ${alias}: next_items_page(limit: ${PAGINA}, cursor: "${literal(cursor)}") {
+    cursor
+    items { ${CAMPOS_CLIENTE} }
+  }`
+
+/**
+ * Cuántas coincidencias trae CADA página de la consulta. No es el tope de la búsqueda: el cursor de
+ * Monday se sigue hasta agotar los resultados (ver `buscarPersonas`).
+ *
+ * 100 y no 500 porque la consulta trae, por cada persona, su cuenta corriente anidada: pedir de a
+ * 500 hace que la API corte la conexión.
+ */
+const PAGINA = 100
+
+/**
+ * Tope de SEGURIDAD: hasta cuántas coincidencias se traen antes de cortar y pedir que se afine.
+ *
+ * Existe porque un término corto matchea muchísimo y ni la red ni el desplegable tienen sentido con
+ * esos números. Lo importante es que al cortar se AVISA: el problema viejo no era el tope sino que
+ * fuera MUDO —con 50 fijos, buscar "MARIA" devolvía 50 de 135 y el usuario concluía que su cliente
+ * no existía—. Medido sobre el tablero real, 300 cubre cualquier apellido salvo los tres o cuatro
+ * más comunes, que igual hay que afinar.
+ */
+const TOPE_RESULTADOS = 300
 
 /** Escapa el término para poder interpolarlo en la query sin romperla. */
 const literal = (t: string): string => JSON.stringify(t).slice(1, -1)
 
-type RespuestaPersonas = Record<string, { items_page: { items: MondayItem[] } }[]>
+interface PaginaPersonas {
+  cursor: string | null
+  items: MondayItem[]
+}
+type RespuestaPersonas = Record<string, { items_page: PaginaPersonas }[] | PaginaPersonas>
+
+/** Lo que devuelve una búsqueda: las personas y si quedaron más afuera del tope. */
+export interface ResultadoBusqueda<T> {
+  personas: T[]
+  /**
+   * Se cortó por el tope y hay más coincidencias sin traer. La pantalla lo dice: callarlo es
+   * exactamente el bug que este cambio arregla.
+   */
+  truncado: boolean
+}
 
 /**
  * Busca personas EN EL SERVIDOR, por una o más columnas a la vez (una consulta con alias por
- * columna, todas en la misma solicitud). Devuelve los ítems sin repetir, respetando el orden en
- * que se pidieron las columnas.
+ * columna, todas en la misma solicitud), SIGUIENDO EL CURSOR hasta agotar las coincidencias.
  *
- * Antes esto se resolvía trayendo `items_page(limit: 200)` y filtrando en memoria. El tablero de
- * Personas tiene ~3950 ítems, así que el 95% NUNCA llegaba a la app: buscar un cliente que existe
- * devolvía "no existe" según en qué posición del tablero hubiera caído.
+ * Ese seguimiento es el arreglo de fondo. Antes se pedía UNA sola página de 50 y lo que no entraba
+ * simplemente no existía para la app, sin ningún aviso: medido sobre el tablero real, "MARIA"
+ * coincidía con 135 clientes y se veían 50, así que 85 eran inencontrables por ese término y el
+ * vendedor concluía que el cliente no estaba cargado.
+ *
+ * Las páginas siguientes de todas las columnas viajan JUNTAS, en una sola consulta por vuelta:
+ * `next_items_page` es un campo de nivel raíz, así que se lo puede aliasar igual que la primera.
  */
 async function buscarPersonas(
   porColumna: readonly { columna: string; valores: readonly string[]; comparacion: Comparacion }[],
-) {
+): Promise<ResultadoBusqueda<MondayItem>> {
   const usables = porColumna
     .map((x) => ({ ...x, valores: x.valores.map((v) => v.trim()).filter(Boolean) }))
     .filter((x) => x.valores.length > 0)
-  if (usables.length === 0) return []
-  const data = await mondayApi<RespuestaPersonas>(
-    `query { ${usables.map((x, i) => consultaPersonas(`q${i}`, x.columna, x.valores, x.comparacion)).join('')} }`,
-  )
+  if (usables.length === 0) return { personas: [], truncado: false }
+
   const vistos = new Set<string>()
   const items: MondayItem[] = []
-  usables.forEach((_, i) => {
-    for (const it of data[`q${i}`]?.[0]?.items_page.items ?? []) {
+  /* Se acumula respetando el orden en que se pidieron las columnas, y sin repetir: una persona
+     puede caer por código Y por CUIT, y en el desplegable tiene que figurar una sola vez. */
+  const juntar = (pagina: PaginaPersonas | undefined) => {
+    for (const it of pagina?.items ?? []) {
       if (vistos.has(it.id)) continue
       vistos.add(it.id)
       items.push(it)
     }
+  }
+
+  const primera = await mondayApi<RespuestaPersonas>(
+    `query { ${usables.map((x, i) => consultaPersonas(`q${i}`, x.columna, x.valores, x.comparacion)).join('')} }`,
+  )
+  /* Cursor abierto por consulta. `null` = esa columna ya entregó todo lo que tenía. */
+  let cursores = usables.map((_, i) => {
+    const pagina = (primera[`q${i}`] as { items_page: PaginaPersonas }[] | undefined)?.[0]?.items_page
+    juntar(pagina)
+    return pagina?.cursor ?? null
   })
-  return items
+
+  let truncado = false
+  while (cursores.some((c) => c !== null)) {
+    if (items.length >= TOPE_RESULTADOS) {
+      truncado = true
+      break
+    }
+    const abiertos = cursores
+      .map((cursor, i) => ({ cursor, i }))
+      .filter((x): x is { cursor: string; i: number } => x.cursor !== null)
+
+    const siguiente = await mondayApi<RespuestaPersonas>(
+      `query { ${abiertos.map((x) => consultaSiguiente(`p${x.i}`, x.cursor)).join('')} }`,
+    )
+    cursores = [...cursores]
+    for (const { i } of abiertos) {
+      const pagina = siguiente[`p${i}`] as PaginaPersonas | undefined
+      juntar(pagina)
+      cursores[i] = pagina?.cursor ?? null
+    }
+  }
+
+  /* Recortado al tope: se devuelve lo que entra y se avisa. Traer de más sólo para descartarlo
+     sería gastar red en resultados que nadie va a mirar. */
+  return { personas: items.slice(0, TOPE_RESULTADOS), truncado }
 }
 
 /**
@@ -610,31 +686,19 @@ const variantesCuit = (termino: string): string[] => {
  * El filtro por categoría ("Cliente") y por estado (ACTIVO) se aplica sobre el resultado, que ya
  * viene acotado: un cliente inactivo no puede operar, así que la vista lo trata como inexistente.
  */
-export async function buscarClientes(termino: string): Promise<Cliente[]> {
+export async function buscarClientes(termino: string): Promise<ResultadoBusqueda<Cliente>> {
   const t = termino.trim()
-  if (!t) return []
+  if (!t) return { personas: [], truncado: false }
 
   if (!mondayHabilitado()) {
-    // Modo local: el mock es chico, así que se filtra en memoria como siempre.
-    const activos = CLIENTES.filter((c) => c.activity === 'Activo')
-    if (tipoBusqueda(t) === 'numero') {
-      // Exacto, igual que contra Monday: los dígitos del CUIT se comparan enteros, no por pedazos.
-      const digitos = t.replace(/\D/g, '')
-      return activos.filter(
-        (c) => norm(c.codigo) === norm(t) || c.cuit.replace(/\D/g, '') === digitos,
-      )
-    }
-    return activos
-      .map((c) => ({ c, s: similitud(t, c.name) }))
-      .filter((x) => x.s >= UMBRAL_SIMILITUD)
-      .sort((a, b) => b.s - a.s)
-      .map((x) => x.c)
+    // Modo local: el mock es chico, así que se filtra en memoria con el mismo criterio.
+    return { personas: filtrarClientesEnMemoria(CLIENTES, t), truncado: false }
   }
 
   /* El código se compara tal como se escribió y también en dígitos pelados, por si vino con puntos
      o espacios. El CUIT, por sus variantes de formato (ver `variantesCuit`). Escribir un CUIT con
      guiones o sin ellos da lo mismo, y en las dos columnas la comparación es exacta. */
-  const items =
+  const { personas, truncado } =
     tipoBusqueda(t) === 'numero'
       ? await buscarPersonas([
           {
@@ -648,7 +712,27 @@ export async function buscarClientes(termino: string): Promise<Cliente[]> {
 
   /* Sin filtros de acá: la categoría y el estado ACTIVO ya vienen aplicados en la consulta
      (`REGLAS_CLIENTE_OPERABLE`), así que lo que llega es directamente operable. */
-  return items.map(mapCliente)
+  return { personas: personas.map(mapCliente), truncado }
+}
+
+/**
+ * El mismo criterio de búsqueda, resuelto en memoria. Lo usa el modo local (sin token), donde el
+ * mock es chico y no hay a quién consultarle.
+ */
+function filtrarClientesEnMemoria(personas: readonly Cliente[], termino: string): Cliente[] {
+  const t = termino.trim()
+  if (!t) return []
+  const activos = personas.filter((c) => c.activity === 'Activo')
+  if (tipoBusqueda(t) === 'numero') {
+    // Exacto, igual que contra Monday: los dígitos del CUIT se comparan enteros, no por pedazos.
+    const digitos = t.replace(/\D/g, '')
+    return activos.filter((c) => norm(c.codigo) === norm(t) || c.cuit.replace(/\D/g, '') === digitos)
+  }
+  return activos
+    .map((c) => ({ c, s: similitud(t, c.name) }))
+    .filter((x) => x.s >= UMBRAL_SIMILITUD)
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.c)
 }
 
 /* ===== 3) Búsqueda de producto (precio/rentabilidad según lista del cliente) ===== */

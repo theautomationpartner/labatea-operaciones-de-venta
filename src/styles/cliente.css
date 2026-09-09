@@ -177,6 +177,24 @@
   border-color: var(--c-border);
   max-height: 260px;
 }
+
+/* Aviso de lista CORTADA, arriba de los resultados. Va adentro del desplegable y no debajo del
+   campo porque se lee JUNTO con la lista: es información sobre lo que se está mirando, y abajo
+   quedaría después de recorrer los 300 ítems —es decir, tarde—. */
+.cliente-v2 .results-aviso {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  background: #fffaf0;
+  border-bottom: 1px solid var(--tint-neutral-bd);
+  color: #8a6d1f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.cliente-v2 .results-aviso i {
+  color: var(--orange);
+}
 .cliente-v2 .btn {
   padding: 0 24px;
   height: 46px;

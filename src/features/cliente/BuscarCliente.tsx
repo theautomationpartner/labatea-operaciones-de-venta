@@ -25,6 +25,10 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
   const [termino, setTermino] = useState('')
   const [errorInput, setErrorInput] = useState('')
   const [resultados, setResultados] = useState<Cliente[]>([])
+  /* La búsqueda trajo el tope y quedaron coincidencias afuera. Se DICE: callarlo era el bug —con
+     50 resultados fijos, quien buscaba "MARIA" veía 50 de 135 y concluía que su cliente no estaba
+     cargado—. */
+  const [truncado, setTruncado] = useState(false)
   const [abierto, setAbierto] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useClickOutside(ref, useCallback(() => setAbierto(false), []), abierto)
@@ -36,6 +40,7 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
     // El campo queda vacío tras elegir: el resultado se ve en la ficha, no en el buscador.
     setTermino('')
     setResultados([])
+    setTruncado(false)
     setAbierto(false)
     dispatch({ type: 'setCliente', cliente: c })
     onEstado('idle')
@@ -51,13 +56,16 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
     setAbierto(false)
     onEstado('buscando')
     try {
-      const encontrados = await buscarClientes(t)
+      const { personas: encontrados, truncado: hayMas } = await buscarClientes(t)
+      setTruncado(hayMas)
       if (encontrados.length === 0) {
         onEstado('no-encontrado')
         return
       }
-      // Una sola coincidencia: se carga directo. Varias: se muestran para elegir.
-      if (encontrados.length === 1) {
+      /* Una sola coincidencia: se carga directo. Varias: se muestran para elegir.
+         Con la lista truncada NO se auto-carga aunque haya venido una sola: puede no ser la que el
+         usuario busca, y elegirla por él sería decidir con información incompleta. */
+      if (encontrados.length === 1 && !hayMas) {
         elegir(encontrados[0])
         return
       }
@@ -116,6 +124,16 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
         {/* Varios clientes con el mismo nombre: se elige por código. */}
         {desplegado && (
           <div className="results">
+            {/* La lista vino cortada: se avisa ARRIBA de los resultados, que es donde se mira antes
+                de recorrerlos. Sin esto, el que no encuentra su cliente entre los que ve concluye
+                que no existe. */}
+            {truncado && (
+              <div className="results-aviso" role="status">
+                <i className="fas fa-circle-info" aria-hidden="true" /> Se muestran los primeros{' '}
+                {resultados.length} resultados. Agregá más letras, o buscá por código o CUIT, para
+                encontrar el cliente exacto.
+              </div>
+            )}
             {resultados.map((c) => (
               <div className="ritem" key={c.id} onClick={() => elegir(c)}>
                 <span className="ritem-name">{c.name}</span>
