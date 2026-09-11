@@ -20,6 +20,7 @@ import {
   errorFechaProyectada,
   etiquetaActividad,
   faltantesActividad,
+  mensajeVendedorNoInvitado,
   resumenActividades,
 } from '@/lib/actividad'
 import { formatDate } from '@/lib/dates'
@@ -37,6 +38,7 @@ import {
   getActividadesPendientes,
   getActividadesSinAsignar,
   registrarActividad,
+  VendedorNoInvitadoError,
 } from '@/services/monday/actividades'
 import { limpiarCachesConsultas } from '@/services/monday/cache'
 import type { ActividadPendiente, ActividadState } from '@/types'
@@ -316,15 +318,13 @@ assert.deepEqual(pLaBatea.cv[COL.actividad.estado], { label: 'Completado' })
 assert.deepEqual(pLaBatea.cv[COL.actividad.resolucion], { text: 'Pidió cotización de fertilizante' })
 assert.deepEqual(pLaBatea.cv[COL.actividad.contactos], { item_ids: [11] }, 'sus contactos, no todos')
 assert.deepEqual(pCampoSur.cv[COL.actividad.contactos], { item_ids: [22] })
-/* El vendedor NO va en el parche de la gestión. `change_multiple_column_values` es atómica y un
-   vendedor INVITADO no se puede asignar en el tablero público de Actividades: adentro del mismo
-   parche, se llevaba puestos el nombre, el estado, la resolución y los contactos. */
-assert.ok(!(COL.actividad.vendedor in pLaBatea.cv), 'el vendedor va aparte, no en el parche')
-assert.equal(vendedores.length, 4, 'una escritura de vendedor por ítem sincronizado')
-assert.deepEqual(vendedores[0], {
-  id: '1000',
-  cv: { [COL.actividad.vendedor]: { personsAndTeams: [{ id: 99, kind: 'person' }] } },
+/* El vendedor va DENTRO del parche, en la misma mutación que el resto. Es atómica a propósito: si
+   Monday no lo acepta —un invitado al que no se invitó al tablero—, no tiene que quedar nada a
+   medias (ver los casos del invitado, más abajo). */
+assert.deepEqual(pLaBatea.cv[COL.actividad.vendedor], {
+  personsAndTeams: [{ id: 99, kind: 'person' }],
 })
+assert.equal(vendedores.length, 0, 'no hay una escritura aparte para el vendedor')
 assert.ok(
   !(COL.actividad.persona in pLaBatea.cv),
   'la Persona NO se parchea: es lo único que la sincronización sí deja bien',
@@ -423,73 +423,152 @@ assert.equal(timeline.length, 1, 'el asiento en el widget se hizo igual')
 assert.equal(parches.length, 0, 'no hay ítem que completar')
 assert.equal(aMedias.sinCompletar, 1, 'y se dice cuántos quedaron a medias')
 
-/* Vendedor INVITADO: Monday rechaza asignarlo (`invalidPersonAssignment`). La gestión tiene que
-   quedar completa igual —nombre, estado, resolución y contactos— y NO contarse como a medias: lo
-   único que falta es el vendedor, que en ese tablero no se le puede poner. */
-const conInvitado: Parche[] = []
-let proximoInvitado = 5000
-let tableroInvitado: { id: string; personaId: string }[] = []
-globalThis.fetch = (async (_url: string, init: { body: string }) => {
-  const { query, variables } = JSON.parse(init.body) as {
-    query: string
-    variables: Record<string, string>
-  }
-  const responder = (data: unknown) => ({ ok: true, json: async () => ({ data }) })
-  if (query.includes('custom_activity {')) return responder({ custom_activity: customExistentes })
-  if (query.includes('create_timeline_item')) {
-    tableroInvitado = [...tableroInvitado, { id: String(proximoInvitado++), personaId: variables.item }]
-    return responder({ create_timeline_item: { id: 'tl-invitado' } })
-  }
-  if (query.includes('change_multiple_column_values')) {
-    const cv = JSON.parse(variables.cv) as Record<string, unknown>
-    if (COL.actividad.vendedor in cv) {
-      return {
-        ok: true,
-        json: async () => ({
-          errors: [{ message: 'invalid value - unable to assign person with id: 111857051' }],
-        }),
-      }
-    }
-    conInvitado.push({ id: variables.id, cv })
-    return responder({ change_multiple_column_values: { id: variables.id } })
-  }
-  return responder({
-    boards: [
-      {
-        items_page: {
-          items: [...tableroInvitado]
-            .reverse()
-            .map((i) => ({ id: i.id, column_values: [{ linked_item_ids: [i.personaId] }] })),
-        },
-      },
-    ],
-  })
-}) as unknown as typeof fetch
-
-const deInvitado = await registrarActividad(
-  {
-    tipo: 'Visita al Campo',
-    fecha: HOY,
-    hora: '10:14',
-    estado: 'Completada',
-    resolucion: 'testing desde usuario Dev TAP',
-    personas: [
-      {
-        itemId: '12524661079',
-        nombre: '7001 - La Batea S.A TEST',
-        contactos: [{ itemId: '12587733631', nombre: 'Luciano 1' }],
-      },
-    ],
-    vendedorId: '111857051',
+/* ---------- Vendedor INVITADO que no está en el tablero ----------
+   Monday no lo deja figurar en "✋Vendedor" del tablero de Actividades. La decisión es que la
+   operación NO exista: ni la entrada del widget ni el ítem del tablero. Hay dos redes:
+     1) antes de crear nada, se pregunta si puede figurar (invitado y no suscripto → no);
+     2) si igual Monday lo rechaza al completar el ítem, se reconoce ESE rechazo exacto y se borra
+        lo que se alcanzó a crear.
+   Y un fallo cualquiera NO se confunde con este: sigue siendo un asiento a medias. */
+interface EscenarioInvitado {
+  /** Qué contesta la consulta previa. `null` = no contesta (la red 1 no puede decidir). */
+  previa: { is_guest: boolean; suscripto: boolean } | null
+  /** Con qué error contesta Monday el parche. `null` = lo acepta. */
+  errorParche: Record<string, unknown> | null
+}
+const RECHAZO_INVITADO = {
+  message: 'invalid value - unable to assign person with id: 111857051',
+  extensions: {
+    code: 'ColumnValueException',
+    error_data: {
+      column_id: COL.actividad.vendedor,
+      column_validation_error_code: 'invalidPersonAssignment',
+    },
   },
-  null,
+}
+
+function escenarioInvitado(e: EscenarioInvitado) {
+  const registro = { creados: 0, parches: 0, borradosItem: [] as string[], borradosTimeline: [] as string[] }
+  let tablero: { id: string; personaId: string }[] = []
+  let proximo = 7000
+  globalThis.fetch = (async (_url: string, init: { body: string }) => {
+    const { query, variables } = JSON.parse(init.body) as {
+      query: string
+      variables: Record<string, string>
+    }
+    const responder = (data: unknown) => ({ ok: true, json: async () => ({ data }) })
+    if (query.includes('is_guest')) {
+      if (!e.previa) return responder({})
+      return responder({
+        users: [{ id: '111857051', is_guest: e.previa.is_guest }],
+        boards: [
+          {
+            name: 'Actividades',
+            subscribers: e.previa.suscripto ? [{ id: '111857051' }] : [{ id: '107870718' }],
+          },
+        ],
+      })
+    }
+    if (query.includes('custom_activity {')) return responder({ custom_activity: customExistentes })
+    if (query.includes('create_timeline_item')) {
+      registro.creados++
+      tablero = [...tablero, { id: String(proximo++), personaId: variables.item }]
+      return responder({ create_timeline_item: { id: `tl-${registro.creados}` } })
+    }
+    if (query.includes('delete_timeline_item')) {
+      registro.borradosTimeline.push(variables.id)
+      return responder({ delete_timeline_item: { id: variables.id } })
+    }
+    if (query.includes('delete_item')) {
+      registro.borradosItem.push(variables.id)
+      return responder({ delete_item: { id: variables.id } })
+    }
+    if (query.includes('change_multiple_column_values')) {
+      registro.parches++
+      if (e.errorParche) return { ok: true, json: async () => ({ errors: [e.errorParche] }) }
+      return responder({ change_multiple_column_values: { id: variables.id } })
+    }
+    return responder({
+      boards: [
+        {
+          items_page: {
+            items: [...tablero]
+              .reverse()
+              .map((i) => ({ id: i.id, column_values: [{ linked_item_ids: [i.personaId] }] })),
+          },
+        },
+      ],
+    })
+  }) as unknown as typeof fetch
+  return registro
+}
+
+const datosInvitado = {
+  tipo: 'Visita al Campo' as const,
+  fecha: HOY,
+  hora: '10:14',
+  estado: 'Completada' as const,
+  resolucion: 'testing desde usuario Dev TAP',
+  personas: [
+    {
+      itemId: '12524661079',
+      nombre: '7001 - La Batea S.A TEST',
+      contactos: [{ itemId: '12587733631', nombre: 'Luciano 1' }],
+    },
+  ],
+  vendedorId: '111857051',
+}
+
+/* Red 1: la consulta previa dice que es invitado y no está en el tablero → no se crea NADA. */
+const frenado = escenarioInvitado({ previa: { is_guest: true, suscripto: false }, errorParche: null })
+await assert.rejects(
+  registrarActividad(datosInvitado, null),
+  (err: unknown) => err instanceof VendedorNoInvitadoError && err.tablero === 'Actividades',
+  'un invitado que no está en el tablero frena la operación',
 )
-assert.equal(deInvitado.sinCompletar, 0, 'un vendedor rechazado NO deja la gestión a medias')
-assert.equal(conInvitado.length, 1, 'el parche de la gestión se escribió igual')
-assert.deepEqual(conInvitado[0].cv[COL.actividad.estado], { label: 'Completado' })
-assert.deepEqual(conInvitado[0].cv[COL.actividad.resolucion], { text: 'testing desde usuario Dev TAP' })
-assert.deepEqual(conInvitado[0].cv[COL.actividad.contactos], { item_ids: [12587733631] })
-assert.equal(conInvitado[0].cv.name, `Visita al Campo - ${HOY} - Luciano 1`)
+assert.equal(frenado.creados, 0, 'y no se crea ni la entrada del widget: no queda ningún ítem vacío')
+
+/* Invitado AL que sí se invitó al tablero: pasa, como cualquier miembro. */
+const invitadoConAcceso = escenarioInvitado({ previa: { is_guest: true, suscripto: true }, errorParche: null })
+const conAcceso = await registrarActividad(datosInvitado, null)
+assert.equal(conAcceso.sinCompletar, 0, 'si lo invitaron al tablero, se registra normal')
+assert.equal(invitadoConAcceso.creados, 1)
+
+/* Red 2: la consulta previa no alcanza a contestar, y Monday rechaza al vendedor en el parche con
+   ESE código exacto → se borra lo creado (el ítem del tablero Y la entrada del widget). */
+const deshecho = escenarioInvitado({ previa: null, errorParche: RECHAZO_INVITADO })
+await assert.rejects(
+  registrarActividad(datosInvitado, null),
+  (err: unknown) => err instanceof VendedorNoInvitadoError,
+  'el rechazo exacto de Monday también frena la operación',
+)
+assert.equal(deshecho.creados, 1, 'la entrada del widget se había creado')
+assert.deepEqual(deshecho.borradosItem, ['7000'], 'y se borra el ítem que sincronizó el tablero')
+assert.deepEqual(deshecho.borradosTimeline, ['tl-1'], 'y la entrada del widget: no queda nada')
+
+/* Un fallo CUALQUIERA no se confunde con "no está invitado": no se borra nada y sigue siendo un
+   asiento a medias, que se completa a mano. Es lo que valida que el impedimento sea ESE. */
+const otroError = escenarioInvitado({
+  previa: null,
+  errorParche: { message: 'Internal server error', extensions: { code: 'INTERNAL_SERVER_ERROR' } },
+})
+const aMediasPorOtro = await registrarActividad(datosInvitado, null)
+assert.equal(aMediasPorOtro.sinCompletar, 1, 'otro error deja el asiento a medias, como antes')
+assert.equal(otroError.borradosItem.length + otroError.borradosTimeline.length, 0, 'y no borra nada')
+
+/* El aviso: dice qué tablero, por qué, y quién lo resuelve. */
+const aUsuario = mensajeVendedorNoInvitado('Actividades', 'Dev TAP', true)
+assert.ok(aUsuario.startsWith('Tu usuario no está invitado al tablero "Actividades"'))
+assert.ok(aUsuario.includes('no se lo puede asignar como Vendedor'))
+assert.ok(aUsuario.includes('No se registró nada'))
+assert.ok(aUsuario.includes('Pedile a tu administrador de sistema que te invite al tablero "Actividades"'))
+const aOtro = mensajeVendedorNoInvitado('Actividades', 'Camila Ferreras', false)
+assert.ok(
+  aOtro.startsWith('El vendedor Camila Ferreras no está invitado'),
+  'si el vendedor es otro, no se le dice "tu usuario" a quien está operando',
+)
+
+console.log('OK · vendedor invitado: se frena antes de crear, se deshace si Monday lo rechaza, y el aviso dice quién lo resuelve')
 
 globalThis.setTimeout = setTimeoutReal
 const llamadas: { name: string; cv: Record<string, unknown> }[] = []

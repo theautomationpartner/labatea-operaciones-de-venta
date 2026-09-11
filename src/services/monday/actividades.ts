@@ -31,7 +31,7 @@ import {
   COL,
   personCol,
 } from './columns'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { esAsignacionDePersonaInvalida, mondayApi, mondayHabilitado } from './sdk'
 
 /**
  * Cómo se llama cada estado EN EL BOARD. La pantalla dice "Completada" (concuerda con "actividad")
@@ -298,33 +298,89 @@ async function esperarSincronizacion(
   return nuevos
 }
 
-/** Escribe columnas en el ítem de la actividad, en UNA mutación. */
-const escribirColumnas = (itemId: string, cv: Record<string, unknown>) =>
-  mondayApi(
-    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
-      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
-    }`,
-    { id: itemId, board: BOARDS.actividades, cv: JSON.stringify(cv) },
-  )
+/**
+ * El vendedor de la operación no puede figurar en el tablero donde se asienta: es un usuario
+ * INVITADO de la cuenta y a ese tablero no lo invitaron. Monday rechaza asignarlo en "✋Vendedor",
+ * y la operación se frena ENTERA: no queda ningún ítem a medio completar.
+ */
+export class VendedorNoInvitadoError extends Error {
+  readonly tablero: string
+  readonly vendedorId: string
+  constructor(tablero: string, vendedorId: string) {
+    super(`El vendedor ${vendedorId} no está invitado al tablero "${tablero}".`)
+    this.name = 'VendedorNoInvitadoError'
+    this.tablero = tablero
+    this.vendedorId = vendedorId
+  }
+}
+
+/** Cómo se llama el tablero en Monday: es lo que se le nombra al usuario en el aviso. */
+const TABLERO_ACTIVIDADES = 'Actividades'
 
 /**
- * Le escribe al ítem sincronizado todo lo que la sincronización no pudo traer.
+ * ¿El vendedor puede figurar en el tablero de Actividades? Se pregunta ANTES de crear nada.
  *
- * Son DOS mutaciones, no una, y a propósito. `change_multiple_column_values` es atómica: si una
- * sola columna es inválida, Monday rechaza TODAS. Y la del vendedor puede serlo sin que la app haya
- * hecho nada mal: un usuario INVITADO de la cuenta no se puede asignar en un tablero público —el de
- * Actividades lo es—, y Monday responde `invalidPersonAssignment`. Con el vendedor adentro del mismo
- * parche, un invitado perdía el nombre, el estado, la resolución y los contactos, y la operación
- * terminaba en "asiento sin completar" (verificado contra la cuenta con Dev TAP, 11/09/2026).
+ * La regla, verificada contra la cuenta el 11/09/2026: un MIEMBRO se puede asignar aunque no esté
+ * suscripto al tablero; un INVITADO, sólo si se lo invitó (está entre sus suscriptores). Al invitado
+ * que no está, Monday lo rechaza con `invalidPersonAssignment`.
  *
- * Por eso lo que hace a la gestión va primero y solo; el vendedor va después, aparte y sin frenar
- * nada: si no se puede asignar, la actividad queda completa igual, a nombre del dueño del token.
+ * Si la consulta no alcanza a contestar, NO frena: bloquear sin certeza le cerraría la operación a
+ * un vendedor legítimo. Para ese caso está la segunda red, el rechazo real de Monday al completar el
+ * ítem, que deshace lo creado (ver `asentarEnTimeline`).
+ */
+async function vendedorPuedeFigurar(vendedorId: string): Promise<{ ok: boolean; tablero: string }> {
+  const id = Number(vendedorId)
+  if (!Number.isFinite(id) || id <= 0) return { ok: true, tablero: TABLERO_ACTIVIDADES }
+  try {
+    const d = await mondayApi<{
+      users?: { id: string; is_guest: boolean }[]
+      boards?: { name: string; subscribers?: { id: string }[] }[]
+    }>(
+      `query {
+        users(ids: [${id}]) { id is_guest }
+        boards(ids: [${BOARDS.actividades}]) { name subscribers { id } }
+      }`,
+    )
+    const usuario = d.users?.[0]
+    const tablero = d.boards?.[0]
+    const nombre = tablero?.name || TABLERO_ACTIVIDADES
+    if (!usuario || !tablero?.subscribers) return { ok: true, tablero: nombre }
+    const ok = !usuario.is_guest || tablero.subscribers.some((u) => String(u.id) === String(id))
+    return { ok, tablero: nombre }
+  } catch {
+    return { ok: true, tablero: TABLERO_ACTIVIDADES }
+  }
+}
+
+/**
+ * Borra lo que alcanzó a crearse de una gestión que no se pudo completar: los ítems que sincronizó
+ * el tablero y las entradas del widget. Van los dos porque borrar la entrada del widget NO borra el
+ * ítem sincronizado (verificado). Si algo no se puede borrar, sigue con el resto.
+ */
+async function deshacer(itemIds: readonly string[], timelineIds: readonly string[]): Promise<void> {
+  for (const id of itemIds) {
+    try {
+      await mondayApi(`mutation ($id: ID!) { delete_item(item_id: $id) { id } }`, { id })
+    } catch {
+      /* sigue con el resto */
+    }
+  }
+  for (const id of timelineIds) {
+    try {
+      await mondayApi(`mutation ($id: String!) { delete_timeline_item(id: $id) { id } }`, { id })
+    } catch {
+      /* sigue con el resto */
+    }
+  }
+}
+
+/**
+ * Le escribe al ítem sincronizado todo lo que la sincronización no pudo traer, en UNA mutación.
  *
- * No hay otra mutación que lo resuelva: `change_column_value` y `change_simple_column_value` rechazan
- * al invitado igual. La única que lo acepta es `create_item` —por eso el resto de los servicios, que
- * crean sus registros con el vendedor adentro, funcionan con vendedores invitados—, pero este ítem
- * no lo creamos nosotros: lo crea la sincronización del widget. La salida de fondo es compartirle el
- * tablero de Actividades a esos usuarios, no un cambio de código.
+ * Es atómica a propósito: si Monday rechaza una columna, rechaza todas. La que puede fallar sin que
+ * la app haya hecho nada mal es la del vendedor —un INVITADO al que no se invitó al tablero—, y en
+ * ese caso lo correcto es que no quede nada a medias: `asentarEnTimeline` reconoce ese rechazo
+ * exacto y deshace lo creado.
  */
 async function completarItemSincronizado(
   itemId: string,
@@ -342,16 +398,15 @@ async function completarItemSincronizado(
     .map((c) => Number(c.itemId))
     .filter((n) => Number.isFinite(n) && n > 0)
   if (contactos.length > 0) cv[COL.actividad.contactos] = { item_ids: contactos }
-  await escribirColumnas(itemId, cv)
-
   const vendedor = personCol(datos.vendedorId)
-  if (!vendedor) return
-  try {
-    await escribirColumnas(itemId, { [COL.actividad.vendedor]: vendedor })
-  } catch {
-    /* Invitado (o alguien que el tablero no admite): la gestión ya está completa, y sólo queda sin
-       vendedor asignado. No es un asiento a medias, así que tampoco se cuenta como tal. */
-  }
+  if (vendedor) cv[COL.actividad.vendedor] = vendedor
+
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    { id: itemId, board: BOARDS.actividades, cv: JSON.stringify(cv) },
+  )
 }
 
 /**
@@ -369,8 +424,9 @@ async function asentarEnTimeline(
   const previos = new Set((await actividadesDeLasPersonas(personaIds)).map((a) => a.id))
   const timestamp = aTimestamp(datos.fecha, datos.hora)
 
+  const timelineIds: string[] = []
   for (const persona of datos.personas) {
-    await mondayApi(
+    const creado = await mondayApi<{ create_timeline_item: { id: string } }>(
       `mutation ($item: ID!, $act: String!, $title: String!, $ts: ISO8601DateTime!, $content: String) {
         create_timeline_item(
           item_id: $item
@@ -389,6 +445,7 @@ async function asentarEnTimeline(
         content: datos.resolucion?.trim() || null,
       },
     )
+    timelineIds.push(creado.create_timeline_item.id)
   }
 
   const sincronizados = await esperarSincronizacion(personaIds, previos)
@@ -403,11 +460,19 @@ async function asentarEnTimeline(
       continue
     }
     ids.push(itemId)
-    /* Un fallo acá no tira abajo la operación: la gestión ya está asentada y en el widget, y lo
-       que quedó a medias es un ítem del tablero que se termina de completar a mano. */
     try {
       await completarItemSincronizado(itemId, persona, datos)
-    } catch {
+    } catch (e) {
+      /* Monday rechazó al VENDEDOR: no puede figurar en este tablero. No es un asiento a medias
+         que se completa a mano: es una operación que no tiene que existir, así que se borra lo
+         que alcanzó a crearse —los ítems del tablero y las entradas del widget— y se frena. Se
+         reconoce por el código exacto en la columna del vendedor, no por un error cualquiera. */
+      if (esAsignacionDePersonaInvalida(e, COL.actividad.vendedor)) {
+        await deshacer([...sincronizados.values()], timelineIds)
+        throw new VendedorNoInvitadoError(TABLERO_ACTIVIDADES, String(datos.vendedorId ?? ''))
+      }
+      /* Cualquier otro fallo no tira abajo la operación: la gestión ya está asentada y en el
+         widget, y lo que quedó a medias se termina de completar a mano. */
       sinCompletar++
     }
   }
@@ -430,6 +495,13 @@ export async function registrarActividad(
   datos: DatosActividad,
   proyectada: ActividadProyectada | null,
 ): Promise<ActividadCreada> {
+  /* Antes de crear NADA: si el vendedor no puede figurar en el tablero, la operación no arranca.
+     Crear la entrada del widget dispara la sincronización, y a partir de ahí el ítem del tablero
+     existe: después sólo quedaría deshacerlo. */
+  if (datos.vendedorId && mondayHabilitado()) {
+    const { ok, tablero } = await vendedorPuedeFigurar(String(datos.vendedorId))
+    if (!ok) throw new VendedorNoInvitadoError(tablero, String(datos.vendedorId))
+  }
   const principal = await asentarEnTimeline(datos)
   const base = { actividadId: principal.ids[0] ?? '', sinCompletar: principal.sinCompletar }
   if (!proyectada || !proyectada.tipo) return { ...base, proyectadaId: null }

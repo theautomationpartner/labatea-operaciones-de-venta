@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
-import { faltantesActividad, hayProyectada } from '@/lib/actividad'
+import { faltantesActividad, hayProyectada, mensajeVendedorNoInvitado } from '@/lib/actividad'
 import { indiceDePaso, pasosDe, rotuloEtapaActividad } from '@/lib/pasos'
 import {
   actividadesPendientesEnCache,
@@ -11,6 +11,7 @@ import {
   getActividadesPendientes,
   type PersonaActividad,
   registrarActividad,
+  VendedorNoInvitadoError,
 } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { ActividadPendiente, ContactoElegido, TipoOperacionActividad } from '@/types'
@@ -57,7 +58,8 @@ function personasConSusContactos(contactos: readonly ContactoElegido[]): Persona
  *     ya tenía agendadas y se eligen cuáles pasan a "Completado".
  */
 export function ActividadView() {
-  const { operacion, tipoVenta, tipoEntrega, remito, actividad, cliente, vendedor } = useApp()
+  const { operacion, tipoVenta, tipoEntrega, remito, actividad, cliente, vendedor, usuarioActual } =
+    useApp()
   const dispatch = useDispatch()
   // Qué falta para poder cerrar. Se arma al intentar finalizar, no mientras se completa.
   const [faltantes, setFaltantes] = useState<string[] | null>(null)
@@ -66,6 +68,9 @@ export function ActividadView() {
   /* La operación salió, pero con una observación que hay que leer. No es un error —no se puede
      reintentar, ya está asentada—, así que cierra la operación igual al aceptarlo. */
   const [aviso, setAviso] = useState<string | null>(null)
+  /* El vendedor no puede figurar en el tablero: no se registró nada. Va aparte del error genérico
+     porque dice otra cosa —por qué, y quién lo resuelve— y no manda a revisar el tablero. */
+  const [noInvitado, setNoInvitado] = useState<string | null>(null)
   // La operación ya quedó asentada: se muestra el tilde y la app se reinicia sola.
   const [listo, setListo] = useState(false)
   /* Si ya se consultaron las pendientes en esta operación, la lista arranca puesta y el "cargando"
@@ -198,8 +203,18 @@ export function ActividadView() {
         return
       }
       setListo(true)
-    } catch {
+    } catch (e) {
       setGuardando(false)
+      if (e instanceof VendedorNoInvitadoError) {
+        setNoInvitado(
+          mensajeVendedorNoInvitado(
+            e.tablero,
+            vendedor?.name ?? '',
+            !!usuarioActual && vendedor?.id === usuarioActual.id,
+          ),
+        )
+        return
+      }
       setError(
         'No se pudo registrar la actividad. Revisá en el tablero si quedó algo creado antes de reintentar.',
       )
@@ -308,6 +323,12 @@ export function ActividadView() {
           onClose={() => setFaltantes(null)}
         >
           No se puede finalizar hasta completar esto:
+        </AvisoModal>
+      )}
+
+      {noInvitado && (
+        <AvisoModal titulo="No se pudo registrar la actividad" onClose={() => setNoInvitado(null)}>
+          {noInvitado}
         </AvisoModal>
       )}
 

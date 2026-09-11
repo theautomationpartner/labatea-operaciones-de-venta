@@ -54,6 +54,45 @@ export function urlArchivo(url: string): string {
 
 interface ApiError {
   message: string
+  /** Lo que agrega Monday: el código y, en los rechazos de columna, qué columna y por qué. */
+  extensions?: {
+    code?: string
+    error_data?: {
+      column_id?: string
+      column_validation_error_code?: string
+    }
+  }
+}
+
+/**
+ * Monday respondió con `errors`. Conserva los errores tal como vinieron —no sólo el texto— porque
+ * hay rechazos que la app tiene que reconocer con EXACTITUD (ver `esAsignacionDePersonaInvalida`),
+ * y el mensaje suelto no alcanza: no dice qué columna falló y su redacción puede cambiar. El
+ * `message` es el mismo de siempre, así que quien atrapa un `Error` común sigue funcionando igual.
+ */
+export class MondayApiError extends Error {
+  readonly errores: ApiError[]
+  constructor(errores: ApiError[]) {
+    super(errores.map((e) => e.message).join(' · '))
+    this.name = 'MondayApiError'
+    this.errores = errores
+  }
+}
+
+/**
+ * Monday se negó a asignar a una persona en una columna de persona (`invalidPersonAssignment`).
+ * Pasa cuando el usuario no puede figurar en ese tablero: un INVITADO de la cuenta al que no se
+ * invitó al tablero. Con `columnaId`, sólo cuenta si la columna rechazada es ésa.
+ */
+export function esAsignacionDePersonaInvalida(error: unknown, columnaId?: string): boolean {
+  if (!(error instanceof MondayApiError)) return false
+  return error.errores.some((e) => {
+    const d = e.extensions?.error_data
+    return (
+      d?.column_validation_error_code === 'invalidPersonAssignment' &&
+      (!columnaId || d.column_id === columnaId)
+    )
+  })
 }
 
 /**
@@ -218,7 +257,7 @@ export async function mondayApi<T>(query: string, variables?: Record<string, unk
   }))
   await verificarRespuesta(res, 'Monday API')
   const json = (await res.json()) as { data?: T; errors?: ApiError[] }
-  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join(' · '))
+  if (json.errors?.length) throw new MondayApiError(json.errors)
   if (!json.data) throw new Error('Monday no devolvió datos.')
   return json.data
 }

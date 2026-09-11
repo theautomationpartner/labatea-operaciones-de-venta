@@ -112,6 +112,24 @@ export function etiquetaActividad(a: ActividadListada): ResumenActividades {
   }
 }
 
+/**
+ * Qué se le dice al usuario cuando el vendedor no puede figurar en el tablero (ver
+ * `VendedorNoInvitadoError`). No se registró nada y reintentar no cambia nada: lo que sirve es
+ * saber POR QUÉ y QUIÉN lo resuelve.
+ *
+ * Distingue si el vendedor es el propio usuario —"tu usuario"— o uno elegido en el encabezado:
+ * decirle "no estás invitado" a un administrador que eligió a otro vendedor sería falso.
+ */
+export function mensajeVendedorNoInvitado(
+  tablero: string,
+  vendedorNombre: string,
+  esElUsuario: boolean,
+): string {
+  return esElUsuario
+    ? `Tu usuario no está invitado al tablero "${tablero}", así que no se lo puede asignar como Vendedor de la nueva actividad que estás registrando. No se registró nada. Pedile a tu administrador de sistema que te invite al tablero "${tablero}".`
+    : `El vendedor ${vendedorNombre} no está invitado al tablero "${tablero}", así que no se lo puede asignar como Vendedor de la nueva actividad que estás registrando. No se registró nada. Pedile a tu administrador de sistema que lo invite al tablero "${tablero}", o elegí otro vendedor.`
+}
+
 /* ===== Las actividades asociadas al documento ===== */
 
 /** Cómo se muestran las actividades elegidas en el resumen del presupuesto o de la venta. */
