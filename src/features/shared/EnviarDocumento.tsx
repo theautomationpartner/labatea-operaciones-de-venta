@@ -51,6 +51,16 @@ type EstadoEnvio = 'idle' | 'enviando' | 'enviado' | 'error'
 export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) {
   const state = useApp()
   const { medioEnvio, contactos, cliente, documentoEnviado, log } = state
+  /* FACTURA (VENTA y VENTA PROFORMA): el Email va SIEMPRE y WhatsApp se suma con un check. No hay
+     selector ni opción "Ambos": tildar WhatsApp es, en el tablero, exactamente eso —las dos etiquetas
+     en "🤖Enviar Fact por:"—, así que se reusa el mismo valor en vez de inventar otro.
+
+     `medioEfectivo` normaliza lo que venga del estado, que es GLOBAL y compartido con los otros
+     comprobantes: si llegara un "WhatsApp" solo, en la factura no existe esa combinación y se
+     trata como Email. Los otros comprobantes siguen usando su selector sin cambios. */
+  const esFactura = documento === 'factura'
+  const conWhatsapp = medioEnvio === 'Ambos'
+  const medioEfectivo: MedioEnvio = esFactura ? (conWhatsapp ? 'Ambos' : 'Email') : medioEnvio
   const dispatch = useDispatch()
   /* El comprobante a enviar. Es lo ÚNICO que sabe de las diferencias entre uno y otro: el
      componente sólo le pregunta. */
@@ -184,15 +194,15 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
    * Devuelve `true` si frenó. Con "Ambos" NUNCA frena: ver `contactosSinVia`.
    */
   const frenarPorContactoSinVia = (): boolean => {
-    const sinVia = contactosSinVia(contactos, medioEnvio)
+    const sinVia = contactosSinVia(contactos, medioEfectivo)
     if (sinVia.length === 0) return false
     dispatch({
       type: 'setLog',
       entries: sinVia.map((c) => ({
         id: `sin-via-${c.id}`,
         tipo: 'err' as const,
-        titulo: `${c.name} no puede recibirlo por ${medioEnvio.toLowerCase()}`,
-        detalle: `${msgContactoSinVia(c.name, medioEnvio)} Quitalo de la lista para enviarles al resto, o cargale el dato en Monday y reintentá.`,
+        titulo: `${c.name} no puede recibirlo por ${medioEfectivo.toLowerCase()}`,
+        detalle: `${msgContactoSinVia(c.name, medioEfectivo)} Quitalo de la lista para enviarles al resto, o cargale el dato en Monday y reintentá.`,
       })),
     })
     marcarError()
@@ -229,7 +239,7 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
         state,
         itemId,
         contactoIds: contactoItemIds(),
-        medio: medioEnvio,
+        medio: medioEfectivo,
         onProgreso: setEstadoMonday,
       })
       // El PDF todavía no se generó: no es un fallo, hay que esperar y reintentar.
@@ -293,28 +303,59 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
           </div>
         ) : (
           <>
-            <div className="igp">
-              <label htmlFor="medio">Medio de envío *</label>
-              <select
-                id="medio"
-                className="full w-medio"
-                style={{ cursor: 'pointer' }}
-                value={medioEnvio}
-                onChange={(e) => {
-                  /* Cambiar el medio puede resolver el problema —o crear otro—: en los dos casos
-                     el aviso anterior ya no aplica. */
-                  limpiarIntento()
-                  dispatch({ type: 'setMedioEnvio', value: e.target.value as MedioEnvio })
-                }}
-              >
-                {/* El value queda limpio: el emoji es sólo la etiqueta. */}
-                {MEDIOS.map((m) => (
-                  <option key={m} value={m}>
-                    {ICONO_MEDIO[m]} {m}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {esFactura ? (
+              /* El Email no se elige: va siempre. Se muestra fijo para que se sepa por dónde sale, y la
+                 única decisión que queda es sumar WhatsApp. */
+              <div className="igp">
+                <span className="envio-medio-lbl">Medio de envío *</span>
+                <div className="envio-medio-fijo">
+                  <i className="fas fa-envelope" aria-hidden="true" /> Email
+                </div>
+                <label className="dpago-check envio-wsp-check">
+                  <input
+                    type="checkbox"
+                    className="dpago-check-input"
+                    checked={conWhatsapp}
+                    onChange={(e) => {
+                      /* Sumar o sacar WhatsApp cambia qué dato se le exige a cada contacto: el aviso
+                         anterior ya no aplica. */
+                      limpiarIntento()
+                      dispatch({ type: 'setMedioEnvio', value: e.target.checked ? 'Ambos' : 'Email' })
+                    }}
+                  />
+                  <span
+                    className={`dpago-check-box ${conWhatsapp ? 'dpago-check-box--on' : ''}`}
+                    aria-hidden="true"
+                  >
+                    <i className="fas fa-check" />
+                  </span>
+                  <span className="dpago-check-txt">¿Desea realizar también un envío por WhatsApp?</span>
+                </label>
+              </div>
+            ) : (
+              <div className="igp">
+                <label htmlFor="medio">Medio de envío *</label>
+                <select
+                  id="medio"
+                  className="full w-medio"
+                  style={{ cursor: 'pointer' }}
+                  value={medioEnvio}
+                  onChange={(e) => {
+                    /* Cambiar el medio puede resolver el problema —o crear otro—: en los dos casos
+                       el aviso anterior ya no aplica. */
+                    limpiarIntento()
+                    dispatch({ type: 'setMedioEnvio', value: e.target.value as MedioEnvio })
+                  }}
+                >
+                  {/* El value queda limpio: el emoji es sólo la etiqueta. */}
+                  {MEDIOS.map((m) => (
+                    <option key={m} value={m}>
+                      {ICONO_MEDIO[m]} {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <ContactosPicker disponibles={disponibles} />
 
@@ -323,10 +364,10 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
             </div>
             <div className="selc">
               {contactos.map((c) => {
-                const falta = faltaParaMedio(c, medioEnvio)
+                const falta = faltaParaMedio(c, medioEfectivo)
                 /* Sólo se marca al contacto que NO tiene por dónde recibirlo. Con "Ambos", que le
                    falte uno de los dos datos no es un problema: se envía por el que tenga. */
-                const incompleto = sinViaDeEnvio(c, medioEnvio)
+                const incompleto = sinViaDeEnvio(c, medioEfectivo)
                 /* Rojo únicamente cuando el envío no puede llegarle. Si sigue siendo alcanzable por
                    el otro canal, el dato ausente se informa en gris oscuro: no es un error. */
                 const claseFalta = incompleto ? 'citem-sub--falta' : 'citem-sub--aviso'

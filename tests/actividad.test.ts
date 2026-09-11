@@ -158,6 +158,9 @@ interface Parche {
 
 const timeline: TimelineCreado[] = []
 const parches: Parche[] = []
+/* El vendedor se escribe en una mutación APARTE (ver `completarItemSincronizado`): se junta acá
+   para que lo que se afirma del parche de la gestión no dependa de él. */
+const vendedores: Parche[] = []
 const customCreadas: string[] = []
 /* Las custom activities que la cuenta YA tiene. "Visita al Campo" no está a propósito: es el caso
    que obliga a darla de alta antes de poder asentar nada. */
@@ -204,7 +207,12 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
     return responder({ create_timeline_item: { id: `tl-${timeline.length}` } })
   }
   if (query.includes('change_multiple_column_values')) {
-    parches.push({ id: variables.id, cv: JSON.parse(variables.cv) })
+    const cv = JSON.parse(variables.cv) as Record<string, unknown>
+    if (Object.keys(cv).length === 1 && COL.actividad.vendedor in cv) {
+      vendedores.push({ id: variables.id, cv })
+    } else {
+      parches.push({ id: variables.id, cv })
+    }
     return responder({ change_multiple_column_values: { id: variables.id } })
   }
   // La foto del tablero: los ítems ligados a las Personas, de los más nuevos.
@@ -308,8 +316,14 @@ assert.deepEqual(pLaBatea.cv[COL.actividad.estado], { label: 'Completado' })
 assert.deepEqual(pLaBatea.cv[COL.actividad.resolucion], { text: 'Pidió cotización de fertilizante' })
 assert.deepEqual(pLaBatea.cv[COL.actividad.contactos], { item_ids: [11] }, 'sus contactos, no todos')
 assert.deepEqual(pCampoSur.cv[COL.actividad.contactos], { item_ids: [22] })
-assert.deepEqual(pLaBatea.cv[COL.actividad.vendedor], {
-  personsAndTeams: [{ id: 99, kind: 'person' }],
+/* El vendedor NO va en el parche de la gestión. `change_multiple_column_values` es atómica y un
+   vendedor INVITADO no se puede asignar en el tablero público de Actividades: adentro del mismo
+   parche, se llevaba puestos el nombre, el estado, la resolución y los contactos. */
+assert.ok(!(COL.actividad.vendedor in pLaBatea.cv), 'el vendedor va aparte, no en el parche')
+assert.equal(vendedores.length, 4, 'una escritura de vendedor por ítem sincronizado')
+assert.deepEqual(vendedores[0], {
+  id: '1000',
+  cv: { [COL.actividad.vendedor]: { personsAndTeams: [{ id: 99, kind: 'person' }] } },
 })
 assert.ok(
   !(COL.actividad.persona in pLaBatea.cv),
@@ -334,6 +348,7 @@ assert.ok(
 /* Sin actividad proyectada se asienta UNA sola gestión: agendar la próxima es opcional. */
 timeline.length = 0
 parches.length = 0
+vendedores.length = 0
 const sola = await registrarActividad(
   {
     tipo: 'Llamada telefónica',
@@ -357,6 +372,7 @@ assert.ok(
   !(COL.actividad.vendedor in parches[0].cv),
   'y sin vendedor tampoco se manda la columna Person',
 )
+assert.equal(vendedores.length, 0, 'ni una escritura aparte para asignarlo')
 
 /* Si el ítem no aparece en la ventana de espera, la gestión igual quedó asentada —el timeline item
    existe— y se avisa cuántos quedaron a medio completar, en vez de mentir que salió todo. */
@@ -406,6 +422,74 @@ const aMedias = await registrarActividad(
 assert.equal(timeline.length, 1, 'el asiento en el widget se hizo igual')
 assert.equal(parches.length, 0, 'no hay ítem que completar')
 assert.equal(aMedias.sinCompletar, 1, 'y se dice cuántos quedaron a medias')
+
+/* Vendedor INVITADO: Monday rechaza asignarlo (`invalidPersonAssignment`). La gestión tiene que
+   quedar completa igual —nombre, estado, resolución y contactos— y NO contarse como a medias: lo
+   único que falta es el vendedor, que en ese tablero no se le puede poner. */
+const conInvitado: Parche[] = []
+let proximoInvitado = 5000
+let tableroInvitado: { id: string; personaId: string }[] = []
+globalThis.fetch = (async (_url: string, init: { body: string }) => {
+  const { query, variables } = JSON.parse(init.body) as {
+    query: string
+    variables: Record<string, string>
+  }
+  const responder = (data: unknown) => ({ ok: true, json: async () => ({ data }) })
+  if (query.includes('custom_activity {')) return responder({ custom_activity: customExistentes })
+  if (query.includes('create_timeline_item')) {
+    tableroInvitado = [...tableroInvitado, { id: String(proximoInvitado++), personaId: variables.item }]
+    return responder({ create_timeline_item: { id: 'tl-invitado' } })
+  }
+  if (query.includes('change_multiple_column_values')) {
+    const cv = JSON.parse(variables.cv) as Record<string, unknown>
+    if (COL.actividad.vendedor in cv) {
+      return {
+        ok: true,
+        json: async () => ({
+          errors: [{ message: 'invalid value - unable to assign person with id: 111857051' }],
+        }),
+      }
+    }
+    conInvitado.push({ id: variables.id, cv })
+    return responder({ change_multiple_column_values: { id: variables.id } })
+  }
+  return responder({
+    boards: [
+      {
+        items_page: {
+          items: [...tableroInvitado]
+            .reverse()
+            .map((i) => ({ id: i.id, column_values: [{ linked_item_ids: [i.personaId] }] })),
+        },
+      },
+    ],
+  })
+}) as unknown as typeof fetch
+
+const deInvitado = await registrarActividad(
+  {
+    tipo: 'Visita al Campo',
+    fecha: HOY,
+    hora: '10:14',
+    estado: 'Completada',
+    resolucion: 'testing desde usuario Dev TAP',
+    personas: [
+      {
+        itemId: '12524661079',
+        nombre: '7001 - La Batea S.A TEST',
+        contactos: [{ itemId: '12587733631', nombre: 'Luciano 1' }],
+      },
+    ],
+    vendedorId: '111857051',
+  },
+  null,
+)
+assert.equal(deInvitado.sinCompletar, 0, 'un vendedor rechazado NO deja la gestión a medias')
+assert.equal(conInvitado.length, 1, 'el parche de la gestión se escribió igual')
+assert.deepEqual(conInvitado[0].cv[COL.actividad.estado], { label: 'Completado' })
+assert.deepEqual(conInvitado[0].cv[COL.actividad.resolucion], { text: 'testing desde usuario Dev TAP' })
+assert.deepEqual(conInvitado[0].cv[COL.actividad.contactos], { item_ids: [12587733631] })
+assert.equal(conInvitado[0].cv.name, `Visita al Campo - ${HOY} - Luciano 1`)
 
 globalThis.setTimeout = setTimeoutReal
 const llamadas: { name: string; cv: Record<string, unknown> }[] = []
@@ -601,10 +685,10 @@ assert.equal(payloads.length, 0, 'sin actividades elegidas no se escribe nada')
    7) REGISTRO DE ACTIVIDADES · COMPLETAR ACTIVIDAD PENDIENTE.
    ==========================================================================================
    La consulta trae TODAS las pendientes del tablero y el recorte por Persona y contacto se hace en
-   memoria: Monday no filtra una board_relation por el id del ítem conectado (una regla `any_of`
-   con ids devuelve vacío, verificado contra el board real), y además la selección de Personas
-   cambia dentro de la misma operación, así que filtrar del lado del servidor obligaría a volver a
-   consultar en cada cambio. */
+   memoria. Monday SÍ filtra una board_relation por id, pero sólo con el id como NÚMERO (con texto
+   devuelve vacío sin avisar); el recorte va en memoria porque la selección de Personas cambia
+   dentro de la misma operación, y filtrar del lado del servidor obligaría a volver a consultar en
+   cada cambio. */
 limpiarCachesConsultas()
 llamadas.length = 0
 globalThis.fetch = (async (_url: string, init: { body: string }) => {

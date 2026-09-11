@@ -453,6 +453,39 @@
   color: var(--text-dark, #323338);
 }
 
+/* ENVÍO DE FACTURA: el Email fijo y el check para sumar WhatsApp. Reusan la pregunta sí/no de
+   `.dpago-check` para que se lea igual que la otra de la app; acá va sin relleno lateral porque
+   vive dentro de la card de envío, alineada con el resto de sus campos. */
+.envio-medio-lbl {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark, #323338);
+  margin-bottom: 6px;
+}
+.envio-medio-fijo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-suave, #e4e7ec);
+  border-radius: 8px;
+  background: var(--tint-neutral, #f7f8fa);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dark, #323338);
+}
+.envio-medio-fijo i {
+  color: var(--primary-blue, #0073ea);
+}
+.envio-wsp-check {
+  padding: 12px 0 0;
+}
+/* En la card la pregunta puede partirse: el `nowrap` de la original es para su caja ancha. */
+.envio-wsp-check .dpago-check-txt {
+  white-space: normal;
+}
+
 /* Divisoria interna entre las dos mitades: de borde a borde de la caja. */
 .dpago-sep {
   flex: 0 0 auto;

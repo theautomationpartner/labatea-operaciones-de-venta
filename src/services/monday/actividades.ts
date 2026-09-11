@@ -298,7 +298,34 @@ async function esperarSincronizacion(
   return nuevos
 }
 
-/** Le escribe al ítem sincronizado todo lo que la sincronización no pudo traer. */
+/** Escribe columnas en el ítem de la actividad, en UNA mutación. */
+const escribirColumnas = (itemId: string, cv: Record<string, unknown>) =>
+  mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    { id: itemId, board: BOARDS.actividades, cv: JSON.stringify(cv) },
+  )
+
+/**
+ * Le escribe al ítem sincronizado todo lo que la sincronización no pudo traer.
+ *
+ * Son DOS mutaciones, no una, y a propósito. `change_multiple_column_values` es atómica: si una
+ * sola columna es inválida, Monday rechaza TODAS. Y la del vendedor puede serlo sin que la app haya
+ * hecho nada mal: un usuario INVITADO de la cuenta no se puede asignar en un tablero público —el de
+ * Actividades lo es—, y Monday responde `invalidPersonAssignment`. Con el vendedor adentro del mismo
+ * parche, un invitado perdía el nombre, el estado, la resolución y los contactos, y la operación
+ * terminaba en "asiento sin completar" (verificado contra la cuenta con Dev TAP, 11/09/2026).
+ *
+ * Por eso lo que hace a la gestión va primero y solo; el vendedor va después, aparte y sin frenar
+ * nada: si no se puede asignar, la actividad queda completa igual, a nombre del dueño del token.
+ *
+ * No hay otra mutación que lo resuelva: `change_column_value` y `change_simple_column_value` rechazan
+ * al invitado igual. La única que lo acepta es `create_item` —por eso el resto de los servicios, que
+ * crean sus registros con el vendedor adentro, funcionan con vendedores invitados—, pero este ítem
+ * no lo creamos nosotros: lo crea la sincronización del widget. La salida de fondo es compartirle el
+ * tablero de Actividades a esos usuarios, no un cambio de código.
+ */
 async function completarItemSincronizado(
   itemId: string,
   persona: PersonaActividad,
@@ -315,15 +342,16 @@ async function completarItemSincronizado(
     .map((c) => Number(c.itemId))
     .filter((n) => Number.isFinite(n) && n > 0)
   if (contactos.length > 0) cv[COL.actividad.contactos] = { item_ids: contactos }
-  const vendedor = personCol(datos.vendedorId)
-  if (vendedor) cv[COL.actividad.vendedor] = vendedor
+  await escribirColumnas(itemId, cv)
 
-  await mondayApi(
-    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
-      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
-    }`,
-    { id: itemId, board: BOARDS.actividades, cv: JSON.stringify(cv) },
-  )
+  const vendedor = personCol(datos.vendedorId)
+  if (!vendedor) return
+  try {
+    await escribirColumnas(itemId, { [COL.actividad.vendedor]: vendedor })
+  } catch {
+    /* Invitado (o alguien que el tablero no admite): la gestión ya está completa, y sólo queda sin
+       vendedor asignado. No es un asiento a medias, así que tampoco se cuenta como tal. */
+  }
 }
 
 /**
@@ -666,11 +694,11 @@ export async function asociarActividades(
  * TODAS las pendientes del tablero, con las relaciones que dicen a quién involucran.
  *
  * El filtro por Persona y por contacto va EN MEMORIA (ver `filtrarPendientesDe`), no en la
- * consulta: Monday no filtra una `board_relation` por el id del ítem conectado —una regla
- * `any_of` con ids devuelve vacío, verificado contra el board—, así que la única regla que sirve
- * del lado del servidor es el estado. Como la selección de Personas cambia dentro de la misma
- * operación (la etapa 1 deja sumar clientes), filtrar acá también sería peor: habría que volver a
- * consultar en cada cambio.
+ * consulta. No es porque Monday no pueda: una regla `any_of` sobre la `board_relation` SÍ filtra por
+ * el id del ítem conectado, pero sólo si va como NÚMERO (`compare_value: [123]`); como texto
+ * (`["123"]`) devuelve vacío sin avisar —verificado contra el board el 11/09/2026—. Va en memoria
+ * porque la selección de Personas cambia dentro de la misma operación (la etapa 1 deja sumar
+ * clientes): filtrando en la consulta habría que volver a pedirla en cada cambio.
  */
 async function getActividadesPendientesImpl(): Promise<ActividadPendiente[]> {
   if (!mondayHabilitado()) return []
