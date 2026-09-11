@@ -151,7 +151,7 @@ export function ResumenVenta({
       {/* Con comprobantes ya creados no se vuelve a emitir: se duplicarían los ítems. */}
       <button
         type="button"
-        className="btn-generar"
+        className="btn-generar btn-mayus"
         disabled={emitiendo || yaEmitido || cantidadFacturas === 0}
         aria-busy={emitiendo}
         onClick={onEmitir}

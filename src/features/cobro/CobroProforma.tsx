@@ -215,7 +215,7 @@ export function CobroProforma() {
 
           <button
             type="button"
-            className="btn btn-primary proforma-emitir"
+            className="btn btn-primary proforma-emitir btn-mayus"
             onClick={emitir}
             disabled={emitiendo || emitida || productos.length === 0}
             aria-busy={emitiendo}

@@ -110,7 +110,7 @@ export function ResumenEmision({
 
       <button
         type="button"
-        className="btn-generar"
+        className="btn-generar btn-mayus"
         onClick={onGenerar}
         disabled={generando || emitido}
         aria-busy={generando}

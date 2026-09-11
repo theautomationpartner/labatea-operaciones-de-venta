@@ -485,6 +485,16 @@
 .envio-wsp-check .dpago-check-txt {
   white-space: normal;
 }
+/* El checkbox vive dentro de un `.igp`, y `.igp label` (más específica que `.dpago-check`) le
+   imponía `display: block`: la caja del check, que también es flex, se iba a su propia línea y la
+   pregunta caía abajo. Acá se le devuelve la fila, con más especificidad y SÓLO para este control.
+   En pantallas angostas la pregunta se parte en renglones AL LADO de la caja —que no se encoge—, en
+   lugar de bajar debajo de ella. */
+.igp .envio-wsp-check {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+}
 
 /* Divisoria interna entre las dos mitades: de borde a borde de la caja. */
 .dpago-sep {
@@ -1518,11 +1528,19 @@
   flex-shrink: 0;
 }
 /* Le falta el dato del medio elegido: el envío no puede llegarle. */
+/* El contacto que no tiene por dónde recibir el envío se marca SÓLO con color: el estado no puede
+   cambiar las medidas de la fila. Antes la franja era un `border-left` de 3px que el margen negativo
+   no compensaba, y el contenido se corría 3px a la derecha al pasar a rojo —y volvía a su lugar al
+   sumar WhatsApp—. La franja ahora es una sombra interna, que se pinta pero no ocupa lugar; y el
+   relleno de cada lado se compensa con el mismo margen negativo, así el fondo rojo desborda parejo y
+   el avatar, el nombre, el badge y el tacho quedan exactamente donde están en una fila normal. */
 .citem--sin-dato {
   background: #fff5f6;
-  border-left: 3px solid var(--red);
+  box-shadow: inset 3px 0 0 var(--red);
   padding-left: 10px;
+  padding-right: 10px;
   margin-left: -10px;
+  margin-right: -10px;
   border-radius: 4px;
 }
 .citem--sin-dato .citem-name {

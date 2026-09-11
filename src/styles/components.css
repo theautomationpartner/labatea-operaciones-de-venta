@@ -1342,3 +1342,13 @@ td {
 .skeleton--medio {
   width: 260px;
 }
+
+/* ===== Botones de emitir y de enviar, en MAYÚSCULAS =====
+   Los que cierran una operación —emitir el presupuesto, la factura, la proforma o el remito, y
+   "Confirmar y Enviar"— van en mayúsculas en TODOS sus estados ("Emitiendo…", "Factura emitida",
+   "Enviado exitosamente"…). Es por clase y no escribiendo el texto en mayúsculas: así cubre cada
+   estado sin tocar ningún rótulo, y el lector de pantalla sigue leyendo el texto normal —en
+   mayúsculas lo deletrearía como una sigla—. */
+.btn-mayus {
+  text-transform: uppercase;
+}

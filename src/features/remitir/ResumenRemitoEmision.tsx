@@ -145,7 +145,7 @@ export function ResumenRemitoEmision({
 
       <button
         type="button"
-        className="btn-generar"
+        className="btn-generar btn-mayus"
         onClick={onEmitir}
         disabled={generando || emitido || bloqueado}
         aria-busy={generando}

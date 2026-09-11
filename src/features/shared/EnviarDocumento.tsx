@@ -416,7 +416,7 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
             <div className="enviar-row">
               <button
                 type="button"
-                className="btn-block btn-block--enviar"
+                className="btn-block btn-block--enviar btn-mayus"
                 /* MÓDULO 3 · el fondo verde de éxito depende de la bandera GLOBAL (`enviadoOk`): se
                    conserva al volver a esta etapa con el stepper.
                    El `opacity: 1` del éxito NO es decorativo: enviado el botón queda `disabled`, y
