@@ -19,6 +19,7 @@ import {
   hayExcesos,
   puedeEditarPrecio,
   puedeElegirVendedor,
+  puedeSuperarTopeDescuento,
   rolUsuario,
   usuarioDeLaOperacion,
   topesDescuentoDe,
@@ -56,7 +57,25 @@ assert.equal(rolUsuario(ADMIN), 'ADMINISTRADOR', 'el equipo Administradores mand
 assert.equal(rolUsuario(VENDEDOR), 'VENDEDOR', 'sólo Vendedores → grupo estándar')
 assert.equal(rolUsuario(usuario([])), 'VENDEDOR', 'sin equipos no hay privilegio')
 assert.equal(rolUsuario(usuario([], true)), 'ADMINISTRADOR', 'el admin de la cuenta es privilegiado')
-assert.equal(rolUsuario(null), 'ADMINISTRADOR', 'sin sesión (modo local) no se bloquea')
+/* SIN sesión el permiso FALLA CERRADO. `getUsuarioActual()` puede fallar en producción —o no haber
+   resuelto todavía— y con el default anterior (ADMINISTRADOR) la app le abría a cualquiera el
+   descuento hasta el 100% y el pisado de precio, sin ninguna señal en pantalla. */
+assert.equal(rolUsuario(null), 'VENDEDOR', 'sin sesión NO se conceden privilegios')
+assert.ok(!esAdministrador(null), 'y por lo tanto no es administrador')
+assert.ok(
+  !puedeEditarPrecio(null, 'productos', 'VENTA'),
+  'sin sesión no se puede pisar el precio unitario',
+)
+assert.ok(
+  !puedeSuperarTopeDescuento(null, 'productos', 'VENTA'),
+  'sin sesión no se puede superar el tope de descuento',
+)
+assert.deepEqual(
+  topesDescuentoDe(TOPES_DESCUENTO_DEFAULT, null, 'productos', 'VENTA'),
+  TOPES_DESCUENTO_DEFAULT,
+  'sin sesión rige el tope del tablero, no la bonificación total',
+)
+assert.ok(!puedeElegirVendedor(null, 'inicio', 'VENTA'), 'ni cambiar el vendedor de la operación')
 /* El equipo se identifica por ID y no por nombre. Es la diferencia entre un permiso estable y uno
    que se cae solo: renombrar el equipo en Monday son dos clics, y con nombres eso dejaba a toda
    su gente sin privilegios sin que nadie tocara el código. */
@@ -294,7 +313,11 @@ assert.ok(puedeEditarPrecio(comoDuenio, 'productos', 'VENTA'), 'el admin de la c
 
 // Sin vendedor elegido rige quien está logueado; sin sesión (desarrollo) no se bloquea nada.
 assert.equal(usuarioDeLaOperacion(ADMIN, null), ADMIN, 'sin vendedor manda el logueado')
-assert.equal(usuarioDeLaOperacion(null, devTap), null, 'sin sesión, el caso permisivo de siempre')
+assert.equal(usuarioDeLaOperacion(null, devTap), null, 'sin sesión no hay responsable que consultar')
+assert.ok(
+  !puedeEditarPrecio(usuarioDeLaOperacion(null, devTap), 'productos', 'VENTA'),
+  'y ese caso queda del lado restrictivo, no del permisivo',
+)
 
 // ---------- Lo ya cargado que el nuevo responsable no habría podido firmar ----------
 /* Que los permisos sigan al vendedor asignado impide aplicar una excepción NUEVA, pero no revisa

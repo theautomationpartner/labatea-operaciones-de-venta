@@ -42,12 +42,22 @@ export const perteneceAEquipo = (u: UsuarioActual | null, equipo: string): boole
  * es admin de la CUENTA de Monday (`is_admin`): ése ya puede editar cualquier valor directo en los
  * tableros, así que bloquearlo en la app no protegería nada.
  *
- * SIN usuario (modo local sin token, o falló la lectura de la sesión) el rol es ADMINISTRADOR a
- * propósito: en desarrollo no hay sesión que consultar y trabar la app no aportaría nada. En
- * producción siempre hay `me`, así que el permiso real lo decide el equipo.
+ * SIN usuario el rol es VENDEDOR: el permiso FALLA CERRADO.
+ *
+ * Antes era al revés —sin sesión, ADMINISTRADOR— con el argumento de que en desarrollo local no hay
+ * `me` que consultar y trabar la app no aporta nada. El problema es que "no hay usuario" no es sólo
+ * el modo local: también es `getUsuarioActual()` fallando en producción, o todavía sin resolver en
+ * los primeros renders. En cualquiera de esos casos la app le abría a CUALQUIERA los dos permisos
+ * que más plata mueven —descuento hasta el 100% y pisar el precio unitario—, y el síntoma es
+ * invisible: la pantalla se ve normal, sólo que deja hacer cosas que no debería.
+ *
+ * El costo del cambio es que un administrador se quede sin sus privilegios cuando la lectura de la
+ * sesión falla; el costo del default anterior era dárselos a todos. Entre las dos, esta equivoca
+ * para el lado barato: se arregla recargando, y mientras tanto la operación queda dentro del tope
+ * del tablero.
  */
 export function rolUsuario(u: UsuarioActual | null): RolUsuario {
-  if (!u) return 'ADMINISTRADOR'
+  if (!u) return 'VENDEDOR'
   if (u.isAdmin) return 'ADMINISTRADOR'
   if (IDS_ADMINISTRADOR.includes(u.id)) return 'ADMINISTRADOR'
   return perteneceAEquipo(u, TEAM_ADMINISTRADORES) ? 'ADMINISTRADOR' : 'VENDEDOR'
@@ -68,8 +78,8 @@ export const esAdministrador = (u: UsuarioActual | null): boolean =>
  * Elegir el vendedor sigue siendo atributo de quien está logueado (`puedeElegirVendedor`), o el
  * administrador quedaría encerrado apenas asigna a otro.
  *
- * Sin sesión (desarrollo local sin token) devuelve `null`, que es el caso permisivo de siempre:
- * ahí no hay a quién consultarle y trabar la app no aporta nada.
+ * Sin sesión devuelve `null`, que ahora es el caso RESTRICTIVO: sin saber quién opera, el
+ * responsable de la operación es un vendedor común (ver `rolUsuario`).
  */
 export const usuarioDeLaOperacion = (
   logueado: UsuarioActual | null,
