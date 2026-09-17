@@ -9,7 +9,7 @@
  * cabecera sin sus líneas no es una venta, y el paso siguiente no debe abrirse.
  */
 import { VENTAS_ENTREGA } from '@/data/mock'
-import { descuentoUnitario, ivaLinea } from '@/lib/descuentos'
+import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { memoPorCliente } from './cache'
 import type {
@@ -41,8 +41,9 @@ const CANT_VENDIDA_POR_TANDA = 25
 /** Subelementos por solicitud, igual que en el presupuesto. */
 const PRODUCTOS_POR_TANDA = 25
 
-/** Alícuota de IVA por defecto cuando el producto no trae la suya. */
-const IVA_DEFECTO_VENTA = 21
+/* La alícuota de cada línea sale de `alicuotaDeclarada`: la del producto resuelta contra las tasas
+   que acepta el comprobante. Con un 21% fijo, los totales del ítem de venta quedaban por encima de
+   los de sus propias facturas apenas entraba un producto al 10,5%. */
 
 /**
  * Un producto de la venta, ya normalizado desde el flujo que lo haya cargado. Además de lo
@@ -192,7 +193,7 @@ const columnasLinea = (
   const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFp).total
   const impBonifLinea = round2(bonifUnit * l.cantidad)
   const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-  const ivaMonto = ivaLinea(totalLinea, l.iva ?? IVA_DEFECTO_VENTA)
+  const ivaMonto = ivaLinea(totalLinea, alicuotaDeclarada(l.iva))
   /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto se calcula sobre el precio de
      LISTA por separado (NO en cascada), y su "precio con dto" = precio − ese monto. Son columnas
      informativas del board, distintas del Imp. Bonificado / Precio Bonif (que van en cascada). */
@@ -456,14 +457,13 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
       const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
       acc.desc += round2(bonifUnit * l.cantidad)
       acc.neto += totalLinea
-      acc.iva += ivaLinea(totalLinea, l.iva ?? IVA_DEFECTO_VENTA)
+      acc.iva += ivaLinea(totalLinea, alicuotaDeclarada(l.iva))
       return acc
     },
     { desc: 0, neto: 0, iva: 0 },
   )
   const descuentoTotal = round2(totales.desc)
   const ivaTotal = round2(totales.iva)
-  const totalVenta = round2(totales.neto + ivaTotal)
 
   if (!mondayHabilitado()) {
     return { id: `mock-venta-${Date.now()}`, subitemsCreados: lineas.length }
@@ -511,10 +511,11 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   if (tasaCambio != null && tasaCambio > 0) {
     cabecera[COL.venta.tasaCambio] = round2(tasaCambio)
   }
-  // Totales de la venta: descuento total, IVA total y TOTAL (neto + IVA).
+  /* Totales de la venta: descuento total e IVA total. El TOTAL va en "🤖TOTAL $"
+     (`importeTotalPesos`), que es el que llega más abajo desde la vista; no hay una segunda columna
+     de total que completar. */
   cabecera[COL.venta.descuentoTotal] = descuentoTotal
   cabecera[COL.venta.ivaTotal] = ivaTotal
-  cabecera[COL.venta.total] = totalVenta
   /* Rentabilidad forzada: si alguna línea la aplicó, va su % (la rentabilidad final de esa línea, que
      es estrictamente el % forzado) a "Rentab Forzada Aplicada", y la suma de la Nota de Crédito x
      Comisión de cada producto (monto por unidad, sin multiplicar por cantidad) al TOTAL. */

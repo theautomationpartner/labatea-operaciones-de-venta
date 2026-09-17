@@ -8,7 +8,7 @@
  */
 import { PRESUPUESTOS } from '@/data/mock'
 import { num, numCol, valor, byId, type CV, type MondayItem } from './parse'
-import { descuentoUnitario, ivaLinea } from '@/lib/descuentos'
+import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { memoPorCliente } from './cache'
 import type { MedioEnvio, PresupuestoProducto, TipoEntrega, TipoVenta } from '@/types'
@@ -300,8 +300,9 @@ export interface DatosProforma {
   actividadesIds?: readonly string[]
 }
 
-/** Alícuota de IVA por defecto cuando el producto no trae la suya. */
-const IVA_DEFECTO_PROFORMA = 21
+/* La alícuota de cada línea sale de `alicuotaDeclarada`: la del producto resuelta contra las tasas
+   que acepta el comprobante. Es la MISMA que usan la card de la proforma y la factura que después
+   se emite, así el total de la proforma no puede divergir de ninguna de las dos. */
 
 /** Resultado de crear la proforma: su id y cuántos subelementos entraron. */
 export interface ProformaCreada {
@@ -337,7 +338,7 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
     // Descuento por unidad compuesto EN CASCADA (forma de pago primero, manual sobre el resto).
     const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFormaPago).total
     const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-    return { l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, l.iva ?? IVA_DEFECTO_PROFORMA) }
+    return { l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
   })
   // Totales de la venta: descuento (suma de importes bonificados), IVA total y TOTAL (neto + IVA).
   const descuentoTotal = round2(filas.reduce((a, f) => a + f.bonifUnit * f.l.cantidad, 0))

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { datosCobroVenta, descuentoDeFormaPago } from '@/lib/cobros'
-import { netoLinea } from '@/lib/descuentos'
+import { alicuotaDeclarada, ivaLinea, netoLinea as netoLineaConDesc } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
-import { documentoDeVentaItem, IVA_RATE } from '@/lib/selectors'
+import { documentoDeVentaItem } from '@/lib/selectors'
 import {
   actualizarCantVendida,
   asociarActividades,
@@ -97,14 +97,23 @@ export function useCrearVenta() {
       facturaItems: state.facturaItems,
     })
 
-    /* Total en pesos (con IVA): neto bonificado × (1 + IVA). El neto incluye el descuento por forma
-       de pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual. */
+    /* Total en pesos (con IVA): el neto bonificado de cada línea más SU IVA, liquidado con la
+       alícuota que esa línea declara en el comprobante. El neto incluye el descuento por forma de
+       pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual.
+       Antes se aplicaba un 21% plano sobre el neto del documento, y una venta con un producto al
+       10,5% se registraba por encima de lo que decían sus propias facturas. */
     const descFormaPago = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
-    const neto = productos.reduce(
-      (acc, p) => acc + netoLinea(p.precioUnitario, p.cantidad, p.descuento ?? 0, descFormaPago),
-      0,
+    const importeTotalPesos = round2(
+      productos.reduce((acc, p) => {
+        const neto = netoLineaConDesc(
+          p.precioUnitario,
+          p.cantidad,
+          p.descuento ?? 0,
+          p.descFormaPago ?? descFormaPago,
+        )
+        return acc + neto + ivaLinea(neto, alicuotaDeclarada(p.iva))
+      }, 0),
     )
-    const importeTotalPesos = round2(neto * (1 + IVA_RATE))
 
     let ventaId = state.ventaId
     if (!ventaId) {

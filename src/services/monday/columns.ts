@@ -887,8 +887,10 @@ export const COL = {
     descuentoTotal: 'numeric_mm5s9czk',
     /** IVA total de la venta (en $). */
     ivaTotal: 'numeric_mm5skvne',
-    /** TOTAL de la venta = subtotal − descuento total + IVA total (neto bonificado + IVA). */
-    total: 'numeric_mm5s9zx5',
+    /* El TOTAL de la venta NO tiene columna propia: es `importeTotalPesos` ("🤖TOTAL $",
+       numeric_mm5qbwer). Existía además `numeric_mm5s9zx5`, que se borró del tablero; la app se la
+       siguió mandando un tiempo y Monday la descartaba sin avisar —una escritura que parecía
+       funcionar y no llegaba a ningún lado—. */
     /** "🤖TOTAL Nota de Credito x Comision $": suma de la Nota de Crédito x Comisión de cada producto. */
     notaCreditoComision: 'numeric_mm60s7hh',
     /** "🤖Rentab Forzada Aplicada": el porcentaje de rentabilidad forzada aplicado en la operación. */

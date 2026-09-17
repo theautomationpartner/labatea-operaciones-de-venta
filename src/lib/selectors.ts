@@ -9,7 +9,13 @@ import {
   SIN_CREDITO,
   type OperacionCredito,
 } from '@/lib/credito'
-import { bonificacionLinea, descuentoCompuesto, ivaLinea, netoLinea } from '@/lib/descuentos'
+import {
+  alicuotaDeclarada,
+  bonificacionLinea,
+  descuentoCompuesto,
+  ivaLinea,
+  netoLinea,
+} from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { esFlujoRemito } from '@/lib/pasos'
@@ -246,7 +252,10 @@ export interface ResumenPresupuesto {
   descuento: number
   /** Suma de la columna **Total** de la tabla: lo que queda después de bonificar. */
   neto: number
-  /** IVA sobre el neto. En el presupuesto siempre es 0: el presupuesto no lo liquida. */
+  /**
+   * IVA del documento: la suma del IVA de cada línea, liquidado con la alícuota DECLARADA de su
+   * producto (no con una tasa única). En el presupuesto siempre es 0: no lo liquida.
+   */
   iva: number
   /** Importe final del documento: neto + IVA. */
   total: number
@@ -258,8 +267,14 @@ export interface ResumenPresupuesto {
  * Totales de una lista de productos, con los mismos números que muestra la tabla: el subtotal
  * es la suma de la columna Subtotal (bruto) y el neto, la de la columna Total (bonificado).
  *
- * `conIva` distingue los dos usos: la VENTA liquida el 21% sobre el neto, y el PRESUPUESTO no
- * lo liquida en absoluto —sus precios son los de lista, sin la alícuota del producto—.
+ * `conIva` distingue los dos usos: la VENTA liquida el IVA, y el PRESUPUESTO no lo liquida en
+ * absoluto —sus precios son los de lista, sin la alícuota del producto—.
+ *
+ * Cuando lo liquida, lo hace LÍNEA POR LÍNEA con la alícuota declarada de cada producto, que es
+ * exactamente la que va a declarar el comprobante (ver `alicuotaDeclarada`). Antes se aplicaba un
+ * 21% plano sobre el neto del documento: una venta DIRECTA con un producto al 10,5% terminaba con
+ * un total —el que se le exige cobrar al cliente, el que se escribe en "🤖Importe Total $" y el que
+ * viaja al recibo— más alto que la suma de sus propias facturas.
  */
 export function resumenPresupuesto(
   lineas: LineaPresupuesto[],
@@ -283,7 +298,16 @@ export function resumenPresupuesto(
     neto > 0
       ? round2(lineas.reduce((acc, l) => acc + rentCon(l) * (totalCon(l) / neto), 0))
       : 0
-  const iva = conIva ? round2(neto * IVA_RATE) : 0
+  /* El IVA se suma por línea, con la alícuota que esa línea va a declarar en el comprobante: es lo
+     único que garantiza que el total del documento y el total facturado sean el mismo número. */
+  const iva = conIva
+    ? round2(
+        lineas.reduce(
+          (acc, l) => acc + ivaLinea(totalCon(l), alicuotaDeclarada(l.producto.iva)),
+          0,
+        ),
+      )
+    : 0
   return {
     subtotal,
     descuento: round2(subtotal - neto),
@@ -541,7 +565,9 @@ export function resumenVenta(
   const total = round2(items.reduce((acc, it) => acc + importeItem(it), 0))
   /* IVA de cada línea sobre su NETO ya bonificado, con la alícuota propia del producto (21% por
      defecto). El total se suma al neto para el importe con impuestos. */
-  const iva = round2(items.reduce((acc, it) => acc + ivaLinea(importeItem(it), it.iva ?? 21), 0))
+  const iva = round2(
+    items.reduce((acc, it) => acc + ivaLinea(importeItem(it), alicuotaDeclarada(it.iva)), 0),
+  )
   const rentPonderada = items.reduce(
     (acc, it) => acc + rentabilidadDeMarkup(it.rent, descTotal(it)) * importeItem(it),
     0,
@@ -716,7 +742,9 @@ export function resumenFactura(
   const neto = round2(subtotal - descuentoAplicado)
   /* IVA total: el de cada producto sobre su importe YA bonificado, con la alícuota propia del
      producto (21% por defecto si no vino). */
-  const iva = round2(items.reduce((acc, it) => acc + ivaLinea(netoDe(it), it.iva ?? 21), 0))
+  const iva = round2(
+    items.reduce((acc, it) => acc + ivaLinea(netoDe(it), alicuotaDeclarada(it.iva)), 0),
+  )
   /* Comisión: MISMA regla que el resto de las ventas —sólo los productos comisionables, con la tasa
      única del tipo de venta, sobre el importe GRAVADO de la línea: Subtotal − Descuento Total (el
      descuento por forma de pago ya aplicado), SIN IVA—. */

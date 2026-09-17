@@ -13,16 +13,17 @@
 /* Se importan los módulos concretos y no el barril de servicios: la capa de servicio de
    facturación depende de este archivo, y pasar por el barril armaría un ciclo. */
 import {
+  alicuotaDeclarada,
   bonificacionLinea,
   descuentoUnitario,
+  IVA_DEFECTO,
   netoLinea as netoConDescuento,
 } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
-import { FACT_ALICUOTAS_IVA } from '@/services/monday/columns'
 import type { LineaVenta } from '@/services/monday/venta'
 
 /** Alícuota que se asume cuando el producto no la trae cargada en el maestro. */
-export const ALICUOTA_POR_DEFECTO = 21
+export const ALICUOTA_POR_DEFECTO = IVA_DEFECTO
 
 /** Clave del comprobante de mercadería común. Es único, así que no necesita proveedor. */
 export const CLAVE_COMUN = 'COMUN'
@@ -72,11 +73,7 @@ export const esConsignada = (tipoMercaderia?: string): boolean =>
  * cercana, para no inventar una tasa que el comprobante no pueda declarar.
  */
 export function alicuotaDe(linea: LineaVenta): number {
-  const tasa = linea.iva && linea.iva > 0 ? linea.iva : ALICUOTA_POR_DEFECTO
-  if (FACT_ALICUOTAS_IVA.includes(tasa as (typeof FACT_ALICUOTAS_IVA)[number])) return tasa
-  return FACT_ALICUOTAS_IVA.reduce((mejor, a) =>
-    Math.abs(a - tasa) < Math.abs(mejor - tasa) ? a : mejor,
-  )
+  return alicuotaDeclarada(linea.iva)
 }
 
 /**

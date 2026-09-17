@@ -4,9 +4,10 @@ import { CompBody } from '@/features/shared/CompBody'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
+import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { money, round2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
-import { documentoDeVentaItem, IVA_RATE } from '@/lib/selectors'
+import { documentoDeVentaItem } from '@/lib/selectors'
 import {
   crearProforma,
   getActividadesDePresupuestos,
@@ -60,27 +61,30 @@ export function CobroProforma() {
      igual que en la tabla de "Seleccionar productos" del paso anterior. */
   const descFormaPago = descuentoDeFormaPago(formaPago, descuentosPago)
 
-  /* Filas de la factura proforma con los mismos valores que la tabla de productos seleccionados:
-     Importe Bonif. por unidad = precio × (%desc manual + %desc forma de pago); Total de la línea =
-     (precio − Importe Bonif.) × cantidad. */
+  /* Filas de la factura proforma con los MISMOS valores que va a escribir `crearProforma`, que es
+     lo que termina en el tablero y en el PDF que ve el cliente:
+       · Importe Bonif. por unidad = los dos descuentos compuestos EN CASCADA (`descuentoUnitario`),
+         no sumados. Sumarlos daba de más —4% + 6% = 10% contra el 9,64% real—, así que la pantalla
+         mostraba un total más barato que el que quedaba emitido.
+       · IVA de la línea = su neto ya bonificado por la alícuota DECLARADA del producto, no un 21%
+         plano: con un producto al 10,5% el total de la pantalla tampoco cerraba contra el emitido. */
   const filas = useMemo(
     () =>
       productos.map((l) => {
-        const descTotal = Math.min(l.descuento + descFormaPago, 100)
-        const bonifUnit = round2((l.precioUnitario * descTotal) / 100)
+        const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFormaPago).total
         const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-        return { ...l, bonifUnit, totalLinea }
+        return { ...l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
       }),
     [productos, descFormaPago],
   )
 
-  /* Totales de la factura, tomados del mismo cálculo del paso de selección: el bruto es Σ (precio ×
-     cantidad); el neto (gravado), la suma de los "Total" de cada línea; el descuento, su diferencia;
-     y el IVA en $ se liquida sobre el neto (21%). */
+  /* Totales de la factura: el bruto es Σ (precio × cantidad); el neto (gravado), la suma de los
+     "Total" de cada línea; el descuento, su diferencia; y el IVA, la suma del de cada línea. Son
+     exactamente los cuatro que `crearProforma` guarda en la cabecera del ítem. */
   const { bruto, neto, descuento, iva, total } = useMemo(() => {
     const n = round2(filas.reduce((acc, f) => acc + f.totalLinea, 0))
     const b = round2(filas.reduce((acc, f) => acc + f.precioUnitario * f.cantidad, 0))
-    const impuesto = round2(n * IVA_RATE)
+    const impuesto = round2(filas.reduce((acc, f) => acc + f.ivaLinea, 0))
     return { bruto: b, neto: n, descuento: round2(b - n), iva: impuesto, total: round2(n + impuesto) }
   }, [filas])
 

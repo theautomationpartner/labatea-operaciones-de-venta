@@ -17,9 +17,28 @@
  * neto de la línea (`netoLinea`), que multiplica por la cantidad el precio ya descontado.
  */
 import { round2 } from '@/lib/format'
+import { FACT_ALICUOTAS_IVA } from '@/services/monday/columns'
 
 /** Alícuota de IVA por defecto cuando el producto no trae la suya, en puntos porcentuales. */
 export const IVA_DEFECTO = 21
+
+/**
+ * Alícuota con la que se va a DECLARAR la línea: la del producto, resuelta contra las tasas que
+ * acepta el comprobante. Si el maestro trae una que no existe en AFIP se usa la más cercana, para
+ * no inventar una tasa que el comprobante no pueda declarar.
+ *
+ * Vive acá —y no sólo en `lib/facturacion`— porque es la MISMA alícuota que tienen que usar los
+ * totales del documento. Cuando el resumen liquidaba un 21% plano y el comprobante la alícuota
+ * real, una venta con un producto al 10,5% quedaba con el "Importe Total $" y el recibo por encima
+ * de lo que decían sus facturas: la caja recibía plata sin comprobante que la respaldara.
+ */
+export function alicuotaDeclarada(iva?: number | null): number {
+  const tasa = iva && iva > 0 ? iva : IVA_DEFECTO
+  if ((FACT_ALICUOTAS_IVA as readonly number[]).includes(tasa)) return tasa
+  return FACT_ALICUOTAS_IVA.reduce((mejor, a) =>
+    Math.abs(a - tasa) < Math.abs(mejor - tasa) ? a : mejor,
+  )
+}
 
 /** Un porcentaje utilizable: número finito acotado al rango 0–100. */
 const pctValido = (n: number): number => (Number.isFinite(n) ? Math.min(Math.max(n, 0), 100) : 0)
