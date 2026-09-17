@@ -20,7 +20,7 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { DIAS_VIGENCIA_CHEQUE, SIN_DESCUENTOS_PAGO, balancePagos, vencimientoCheque } from '@/lib/cobros'
+import { DIAS_VIGENCIA_CHEQUE, balancePagos, vencimientoCheque } from '@/lib/cobros'
 import { formatDate } from '@/lib/dates'
 import { registrarCobro } from '@/services/monday/cobrar'
 import { COL } from '@/services/monday/columns'
@@ -74,7 +74,7 @@ await registrarCobro({
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 10000,
   facturas: [{ facturaId: '501', importe: 10000 }],
-  balances: balancePagos([cheque], SIN_DESCUENTOS_PAGO),
+  balances: balancePagos([cheque]),
 })
 
 /* ---------- 1) Las dos fechas viajan a DOS columnas distintas ---------- */

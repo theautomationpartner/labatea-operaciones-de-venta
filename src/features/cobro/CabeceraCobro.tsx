@@ -64,7 +64,7 @@ export function CabeceraCobro({
           icono="fa-hand-holding-dollar"
           tono="verde"
           rotulo="TOTAL COBRADO"
-          valor={money(resumen.totalCobrado)}
+          valor={money(resumen.recibido)}
         />
         {/* Cobrado de más, la cifra sale en negativo y NADA la aclara al pie: el exceso ya lo
             explica el aviso que frena el "Continuar" ("el total cobrado supera el total de la

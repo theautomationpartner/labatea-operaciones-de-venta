@@ -8,7 +8,7 @@
  *   npm run test:recibo-facturas
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { registrarCobro } from '@/services/monday/cobrar'
 import type { MovimientoPago } from '@/types'
 
@@ -44,10 +44,7 @@ await registrarCobro({
     { facturaId: '5001', importe: 200000 },
     { facturaId: '5002', importe: 100000 },
   ],
-  balances: balancePagos(
-    [movimiento('Efectivo', 120000), movimiento('Transferencia', 180000)],
-    SIN_DESCUENTOS_PAGO,
-  ),
+  balances: balancePagos([movimiento('Efectivo', 120000), movimiento('Transferencia', 180000)]),
 })
 
 /* Lo que se mide acá es el BATCH: los cuatro subelementos —dos facturas y dos movimientos— salen en
@@ -126,7 +123,7 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 1000,
-  balances: balancePagos([movimiento('Efectivo', 1000)], SIN_DESCUENTOS_PAGO),
+  balances: balancePagos([movimiento('Efectivo', 1000)]),
 })
 assert.equal(
   llamadas[1].query.match(/create_subitem/g)?.length,

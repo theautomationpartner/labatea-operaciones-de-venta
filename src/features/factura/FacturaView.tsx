@@ -8,12 +8,10 @@ import { netoLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { ivaPorDefecto, letraComprobante, PUNTO_VENTA_DEFAULT } from '@/lib/factura'
 import {
-  SIN_DESCUENTOS_PAGO,
   balancePagos,
   cobroSimultaneoOperacion,
   datosCobroVenta,
   descuentoDeFormaPago,
-  esPagoConTarjeta,
   requiereRegistroDeuda,
 } from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
@@ -123,6 +121,18 @@ export function FacturaView() {
   const { actividades: actividadesVenta, cargando: cargandoActividades } = useActividadesDeLaVenta()
   const conActividades = actividadesVenta.length > 0
 
+  /**
+   * Tipo de venta que rige la COMISIÓN. Es UNA sola constante —y no la misma expresión repetida en
+   * dos lugares— porque de ella salen los dos números que tienen que coincidir: el que se le muestra
+   * al vendedor antes de emitir y el que se escribe en "💲Registro de Comisiones".
+   *
+   * La VENTA PROFORMA lo HEREDA de la proforma: su recorrido no configura tipo de venta, así que
+   * `state.tipoVenta` queda en null. Mientras el resumen miraba `proformaTipoVenta` y el registro
+   * no, una venta que salía de una proforma CON PRESUPUESTO PREVIO con actividades mostraba la tasa
+   * Activa y liquidaba la Pasiva: al vendedor se le pagaba menos de lo que la app le había dicho.
+   */
+  const tipoVentaComision = state.proformaTipoVenta ?? tipoVenta ?? 'DIRECTA'
+
   /* Comisión del vendedor por esta venta: la tasa que rige su combinación sobre el neto de cada
      producto comisionable. Es el importe que se muestra antes de emitir y el que se registra.
 
@@ -131,13 +141,7 @@ export function FacturaView() {
      corregirlo a la vista del vendedor. */
   const comisionVenta = useMemo(() => {
     if (cargandoActividades) return null
-    /* VENTA PROFORMA: la tasa la define el tipo de venta de la proforma elegida; el resto usa el
-       tipo de la operación. Así la comisión registrada coincide con la mostrada. */
-    const tasa = tasaComision(
-      state.comisiones,
-      state.proformaTipoVenta ?? tipoVenta ?? 'DIRECTA',
-      conActividades,
-    )
+    const tasa = tasaComision(state.comisiones, tipoVentaComision, conActividades)
     return round2(
       lineasComision.reduce(
         (acc, l) => acc + comisionLinea(l.neto, l.comisionable === true, tasa),
@@ -147,8 +151,7 @@ export function FacturaView() {
   }, [
     lineasComision,
     state.comisiones,
-    tipoVenta,
-    state.proformaTipoVenta,
+    tipoVentaComision,
     conActividades,
     cargandoActividades,
   ])
@@ -209,18 +212,10 @@ export function FacturaView() {
     // Con decimales: redondear a entero asignaba una rentabilidad general incorrecta en el ítem.
     return round2(ponderada)
   }, [productos])
-  /* Balance de los movimientos de pago y su resumen contra el total: alimentan el recibo simultáneo.
-     Con TARJETA los movimientos van SIN descuento por medio de pago: el de la forma de pago ya está
-     aplicado en el total de la venta, así que volver a descontarlo por movimiento lo contaría dos
-     veces y el recibo no cerraría contra el total que se cobró. */
-  const balances = useMemo(
-    () =>
-      balancePagos(
-        cobro.movimientos,
-        esPagoConTarjeta(formaPago) ? SIN_DESCUENTOS_PAGO : state.descuentosPago,
-      ),
-    [cobro.movimientos, state.descuentosPago, formaPago],
-  )
+  /* Los movimientos del cobro, tal como van al recibo. No llevan descuento por medio de pago: el
+     de la forma de pago ya está aplicado en el precio de la venta, y volver a descontarlo por
+     movimiento lo contaría dos veces. */
+  const balances = useMemo(() => balancePagos(cobro.movimientos), [cobro.movimientos])
   const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
 
   if (!cliente) return null
@@ -264,6 +259,10 @@ export function FacturaView() {
              así que se toma del mismo lugar que usa la creación de la venta. */
           tipoEntrega: tipoEntrega ?? state.proformaTipoEntrega ?? null,
           ventaId,
+          /* Deciden la "Condición de Venta" que declara el comprobante: la elegida en la operación,
+             no la condición pactada del cliente (ver `condicionVentaDe`). */
+          formaPago,
+          operacion,
           // Entra sólo en el "Importe Bonif $" de cada línea, no en el precio del comprobante.
           descFormaPago,
         },
@@ -295,7 +294,9 @@ export function FacturaView() {
       ventaId: vId,
       clienteId: cliente.id,
       vendedorId: state.vendedor?.id ?? null,
-      tipoVenta: tipoVenta ?? 'DIRECTA',
+      /* El MISMO tipo de venta con el que se calculó la comisión que el vendedor acaba de ver en el
+         resumen (incluye el heredado de la proforma, ver `tipoVentaComision`). */
+      tipoVenta: tipoVentaComision,
       /* Tipo de cobro de la operación e importe total (con IVA): definen el monto pendiente de
          cobro. Va el total REAL de la venta, que es lo que efectivamente se le cobra al cliente. */
       tipoPago: datosCobroVenta(formaPago, operacion).tipoPago,

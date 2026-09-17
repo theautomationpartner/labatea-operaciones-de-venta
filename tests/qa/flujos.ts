@@ -21,12 +21,10 @@ import {
   totalVentaOperacion,
 } from '@/lib/selectors'
 import {
-  SIN_DESCUENTOS_PAGO,
   balancePagos,
   cobroSimultaneoOperacion,
   datosCobroVenta,
   descuentoDeFormaPago,
-  esPagoConTarjeta,
   requiereRegistroDeuda,
   resumenCobro,
   type DescuentosPago,
@@ -267,6 +265,8 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
       observaciones: d.observaciones ?? '',
       tipoEntrega: tipoEntregaEfectivo,
       ventaId: null,
+      formaPago: d.formaPago,
+      operacion: d.operacion,
       descFormaPago,
     },
   )
@@ -354,10 +354,7 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
   }
 
   const movimientos = d.movimientos ?? d.movimientosPorTotal?.(totalVenta) ?? []
-  const balances = balancePagos(
-    movimientos,
-    esPagoConTarjeta(d.formaPago) ? SIN_DESCUENTOS_PAGO : d.config.descuentosPago,
-  )
+  const balances = balancePagos(movimientos)
   let reciboId: string | null = null
   let deudaId: string | null = null
 
@@ -396,11 +393,10 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
   }
 
   const conActividades = actividadesIds.length > 0
-  const tasa = tasaComision(
-    d.config.comisiones,
-    d.proformaTipoVenta ?? d.tipoVenta ?? 'DIRECTA',
-    conActividades,
-  )
+  /* MISMA constante que `FacturaView.tipoVentaComision`: de ella salen la tasa que se le muestra al
+     vendedor y la que se registra, y por eso viaja tal cual a `crearComisiones`. */
+  const tipoVentaComision = d.proformaTipoVenta ?? d.tipoVenta ?? 'DIRECTA'
+  const tasa = tasaComision(d.config.comisiones, tipoVentaComision, conActividades)
   const lineasComision = productos.map((p) => ({
     ...p,
     neto: netoConDesc(p.precioUnitario, p.cantidad, p.descuento ?? 0, p.descFormaPago ?? descFormaPago),
@@ -412,7 +408,7 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
     ventaId,
     clienteId: d.cliente.id,
     vendedorId: d.vendedor.id,
-    tipoVenta: d.tipoVenta ?? 'DIRECTA',
+    tipoVenta: tipoVentaComision,
     tipoPago: datosCobroVenta(d.formaPago, d.operacion).tipoPago,
     importeTotalVenta: totalVenta,
     fecha: aIso(fechaEmision),

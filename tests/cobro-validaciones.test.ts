@@ -16,9 +16,9 @@ import {
   MSG_CHEQUE_VENCIDO,
   MSG_CHEQUE_CLIENTE_NO,
   MSG_CUIT_SIN_VALIDAR,
-  SIN_DESCUENTOS_PAGO,
   balancePagos,
   chequeDelClienteVedado,
+  cobroCompleto,
   validarCuitEmisor,
   chequeInvalido,
   cuitCompleto,
@@ -284,7 +284,7 @@ assert.equal(formaPagoTarjeta('CREDITO'), 'Tarjeta de crédito', 'y el crédito 
 
 // Diferencia: sólo el CERO exacto habilita avanzar de etapa.
 const resumenDe = (total: number, cobrado: number) =>
-  resumenCobro(balancePagos([{ importe: cobrado } as MovimientoPago], SIN_DESCUENTOS_PAGO), total)
+  resumenCobro(balancePagos([{ importe: cobrado } as MovimientoPago]), total)
 assert.equal(diferenciaCobro(resumenDe(100000, 100000)), 0, 'cobrado justo → diferencia 0')
 assert.ok(diferenciaEnCero(resumenDe(100000, 100000)), 'con la diferencia en 0 se puede avanzar')
 assert.ok(!diferenciaEnCero(resumenDe(100000, 99999)), 'falta cobrar → bloqueado')
@@ -292,14 +292,14 @@ assert.ok(!diferenciaEnCero(resumenDe(100000, 100001)), 'cobro excedente → blo
 // Ni siquiera los centavos pasan: la tarjeta exige el cero exacto (el contado sí los tolera).
 assert.ok(!diferenciaEnCero(resumenDe(181396.91, 181396)), 'una diferencia de centavos bloquea')
 
-// El cobro con tarjeta NO descuenta por medio de pago: ya viene aplicado en el total de la venta.
-assert.equal(SIN_DESCUENTOS_PAGO['Tarjeta de crédito'], 0, 'el crédito no descuenta por movimiento')
-assert.equal(
-  balancePagos([{ formaPago: 'Tarjeta de crédito', importe: 100000 } as MovimientoPago], SIN_DESCUENTOS_PAGO)[0]
-    .montoCobrado,
-  100000,
-  'lo cobrado es el importe cargado, sin recortes',
-)
+/* NINGÚN medio de cobro descuenta por movimiento: el pronto pago lo decide la FORMA DE PAGO de la
+   operación y ya está aplicado en el precio de la venta. El movimiento viaja tal como se cargó. */
+for (const forma of ['Efectivo', 'Cheque', 'Transferencia', 'Tarjeta de crédito'] as const) {
+  const resumen = resumenCobro(balancePagos([{ formaPago: forma, importe: 100000 } as MovimientoPago]), 100000)
+  assert.equal(resumen.recibido, 100000, `${forma}: entra a caja el importe cargado, sin recortes`)
+  assert.equal(resumen.cancelado, 100000, `${forma}: y cancela exactamente eso`)
+  assert.ok(cobroCompleto(resumen), `${forma}: con el total exacto, el cobro queda completo`)
+}
 
 // ---------- TOTAL de la venta: el importe FINAL, con el descuento por forma de pago ----------
 /* Es el número que alimenta la métrica "TOTAL VENTA" del cobro y el que viaja a `numeric_mm5xbjkm`

@@ -12,7 +12,7 @@
  * Se corre con esbuild + node (`npm run test:anticipo-subitem`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { registrarCobro, ReciboDesbalanceado } from '@/services/monday/cobrar'
 import { CAJA_INDEX, COL } from '@/services/monday/columns'
 import type { MovimientoPago } from '@/types'
@@ -45,10 +45,7 @@ const FACTURAS = [
 ]
 /** Movimientos del cobro. El ANTICIPO se elige del MISMO selector que el efectivo o el cheque. */
 const movs = (...ms: [string, number][]) =>
-  balancePagos(
-    ms.map(([formaPago, importe]) => ({ formaPago, importe }) as MovimientoPago),
-    SIN_DESCUENTOS_PAGO,
-  )
+  balancePagos(ms.map(([formaPago, importe]) => ({ formaPago, importe }) as MovimientoPago))
 
 await registrarCobro({
   clienteId: '111',

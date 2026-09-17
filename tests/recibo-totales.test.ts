@@ -15,7 +15,7 @@
  * Se corre con esbuild + node (`npm run test:recibo-totales`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { ReciboDesbalanceado, registrarCobro } from '@/services/monday/cobrar'
 import { COL } from '@/services/monday/columns'
 import type { MovimientoPago } from '@/types'
@@ -47,7 +47,7 @@ async function totales(...ms: MovimientoPago[]) {
     nombreCliente: 'AGRO LUCIA S.A.',
     totalVenta: VENTA,
     facturas: [{ facturaId: '501', importe: VENTA }],
-    balances: balancePagos(ms, SIN_DESCUENTOS_PAGO),
+    balances: balancePagos(ms),
   })
   return {
     cancelado: Number(cabecera[COL.cobro.totalVenta]),
@@ -91,7 +91,7 @@ await assert.rejects(
     nombreCliente: 'AGRO LUCIA S.A.',
     totalVenta: VENTA,
     facturas: [{ facturaId: '501', importe: VENTA }],
-    balances: balancePagos([mov('Cheque', 600000), mov('Anticipo', 100)], SIN_DESCUENTOS_PAGO),
+    balances: balancePagos([mov('Cheque', 600000), mov('Anticipo', 100)]),
   }),
   ReciboDesbalanceado,
   'un anticipo que no cierra la diferencia frena el recibo',

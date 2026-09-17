@@ -11,7 +11,7 @@
  * Se corre con esbuild + node (`npm run test:registro-cobro`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { registrarCobro } from '@/services/monday/cobrar'
 import { COBRO_REGISTRO_INDEX, COL } from '@/services/monday/columns'
 import type { MovimientoPago } from '@/types'
@@ -43,7 +43,7 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
 }) as unknown as typeof fetch
 
 const cobro = (importe: number) =>
-  balancePagos([{ formaPago: 'Efectivo', importe } as MovimientoPago], SIN_DESCUENTOS_PAGO)
+  balancePagos([{ formaPago: 'Efectivo', importe } as MovimientoPago])
 
 /* ---------- Una venta de CONTADO cobrada en el acto ---------- */
 await registrarCobro({

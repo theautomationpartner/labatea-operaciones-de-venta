@@ -12,7 +12,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   MSG_COBRO_CUBIERTO,
-  SIN_DESCUENTOS_PAGO,
   balancePagos,
   cobroCubierto,
   resumenCobro,
@@ -22,7 +21,7 @@ import type { MovimientoPago } from '@/types'
 const VENTA = 98285.88
 const mov = (formaPago: string, importe: number) => ({ formaPago, importe }) as MovimientoPago
 const cubierto = (...ms: MovimientoPago[]) =>
-  cobroCubierto(resumenCobro(balancePagos(ms, SIN_DESCUENTOS_PAGO), VENTA))
+  cobroCubierto(resumenCobro(balancePagos(ms), VENTA))
 
 /* ---------- Cuándo se cierra ---------- */
 assert.equal(cubierto(mov('Efectivo', VENTA)), true, 'cobrado justo: no hay nada más que cargar')

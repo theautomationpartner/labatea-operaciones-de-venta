@@ -3,7 +3,6 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { Modal } from '@/components/ui/Modal'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
-  SIN_DESCUENTOS_PAGO,
   balancePagos,
   cobroSimultaneoOperacion,
   descuentoDeFormaPago,
@@ -86,12 +85,10 @@ export function CobroView() {
     ],
   )
 
-  /* El cobro de contado NO aplica descuentos por medio de pago: lo cobrado es el importe cargado,
-     y "Total Cobrado" debe dar exactamente el total de la venta (Diferencia 0) para avanzar. */
-  const balances = useMemo(
-    () => balancePagos(cobro.movimientos, SIN_DESCUENTOS_PAGO),
-    [cobro.movimientos],
-  )
+  /* Lo cobrado es el importe cargado, sin más vueltas: el descuento por pronto pago ya bajó el
+     precio de la venta (lo decide la forma de pago). "Total Cobrado" debe dar exactamente el total
+     de la venta (Diferencia 0) para poder avanzar. */
+  const balances = useMemo(() => balancePagos(cobro.movimientos), [cobro.movimientos])
   const resumen = useMemo(() => resumenCobro(balances, totalVenta), [balances, totalVenta])
 
   /* MÓDULO 2 · reactividad del cobro: si la venta cambió (se editaron productos en un paso anterior)

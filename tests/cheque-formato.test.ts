@@ -13,7 +13,7 @@
  * Se corre con esbuild + node (`npm run test:cheque-formato`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { registrarCobro } from '@/services/monday/cobrar'
 import { COL } from '@/services/monday/columns'
 import type { FormatoCheque, MovimientoPago } from '@/types'
@@ -44,10 +44,7 @@ async function origenEscrito(formato: FormatoCheque): Promise<unknown> {
     nombreCliente: 'AGRO LUCIA S.A.',
     totalVenta: 1000,
     facturas: [{ facturaId: '501', importe: 1000 }],
-    balances: balancePagos(
-      [{ formaPago: 'Cheque', importe: 1000, formatoCheque: formato } as MovimientoPago],
-      SIN_DESCUENTOS_PAGO,
-    ),
+    balances: balancePagos([{ formaPago: 'Cheque', importe: 1000, formatoCheque: formato } as MovimientoPago]),
   })
   const sub = llamadas[1]
   const i = [0, 1, 2].find((n) => sub.variables[`n${n}`] === 'Cheque')

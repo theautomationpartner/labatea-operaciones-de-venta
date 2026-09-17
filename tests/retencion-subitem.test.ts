@@ -12,7 +12,7 @@
  *   npm run test:retencion-subitem
  */
 import assert from 'node:assert/strict'
-import { SIN_DESCUENTOS_PAGO, balancePagos } from '@/lib/cobros'
+import { balancePagos } from '@/lib/cobros'
 import { registrarCobro } from '@/services/monday/cobrar'
 import type { FormaPago, MovimientoPago } from '@/types'
 
@@ -57,7 +57,7 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 20000,
-  balances: balancePagos(FORMAS.map(retencion), SIN_DESCUENTOS_PAGO),
+  balances: balancePagos(FORMAS.map(retencion)),
 })
 
 const sub = llamadas[1]
@@ -87,13 +87,10 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 2000,
-  balances: balancePagos(
-    [
+  balances: balancePagos([
       { formaPago: 'Retencion IVA', importe: 1000 } as MovimientoPago,
       { formaPago: 'Efectivo', importe: 1000 } as MovimientoPago,
-    ],
-    SIN_DESCUENTOS_PAGO,
-  ),
+    ]),
 })
 const sinCert = JSON.parse(llamadas[1].variables.c0 as string) as Record<string, unknown>
 assert.ok(!('numeric_mm64dwpx' in sinCert), 'sin año la columna no viaja')
@@ -112,8 +109,7 @@ await registrarCobro({
   clienteId: '111',
   nombreCliente: 'AGRO LUCIA S.A.',
   totalVenta: 13500,
-  balances: balancePagos(
-    [
+  balances: balancePagos([
       { formaPago: 'Cheque', importe: 10000, numeroCheque: '00123456' } as MovimientoPago,
       {
         formaPago: 'Tarjeta de crédito',
@@ -125,9 +121,7 @@ await registrarCobro({
         importe: 500,
         nroComprobanteTransferencia: 'OP-9911/2026',
       } as MovimientoPago,
-    ],
-    SIN_DESCUENTOS_PAGO,
-  ),
+    ]),
 })
 const compartida = (n: number) =>
   JSON.parse(llamadas[1].variables[`c${n}`] as string) as Record<string, unknown>

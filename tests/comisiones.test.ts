@@ -160,12 +160,31 @@ assert.ok(
   'y de ahí sale `conActividades`',
 )
 assert.ok(
-  /tasaComision\(\s*state\.comisiones,[\s\S]{0,120}?conActividades,/.test(factura),
+  /tasaComision\(\s*state\.comisiones,[\s\S]{0,160}?conActividades\b/.test(factura),
   'la comisión que se MUESTRA se calcula con ese dato',
 )
 assert.ok(
   /conActividades,/.test(factura.slice(factura.indexOf('crearComisiones('))),
   'y la que se REGISTRA en el board va con el mismo, no con un default',
+)
+
+/* El OTRO dato que define la tasa es el TIPO DE VENTA, y tiene que salir del mismo lugar en los dos
+   caminos. Mientras el resumen miraba `proformaTipoVenta` y `crearComisiones` recibía
+   `tipoVenta ?? 'DIRECTA'`, una VENTA PROFORMA sobre una proforma CON PRESUPUESTO PREVIO con
+   actividades mostraba la tasa Activa (4%) y registraba la Pasiva (1,5%): el vendedor cobraba menos
+   de lo que la app le había prometido. Se afirma sobre la CONSTANTE ÚNICA, que es lo que impide que
+   los dos vuelvan a separarse. */
+assert.ok(
+  /const tipoVentaComision =\s*state\.proformaTipoVenta \?\? tipoVenta \?\? 'DIRECTA'/.test(factura),
+  'el tipo de venta de la comisión sale de UNA constante que hereda el de la proforma',
+)
+assert.ok(
+  /tasaComision\(state\.comisiones, tipoVentaComision, conActividades\)/.test(factura),
+  'la comisión que se MUESTRA usa esa constante',
+)
+assert.ok(
+  /tipoVenta: tipoVentaComision,/.test(factura.slice(factura.indexOf('crearComisiones('))),
+  'y la que se REGISTRA en el board usa la MISMA constante, no `tipoVenta ?? DIRECTA`',
 )
 
 /* El skeleton de "Comision x Venta" tiene que existir en el namespace donde se dibuja. Vivía

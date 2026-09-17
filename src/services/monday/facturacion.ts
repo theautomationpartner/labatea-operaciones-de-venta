@@ -10,6 +10,7 @@
  * subelementos no pueden ir en la misma solicitud que los ítems porque necesitan el id del
  * padre, que recién se conoce cuando la primera vuelve.
  */
+import { tipoPagoOperacion } from '@/lib/cobros'
 import { addDays } from '@/lib/dates'
 import { alicuotaDe, bonifLinea, type ComprobanteAGenerar } from '@/lib/facturacion'
 import { round2 } from '@/lib/format'
@@ -17,9 +18,11 @@ import type {
   Cliente,
   ComprobanteEmitido,
   CondicionIVA,
+  FormaPagoVenta,
   LetraComprobante,
   MedioEnvio,
   MonedaFactura,
+  Operacion,
   TipoEntrega,
 } from '@/types'
 import {
@@ -73,6 +76,13 @@ export interface DatosFacturacion {
   tipoEntrega?: TipoEntrega | null
   /** Ítem de la venta en "📈Ventas", para dejar el comprobante conectado a ella. */
   ventaId?: string | null
+  /**
+   * Forma de pago elegida en la operación. Define la "Condición de Venta" que declara el
+   * comprobante (ver `condicionVentaDe`); en VENTA PROFORMA llega `null` y manda la operación.
+   */
+  formaPago?: FormaPagoVenta | null
+  /** Operación en curso: la VENTA PROFORMA se cobra siempre en el acto aunque no elija forma de pago. */
+  operacion?: Operacion | null
 }
 
 /**
@@ -109,12 +119,28 @@ const fechaMonday = (v: string): string | null => {
 }
 
 /**
- * "Condición de Venta" a partir de la condición de pago del cliente. El board tiene tres
- * etiquetas y el cliente cinco condiciones posibles: las que hablan de contado van a
- * "Contado" y las demás (cuenta corriente y los plazos de proveedor) a "Cuenta Corriente".
+ * "Condición de Venta" del comprobante, a partir de la FORMA DE PAGO de la operación:
+ *
+ *   CONTADO ................... Contado
+ *   TARJETA DE DEBITO/CREDITO . Contado  (por ahora: el board tiene una etiqueta "Tarjeta" que
+ *                                        todavía no se usa)
+ *   CUENTA CORRIENTE .......... Cuenta Corriente
+ *   VENTA PROFORMA ............ Contado  (no elige forma de pago: se cobra siempre en el acto)
+ *
+ * Se deriva de `tipoPagoOperacion` y no de un `switch` propio porque la pregunta es exactamente la
+ * misma que decide el "✋Tipo de Cobro" de la venta: ¿esta operación se cobra ahora o después? Con
+ * una sola fuente, el comprobante no puede decir una cosa y la venta otra.
+ *
+ * ANTES salía de `cliente.condicionPago` —la condición PACTADA en el CRM— y por eso una venta
+ * cobrada al contado a un cliente de cuenta corriente emitía un comprobante que decía "Cuenta
+ * Corriente" con vencimiento el mismo día de la emisión y un recibo que ya la cancelaba. La
+ * condición pactada define QUÉ formas de pago se le ofrecen al vendedor (`formasPagoDeCliente`),
+ * no cómo se declara la venta que terminó eligiendo.
  */
-const condicionVentaDe = (condicionPago: string): string =>
-  /contado/i.test(condicionPago) ? FACT_CONDICION_VENTA.contado : FACT_CONDICION_VENTA.cuentaCorriente
+const condicionVentaDe = (formaPago: FormaPagoVenta | null, operacion: Operacion | null): string =>
+  tipoPagoOperacion(formaPago, operacion) === 'SIMULTANEO'
+    ? FACT_CONDICION_VENTA.contado
+    : FACT_CONDICION_VENTA.cuentaCorriente
 
 /** El CUIT va a una columna numérica: se manda sin guiones ni espacios. */
 const soloDigitos = (v: string): string => (v ?? '').replace(/\D/g, '')
@@ -146,7 +172,9 @@ function columnasComprobante(
     /* Punto de venta fijo en "5" por ahora. El de la ficha ("0001"…) no existe en el board,
        así que mandarlo dejaría la columna vacía; se conecta cuando se definan los puntos. */
     [COL.facturacion.puntoVenta]: { labels: [FACT_PUNTO_VENTA_DEFAULT] },
-    [COL.facturacion.condicionVenta]: { labels: [condicionVentaDe(cliente.condicionPago ?? '')] },
+    [COL.facturacion.condicionVenta]: {
+      labels: [condicionVentaDe(datos.formaPago ?? null, datos.operacion ?? null)],
+    },
     [COL.facturacion.letra]: { labels: [letra] },
     /* Observaciones del comprobante: con entrega SIMULTÁNEA arrancan con la leyenda de que la
        mercadería ya salió, y siguen con lo que haya escrito el vendedor. */

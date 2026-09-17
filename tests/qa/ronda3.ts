@@ -325,13 +325,13 @@ for (const forma of ['CONTADO', 'CUENTA CORRIENTE', 'TARJETA DE DEBITO', 'TARJET
 paso(`VENTA PROFORMA (sin forma de pago) → tipo de cobro ${tipoPagoOperacion(null, 'VENTA PROFORMA')}`)
 
 /* El cobro exige el 100%: ni de menos ni de más. */
-const resumenExacto = resumenCobro(balancePagos([{ id: 'x', formaPago: 'Efectivo', importe: 1000, chequeFechaPago: '' }], descuentosPago), 1000)
+const resumenExacto = resumenCobro(balancePagos([{ id: 'x', formaPago: 'Efectivo', importe: 1000, chequeFechaPago: '' }]), 1000)
 chequear(cobroCompleto(resumenExacto), 'Cobro exacto: el 100% queda cubierto', `cancelado ${resumenExacto.cancelado} vs ${resumenExacto.totalACobrar}`)
-const resumenCorto = resumenCobro(balancePagos([{ id: 'x', formaPago: 'Efectivo', importe: 900, chequeFechaPago: '' }], descuentosPago), 1000)
+const resumenCorto = resumenCobro(balancePagos([{ id: 'x', formaPago: 'Efectivo', importe: 900, chequeFechaPago: '' }]), 1000)
 chequear(!cobroCompleto(resumenCorto), 'Cobro incompleto: no deja avanzar', `cancelado ${resumenCorto.cancelado} vs ${resumenCorto.totalACobrar}`)
 paso(
-  `NOTA · el descuento por medio de cobro no cambia lo cancelado: con 1000 en efectivo (${descuentosPago.Efectivo}% dto) ` +
-    `cancelado=${resumenExacto.cancelado}, cobrado=${resumenExacto.totalCobrado}, descuento=${resumenExacto.descuentoTotal}`,
+  `El movimiento entra tal como se carga: recibido=${resumenExacto.recibido}, cancelado=${resumenExacto.cancelado} ` +
+    `(el ${descuentosPago.Efectivo}% del pronto pago ya bajó el precio de la venta, no el movimiento)`,
 )
 
 const { informe } = await import('./base')

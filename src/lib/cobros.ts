@@ -169,25 +169,26 @@ export const COLOR_PAGO: Record<FormaPago, string> = {
   Anticipo: 'var(--purple)',
 }
 
+/**
+ * Un movimiento del cobro, listo para el recibo.
+ *
+ * NO lleva descuento. El descuento por pronto pago es de la OPERACIÓN, no del medio con el que se
+ * paga: lo define la FORMA DE PAGO elegida en la selección de productos (ver `descuentoDeFormaPago`)
+ * y ya viene aplicado en el precio de cada línea, así que el total de la venta —y con él lo que hay
+ * que cobrar— lo trae adentro. Descontarlo otra vez acá, por movimiento, sería contarlo dos veces.
+ *
+ * Antes cada movimiento cargaba su propio `descuentoPct`/`descuento`/`montoCobrado`, leídos de la
+ * config por MEDIO de cobro. Nunca cambió nada: `resumenCobro` volvía a sumar el descuento para
+ * llegar a lo cancelado (`cobrado + descuento ≡ recibido`) y el recibo siempre escribió el importe
+ * entregado. Eran tres campos que aparentaban una regla que ya no existe.
+ */
 export interface BalancePago {
   movimiento: MovimientoPago
-  descuentoPct: number
-  /** Descuento por la forma de pago: resta del importe recibido. */
-  descuento: number
-  /** Lo que se imputa a la venta: lo entregado menos el descuento. */
-  montoCobrado: number
 }
 
-/** Aplica a cada movimiento el descuento que el tablero define para su forma de pago. */
-export function balancePagos(
-  movimientos: MovimientoPago[],
-  descuentos: DescuentosPago,
-): BalancePago[] {
-  return movimientos.map((m) => {
-    const descuentoPct = descuentos[m.formaPago] ?? 0
-    const descuento = (m.importe * descuentoPct) / 100
-    return { movimiento: m, descuentoPct, descuento, montoCobrado: m.importe - descuento }
-  })
+/** Los movimientos cargados, en la forma que consumen el resumen y el recibo. */
+export function balancePagos(movimientos: MovimientoPago[]): BalancePago[] {
+  return movimientos.map((m) => ({ movimiento: m }))
 }
 
 export interface ResumenCobro {
@@ -195,15 +196,12 @@ export interface ResumenCobro {
   totalACobrar: number
   /** Lo que se parkeó como saldo a favor. 0 cuando no se cargó ningún anticipo. */
   anticipos: number
-  /** Lo que entra a caja: la suma de los montos cobrados, ya con el descuento aplicado. */
-  totalCobrado: number
-  /** Lo que el cliente imputa a la venta, antes del descuento de cada forma de pago. */
+  /** Lo que entra a caja: la suma de lo entregado por los medios de cobro (el anticipo no entra). */
   recibido: number
-  descuentoTotal: number
   /**
-   * Deuda que la venta deja saldada: lo que entra a caja más los descuentos otorgados.
-   * Cada forma de pago descuenta distinto, así que lo cobrado por sí solo nunca llega al
-   * total; la diferencia la cubre el descuento, que también cancela.
+   * Deuda que la venta deja saldada. Es exactamente lo RECIBIDO: el descuento por pronto pago ya
+   * está aplicado en el precio de la venta (lo decide la forma de pago), así que no hay ninguna
+   * bonificación que cancelar por encima de la plata que entró.
    */
   cancelado: number
   /** Lo que le sigue quedando pendiente al cliente de esta venta. */
@@ -223,10 +221,8 @@ export function resumenCobro(balances: BalancePago[], totalVenta: number): Resum
   const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
 
   const recibido = cobros.reduce((a, b) => a + b.movimiento.importe, 0)
-  const descuentoTotal = cobros.reduce((a, b) => a + b.descuento, 0)
-  const totalCobrado = recibido - descuentoTotal
-  // Lo cobrado más los descuentos: es contra esto que se mide la cobertura de la venta.
-  const cancelado = totalCobrado + descuentoTotal
+  // Lo que la venta da por cancelado ES lo que entró: el pronto pago ya bajó el precio.
+  const cancelado = recibido
   /* Lo que hay que cubrir: la venta MÁS lo que se decidió dejar a favor. Con el anticipo cargado
      por el excedente exacto, la diferencia cierra en cero sola. */
   const aCubrir = round2(totalVenta + anticipos)
@@ -235,9 +231,7 @@ export function resumenCobro(balances: BalancePago[], totalVenta: number): Resum
   return {
     totalACobrar: aCubrir,
     anticipos,
-    totalCobrado,
     recibido,
-    descuentoTotal,
     cancelado,
     pendiente: Math.max(aCubrir - cancelado, 0),
     cobradoPct,
@@ -622,9 +616,9 @@ export const requiereRegistroDeuda = (
 ): boolean => tipoPagoOperacion(forma, operacion) === 'POSTERIOR'
 
 /**
- * El cobro simultáneo exige el 100%: lo que entra a caja más los descuentos otorgados tiene
- * que ser exactamente el total a cobrar. No alcanza con mirar lo cobrado, porque cada forma
- * de pago descuenta distinto y la venta se cancela igual.
+ * El cobro simultáneo exige el 100%: lo que entra a caja tiene que ser exactamente el total a
+ * cobrar. Ese total ya viene con el descuento por pronto pago de la FORMA DE PAGO aplicado en el
+ * precio de cada línea, así que no hay ninguna bonificación que sumarle acá.
  * Se compara con la misma precisión con la que se escribe en Monday: dos decimales.
  */
 export const cobroCompleto = (resumen: ResumenCobro): boolean =>
