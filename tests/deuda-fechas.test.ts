@@ -50,6 +50,13 @@ assert.deepEqual(cv['board_relation_mm4d3nn0'], { item_ids: [4242] }, 'la venta 
 assert.deepEqual(cv['board_relation_mm5zaxck'], { item_ids: [111] }, 'quién queda debiendo')
 assert.equal(cv['numeric_mkwbck5d'], '300000')
 assert.deepEqual(cv['color_mkwb727e'], { index: 2 }, 'nace pendiente de cobro al 100%')
+/* "🤖Estado de Vencimiento": nace SIN mora. La deuda se crea junto con la factura, así que en
+   ese momento no venció nada; de ahí en más el tramo lo mueve el tablero.
+
+   Va por ÍNDICE: la etiqueta del board es "No vencido" —con v minúscula—, y los índices no siguen
+   el orden de la mora (0 = "Vencido 0 a 15 Dias", 1 = "No vencido"), así que ni se puede escribir
+   de memoria ni deducir. */
+assert.deepEqual(cv['color_mm6symyx'], { index: 1 }, 'nace "No vencido"')
 
 /* Sin fechas (o con una fecha inválida) las columnas se OMITEN: no se manda una date vacía. */
 llamadas.length = 0
@@ -64,5 +71,8 @@ const sinFechas = JSON.parse(
 ) as Record<string, unknown>
 assert.ok(!('date_mm648d33' in sinFechas), 'sin emisión la columna no viaja')
 assert.ok(!('date_mm647vwr' in sinFechas), 'sin vencimiento la columna no viaja')
+/* El estado de vencimiento NO depende de las fechas: es el valor con el que la deuda nace, y viaja
+   siempre. Sin él la columna queda vacía y la deuda no entra en ningún tramo de mora. */
+assert.deepEqual(sinFechas['color_mm6symyx'], { index: 1 }, 'y sin fechas igual nace "No vencido"')
 
 console.log('OK · fechas de la deuda pendiente de cobro')

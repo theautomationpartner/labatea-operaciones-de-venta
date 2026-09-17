@@ -182,6 +182,17 @@ export const FACT_PENDIENTE_ESTADO_INDEX = {
   pendienteDeCobro: 2,
 } as const
 
+/**
+ * Índice de "🤖Estado de Vencimiento" (color_mm6symyx) con el que NACE la deuda.
+ *
+ * Va por ÍNDICE y no por etiqueta por dos razones. La etiqueta del board está escrita "No vencido",
+ * con v minúscula, así que mandarla como "No Vencido" no engancha la que ya existe —y con
+ * `create_labels_if_missing` habría creado una segunda, igual que pasó con "Papel" en el origen del
+ * cheque—. Y los índices del resto NO siguen el orden de la mora (0 = "Vencido 0 a 15 Dias",
+ * 1 = "No vencido", 2 = 15 a 30, 4 = 30 a 60, 3 = +60), así que tampoco se pueden deducir.
+ */
+export const FACT_PENDIENTE_VENCIMIENTO_INDEX = { noVencido: 1 } as const
+
 /* Índices de las columnas status del board de Ventas (18421035510). Se leyeron del board:
    las etiquetas son "Directa"/"C/ Presup Previo", "Anterior"/"Posterior"/"Simultánea" y
    "Posterior"/"Simultaneo", y los índices NO son correlativos. */
@@ -824,6 +835,11 @@ export const COL = {
     total: 'numeric_mkwbck5d',
     /** "🤖Estado": cuánto de esta factura ya se cobró. Nace pendiente al 100%. */
     estado: 'color_mkwb727e',
+    /**
+     * "🤖Estado de Vencimiento": en qué tramo de mora está la deuda. Nace "No vencido" y de ahí
+     * en más lo mueve el tablero según la fecha de vencimiento.
+     */
+    estadoVencimiento: 'color_mm6symyx',
   },
   // Cuenta bancaria del cliente (board 18421723667).
   ctaBancaria: {

@@ -33,6 +33,7 @@ import {
   COL,
   personCol,
   FACT_PENDIENTE_ESTADO_INDEX,
+  FACT_PENDIENTE_VENCIMIENTO_INDEX,
   FORMA_PAGO_LABEL,
   TIPO_COBRO_LABEL,
 } from './columns'
@@ -525,6 +526,11 @@ export async function registrarDeudaPosterior(
     [COL.factPendiente.total]: String(round2(total)),
     // Nace sin un peso cobrado: el estado lo irán moviendo los cobros posteriores.
     [COL.factPendiente.estado]: { index: FACT_PENDIENTE_ESTADO_INDEX.pendienteDeCobro },
+    /* Y nace SIN mora: la deuda se crea junto con la factura, así que en ese momento todavía no
+       venció nada. De ahí en más el tramo lo mueve el tablero contra la fecha de vencimiento. */
+    [COL.factPendiente.estadoVencimiento]: {
+      index: FACT_PENDIENTE_VENCIMIENTO_INDEX.noVencido,
+    },
   }
   // "🤖Personas": quién queda debiendo. Sin id válido la columna se omite, no se manda vacía.
   const persona = relacion(clienteId)
