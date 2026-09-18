@@ -50,17 +50,25 @@ type EstadoEnvio = 'idle' | 'enviando' | 'enviado' | 'error'
 /** Envío del PDF por mail. Lo comparten la emisión del presupuesto y la de la factura. */
 export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) {
   const state = useApp()
-  const { medioEnvio, contactos, cliente, documentoEnviado, log } = state
-  /* FACTURA (VENTA y VENTA PROFORMA): el Email va SIEMPRE y WhatsApp se suma con un check. No hay
-     selector ni opción "Ambos": tildar WhatsApp es, en el tablero, exactamente eso —las dos etiquetas
-     en "🤖Enviar Fact por:"—, así que se reusa el mismo valor en vez de inventar otro.
+  const { medioEnvio, contactos, cliente, documentoEnviado, log, operacion } = state
+  /* VENTA y VENTA PROFORMA: el Email va SIEMPRE y WhatsApp se suma con un check. No hay selector ni
+     opción "Ambos": tildar WhatsApp es, en el tablero, exactamente eso —las dos etiquetas en la
+     columna de medio de envío—, así que se reusa el mismo valor en vez de inventar otro.
+
+     Manda la OPERACIÓN, no el documento: dentro de una VENTA se despachan la factura y —cuando el
+     cliente es agente de retención— también la proforma, y las dos tienen que preguntar lo mismo.
+     PRESUPUESTAR y REMITO siguen con su selector de tres medios.
 
      `medioEfectivo` normaliza lo que venga del estado, que es GLOBAL y compartido con los otros
-     comprobantes: si llegara un "WhatsApp" solo, en la factura no existe esa combinación y se
-     trata como Email. Los otros comprobantes siguen usando su selector sin cambios. */
-  const esFactura = documento === 'factura'
+     comprobantes: si llegara un "WhatsApp" solo, acá esa combinación no existe y se trata como
+     Email. */
+  const esVentaOProforma = operacion === 'VENTA' || operacion === 'VENTA PROFORMA'
   const conWhatsapp = medioEnvio === 'Ambos'
-  const medioEfectivo: MedioEnvio = esFactura ? (conWhatsapp ? 'Ambos' : 'Email') : medioEnvio
+  const medioEfectivo: MedioEnvio = esVentaOProforma
+    ? conWhatsapp
+      ? 'Ambos'
+      : 'Email'
+    : medioEnvio
   const dispatch = useDispatch()
   /* El comprobante a enviar. Es lo ÚNICO que sabe de las diferencias entre uno y otro: el
      componente sólo le pregunta. */
@@ -303,13 +311,15 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
           </div>
         ) : (
           <>
-            {esFactura ? (
-              /* El Email no se elige: va siempre. Se muestra fijo para que se sepa por dónde sale, y la
-                 única decisión que queda es sumar WhatsApp. */
+            {esVentaOProforma ? (
+              /* El Email no se elige: va siempre. Se muestra fijo —en la MISMA línea que su rótulo—
+                 para que se sepa por dónde sale, y la única decisión que queda es sumar WhatsApp. */
               <div className="igp">
-                <span className="envio-medio-lbl">Medio de envío *</span>
-                <div className="envio-medio-fijo">
-                  <i className="fas fa-envelope" aria-hidden="true" /> Email
+                <div className="envio-medio-fila">
+                  <span className="envio-medio-lbl">Medio de Envío por defecto:</span>
+                  <div className="envio-medio-fijo">
+                    <i className="fas fa-envelope" aria-hidden="true" /> Email
+                  </div>
                 </div>
                 <label className="dpago-check envio-wsp-check">
                   <input

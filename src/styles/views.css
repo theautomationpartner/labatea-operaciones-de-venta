@@ -453,15 +453,23 @@
   color: var(--text-dark, #323338);
 }
 
-/* ENVÍO DE FACTURA: el Email fijo y el check para sumar WhatsApp. Reusan la pregunta sí/no de
-   `.dpago-check` para que se lea igual que la otra de la app; acá va sin relleno lateral porque
-   vive dentro de la card de envío, alineada con el resto de sus campos. */
+/* ENVÍO EN VENTA Y VENTA PROFORMA: el Email fijo y el check para sumar WhatsApp. Reusan la pregunta
+   sí/no de `.dpago-check` para que se lea igual que la otra de la app; acá va sin relleno lateral
+   porque vive dentro de la card de envío, alineada con el resto de sus campos. */
+
+/* El rótulo y el Email van en la MISMA línea: el medio no se elige, así que no es un campo con su
+   label arriba sino una sola frase —"Medio de Envío por defecto: Email"—. En pantallas angostas el
+   botón baja al renglón siguiente en vez de comprimirse. */
+.envio-medio-fila {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .envio-medio-lbl {
-  display: block;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-dark, #323338);
-  margin-bottom: 6px;
 }
 .envio-medio-fijo {
   display: inline-flex;
