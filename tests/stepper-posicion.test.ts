@@ -235,5 +235,35 @@ assert.ok(
   'y no con un paso fijo: con REGISTRO DE ACTIVIDADES eso dibuja la vista del cliente',
 )
 
+/* ---------- El ancho de cada paso ----------
+   Todas las columnas del stepper tienen que medir lo MISMO. El círculo va centrado en su columna,
+   así que el aire entre el círculo y el conector es (ancho de la columna − 30px) / 2: con columnas
+   de ancho distinto ese aire cambia paso a paso. Cuando el ancho lo ponía el rótulo, "Cobro" (~36px)
+   contra "Seleccionar Productos" (72px) dejaba el conector del medio pegado a "Cobro" —9px de un
+   lado contra 27px del otro— y los círculos sin equiespaciar (112 · 94 · 94 · 112).
+
+   Se afirma sobre el CSS porque el bug es de layout y no hay nada en el TSX que lo delate. */
+/* Sin comentarios: los de este mismo bloque nombran las propiedades que se afirman, y un
+   `!/flex: none/` daba falso positivo contra el texto que explica por qué NO está. */
+const estilos = readFileSync('src/styles/components.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const reglaStep = estilos.slice(estilos.indexOf('\n.step {'), estilos.indexOf('\n.step-nro {'))
+assert.ok(
+  /width: var\(--step-w\)/.test(reglaStep),
+  'cada `.step` mide `--step-w`, no lo que ocupe su rótulo',
+)
+assert.ok(
+  /--step-w:\s*\d+px/.test(estilos.slice(estilos.indexOf('\n.stepper {'), estilos.indexOf('\n.step {'))),
+  '`--step-w` se define en el `.stepper`, que es quien lo comparte con sus hijos',
+)
+assert.ok(
+  /max-width: var\(--step-w\)/.test(estilos),
+  'y el rótulo usa la MISMA medida: si se separan, vuelve la barra despareja',
+)
+assert.ok(
+  !/\.step \{[^}]*flex:\s*none/.test(estilos),
+  'el paso se puede encoger: todos parten del mismo ancho, así que se achican parejo',
+)
+
 console.log(`OK · ${CASOS.length} recorridos: cada vista se ubica por su clave de paso`)
 console.log('OK · cada operación entra por la primera etapa de SU recorrido')
+console.log('OK · todas las columnas del stepper miden lo mismo: conectores y círculos parejos')

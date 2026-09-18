@@ -149,6 +149,9 @@
   align-items: flex-start;
   gap: 14px;
   margin-bottom: 20px;
+  /* Ancho de CADA paso. Una sola medida para la columna y para el rótulo que va debajo: si se
+     separan, el rótulo deja de ser lo que define el ancho y vuelve la barra despareja. */
+  --step-w: 72px;
 }
 /* Cada paso es una columna: el círculo arriba y su ordinal debajo. */
 .step {
@@ -158,6 +161,15 @@
   gap: 6px;
   font-size: 14px;
   color: var(--text-gray);
+  /* Ancho IGUAL para todos los pasos, no el de su rótulo.
+     El círculo va centrado en su columna, así que el aire entre el círculo y el conector es
+     (ancho de la columna − 30px) / 2. Con columnas de ancho distinto ese aire cambia paso a paso:
+     "Cobro" mide ~36px y "Seleccionar Productos" 72px, así que el conector del medio quedaba
+     pegado a "Cobro" y suelto del otro lado, y los círculos no estaban equiespaciados.
+     Con el mismo ancho, todos los círculos quedan a la misma distancia y los cuatro conectores
+     miden y respiran igual. Se deja encoger (sin `flex: none`): al achicarse todos parten del
+     mismo ancho, así que se achican juntos y la barra sigue pareja. */
+  width: var(--step-w);
 }
 /* Nombre de la etapa bajo el círculo. Hereda el color del estado del paso (gris / oscuro).
    Ancho acotado y con salto: "Entrega de Mercadería" en una sola línea estiraría la barra hasta
@@ -165,11 +177,11 @@
 .step-nro {
   font-size: 12px;
   line-height: 1.2;
-  /* El rótulo es lo que fija el ancho de CADA paso, y el ancho de cada paso es lo que decide si la
-     barra entra al lado de los selectores o se va a su propio renglón. 72px alcanza para partir en
-     dos líneas el nombre más largo ("Entrega de Mercadería") y deja el ancho total de la barra en
-     el mismo orden que tenía cuando decía "Paso N". */
-  max-width: 72px;
+  /* El rótulo ocupa la columna entera (`--step-w`), que es lo que decide si la barra entra al lado
+     de los selectores o se va a su propio renglón. 72px alcanza para partir en dos líneas el
+     nombre más largo ("Entrega de Mercadería") y deja el ancho total de la barra en el mismo orden
+     que tenía cuando decía "Paso N". */
+  max-width: var(--step-w);
   text-align: center;
   /* Reparte las palabras entre las líneas en vez de dejar una sola colgando en la última. */
   text-wrap: balance;
