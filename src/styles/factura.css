@@ -365,6 +365,20 @@
 .factura-v2 .comp-estado-txt--err {
   color: var(--f-danger);
 }
+/* Mientras se emite, en el lugar del tilde. Ocupa EXACTAMENTE el mismo hueco que `.cobro-ok`
+   (24px) para que la cabecera no salte al pasar de "emitiendo" a "emitida", y va sin disco de
+   fondo: el anillo girando ya se distingue sobre la card, y un círculo gris detrás lo único que
+   hace es competir con el tilde verde que viene después. */
+.factura-v2 .comp-estado-spin {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--f-text-label);
+  flex-shrink: 0;
+}
 .factura-v2 .comp-ok--err {
   background: var(--f-danger);
 }

@@ -98,21 +98,31 @@ function CardComprobante({
         </div>
 
         {/* Se tilda cuando el comprobante terminó de escribirse en el board. El check en verde ya
-            dice que se emitió: el rótulo "Emitida" al lado era redundante. Los otros dos estados sí
-            llevan texto porque el tilde solo no alcanza para explicarlos. */}
+            dice que se emitió: el rótulo "Emitida" al lado era redundante. Lo mismo vale mientras
+            se emite —la animación ya dice que está en curso, el "Emitiendo…" al lado no agregaba
+            nada—; el único estado que sí lleva texto es el incompleto, que el ícono solo no explica.
+
+            La animación es la MISMA de toda la app (`fa-circle-notch spin`) y la muestran TODAS las
+            cards, común y consignada: se emiten en la misma solicitud, así que están en curso a la
+            vez y ninguna tiene por qué verse distinta. */}
         <span className="comp-estado">
-          {emitiendo && !emitido && <span className="comp-estado-txt">Emitiendo…</span>}
           {incompleto && (
             <span className="comp-estado-txt comp-estado-txt--err">
               {emitido!.lineasCreadas}/{emitido!.lineasEsperadas} líneas
             </span>
           )}
-          <span
-            className={`cobro-ok ${completo ? 'on' : ''} ${incompleto ? 'comp-ok--err' : ''}`}
-            title={completo ? `Emitida · ${emitido!.id}` : 'Pendiente de emisión'}
-          >
-            <i className={`fas ${incompleto ? 'fa-triangle-exclamation' : 'fa-check'}`} />
-          </span>
+          {emitiendo && !emitido ? (
+            <span className="comp-estado-spin" role="status" aria-label="Emitiendo la factura">
+              <i className="fas fa-circle-notch spin" />
+            </span>
+          ) : (
+            <span
+              className={`cobro-ok ${completo ? 'on' : ''} ${incompleto ? 'comp-ok--err' : ''}`}
+              title={completo ? `Emitida · ${emitido!.id}` : 'Pendiente de emisión'}
+            >
+              <i className={`fas ${incompleto ? 'fa-triangle-exclamation' : 'fa-check'}`} />
+            </span>
+          )}
         </span>
       </div>
 

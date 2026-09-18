@@ -11,6 +11,7 @@
  * precio ya bonificado, la fórmula del board restaría el descuento dos veces.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ComprobantesAGenerar } from '@/features/factura/ComprobantesAGenerar'
@@ -120,4 +121,70 @@ for (const l of lineasVenta) {
 // El bruto de la línea NO puede aparecer como subtotal: eso era la card sin bonificar.
 assert.ok(!html.includes(money(30000)), 'la columna Subtotal sigue mostrando el bruto de la línea')
 
+/* ---------- El estado de cada card mientras se emite ----------
+   Todas las cards de la venta se emiten en la MISMA solicitud, así que están en curso a la vez:
+   común y consignada tienen que mostrar lo mismo. Y lo que muestran es la animación compartida de
+   la app (`fa-circle-notch spin`), sin la palabra "Emitiendo…" al lado: el anillo girando ya lo
+   dice, y el texto movía el ancho de la cabecera al aparecer y desaparecer. */
+const conDosCards = comprobantesDeVenta(
+  [
+    ...lineasVenta,
+    { ...lineasVenta[0], tipoMercaderia: 'CO', proveedorId: '9', proveedorNombre: 'PROVEEDOR TEST' },
+  ],
+  FP,
+)
+assert.equal(conDosCards.length, 2, 'el caso necesita una card común y una consignada')
+
+const enEstado = (emitiendo: boolean, emitidos: Map<string, never>) =>
+  renderToStaticMarkup(
+    createElement(ComprobantesAGenerar, {
+      comprobantes: conDosCards,
+      descFormaPago: FP,
+      letra: 'B' as const,
+      puntoVenta: '0000',
+      fechaEmision: '05/08/2026',
+      venceAPlazo: false,
+      dias: {},
+      emitidos,
+      emitiendo,
+    }),
+  )
+
+const emitiendoHtml = enEstado(true, new Map())
+/* Sin los atributos: el `aria-label` del spinner SÍ nombra el estado —un anillo girando sin nombre
+   accesible no le dice nada a un lector de pantalla—, pero en pantalla no se lee nada. */
+const visible = emitiendoHtml.replace(/<[^>]+>/g, ' ')
+assert.ok(
+  !/Emitiendo/.test(visible),
+  'la palabra "Emitiendo" no va más en las cards: la animación ya lo dice',
+)
+assert.ok(
+  /aria-label="Emitiendo la factura"/.test(emitiendoHtml),
+  'pero el spinner conserva su nombre accesible',
+)
+assert.equal(
+  (emitiendoHtml.match(/fa-circle-notch spin/g) ?? []).length,
+  2,
+  'las DOS cards —común y consignada— muestran la animación compartida mientras se emite',
+)
+assert.ok(
+  !/class="cobro-ok/.test(emitiendoHtml),
+  'y mientras gira no se muestra el tilde: son estados distintos, no superpuestos',
+)
+
+// En reposo y ya emitida NO hay animación: el tilde vuelve a su lugar.
+for (const [caso, html] of [
+  ['en reposo', enEstado(false, new Map())],
+  ['ya emitida', enEstado(false, new Map())],
+] as const) {
+  assert.ok(!/fa-circle-notch/.test(html), `${caso}: no tiene que haber animación`)
+  assert.ok(/class="cobro-ok/.test(html), `${caso}: el tilde ocupa el lugar del estado`)
+}
+
+/* El hueco es el mismo en los dos estados, o la cabecera salta al terminar de emitir. */
+const estilos = readFileSync('src/styles/factura.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const spin = estilos.slice(estilos.indexOf('.comp-estado-spin'))
+assert.ok(/width: 24px/.test(spin.slice(0, 200)), '.comp-estado-spin mide lo mismo que el tilde')
+
 console.log('OK · la card de factura refleja la selección de productos y las fórmulas del board')
+console.log('OK · mientras se emite, las dos cards giran la animación compartida y sin texto')
