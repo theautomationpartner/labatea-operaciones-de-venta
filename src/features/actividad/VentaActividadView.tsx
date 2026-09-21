@@ -8,9 +8,9 @@ import { TablaActividades } from './TablaActividades'
 
 /** Cómo se nombra la etapa siguiente en el footer, según qué documento se va a emitir. */
 const SIGUIENTE: Record<string, string> = {
-  PRESUPUESTAR: 'Emitir y Enviar el presupuesto',
-  VENTA: 'Emitir y Enviar la factura',
-  'VENTA PROFORMA': 'Emitir y Enviar la factura',
+  PRESUPUESTAR: 'Emitir y Enviar el Presupuesto',
+  VENTA: 'Emitir y Enviar la Factura',
+  'VENTA PROFORMA': 'Emitir y Enviar la Factura',
 }
 
 /**
@@ -114,7 +114,7 @@ export function VentaActividadView() {
           {/* Sin validación: elegir actividad es opcional, así que no hay nada que pueda faltar. */}
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn-continuar"
             onClick={() => dispatch({ type: 'goto', paso: pasoDeEmision(operacion) })}
           >
             Continuar a {siguiente} <i className="fas fa-arrow-right" />

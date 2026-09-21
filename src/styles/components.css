@@ -388,6 +388,38 @@
    derecha. La posición la decide sola el `space-between` del contenedor, por LÍNEA: arriba a la
    derecha mientras entre, a la izquierda sólo cuando colapsa a su propia línea. */
 
+/* Botón de AVANCE de etapa ("Continuar a …"). Es el gemelo de `.btn-volver`: el mismo control en
+   todas las etapas, definido UNA vez y global.
+
+   Sin scope de vista a propósito. El de referencia vivía en `.cobro-btn--primary`, scopeado a
+   `.cobro-v2`, así que la etapa de actividad —que vive en `.actividad-v2`— no lo podía usar y
+   terminaba con `.btn-primary`: otro azul y la mitad del radio. Con prefijo de vista el problema se
+   repite en la próxima etapa que se agregue. */
+.btn-continuar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #0052cc;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-continuar:hover:not(:disabled) {
+  background: #0747a6;
+}
+.btn-continuar:disabled {
+  background: #e6e9ef;
+  color: #a1a3b1;
+  cursor: not-allowed;
+}
+
 /* Botón de RETROCESO de etapa. Es el mismo control en las catorce pantallas de la app, así que se
    define UNA vez y global: antes cada vista lo escribía con la clase que tuviera a mano —`.btn
    .btn-out`, `.btn-outline` de dos hojas distintas, `.cobro-btn--out`— y convivían cuatro diseños,

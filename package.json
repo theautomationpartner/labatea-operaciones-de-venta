@@ -79,7 +79,8 @@
     "test:presup-id": "esbuild tests/presupuesto-id-card.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/presup-id.test.mjs && node node_modules/.cache/presup-id.test.mjs",
     "test:condicion-venta": "esbuild tests/condicion-venta.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/condicion-venta.test.mjs && node node_modules/.cache/condicion-venta.test.mjs",
     "test:iva-alicuota": "esbuild tests/iva-alicuota-real.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/iva-alicuota.test.mjs && node node_modules/.cache/iva-alicuota.test.mjs",
-    "test:envio-factura": "esbuild tests/envio-factura-medio.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/envio-factura.test.mjs && node node_modules/.cache/envio-factura.test.mjs"
+    "test:envio-factura": "esbuild tests/envio-factura-medio.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/envio-factura.test.mjs && node node_modules/.cache/envio-factura.test.mjs",
+    "test:boton-continuar": "esbuild tests/boton-continuar.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/boton-continuar.test.mjs && node node_modules/.cache/boton-continuar.test.mjs"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.3",
