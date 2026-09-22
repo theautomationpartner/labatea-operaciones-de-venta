@@ -2,11 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/clientes",
+      "path": "/api/cron/personas",
       "schedule": "*/5 * * * *"
     },
     {
-      "path": "/api/cron/clientes",
+      "path": "/api/cron/personas",
       "schedule": "0 6 * * *"
     },
     {
@@ -19,8 +19,8 @@
     }
   ],
   "functions": {
-    "api/cron/clientes.ts": {
-      "maxDuration": 120
+    "api/cron/personas.ts": {
+      "maxDuration": 180
     },
     "api/cron/productos.ts": {
       "maxDuration": 300

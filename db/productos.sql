@@ -1,7 +1,7 @@
 -- Catálogo de productos cacheado en el servidor: lo que escribe el Cron Job y lee /api/productos.
 --
 -- Misma base que el padrón de clientes y el segundo factor (Neon, `DATABASE_URL` con pooler; ver
--- `db/clientes.sql` y `db/mfa.sql`).
+-- `db/personas.sql` y `db/mfa.sql`).
 --
 -- Aplicarlo, desde el SQL Editor de Neon (pegar este archivo) o por consola:
 --   psql "$DATABASE_URL" -f db/productos.sql

@@ -17,7 +17,7 @@ interface BuscarClienteProps {
  * Búsqueda del cliente, en dos velocidades.
  *
  * 1. **Mientras se escribe**, sobre el padrón cacheado en el servidor por el Cron Job y bajado una
- *    vez por sesión (`services/monday/padronClientes.ts`). No sale un solo pedido de red: los 2681
+ *    vez por sesión (`services/monday/padronPersonas.ts`). No sale un solo pedido de red: los 2681
  *    clientes se recorren en ~1 ms, así que la lista se rearma en cada tecla y el que más matchea
  *    encabeza (ver `lib/busquedaClientes.ts`).
  * 2. **El botón Buscar** sigue consultando Monday directo. Es la salida para el cliente que todavía

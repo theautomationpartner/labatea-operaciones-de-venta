@@ -1,19 +1,22 @@
 /**
- * Vercel Cron Job — mantiene el padrón de clientes cacheado en la base.
+ * Vercel Cron Job — mantiene el padrón de PERSONAS cacheado en la base.
+ *
+ * Guarda clientes Y proveedores (categorías 1 y 2 de "✋Categoria"). La app de ventas consume los
+ * clientes; otra app consume los proveedores contra la misma base.
  *
  * Dos horarios, un solo path (las expresiones exactas están en `crons`, en `vercel.json`):
  *
  *   cada 5 minutos   INCREMENTAL — sólo lo modificado desde la corrida anterior. 1 consulta, ~2 s.
- *   06:00 UTC        COMPLETO    — barre el tablero entero y reconcilia bajas. 27 consultas, ~59 s.
+ *   06:00 UTC        COMPLETO    — barre el tablero entero y reconcilia bajas. 40 consultas, ~68 s.
  *
  * Cuál corre lo decide la cabecera `x-vercel-cron-schedule`, que Vercel manda con la expresión que
  * disparó la invocación.
  *
  * ── Por qué no es un barrido completo cada 5 minutos ──
- * Medido sobre el tablero real: 2681 clientes operables, 27 páginas, 58,7 s por barrido. Cada 5
- * minutos son ~4,7 h/día de función para encontrar, casi siempre, cero cambios —el padrón se toca
- * un puñado de veces por día—. Pedirle a Monday sólo lo modificado deja el mismo frescor por ~2 s
- * por corrida.
+ * Medido sobre el tablero real: 3906 personas (2680 sólo cliente, 1225 sólo proveedor, 1 las dos
+ * cosas), 40 páginas, 67,5 s por barrido. Cada 5 minutos serían ~5,4 h/día de función para
+ * encontrar, casi siempre, cero cambios —el padrón se toca un puñado de veces por día—. Pedirle a
+ * Monday sólo lo modificado deja el mismo frescor por ~2 s por corrida.
  *
  * ── Idempotencia ──
  * Vercel documenta que la entrega es "best effort": puede saltearse una corrida y puede repetir
@@ -25,11 +28,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mondayServidor } from '../_mondayApi.js'
 import {
   BOARD_PERSONAS,
-  CAMPOS_CLIENTE,
+  CAMPOS_PERSONA,
   REGLAS_OPERABLE,
   clasificarPagina,
-  mapClienteCache,
-  type ClienteCache,
+  mapPersonaCache,
+  type PersonaCache,
   type ItemMonday,
 } from '../_padron.js'
 import {
@@ -37,7 +40,7 @@ import {
   barrerNoVistos,
   cerrarCorrida,
   darDeBaja,
-  guardarClientes,
+  guardarPersonas,
   leerEstado,
   soltarLock,
   tomarLock,
@@ -64,10 +67,14 @@ const SOLAPE_MS = 2 * 60_000
 const TOPE_PAGINAS_INCREMENTAL = 30
 
 /**
- * Presupuesto de tiempo. `maxDuration` está en 120 s (`vercel.json`); se corta antes por las
- * buenas para poder cerrar la corrida y soltar el lock, en vez de que la función muera a mitad.
+ * Presupuesto de tiempo. `maxDuration` está en 180 s (`vercel.json`); se corta antes por las buenas
+ * para poder cerrar la corrida y soltar el lock, en vez de que la función muera a mitad.
+ *
+ * 150 s y no 100 s: el barrido completo mide 67,5 s hoy, y con el tope anterior le quedaba menos
+ * del 50% de margen. El padrón crece solo —cada alta en Monday suma— y un día el barrido habría
+ * empezado a abortarse sin que nadie hubiera tocado nada.
  */
-const PRESUPUESTO_MS = 100_000
+const PRESUPUESTO_MS = 150_000
 
 interface PaginaItems {
   cursor: string | null
@@ -108,7 +115,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     await cerrarCorrida({
       marca: resultado.marca,
       completo: resultado.completo,
-      clientes: resultado.clientes,
+      personas: resultado.personas,
       duracionMs: Date.now() - arranque,
       error: null,
     })
@@ -121,11 +128,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     await cerrarCorrida({
       marca: null,
       completo: false,
-      clientes: 0,
+      personas: 0,
       duracionMs: Date.now() - arranque,
       error: mensaje,
     }).catch(() => {})
-    console.error('[cron clientes]', mensaje)
+    console.error('[cron personas]', mensaje)
     return responder(res, 500, { error: mensaje })
   } finally {
     /* Sin esto, una corrida que revienta deja el lock tomado y frena TODAS las siguientes hasta
@@ -137,7 +144,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 interface Resultado {
   modo: 'completo' | 'incremental'
   completo: boolean
-  clientes: number
+  personas: number
   bajas: number
   paginas: number
   marca: string | null
@@ -153,7 +160,7 @@ interface Resultado {
 async function barridoCompleto(inicio: Date, arranque: number): Promise<Resultado> {
   let cursor: string | null = null
   let paginas = 0
-  let clientes = 0
+  let personas = 0
   let masNueva: string | null = null
 
   do {
@@ -163,29 +170,33 @@ async function barridoCompleto(inicio: Date, arranque: number): Promise<Resultad
       throw new Error(`barrido completo cortado por tiempo tras ${paginas} páginas`)
     }
     const pagina: PaginaItems = await traerPagina(cursor, true)
-    const lote = pagina.items.map(mapClienteCache)
+    const lote = pagina.items.map(mapPersonaCache)
     if (lote.length > 0) {
-      await guardarClientes(lote)
+      await guardarPersonas(lote)
       await anularBajas(lote.map((c) => c.id))
     }
     masNueva = masReciente(masNueva, pagina.items)
-    clientes += lote.length
+    personas += lote.length
     cursor = pagina.cursor
     paginas++
   } while (cursor)
 
   const bajas = await barrerNoVistos(inicio)
-  return { modo: 'completo', completo: true, clientes, bajas, paginas, marca: masNueva }
+  return { modo: 'completo', completo: true, personas, bajas, paginas, marca: masNueva }
 }
 
 /**
  * Barrido INCREMENTAL: lo modificado desde la marca, ordenado por fecha de modificación
  * descendente, cortando en cuanto se llega a lo ya procesado.
  *
- * Va SIN las reglas de operable, y ese es el punto fino. Si el filtro viajara en la consulta, el
- * cliente que pasa a INACTIVO —o que deja de ser categoría "Clientes"— desaparecería del resultado
- * y quedaría vivo en el caché para siempre, elegible para vender. Sin filtro llega igual y acá se
+ * Va SIN las reglas de operable, y ese es el punto fino. Si el filtro viajara en la consulta, la
+ * persona que pasa a INACTIVA —o que deja de ser cliente y proveedor— desaparecería del resultado y
+ * quedaría viva en el caché para siempre, elegible para vender. Sin filtro llega igual y acá se
  * decide: operable entra, no operable se da de baja.
+ *
+ * Lo mismo vale para el cambio de UNA categoría: quien deja de ser cliente pero sigue siendo
+ * proveedor no se da de baja, se actualiza —y el buscador de clientes deja de ofrecerlo porque sus
+ * `categorias` ya no lo incluyen—.
  */
 async function barridoIncremental(
   marca: Date,
@@ -196,7 +207,7 @@ async function barridoIncremental(
   let cursor: string | null = null
   let paginas = 0
   let masNueva: string | null = null
-  const entran: ClienteCache[] = []
+  const entran: PersonaCache[] = []
   const salen: string[] = []
 
   for (;;) {
@@ -208,7 +219,7 @@ async function barridoIncremental(
          barrer entero que seguir paginando lo modificado. Se escala ACÁ MISMO y no dejándoselo al
          cron del día siguiente: lo recogido hasta acá se descarta a propósito, porque el barrido
          completo lo vuelve a traer y además reconcilia las bajas. */
-      console.warn(`[cron clientes] la incremental superó ${TOPE_PAGINAS_INCREMENTAL} páginas: se escala a barrido completo`)
+      console.warn(`[cron personas] la incremental superó ${TOPE_PAGINAS_INCREMENTAL} páginas: se escala a barrido completo`)
       return barridoCompleto(inicio, arranque)
     }
 
@@ -225,7 +236,7 @@ async function barridoIncremental(
   }
 
   if (entran.length > 0) {
-    await guardarClientes(entran)
+    await guardarPersonas(entran)
     await anularBajas(entran.map((c) => c.id))
   }
   const bajas = await darDeBaja(salen)
@@ -233,7 +244,7 @@ async function barridoIncremental(
   return {
     modo: 'incremental',
     completo: false,
-    clientes: entran.length,
+    personas: entran.length,
     bajas,
     paginas,
     marca: masNueva,
@@ -251,7 +262,7 @@ async function traerPagina(cursor: string | null, operables: boolean): Promise<P
   if (cursor) {
     const data = await mondayServidor<{ next_items_page: PaginaItems }>(
       `query { next_items_page(limit: ${PAGINA}, cursor: ${JSON.stringify(cursor)}) {
-         cursor items { ${CAMPOS_CLIENTE} }
+         cursor items { ${CAMPOS_PERSONA} }
        } }`,
       {},
     )
@@ -265,7 +276,7 @@ async function traerPagina(cursor: string | null, operables: boolean): Promise<P
   const data = await mondayServidor<{ boards: { items_page: PaginaItems }[] }>(
     `query { boards(ids: [${BOARD_PERSONAS}]) {
        items_page(limit: ${PAGINA}, ${params}) {
-         cursor items { ${CAMPOS_CLIENTE} }
+         cursor items { ${CAMPOS_PERSONA} }
        }
      } }`,
     {},

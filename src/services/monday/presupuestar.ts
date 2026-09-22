@@ -682,7 +682,7 @@ export async function buscarClientes(termino: string): Promise<ResultadoBusqueda
  * Relee UN cliente de Monday, por su id de ítem.
  *
  * Es lo que se ejecuta al ELEGIR un cliente, y existe por una razón concreta: el padrón cacheado
- * (ver `padronClientes.ts`) se refresca cada 5 minutos, y de ese objeto salen `disponible`,
+ * (ver `padronPersonas.ts`) se refresca cada 5 minutos, y de ese objeto salen `disponible`,
  * `limit` y `situation`, que son los números con los que `useBloqueoCredito` decide si una venta
  * puede seguir. Cinco minutos de antigüedad ahí significan dejar pasar una venta contra una línea
  * de crédito que ya se consumió. El caché sirve para ENCONTRAR al cliente; el que decide plata es

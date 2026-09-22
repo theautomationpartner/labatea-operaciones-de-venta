@@ -186,6 +186,15 @@ export interface Cliente {
   addr: string
   activity: ActividadCliente
   situation: SituacionCliente
+  /**
+   * Qué es esta persona en el padrón cacheado: `'cliente'`, `'proveedor'` o las dos. Lo pone el
+   * Cron Job (ver `api/_padron.ts`), porque "✋Categoria" en Monday es multi-valor y hay personas
+   * que son las dos cosas.
+   *
+   * Opcional porque el mock y las consultas directas a Monday no lo traen: ahí ya se sabe que lo
+   * que llegó es un cliente. Cuando VIENE, el buscador lo respeta —ver `indexarPadron`—.
+   */
+  categorias?: ('cliente' | 'proveedor')[]
 }
 
 export interface Producto {

@@ -12,7 +12,7 @@
  * padrón se llenaría de clientes con límite 0 y crédito disponible 0, y toda venta a cuenta
  * corriente quedaría frenada sin que nada pareciera roto: el cron seguiría diciendo OK.
  *
- * Se corre con `npm run test:padron-columnas`; vive fuera de `src/`.
+ * Se corre con `npm run test:personas-columnas`; vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
 import {
@@ -21,8 +21,10 @@ import {
   COL_CLIENTE,
   COL_CTA_CTE,
   SITUACION_CLIENTE_INDEX as SIT_API,
+  CATEGORIA_PROVEEDOR_INDEX as PROV_API,
+  categoriasDe,
   esOperable,
-  mapClienteCache,
+  mapPersonaCache,
   type ItemMonday,
 } from '../api/_padron'
 import {
@@ -120,7 +122,7 @@ const ITEM: ItemMonday = {
   ],
 }
 
-const delServidor = mapClienteCache(ITEM)
+const delServidor = mapPersonaCache(ITEM)
 
 /* El mapeador de la app (`mapCliente`) no está exportado: se lo alcanza por `buscarClientes`,
    interceptando el `fetch` para devolverle este mismo ítem como si viniera de Monday. Es la única
@@ -137,11 +139,18 @@ const { personas } = await buscarClientes('7000')
 assert.equal(personas.length, 1, 'la app tendría que haber mapeado el ítem de prueba')
 const deLaApp: Cliente = personas[0]
 
+/* `categorias` se compara aparte: es el ÚNICO campo que el registro del padrón tiene de más. El
+   mapeador de la app no lo produce —no lo necesita, porque lo que llega por una búsqueda directa
+   ya se sabe que es un cliente— así que compararlo acá haría fallar la paridad por un campo que
+   se agregó a propósito. Todo lo demás tiene que coincidir exactamente. */
+const { categorias, ...delServidorComoCliente } = delServidor
+
 assert.deepEqual(
-  { ...delServidor },
+  { ...delServidorComoCliente },
   { ...deLaApp },
   'el cliente que arma el cron no es el mismo que arma la app sobre el MISMO ítem de Monday',
 )
+assert.deepEqual(categorias, ['cliente'], 'y el registro del padrón dice qué es esa persona')
 
 /* Y los números del crédito son los que se esperan, para que el test falle con un mensaje útil
    si alguno de los dos lados cambia la fórmula (y no sólo "son distintos"). */
@@ -153,9 +162,18 @@ assert.equal(
   'disponible = límite − (saldo + remitos pendientes de facturar)',
 )
 
-/* ---------- 4) Operable: por índice de etiqueta, no por texto ---------- */
+/* ---------- 4) Quién entra al padrón: por índice de etiqueta, no por texto ---------- */
 
-assert.ok(esOperable(ITEM), 'un cliente activo de categoría Clientes es operable')
+/** El mismo ítem con otra categoría. Las etiquetas reales del board van con su id. */
+const conCategoria = (texto: string, ...ids: string[]): ItemMonday => ({
+  ...ITEM,
+  column_values: ITEM.column_values.map((c) =>
+    c.id === COL_CLIENTE.categoria ? { ...c, text: texto, values: ids.map((id) => ({ id })) } : c,
+  ),
+})
+
+assert.ok(esOperable(ITEM), 'un cliente activo es operable')
+assert.deepEqual(categoriasDe(ITEM), ['cliente'])
 
 const inactivo: ItemMonday = {
   ...ITEM,
@@ -163,26 +181,40 @@ const inactivo: ItemMonday = {
     c.id === COL_CLIENTE.estado ? { ...c, text: 'Inactivo', index: 2 } : c,
   ),
 }
-assert.ok(!esOperable(inactivo), 'un cliente INACTIVO no es operable')
+assert.ok(!esOperable(inactivo), 'una persona INACTIVA no entra, sea cliente o proveedor')
 
-const proveedor: ItemMonday = {
-  ...ITEM,
-  column_values: ITEM.column_values.map((c) =>
-    c.id === COL_CLIENTE.categoria ? { ...c, text: 'Proveedores', values: [{ id: '2' }] } : c,
-  ),
-}
-assert.ok(!esOperable(proveedor), 'una persona que no es categoría Clientes no es operable')
+/* Los proveedores AHORA entran: el padrón dejó de ser sólo de clientes. */
+const proveedor = conCategoria('Proveedores', '2')
+assert.ok(esOperable(proveedor), 'un proveedor activo entra al padrón')
+assert.deepEqual(categoriasDe(proveedor), ['proveedor'], 'y queda marcado como proveedor')
 
-/* La categoría es MULTI-VALOR: quien es cliente y proveedor a la vez sigue siendo operable. */
-const ambas: ItemMonday = {
-  ...ITEM,
-  column_values: ITEM.column_values.map((c) =>
-    c.id === COL_CLIENTE.categoria
-      ? { ...c, text: 'Clientes, Proveedores', values: [{ id: '1' }, { id: '2' }] }
-      : c,
-  ),
+/* La categoría es MULTI-VALOR y el solapamiento es real: hay una persona que es las dos cosas.
+   Tiene que quedar en las DOS listas, no en la primera que matchee. */
+const ambas = conCategoria('Clientes, Proveedores', '1', '2')
+assert.ok(esOperable(ambas))
+assert.deepEqual(
+  categoriasDe(ambas),
+  ['cliente', 'proveedor'],
+  'quien es cliente Y proveedor tiene que quedar en las dos listas: guardar una sola lo dejaría ' +
+    'afuera de la otra y nadie se enteraría hasta no encontrarlo',
+)
+
+/* Las otras cuatro etiquetas REALES del board (3 Transporte, 6 Comisionistas, 8 Terceros,
+   9 Vendedores) no entran. Sin esta comprobación, ampliar la regla a [1, 2] podría convertirse
+   mañana en "entran todos" sin que nada lo frene. */
+for (const [nombre, id] of [
+  ['Transporte', '3'],
+  ['Comisionistas', '6'],
+  ['Terceros', '8'],
+  ['Vendedores', '9'],
+] as const) {
+  const otra = conCategoria(nombre, id)
+  assert.ok(!esOperable(otra), `${nombre} no entra al padrón`)
+  assert.deepEqual(categoriasDe(otra), [], `y no tiene ninguna categoría del padrón`)
 }
-assert.ok(esOperable(ambas), 'ser además proveedor no saca a nadie del padrón de clientes')
+
+/* Sin categoría cargada tampoco entra: el vacío no puede significar "es cliente". */
+assert.ok(!esOperable(conCategoria('')), 'sin categoría no se asume ninguna')
 
 /* Renombrar la etiqueta en el board no puede vaciar el padrón: se compara por id, no por texto. */
 const renombrada: ItemMonday = {
@@ -193,4 +225,7 @@ const renombrada: ItemMonday = {
 }
 assert.ok(esOperable(renombrada), 'la etiqueta renombrada sigue siendo la misma categoría')
 
-console.log('padrón/columnas: OK · servidor y app leen y arman lo mismo')
+/* El índice de proveedor también es un espejo: si el board reordena las etiquetas, esto se entera. */
+assert.equal(PROV_API, 2, 'el índice de la categoría "Proveedores" es el 2 del board real')
+
+console.log('personas/columnas: OK · servidor y app leen y arman lo mismo, y sólo entran clientes y proveedores')

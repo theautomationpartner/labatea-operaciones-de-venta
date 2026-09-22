@@ -3,7 +3,7 @@
  *
  * Es el reemplazo del ciclo "escribo, aprieto Buscar, espero la paginación de Monday, me equivoqué
  * en una letra, vuelvo a empezar". El padrón entero —2681 clientes— lo trae `services/monday/
- * padronClientes.ts` una vez por sesión; acá sólo se ordena.
+ * padronPersonas.ts` una vez por sesión; acá sólo se ordena.
  *
  * Todo es puro y sin red: recorrer 2681 clientes cuesta ~1 ms, así que la lista se rearma en cada
  * tecla sin debounce.
@@ -58,12 +58,25 @@ export interface EntradaPadron {
 }
 
 /**
+ * ¿Esta persona se puede ofrecer en el paso de cliente?
+ *
+ * El padrón cacheado guarda clientes Y proveedores, y el servidor ya entrega sólo los clientes
+ * (`/api/personas` con `categoria: 'cliente'`). Esto es el segundo cerrojo, y está puesto a
+ * propósito: ofrecer un proveedor como cliente de una venta es facturarle a quien nos vende, y esa
+ * clase de error no se arregla después. Un cerrojo de más cuesta una comparación por tecla.
+ *
+ * Sin `categorias` pasa: es lo que devuelven el mock y la consulta directa a Monday, donde ya se
+ * sabe que lo que llegó es un cliente.
+ */
+const esCliente = (c: Cliente): boolean => !c.categorias || c.categorias.includes('cliente')
+
+/**
  * Prepara el padrón para buscar: normaliza una sola vez lo que si no habría que normalizar en cada
  * tecla y por cada cliente. Con 2681 clientes es la diferencia entre un buscador instantáneo y uno
  * que se siente pegajoso al tipear rápido.
  */
-export function indexarPadron(clientes: readonly Cliente[]): EntradaPadron[] {
-  return clientes.map((cliente) => {
+export function indexarPadron(personas: readonly Cliente[]): EntradaPadron[] {
+  return personas.filter(esCliente).map((cliente) => {
     const nombre = normBusqueda(nombreSinCodigo(cliente.name))
     return {
       cliente,

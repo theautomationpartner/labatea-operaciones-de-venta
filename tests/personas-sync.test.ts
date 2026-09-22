@@ -3,19 +3,19 @@
  *
  * El cron de 5 minutos no barre el tablero: le pide a Monday lo modificado desde la última corrida,
  * ordenado por fecha de modificación descendente, y corta en cuanto llega a lo ya procesado. Eso
- * baja la corrida de 59 s a ~2 s. Lo que este test protege son las dos decisiones que hacen que
+ * baja la corrida de 68 s a ~2 s. Lo que este test protege son las dos decisiones que hacen que
  * ese atajo sea correcto y no una fuente de datos podridos:
  *
  * 1. La consulta incremental va SIN el filtro de "operable", a propósito. Si el filtro viajara en
- *    la consulta, el cliente que pasa a INACTIVO —o que sale de la categoría "Clientes"— dejaría
- *    de aparecer y quedaría vivo en el padrón para siempre, elegible para venderle. Acá se
+ *    la consulta, la persona que pasa a INACTIVA —o que deja de ser cliente y proveedor— dejaría
+ *    de aparecer y quedaría viva en el padrón para siempre, elegible para venderle. Acá se
  *    comprueba que un ítem no operable se DA DE BAJA en vez de ignorarse.
  * 2. La marca de agua avanza con la fecha más nueva vista, incluso cuando no hay nada que
  *    procesar. Si no avanzara, cada corrida volvería a pedir el mismo tramo para siempre.
  *
- * Es la lógica pura (`clasificarPagina`), sin base ni red: eso vive en `api/cron/clientes.ts`.
+ * Es la lógica pura (`clasificarPagina`), sin base ni red: eso vive en `api/cron/personas.ts`.
  *
- * Se corre con `npm run test:padron-sync`; vive fuera de `src/`.
+ * Se corre con `npm run test:personas-sync`; vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
 import { COL_CLIENTE, clasificarPagina, type ItemMonday } from '../api/_padron'
@@ -28,15 +28,16 @@ function persona(opciones: {
   codigo: string
   cuando: string
   activo?: boolean
-  categoria?: string
+  /** Ids de etiqueta de "✋Categoria": 1 Clientes, 2 Proveedores, 3 Transporte, 8 Terceros… */
+  categorias?: string[]
 }): ItemMonday {
-  const { id, codigo, cuando, activo = true, categoria = '1' } = opciones
+  const { id, codigo, cuando, activo = true, categorias = ['1'] } = opciones
   return {
     id,
-    name: `${codigo} - CLIENTE ${codigo}`,
+    name: `${codigo} - PERSONA ${codigo}`,
     updated_at: cuando,
     column_values: [
-      { id: COL_CLIENTE.categoria, text: 'Clientes', values: [{ id: categoria }] },
+      { id: COL_CLIENTE.categoria, text: '', values: categorias.map((c) => ({ id: c })) },
       { id: COL_CLIENTE.codigo, text: codigo },
       { id: COL_CLIENTE.cuit, text: '' },
       { id: COL_CLIENTE.estado, text: activo ? 'Activo' : 'Inactivo', index: activo ? 1 : 2 },
@@ -49,32 +50,56 @@ function persona(opciones: {
 const AHORA = Date.parse('2026-09-22T14:00:00Z')
 const MINUTO = 60_000
 
-/* ---------- 1) Lo operable entra; lo que dejó de serlo, SALE ---------- */
+/* ---------- 1) Clientes Y proveedores entran; lo que no es ninguna de las dos, SALE ---------- */
 
 {
   const corte = AHORA - 10 * MINUTO
   const pagina = [
     persona({ id: '1', codigo: '100', cuando: iso(AHORA) }),
     persona({ id: '2', codigo: '200', cuando: iso(AHORA - MINUTO), activo: false }),
-    persona({ id: '3', codigo: '300', cuando: iso(AHORA - 2 * MINUTO), categoria: '2' }),
+    // Proveedor: ANTES se daba de baja, ahora entra. Es el cambio de este trabajo.
+    persona({ id: '3', codigo: '300', cuando: iso(AHORA - 2 * MINUTO), categorias: ['2'] }),
     persona({ id: '4', codigo: '400', cuando: iso(AHORA - 3 * MINUTO) }),
+    // Transporte: no es ni cliente ni proveedor, así que no tiene por qué estar en el padrón.
+    persona({ id: '5', codigo: '500', cuando: iso(AHORA - 4 * MINUTO), categorias: ['3'] }),
+    // Cliente Y proveedor a la vez: entra una sola vez, con las dos categorías.
+    persona({ id: '6', codigo: '600', cuando: iso(AHORA - 5 * MINUTO), categorias: ['1', '2'] }),
   ]
 
   const r = clasificarPagina(pagina, corte)
 
   assert.deepEqual(
     r.entran.map((c) => c.codigo),
-    ['100', '400'],
-    'los clientes operables modificados entran al padrón',
+    ['100', '300', '400', '600'],
+    'clientes y proveedores activos entran al padrón',
+  )
+  assert.deepEqual(
+    r.entran.map((c) => c.categorias),
+    [['cliente'], ['proveedor'], ['cliente'], ['cliente', 'proveedor']],
+    'y cada uno queda marcado con lo que realmente es',
   )
   assert.deepEqual(
     r.salen,
-    ['2', '3'],
-    'el que pasó a INACTIVO y el que salió de la categoría se DAN DE BAJA; ignorarlos los dejaría ' +
-      'vivos en el padrón para siempre',
+    ['2', '5'],
+    'la que pasó a INACTIVA y la que no es cliente ni proveedor se DAN DE BAJA; ignorarlas las ' +
+      'dejaría vivas en el padrón para siempre',
   )
   assert.ok(!r.alcanzado, 'todavía no se llegó a lo ya procesado')
   assert.equal(r.masNueva, iso(AHORA), 'la marca avanza a la modificación más nueva de la página')
+}
+
+/* ---------- 1b) Perder UNA categoría no es una baja ---------- */
+
+{
+  /* Quien deja de ser cliente pero sigue siendo proveedor NO se da de baja: se actualiza. Darlo de
+     baja lo borraría también de la otra app, que lo tiene como proveedor y no pidió nada. Lo que
+     hace que desaparezca del buscador de clientes es su `categorias`, no su ausencia. */
+  const r = clasificarPagina(
+    [persona({ id: '9', codigo: '900', cuando: iso(AHORA), categorias: ['2'] })],
+    AHORA - 10 * MINUTO,
+  )
+  assert.equal(r.salen.length, 0, 'dejar de ser cliente no da de baja a quien sigue siendo proveedor')
+  assert.deepEqual(r.entran[0]?.categorias, ['proveedor'], 'queda sólo como proveedor')
 }
 
 /* ---------- 2) El corte: desde la marca para atrás no se procesa nada ---------- */
@@ -166,4 +191,4 @@ const MINUTO = 60_000
   assert.equal(r.masNueva, null, 'pero no aporta marca')
 }
 
-console.log('padrón/sync: OK · lo que deja de ser cliente se da de baja y la marca avanza')
+console.log('personas/sync: OK · entran clientes y proveedores, lo demás se da de baja y la marca avanza')

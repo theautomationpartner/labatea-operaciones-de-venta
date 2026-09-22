@@ -29,12 +29,12 @@ export const config = {
      un navegador, así que llegan sin `Referer` y el portero los rechazaría con 403 en cada corrida
      —el padrón y el catálogo no se actualizarían nunca—. Esas rutas tienen su propia puerta, que es
      la que corresponde para un llamador que no es una persona: el `CRON_SECRET` que Vercel manda en
-     la Authorization (ver `api/cron/clientes.ts` y `api/cron/productos.ts`). */
+     la Authorization (ver `api/cron/personas.ts` y `api/cron/productos.ts`). */
   matcher: [
     '/api/monday',
     '/api/monday-upload',
     '/api/vendedores',
-    '/api/clientes',
+    '/api/personas',
     '/api/productos',
     '/api/mfa/:path*',
   ],

@@ -18,12 +18,19 @@ import { buscarEnPadron, indexarPadron, nombreSinCodigo } from '@/lib/busquedaCl
 import type { Cliente } from '@/types'
 
 /** Un cliente con lo mínimo que mira el buscador; el resto no interviene en el orden. */
-const cliente = (id: string, codigo: string, name: string, cuit = ''): Cliente =>
+const cliente = (
+  id: string,
+  codigo: string,
+  name: string,
+  cuit = '',
+  categorias?: Cliente['categorias'],
+): Cliente =>
   ({
     id,
     codigo,
     name,
     cuit,
+    categorias,
     ptype: '',
     status: '',
     list: null,
@@ -141,4 +148,32 @@ assert.deepEqual(
   'dos búsquedas iguales tienen que devolver el mismo orden, o la lista salta al tipear',
 )
 
-console.log('búsqueda local: OK · el que más matchea va primero')
+/* ---------- 10) Un proveedor NO se puede ofrecer como cliente ----------
+   El padrón del servidor guarda clientes y proveedores, y el endpoint ya entrega sólo los
+   clientes. Esto es el segundo cerrojo, y el motivo por el que existe no es de estilo: ofrecer un
+   proveedor como cliente de una venta es facturarle a quien nos vende. */
+
+const mixto = indexarPadron([
+  cliente('p1', '5001', '5001 - DISTRIBUIDORA NORTE', '', ['proveedor']),
+  cliente('c1', '5002', '5002 - DISTRIBUIDORA SUR', '', ['cliente']),
+  // Cliente Y proveedor a la vez: sigue siendo cliente, así que SÍ se puede elegir.
+  cliente('a1', '5003', '5003 - DISTRIBUIDORA ESTE', '', ['cliente', 'proveedor']),
+  // Sin categorías: es lo que devuelven el mock y la búsqueda directa a Monday, y ahí ya se sabe
+  // que lo que llegó es un cliente.
+  cliente('s1', '5004', '5004 - DISTRIBUIDORA OESTE'),
+])
+
+assert.deepEqual(
+  buscarEnPadron(mixto, 'DISTRIBUIDORA').clientes.map((c) => c.codigo).sort(),
+  ['5002', '5003', '5004'],
+  'un proveedor NO puede aparecer en el buscador de clientes: elegirlo sería facturarle a quien ' +
+    'nos vende',
+)
+
+assert.equal(
+  buscarEnPadron(mixto, '5001').clientes.length,
+  0,
+  'ni siquiera buscándolo por su código exacto',
+)
+
+console.log('búsqueda local: OK · el que más matchea va primero, y ningún proveedor se ofrece')

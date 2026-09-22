@@ -2,12 +2,19 @@
  * El padrón de clientes en el navegador: se baja una vez, se revalida por delta y lo consume el
  * buscador para resolver la búsqueda en local.
  *
- * El servidor lo mantiene con un Vercel Cron Job (`api/cron/clientes.ts`) y lo entrega por
- * `/api/clientes`. Acá no se le pregunta nada a Monday: ese es el punto del caché.
+ * El servidor lo mantiene con un Vercel Cron Job (`api/cron/personas.ts`) y lo entrega por
+ * `/api/personas`. Acá no se le pregunta nada a Monday: ese es el punto del caché.
+ *
+ * ── Sólo clientes ──
+ * El padrón del servidor guarda clientes Y proveedores —otra app consume esos últimos—, pero esta
+ * app pide `categoria: 'cliente'` y no se baja los 1225 proveedores que no le sirven. Y no es sólo
+ * ahorro de bytes: un proveedor no puede aparecer NUNCA en el paso de cliente, porque elegirlo
+ * sería facturarle a quien nos vende. Filtrando en el servidor, ni siquiera llega al navegador
+ * donde alguien podría mostrarlo por error.
  *
  * ── Cómo se revalida ──
  * Se guarda la `version` que devolvió el servidor y en cada revalidación se la manda de vuelta; lo
- * que llega es sólo lo que cambió desde entonces —altas y modificaciones en `clientes`, bajas en
+ * que llega es sólo lo que cambió desde entonces —altas y modificaciones en `personas`, bajas en
  * `bajas`—. En régimen eso son dos arreglos vacíos. Sin el delta, cada recarga se bajaría los 81 KB
  * del padrón entero para enterarse de que no cambió nada.
  *
@@ -22,7 +29,10 @@ import { indexarPadron, type EntradaPadron } from '@/lib/busquedaClientes'
 import type { Cliente } from '@/types'
 import { cabecerasPropias, mondayHabilitado, verificarRespuesta } from './sdk'
 
-const CLAVE_SESION = 'padron-clientes-v1'
+/* La versión de la clave sube con cada cambio de forma de lo guardado: así, el espejo que quedó de
+   la versión anterior no se lee como si fuera del formato nuevo. v2 = el registro trae `categorias`
+   y viene del endpoint de personas. */
+const CLAVE_SESION = 'padron-clientes-v2'
 
 /** Cada cuánto se vuelve a preguntar por novedades. El cron corre cada 5 minutos; esto lo sigue. */
 const REVALIDAR_CADA_MS = 5 * 60_000
@@ -30,7 +40,7 @@ const REVALIDAR_CADA_MS = 5 * 60_000
 interface RespuestaPadron {
   version: string | null
   completo: boolean
-  clientes: Cliente[]
+  personas: Cliente[]
   bajas: string[]
   sincronizado: string | null
   error: string | null
@@ -121,10 +131,10 @@ async function cargar(): Promise<Padron> {
 
 /** Pide al servidor lo que falte desde `desde` y lo aplica. */
 async function pedir(desde: string | null): Promise<void> {
-  const res = await fetch('/api/clientes', {
+  const res = await fetch('/api/personas', {
     method: 'POST',
     headers: await cabecerasPropias({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ desde }),
+    body: JSON.stringify({ desde, categoria: 'cliente' }),
   })
   /* Misma lectura del rechazo que el resto de los pedidos: un 401 o un 403 acá tienen que levantar
      la ventana de seguridad igual que en cualquier otra consulta. */
@@ -136,11 +146,11 @@ function aplicar(data: RespuestaPadron): void {
   /* `completo` marca si lo que llegó REEMPLAZA el padrón o se le suma. Sin ese dato, un delta
      vacío sería indistinguible de un padrón vacío y el buscador se quedaría sin nada. */
   if (data.completo) porId = new Map()
-  for (const cliente of data.clientes) porId.set(cliente.id, cliente)
+  for (const persona of data.personas) porId.set(persona.id, persona)
   /* Las bajas se aplican DESPUÉS de las altas: un cliente que se dio de baja y volvió llega en las
      dos listas, y lo que vale es que está de vuelta. El servidor lo desanota al reactivarlo, así
      que esto es un cinturón además de los tirantes. */
-  for (const id of data.bajas) if (!data.clientes.some((c) => c.id === id)) porId.delete(id)
+  for (const id of data.bajas) if (!data.personas.some((p) => p.id === id)) porId.delete(id)
 
   version = data.version
   sincronizado = data.sincronizado

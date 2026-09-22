@@ -15,7 +15,7 @@ export * from './rutas'
 export * from './talonarios'
 export * from './facturacion'
 export { limpiarCachesConsultas } from './cache'
-export { getPadron, recordarClientes, revalidar, type Padron } from './padronClientes'
+export { getPadron, recordarClientes, revalidar, type Padron } from './padronPersonas'
 export {
   conStockFresco,
   getCatalogo,

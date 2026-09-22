@@ -1,6 +1,11 @@
 /**
- * El padrón de clientes leído por el SERVIDOR: qué columnas se piden, qué persona es operable y
- * cómo se arma el objeto `Cliente` que consume la app.
+ * El padrón de PERSONAS leído por el SERVIDOR: qué columnas se piden, qué persona entra y cómo se
+ * arma el objeto que consume la app.
+ *
+ * Guarda CLIENTES Y PROVEEDORES. La app de ventas pide los clientes; otra app pide los proveedores
+ * contra la misma base. Por eso cada registro lleva sus `categorias`: la categoría de Monday es
+ * multi-valor y el solapamiento es real —hay una persona que es las dos cosas—, así que no se puede
+ * guardar "la" categoría de nadie.
  *
  * ── Por qué esto no importa de `src/` ──
  * `api/` es autocontenido a propósito. `scripts/verificar-funciones.mjs` lo compila con
@@ -10,7 +15,7 @@
  * árbol de salida abajo de los pies.
  *
  * El precio de esa decisión es que los ids de columna viven en DOS lugares: acá y en
- * `src/services/monday/columns.ts`. Ese precio se paga con un test —`npm run test:padron-columnas`—
+ * `src/services/monday/columns.ts`. Ese precio se paga con un test —`npm run test:personas-columnas`—
  * que compara los dos mapas y, además, corre los dos mapeadores sobre el mismo ítem y exige que
  * devuelvan el MISMO `Cliente`. Si alguien toca un id de un lado y no del otro, rompe el test; no
  * rompe una venta.
@@ -21,7 +26,7 @@ export const BOARD_PERSONAS = 18420688238
 
 /**
  * Ids de columna del cliente. Espejo EXACTO de `COL.cliente`
- * (`src/services/monday/columns.ts`); lo verifica `test:padron-columnas`.
+ * (`src/services/monday/columns.ts`); lo verifica `test:personas-columnas`.
  */
 export const COL_CLIENTE = {
   categoria: 'dropdown_mm54e5ag',
@@ -51,6 +56,22 @@ export const COL_CTA_CTE = {
 
 export const CLIENTE_ACTIVO_INDEX = 1
 export const CATEGORIA_CLIENTE_INDEX = 1
+
+/**
+ * Índice de "Proveedores" en "✋Categoria". Las etiquetas reales del board son 1 Clientes,
+ * 2 Proveedores, 3 Transporte, 6 Comisionistas, 8 Terceros y 9 Vendedores: al padrón entran sólo
+ * las dos primeras.
+ */
+export const CATEGORIA_PROVEEDOR_INDEX = 2
+
+/** Qué puede ser una persona del padrón. Una misma puede ser las dos cosas. */
+export type Categoria = 'cliente' | 'proveedor'
+
+const CATEGORIAS: ReadonlyArray<{ indice: number; nombre: Categoria }> = [
+  { indice: CATEGORIA_CLIENTE_INDEX, nombre: 'cliente' },
+  { indice: CATEGORIA_PROVEEDOR_INDEX, nombre: 'proveedor' },
+]
+
 export const SITUACION_CLIENTE_INDEX = {
   liberadoConCredito: 0,
   liberadoSinCredito: 1,
@@ -105,12 +126,12 @@ const COLUMNAS = Object.values(COL_CLIENTE)
 
 /**
  * Campos de cada persona, con la Cta Cte conectada ANIDADA: el crédito sale de ahí y traerlo en la
- * misma consulta evita una segunda vuelta por cliente.
+ * misma consulta evita una segunda vuelta por persona.
  *
  * `updated_at` es lo que hace posible la corrida incremental: con él se sabe hasta dónde llegó la
  * sincronización anterior.
  */
-export const CAMPOS_CLIENTE = `
+export const CAMPOS_PERSONA = `
   id name updated_at
   column_values(ids: ${JSON.stringify(COLUMNAS)}) {
     id text
@@ -128,20 +149,27 @@ export const CAMPOS_CLIENTE = `
   }`
 
 /**
- * Las reglas que definen a un cliente OPERABLE: categoría "Clientes" y estado ACTIVO.
+ * Las reglas que definen a una persona del padrón: categoría "Clientes" **o** "Proveedores", y
+ * estado ACTIVO. `any_of` sobre las dos etiquetas es la unión, no la intersección: entra quien
+ * tenga cualquiera de las dos.
  *
  * Van por índice de etiqueta y no por texto, igual que en la app: aguantan que en el board
  * renombren "Activo" o "Clientes" sin que el padrón se vacíe de golpe.
  */
 export const REGLAS_OPERABLE = [
   `{column_id: "${COL_CLIENTE.estado}", compare_value: [${CLIENTE_ACTIVO_INDEX}], operator: any_of}`,
-  `{column_id: "${COL_CLIENTE.categoria}", compare_value: [${CATEGORIA_CLIENTE_INDEX}], operator: any_of}`,
+  `{column_id: "${COL_CLIENTE.categoria}", compare_value: [${CATEGORIAS.map((c) => c.indice).join(', ')}], operator: any_of}`,
 ].join(', ')
 
 /* ── Mapeo ──────────────────────────────────────────────────────────────────────────────────── */
 
-/** La forma del cliente que consume la app. Espejo de `Cliente` en `src/types.ts`. */
-export interface ClienteCache {
+/**
+ * La forma de la persona que consume la app. Los campos son espejo de `Cliente` en `src/types.ts`
+ * —el mapeo tiene que dar exactamente lo mismo que `mapCliente`, y eso lo verifica
+ * `test:personas-columnas`— más las categorías, que dicen si esta persona es cliente, proveedor o
+ * las dos cosas.
+ */
+export interface PersonaCache {
   id: string
   name: string
   cuit: string
@@ -161,9 +189,16 @@ export interface ClienteCache {
   addr: string
   activity: 'Activo' | 'Inactivo'
   situation: 'Liberado con crédito' | 'Liberado sin crédito' | 'Bloqueado'
+  /**
+   * Qué es esta persona. Viaja DENTRO del registro y no sólo como columna de la tabla para que el
+   * dato se explique solo: quien lee un registro suelto —de la base, de una respuesta, de un log—
+   * tiene que poder saber si está mirando un cliente o un proveedor sin ir a buscarlo a otro lado.
+   * Es el único campo que `Cliente` (en `src/types.ts`) no tiene.
+   */
+  categorias: Categoria[]
 }
 
-function situacionDe(indice: number | null | undefined): ClienteCache['situation'] {
+function situacionDe(indice: number | null | undefined): PersonaCache['situation'] {
   switch (indice) {
     case SITUACION_CLIENTE_INDEX.liberadoConCredito:
       return 'Liberado con crédito'
@@ -175,21 +210,32 @@ function situacionDe(indice: number | null | undefined): ClienteCache['situation
 }
 
 /**
- * ¿Esta persona entra al padrón?
+ * Qué es esta persona, según su columna de categoría.
+ *
+ * Devuelve TODAS las que tiene, no la primera: la categoría es un dropdown MULTI-VALOR y el
+ * solapamiento existe de verdad —hay una persona que es cliente y proveedor—. Quedarse con una
+ * sola la dejaría afuera de una de las dos listas.
+ *
+ * Se compara por el ID de la etiqueta y no por su texto, que es exactamente lo que hace la regla
+ * `any_of` de la consulta (ver `REGLAS_OPERABLE`): así, si en el board renombran "Clientes", las
+ * dos mitades siguen coincidiendo en vez de discrepar en silencio.
+ */
+export function categoriasDe(item: ItemMonday): Categoria[] {
+  const etiquetas = byId(item)[COL_CLIENTE.categoria]?.values ?? []
+  const ids = new Set(etiquetas.map((v) => Number(v.id)))
+  return CATEGORIAS.filter((c) => ids.has(c.indice)).map((c) => c.nombre)
+}
+
+/**
+ * ¿Esta persona entra al padrón? Activa, y cliente o proveedor.
  *
  * Hace falta acá —y no sólo como regla de la consulta— porque la corrida INCREMENTAL pide lo
- * modificado SIN filtrar por operable, justamente para enterarse de los que dejaron de serlo. Ver
- * `api/cron/clientes.ts`.
+ * modificado SIN filtrar, justamente para enterarse de quiénes dejaron de entrar. Ver
+ * `api/cron/personas.ts`.
  */
 export function esOperable(item: ItemMonday): boolean {
-  const c = byId(item)
-  if (c[COL_CLIENTE.estado]?.index !== CLIENTE_ACTIVO_INDEX) return false
-  /* La categoría es un dropdown MULTI-VALOR: una persona puede ser "Clientes, Proveedores" a la
-     vez. Se compara por el ID de la etiqueta y no por su texto, que es exactamente lo que hace la
-     regla `any_of` de la consulta (ver `REGLAS_OPERABLE`): así, si en el board renombran "Clientes",
-     las dos mitades siguen coincidiendo en vez de discrepar en silencio. */
-  const etiquetas = c[COL_CLIENTE.categoria]?.values ?? []
-  return etiquetas.some((v) => Number(v.id) === CATEGORIA_CLIENTE_INDEX)
+  if (byId(item)[COL_CLIENTE.estado]?.index !== CLIENTE_ACTIVO_INDEX) return false
+  return categoriasDe(item).length > 0
 }
 
 /**
@@ -206,7 +252,7 @@ export function esOperable(item: ItemMonday): boolean {
 /** Qué hacer con una página de la corrida incremental. Ver `clasificarPagina`. */
 export interface Clasificacion {
   /** Personas operables: entran o se actualizan en el padrón. */
-  entran: ClienteCache[]
+  entran: PersonaCache[]
   /** Dejaron de ser operables (inactivas, o fuera de la categoría): salen del padrón. */
   salen: string[]
   /** Se llegó a lo ya procesado en corridas anteriores: desde acá para atrás no hay nada que hacer. */
@@ -247,14 +293,14 @@ export function clasificarPagina(
       salida.alcanzado = true
       break
     }
-    if (esOperable(item)) salida.entran.push(mapClienteCache(item))
+    if (esOperable(item)) salida.entran.push(mapPersonaCache(item))
     else salida.salen.push(item.id)
   }
 
   return salida
 }
 
-export function mapClienteCache(item: ItemMonday): ClienteCache {
+export function mapPersonaCache(item: ItemMonday): PersonaCache {
   const c = byId(item)
   const cta = c[COL_CLIENTE.ctaCte]?.linked_items?.[0]
   const ctaCols = cta ? byId(cta) : {}
@@ -289,5 +335,6 @@ export function mapClienteCache(item: ItemMonday): ClienteCache {
     addr: c[COL_CLIENTE.dirFiscal]?.text ?? '',
     activity: c[COL_CLIENTE.estado]?.index === CLIENTE_ACTIVO_INDEX ? 'Activo' : 'Inactivo',
     situation: situacionDe(c[COL_CLIENTE.situacion]?.index),
+    categorias: categoriasDe(item),
   }
 }
