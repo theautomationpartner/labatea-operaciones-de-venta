@@ -1,14 +1,24 @@
-import { useCallback, useRef, useState } from 'react'
-import { buscarProductos, siguientePaginaProductos } from '@/services/monday'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  PRODUCTOS_POR_PAGINA,
+  buscarProductos,
+  conStockFresco,
+  getCatalogo,
+  productoDesdeCache,
+  siguientePaginaProductos,
+  type Catalogo,
+} from '@/services/monday'
+import { buscarEnCatalogo } from '@/lib/busquedaProductos'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useApp, useDispatch } from '@/state/hooks'
-import type { ListaPrecio, Producto } from '@/types'
+import type { Filtro, ListaPrecio, Producto } from '@/types'
 import {
   SIN_RESULTADOS,
   cerrado,
   replegado,
   conPaginaSiguiente,
   conPrimeraPagina,
+  conResultadosLocales,
   cursorActual,
   enPagina,
   hayAnterior,
@@ -21,6 +31,22 @@ import {
 
 /** Pista del campo cuando quedó una búsqueda guardada, replegada tras elegir un producto. */
 const PISTA_RELISTAR = 'Hacé click para volver a ver los resultados de la última búsqueda.'
+
+/**
+ * Desde cuántas letras se busca en el catálogo mientras se escribe.
+ *
+ * Con una sola letra matchean cientos de productos y la lista no dice nada; desde dos, el orden por
+ * puntaje ya empieza a poner arriba lo que se busca. Un código, en cambio, sirve desde el primer
+ * dígito: son de uno a cuatro caracteres y el prefijo recorta muchísimo.
+ */
+const MINIMO_LIVE = 2
+
+/** Lo escrito alcanza para buscar en el catálogo mientras se tipea. */
+const sirveParaLive = (t: string): boolean => t.length >= MINIMO_LIVE || /^\d+$/.test(t)
+
+/** Identifica una búsqueda, para saber si los resultados en pantalla siguen siendo los de lo escrito. */
+const claveBusqueda = (termino: string, filtros: readonly Filtro[]): string =>
+  `${termino}\u0000${filtros.map((f) => `${f.campo}:${f.valor}`).join('|')}`
 
 interface BuscadorProductoProps {
   /** Lista de precio del cliente: define de qué columna sale el precio/rentabilidad. */
@@ -47,15 +73,31 @@ interface BuscadorProductoProps {
 }
 
 /**
- * Búsqueda de producto contra el tablero de Productos de Monday. La consulta se resuelve
- * entera del lado del servidor (reglas dinámicas + `items_page`) y llega de a una página; el
- * desplegable la muestra con su barra de navegación.
+ * Búsqueda de producto en dos velocidades.
+ *
+ * ── 1. Mientras se escribe: el catálogo cacheado ──
+ * El Maestro de Productos entero vive en el navegador (lo mantiene un Vercel Cron Job; ver
+ * `api/cron/productos.ts` y `services/monday/catalogoProductos.ts`). Cada tecla rearma la lista en
+ * memoria, sin red y sin debounce, con el que más matchea primero. Es el reemplazo del ciclo
+ * "escribo, aprieto Buscar, espero, me faltó una letra, vuelvo a empezar".
+ *
+ * ── 2. El botón Buscar: Monday, en vivo ──
+ * Sigue existiendo y hace lo de siempre: consulta el tablero directamente. Es la salida para el
+ * producto que se acaba de crear y que el cron todavía no levantó —como mucho, cinco minutos—, y
+ * para confirmar contra la fuente cuando el live search no muestra lo que se espera.
+ *
+ * Las dos velocidades comparten el mismo desplegable paginado, a propósito: quien filtra por rubro
+ * y recibe ochenta productos navega con las mismas flechas, venga eso del caché o de Monday.
+ *
+ * ── Lo que distingue a un resultado del caché: el stock ──
+ * El caché NO guarda cantidades —se mueven con cada venta, y cachearlas sería mostrar un disponible
+ * que ya se vendió—. Por eso, al elegir una fila que vino del caché, se lee el stock contra Monday
+ * ANTES de entregar el producto: una consulta por selección, no una por tecla. Si esa lectura
+ * falla, el producto NO se carga; mostrarlo con el stock en cero sería peor que no mostrarlo.
  *
  * Se elige un producto por vez: al hacer click la lista se repliega y el producto se carga en
- * «Producto seleccionado», donde se ajustan cantidad y descuento antes de agregarlo. Los
- * resultados NO se pierden: volver a hacer click en el buscador los relista donde estaban
- * —misma página, mismo cursor, filas elegidas marcadas—, así se puede tomar otro producto de
- * esa misma búsqueda. Recién una búsqueda nueva los reemplaza.
+ * «Producto seleccionado», donde se ajustan cantidad y descuento antes de agregarlo. Los resultados
+ * NO se pierden: volver a hacer click en el buscador los relista donde estaban.
  */
 export function BuscadorProducto({
   lista,
@@ -72,10 +114,55 @@ export function BuscadorProducto({
   const [resultados, setResultados] = useState<ResultadosBusqueda>(SIN_RESULTADOS)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
+  const [catalogo, setCatalogo] = useState<Catalogo | null>(null)
+  /** Código de la fila que está resolviendo su stock. Sólo puede haber una a la vez. */
+  const [resolviendo, setResolviendo] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  /**
+   * La búsqueda cuyos resultados vinieron de Monday. Mientras lo escrito coincida con esta clave,
+   * el live search no pisa la lista: apretar Buscar tiene que poder ganarle al caché, o el
+   * resultado que se fue a buscar a la fuente desaparecería en el mismo instante en que llega.
+   */
+  const directaRef = useRef<string | null>(null)
   const cerrar = useCallback(() => setResultados(cerrado), [])
   // Click afuera: una de las tres únicas formas de cerrar la lista.
   useClickOutside(ref, cerrar, resultados.abierto)
+
+  /* El catálogo se pide una vez, al montar, y no bloquea nada: hasta que llegue, el buscador
+     funciona como siempre (escribir + botón Buscar). */
+  useEffect(() => {
+    let vivo = true
+    void getCatalogo().then((c) => {
+      if (vivo) setCatalogo(c)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [])
+
+  /**
+   * Live search: rearma la lista con cada tecla, con cada filtro y con cada cambio de lista de
+   * precio. Es puro cómputo en memoria —recorrer 1285 productos cuesta menos de 1 ms—, así que no
+   * lleva debounce: el debounce sólo agregaría retardo sin ahorrar nada.
+   */
+  useEffect(() => {
+    if (!catalogo) return
+    const t = termino.trim()
+    /* Los resultados que trajo el botón Buscar mandan hasta que se toque algo. */
+    if (directaRef.current === claveBusqueda(t, filtros)) return
+    if (!sirveParaLive(t) && filtros.length === 0) {
+      setResultados(SIN_RESULTADOS)
+      return
+    }
+    const { productos, truncado } = buscarEnCatalogo(catalogo.entradas, t, filtros)
+    setResultados(
+      conResultadosLocales(
+        productos.map((pc) => productoDesdeCache(pc, lista, conIva)),
+        PRODUCTOS_POR_PAGINA,
+        truncado,
+      ),
+    )
+  }, [catalogo, termino, filtros, lista, conIva])
 
   // El aviso se muestra donde lo pida el padre; si no lo maneja, queda bajo el campo.
   const avisar = (mensaje: string) => {
@@ -85,11 +172,29 @@ export function BuscadorProducto({
 
   /**
    * Click en una fila: carga el producto en «Producto seleccionado» y repliega la lista para
-   * dejarlo a la vista. Los resultados quedan guardados —no se consulta nada de nuevo— y
-   * vuelven a listarse al hacer click en el buscador.
+   * dejarlo a la vista. Los resultados quedan guardados —no se consulta nada de nuevo— y vuelven a
+   * listarse al hacer click en el buscador.
+   *
+   * Si la fila vino del caché hay un paso más antes de entregarla: leerle el stock a Monday. Ver
+   * el encabezado del componente.
    */
-  const elegir = (p: Producto) => {
-    onSelect(p)
+  const elegir = async (p: Producto) => {
+    if (resolviendo) return
+    let elegido = p
+    if (resultados.origen === 'cache') {
+      setResolviendo(p.codigo)
+      try {
+        elegido = await conStockFresco(p)
+      } catch {
+        /* Sin stock no se carga el producto. Entregarlo con las cantidades en cero diría "no hay
+           nada en depósito", que es una respuesta distinta de "no se pudo averiguar". */
+        dispatch({ type: 'errorMonday', accion: 'leer el stock del producto' })
+        return
+      } finally {
+        setResolviendo('')
+      }
+    }
+    onSelect(elegido)
     setResultados((r) => replegado(r))
     setError('')
     onAviso?.('')
@@ -115,12 +220,15 @@ export function BuscadorProducto({
     setCargando(true)
     try {
       const res = await buscarProductos(t, lista, conIva, filtros)
+      /* Se marca ANTES de mostrar: desde acá, el live search deja de pisar esta lista mientras lo
+         escrito no cambie. */
+      directaRef.current = claveBusqueda(t, filtros)
       if (res.productos.length === 0) {
         avisar(
           t
             ? filtros.length > 0
               ? `Sin resultados para «${t}» con los filtros aplicados.`
-              : `Sin resultados para «${t}».`
+              : `Sin resultados para «${t}» en Monday.`
             : 'No hay productos que cumplan con los filtros aplicados.',
         )
         return
@@ -129,6 +237,7 @@ export function BuscadorProducto({
          no queda lista que sostener, así que el campo se limpia para el próximo código. */
       if (res.productos.length === 1 && !res.cursor) {
         onSelect(res.productos[0])
+        directaRef.current = null
         setTermino('')
         return
       }
@@ -147,8 +256,8 @@ export function BuscadorProducto({
   const adelante = haySiguiente(resultados)
 
   /**
-   * Trae la página siguiente pasando EXCLUSIVAMENTE el cursor guardado. Si ya se había traído
-   * (el usuario volvió atrás), se muestra la que está en memoria y no se consulta de nuevo.
+   * Trae la página siguiente. Del caché ya están todas en memoria; de Monday se pide con el cursor
+   * guardado, y si ya se había traído (el usuario volvió atrás) se muestra la que está.
    */
   const siguiente = async () => {
     if (cargando || !adelante) return
@@ -175,6 +284,19 @@ export function BuscadorProducto({
     setResultados((r) => enPagina(r, r.pagina - 1))
   }
 
+  /**
+   * El live search no encontró nada y todavía no se consultó a Monday. Es el momento exacto en que
+   * hay que señalar el botón Buscar: puede ser un producto recién creado que el cron no levantó.
+   */
+  const sinCoincidencias =
+    !!catalogo &&
+    !cargando &&
+    resultados.origen === 'cache' &&
+    resultados.paginas.length === 0 &&
+    (sirveParaLive(termino.trim()) || filtros.length > 0)
+
+  const pie = resultados.origen === 'cache' ? 'en el catálogo' : 'en Monday'
+
   // El desplegable de coincidencias es el mismo en las dos variantes.
   const desplegable = resultados.abierto && actuales.length > 0 && (
     <div className="results results--paged">
@@ -182,17 +304,23 @@ export function BuscadorProducto({
         {actuales.map((p) => {
           // La fila marcada es UNA: la del producto que está cargado en este momento.
           const elegido = !!codigoCargado && p.codigo === codigoCargado
+          const buscandoStock = resolviendo === p.codigo
           return (
             <div
               className={`ritem ${elegido ? 'ritem--elegido' : ''}`}
               key={p.id ?? p.codigo}
-              onClick={() => elegir(p)}
+              onClick={() => void elegir(p)}
               title={elegido ? 'Ya seleccionado. Volvé a hacer click para cargarlo de nuevo.' : undefined}
             >
               <span className="ritem-name">{p.nombre}</span>
               <span className="ritem-meta">
                 <span className="ritem-code">{p.codigo}</span>
-                {elegido && (
+                {buscandoStock && (
+                  <span className="ritem-tag">
+                    <i className="fas fa-spinner fa-spin" /> Stock...
+                  </span>
+                )}
+                {elegido && !buscandoStock && (
                   <span className="ritem-tag">
                     <i className="fas fa-check" /> Seleccionado
                   </span>
@@ -213,7 +341,9 @@ export function BuscadorProducto({
           <i className="fas fa-chevron-left" /> Anterior
         </button>
         <span className="results-pager-info" aria-live="polite">
-          Página {resultados.pagina + 1} · {actuales.length} productos
+          Página {resultados.pagina + 1} · {actuales.length} productos {pie}
+          {/* Se avisa que la lista está cortada. Callarlo hace creer que no hay más. */}
+          {resultados.truncado && ' · afiná la búsqueda para ver el resto'}
         </span>
         <button
           type="button"
@@ -225,6 +355,13 @@ export function BuscadorProducto({
           Siguiente <i className="fas fa-chevron-right" />
         </button>
       </div>
+    </div>
+  )
+
+  const avisoSinCoincidencias = sinCoincidencias && (
+    <div className="search-hint" role="status">
+      Sin coincidencias en el catálogo. Si el producto es nuevo, buscalo directo en Monday con{' '}
+      <strong>Buscar</strong>.
     </div>
   )
 
@@ -245,9 +382,10 @@ export function BuscadorProducto({
             /* Volver al buscador relista lo último que se trajo, sin consultar de nuevo. */
             onFocus={reabrir}
             onClick={reabrir}
-            /* Escribir NO cierra la lista: los resultados se reemplazan recién al buscar. */
+            /* Escribir rearma la lista contra el caché; sólo el botón Buscar va a Monday. */
             onChange={(e) => {
               setTermino(e.target.value)
+              directaRef.current = null
               if (error) setError('')
               onAviso?.('')
             }}
@@ -266,6 +404,7 @@ export function BuscadorProducto({
           )}
         </button>
         {desplegable}
+        {avisoSinCoincidencias}
         {error && <div className="search-error">{error}</div>}
       </div>
     )
@@ -290,6 +429,7 @@ export function BuscadorProducto({
             onClick={reabrir}
             onChange={(e) => {
               setTermino(e.target.value)
+              directaRef.current = null
               if (error) setError('')
             }}
             onKeyDown={(e) => e.key === 'Enter' && !cargando && buscar()}
@@ -309,6 +449,7 @@ export function BuscadorProducto({
 
         {desplegable}
       </div>
+      {avisoSinCoincidencias}
       {error && (
         <div className="helper" style={{ color: 'var(--red)', marginTop: 6 }}>
           {error}

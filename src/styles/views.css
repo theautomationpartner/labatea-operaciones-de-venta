@@ -639,6 +639,18 @@
   gap: 12px;
   position: relative;
 }
+/* Pista del live search: aparece cuando el catálogo cacheado no tiene coincidencias y todavía no
+   se consultó a Monday. Es lo que señala el botón Buscar para el producto recién creado. */
+.search-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted, #6b7280);
+}
+.search-hint strong {
+  color: var(--text, #111827);
+}
+
 .results {
   position: absolute;
   top: 100%;

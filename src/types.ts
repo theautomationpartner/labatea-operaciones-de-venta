@@ -261,6 +261,55 @@ export interface Producto {
   stockId?: string
 }
 
+/**
+ * El producto tal como lo guarda el caché del servidor: SIN lista de precio elegida y SIN stock.
+ *
+ * Espejo de `ProductoCache` en `api/_productos.ts` (lo verifica `test:productos-columnas`). La
+ * diferencia con `Producto` es a propósito y son dos cosas:
+ *
+ * · `Producto` tiene UN precio y UNA rentabilidad —los de la lista del cliente de esa operación—;
+ *   el caché es uno solo para todos los clientes, así que guarda las ocho listas y la app
+ *   materializa la que toca con `productoDesdeCache`.
+ * · El caché no trae STOCK. Las cantidades se mueven con cada venta: cachearlas sería mostrar un
+ *   disponible que ya se vendió. Viaja el `stockId` y el stock se lee fresco al elegir el producto.
+ */
+export interface ProductoCache {
+  id: string
+  codigo: string
+  nombre: string
+  /** Precio de lista SIN IVA, por lista. La alícuota se suma después, según el cliente. */
+  precios: Record<ListaPrecio, number>
+  /** "✋Margen" por lista. Es un MARKUP SOBRE EL COSTO, no la rentabilidad. */
+  margenes: Partial<Record<ListaPrecio, number>>
+  precioCosto: number
+  iva: number
+  moneda: string
+  tipo: string
+  comisionable: boolean
+  conRentabForzada: boolean
+  rubro: string
+  subrubro: string
+  categoria: string
+  um: string
+  peso: number
+  provCod: string
+  provNombre: string
+  provId?: string
+  stockId?: string
+}
+
+/** Las siete cantidades del ítem de "🧮Stock y Movimientos" de un producto. */
+export type StockProducto = Pick<
+  Producto,
+  | 'ingresos'
+  | 'egresos'
+  | 'pendEntregaVta'
+  | 'pendRecepcionCompra'
+  | 'fisico'
+  | 'comercial'
+  | 'disponible'
+>
+
 /** Columna de taxonomía del Maestro de Productos sobre la que se filtra. */
 export type CampoFiltro = 'Rubro' | 'Subrubro' | 'Categoría'
 

@@ -16,5 +16,13 @@ export * from './talonarios'
 export * from './facturacion'
 export { limpiarCachesConsultas } from './cache'
 export { getPadron, recordarClientes, revalidar, type Padron } from './padronClientes'
+export {
+  conStockFresco,
+  getCatalogo,
+  leerStock,
+  productoDesdeCache,
+  revalidarCatalogo,
+  type Catalogo,
+} from './catalogoProductos'
 export { mondayHabilitado, urlArchivo } from './sdk'
 export { BOARDS, COL, ENVIO_ESTADO, ENVIO_FACTURA_ESTADO } from './columns'

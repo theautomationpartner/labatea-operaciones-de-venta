@@ -13,6 +13,17 @@
 import type { PaginaProductos } from '@/services/monday'
 import type { Producto } from '@/types'
 
+/**
+ * De dónde salieron estas filas. Va en el ESTADO y no en cada fila porque un conjunto de resultados
+ * viene entero de un lado o entero del otro; repetirlo por fila permitiría estados imposibles.
+ *
+ * Lo que cambia según el origen es qué hace falta para entregar el producto elegido:
+ *  · `monday` — la consulta ya trajo el stock anidado. El producto está completo; se entrega tal cual.
+ *  · `cache`  — el caché no guarda stock (ver `api/_productos.ts`). Antes de entregarlo hay que
+ *               leerlo contra Monday, o el panel de stock mostraría cero para todo.
+ */
+export type OrigenResultados = 'monday' | 'cache'
+
 export interface ResultadosBusqueda {
   /** Páginas ya traídas, en orden. Volver atrás no vuelve a consultar: el cursor sólo avanza. */
   paginas: Producto[][]
@@ -21,6 +32,12 @@ export interface ResultadosBusqueda {
   pagina: number
   /** Visibilidad de la lista. Sólo la bajan una búsqueda nueva, el botón de cierre o el click afuera. */
   abierto: boolean
+  origen: OrigenResultados
+  /**
+   * Quedaron coincidencias afuera del tope. La vista lo AVISA: callarlo es el bug que ya se pagó
+   * una vez contra Monday —quien buscaba veía los primeros y concluía que su producto no estaba—.
+   */
+  truncado: boolean
 }
 
 /* Acá NO se guarda qué fila va marcada como "Seleccionado". Esa marca es del producto cargado
@@ -34,15 +51,56 @@ export const SIN_RESULTADOS: ResultadosBusqueda = {
   cursores: [],
   pagina: 0,
   abierto: false,
+  origen: 'monday',
+  truncado: false,
 }
 
-/** Primera página de una búsqueda nueva: reinicia la paginación entera. */
+/** Primera página de una búsqueda nueva contra Monday: reinicia la paginación entera. */
 export const conPrimeraPagina = (pagina: PaginaProductos): ResultadosBusqueda => ({
   paginas: [pagina.productos],
   cursores: [pagina.cursor],
   pagina: 0,
   abierto: true,
+  origen: 'monday',
+  truncado: false,
 })
+
+/**
+ * Resultados del live search sobre el caché, cortados en páginas del mismo tamaño que las de
+ * Monday.
+ *
+ * Acá se conocen TODAS las coincidencias de entrada —la búsqueda se resolvió en memoria—, así que
+ * la paginación es un `slice` y no hay cursores: todas las páginas existen desde el primer momento
+ * y navegar entre ellas no consulta nada.
+ *
+ * Se pagina igual que la búsqueda directa, y no se muestra una lista larga y scrolleable, para que
+ * las dos búsquedas se manejen igual: quien filtra por rubro y recibe ochenta productos navega con
+ * las mismas flechas que venía usando.
+ *
+ * `porPagina` llega por parámetro y no importado de `services/monday` a propósito: este módulo es
+ * el estado puro de la lista y no tiene que arrastrar el SDK de Monday —ni su lectura de
+ * `import.meta.env`— sólo para conocer un número. Quien lo llama ya tiene la constante a mano.
+ */
+export const conResultadosLocales = (
+  productos: readonly Producto[],
+  porPagina: number,
+  truncado = false,
+): ResultadosBusqueda => {
+  const paginas: Producto[][] = []
+  for (let i = 0; i < productos.length; i += Math.max(1, porPagina)) {
+    paginas.push(productos.slice(i, i + Math.max(1, porPagina)))
+  }
+  return {
+    paginas,
+    /* Sin cursores: `haySiguiente` se apoya sólo en que exista la página de al lado, que es
+       exactamente lo que corresponde cuando ya están todas traídas. */
+    cursores: paginas.map(() => null),
+    pagina: 0,
+    abierto: paginas.length > 0,
+    origen: 'cache',
+    truncado,
+  }
+}
 
 /**
  * Se eligió un producto: la lista se REPLIEGA para despejar el paso siguiente, pero la paginación

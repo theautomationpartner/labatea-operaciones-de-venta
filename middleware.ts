@@ -25,16 +25,17 @@ export const config = {
   /* Sólo las rutas que gastan el token del servidor. El resto del sitio (index.html, assets) no
      necesita portero: ahí el control es la CSP.
 
-     `/api/cron/*` queda AFUERA a propósito, y no es un olvido: al cron lo invoca Vercel, no un
-     navegador, así que llega sin `Referer` y el portero lo rechazaría con 403 en cada corrida —el
-     padrón no se actualizaría nunca—. Esa ruta tiene su propia puerta, que es la que corresponde
-     para un llamador que no es una persona: el `CRON_SECRET` que Vercel manda en la Authorization
-     (ver `api/cron/clientes.ts`). */
+     `/api/cron/*` queda AFUERA a propósito, y no es un olvido: a los crons los invoca Vercel, no
+     un navegador, así que llegan sin `Referer` y el portero los rechazaría con 403 en cada corrida
+     —el padrón y el catálogo no se actualizarían nunca—. Esas rutas tienen su propia puerta, que es
+     la que corresponde para un llamador que no es una persona: el `CRON_SECRET` que Vercel manda en
+     la Authorization (ver `api/cron/clientes.ts` y `api/cron/productos.ts`). */
   matcher: [
     '/api/monday',
     '/api/monday-upload',
     '/api/vendedores',
     '/api/clientes',
+    '/api/productos',
     '/api/mfa/:path*',
   ],
 }

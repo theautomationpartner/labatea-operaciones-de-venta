@@ -8,11 +8,22 @@
     {
       "path": "/api/cron/clientes",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/productos",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/productos",
+      "schedule": "10 6 * * *"
     }
   ],
   "functions": {
     "api/cron/clientes.ts": {
       "maxDuration": 120
+    },
+    "api/cron/productos.ts": {
+      "maxDuration": 300
     }
   },
   "headers": [

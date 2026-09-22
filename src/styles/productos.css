@@ -125,6 +125,19 @@
 .productos-v2 .results-pager-info {
   color: var(--p-text-secondary);
 }
+/* La barra del paso de productos es un flex row: si la pista entrara como un hijo más, se
+   acomodaría al lado del botón Buscar y apretaría el campo. Se cuelga debajo, igual que la lista. */
+.productos-v2 .search-hint {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  color: var(--p-text-secondary);
+}
+.productos-v2 .search-hint strong {
+  color: var(--p-primary);
+}
 .productos-v2 .search-error {
   font-size: 12px;
   font-weight: 600;
