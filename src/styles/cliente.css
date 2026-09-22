@@ -70,6 +70,15 @@
   padding: 20px 24px;
   margin-bottom: 0;
 }
+/* Envoltorio del buscador (campo + botón Buscar). Existe SÓLO para que las teclas apretadas en
+   cualquiera de los dos lleguen a un mismo manejador: son hermanos, y sin un padre común las
+   flechas apretadas con el foco en el botón no llegan a ningún lado.
+   `display: contents` lo borra del layout —sus hijos siguen siendo los ítems flex de
+   `.unified-toolbar`, con el `flex-grow` y el `gap` de siempre— pero lo deja en el árbol de
+   eventos, que es lo único que se le pide. */
+.cliente-v2 .search-teclado {
+  display: contents;
+}
 .cliente-v2 .search-container {
   flex-grow: 1;
   display: flex;

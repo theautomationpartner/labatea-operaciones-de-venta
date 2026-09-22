@@ -90,6 +90,7 @@
     "test:busqueda-catalogo": "esbuild tests/busqueda-catalogo.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/busqueda-catalogo.test.mjs && node node_modules/.cache/busqueda-catalogo.test.mjs",
     "test:padron-sync": "esbuild tests/padron-sync.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/padron-sync.test.mjs && node node_modules/.cache/padron-sync.test.mjs",
     "test:db-ssl": "esbuild tests/db-ssl.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/db-ssl.test.mjs && node node_modules/.cache/db-ssl.test.mjs",
+    "test:buscador-cliente-teclado": "esbuild tests/buscador-cliente-teclado.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/buscador-cliente-teclado.test.mjs && node node_modules/.cache/buscador-cliente-teclado.test.mjs",
     "test:asociar-actividades": "esbuild tests/asociar-actividades.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/asociar-actividades.test.cjs && node node_modules/.cache/asociar-actividades.test.cjs"
   },
   "dependencies": {
