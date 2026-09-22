@@ -36,7 +36,6 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
      manda el live search. Distinguir "no busqué" de "busqué y no hay" es lo que evita que la lista
      local tape un "no encontrado" que el usuario acaba de pedir. */
   const [remotos, setRemotos] = useState<Cliente[] | null>(null)
-  const [truncadoRemoto, setTruncadoRemoto] = useState(false)
   const [padron, setPadron] = useState<readonly EntradaPadron[]>([])
   const [abierto, setAbierto] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -61,13 +60,11 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
 
   /* Lo que se muestra: lo que trajo Monday si se apretó Buscar, el live search si no. */
   const resultados = remotos ?? locales.clientes
-  const truncado = remotos ? truncadoRemoto : locales.truncado
   const desplegado = abierto && resultados.length > 0
 
   const limpiar = () => {
     setTermino('')
     setRemotos(null)
-    setTruncadoRemoto(false)
     setAbierto(false)
   }
 
@@ -111,7 +108,6 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
     onEstado('buscando')
     try {
       const { personas: encontrados, truncado: hayMas } = await buscarClientes(t)
-      setTruncadoRemoto(hayMas)
       setRemotos(encontrados)
       /* Lo que trajo Monday se suma al padrón de la sesión: sería absurdo encontrarlo por acá y
          que el live search siguiera sin conocerlo dos segundos después. */
@@ -173,7 +169,6 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
               /* Editar descarta el resultado de la consulta directa: lo que se ve vuelve a ser el
                  live search sobre lo nuevo que se está escribiendo. */
               setRemotos(null)
-              setTruncadoRemoto(false)
               setAbierto(true)
               // Editar la búsqueda limpia el resultado anterior (aviso / error).
               if (estado !== 'idle') onEstado('idle')
@@ -186,16 +181,6 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
         {/* Los resultados: los del padrón mientras se escribe, los de Monday si se apretó Buscar. */}
         {desplegado && (
           <div className="results">
-            {/* La lista vino cortada: se avisa ARRIBA de los resultados, que es donde se mira antes
-                de recorrerlos. Sin esto, el que no encuentra su cliente entre los que ve concluye
-                que no existe. */}
-            {truncado && (
-              <div className="results-aviso" role="status">
-                <i className="fas fa-circle-info" aria-hidden="true" /> Se muestran los primeros{' '}
-                {resultados.length} resultados. Agregá más letras, o buscá por código o CUIT, para
-                encontrar el cliente exacto.
-              </div>
-            )}
             {resultados.map((c) => (
               <div className="ritem" key={c.id} onClick={() => void elegir(c)}>
                 <span className="ritem-name">{c.name}</span>

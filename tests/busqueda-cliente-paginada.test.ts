@@ -1,5 +1,5 @@
 /**
- * El buscador de clientes trae TODAS las coincidencias, siguiendo el cursor de Monday, y avisa
+ * El buscador de clientes trae TODAS las coincidencias, siguiendo el cursor de Monday, e informa
  * cuando corta por el tope de seguridad.
  *
  * Antes pedía UNA página de 50 y lo que no entraba no existía para la app, sin ninguna señal.
@@ -7,9 +7,14 @@
  * inencontrables por ese término, y el vendedor concluía que el cliente no estaba cargado. Lo
  * mismo con JUAN (126), JOSE (108) y CARLOS (101).
  *
- * Las dos mitades del arreglo se verifican acá, porque ninguna sirve sola: seguir el cursor sin
- * avisar del corte deja el mismo bug para los términos muy amplios, y avisar sin seguir el cursor
- * es sólo documentar la falla.
+ * Seguir el cursor es lo que arregla eso, y es lo que se verifica acá.
+ *
+ * ── Sobre el cartel de "se muestran los primeros N" ──
+ * Existió y se quitó a pedido. Lo que lo hacía necesario ya no está: el padrón entero vive
+ * cacheado en el navegador, así que la lista se rearma con cada tecla sobre TODOS los clientes y
+ * agregar una letra angosta el resultado al instante —no hay que adivinar que falta algo ni pedir
+ * otra búsqueda—. Lo que sí quedó, porque protege contra elegir al cliente equivocado, es la regla
+ * de que una lista cortada no auto-carga su único resultado (sección 4).
  *
  * Se corre con esbuild + node (`npm run test:busqueda-paginada`); vive fuera de `src/`.
  */
@@ -84,20 +89,15 @@ function instalarBoard(total: number) {
   assert.equal(truncado, false, 'con exactamente el tope no falta nada: avisar sería mentir')
 }
 
-/* ---------- 4) La pantalla usa el aviso ----------
-   Sin esto el servicio informaría el corte y la vista lo tiraría a la basura, que es exactamente
-   el estado anterior. */
+/* ---------- 4) Una lista cortada NO auto-carga su único resultado ----------
+   Es lo único que la pantalla sigue decidiendo con el `truncado`, y es lo que no se puede perder:
+   con la lista cortada, el único cliente que llegó puede no ser el que se busca, y cargarlo por el
+   usuario es decidir con información incompleta. De ahí sale una venta facturada a otro. */
 const { readFileSync } = await import('node:fs')
 const vista = readFileSync('src/features/cliente/BuscarCliente.tsx', 'utf8')
-assert.ok(vista.includes('truncado'), 'el buscador tiene que leer el aviso de corte')
-assert.ok(
-  vista.includes('results-aviso'),
-  'y mostrarlo junto a la lista, que es donde se mira antes de recorrerla',
-)
-/* Con la lista cortada NO se auto-carga el único resultado: puede no ser el que se busca. */
 assert.ok(
   vista.includes('encontrados.length === 1 && !hayMas'),
   'una sola coincidencia se carga sola SOLO si la lista vino completa',
 )
 
-console.log('OK · el buscador trae todas las coincidencias y avisa cuando corta por el tope')
+console.log('OK · el buscador trae todas las coincidencias y no auto-carga sobre una lista cortada')
