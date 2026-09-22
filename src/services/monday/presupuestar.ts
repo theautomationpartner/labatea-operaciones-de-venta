@@ -67,50 +67,13 @@ import {
   PRESUP_VIGENCIA_LABEL,
 } from './columns'
 import { DESCUENTO_MAX_DEFAULT, DESCUENTO_MIN_DEFAULT } from '@/lib/selectors'
+import { norm, similitud, UMBRAL_SIMILITUD } from '@/lib/similitud'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
 import { construirBulkSubitems } from './carritoSubitems'
 import { byId, num, numCol, sumaMirror, valor, type CV, type MondayItem } from './parse'
 import { mondayApi, mondayHabilitado } from './sdk'
-
-/* ===== Similitud para búsqueda no exacta (≈60%) ===== */
-
-const norm = (s: string) => s.toLowerCase().trim()
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length
-  const n = b.length
-  if (!m) return n
-  if (!n) return m
-  const fila = Array.from({ length: n + 1 }, (_, i) => i)
-  for (let i = 1; i <= m; i++) {
-    let prev = fila[0]
-    fila[0] = i
-    for (let j = 1; j <= n; j++) {
-      const tmp = fila[j]
-      fila[j] = Math.min(
-        fila[j] + 1,
-        fila[j - 1] + 1,
-        prev + (a[i - 1] === b[j - 1] ? 0 : 1),
-      )
-      prev = tmp
-    }
-  }
-  return fila[n]
-}
-
-/** Similitud 0..1 entre dos textos; la subcadena cuenta como coincidencia fuerte. */
-export function similitud(a: string, b: string): number {
-  const x = norm(a)
-  const y = norm(b)
-  if (!x || !y) return 0
-  if (x === y) return 1
-  if (y.includes(x) || x.includes(y)) return 0.9
-  return 1 - levenshtein(x, y) / Math.max(x.length, y.length)
-}
-
-const UMBRAL_SIMILITUD = 0.6
 
 /* ===== 1) Días de vigencia (config, no editable) ===== */
 
@@ -713,6 +676,29 @@ export async function buscarClientes(termino: string): Promise<ResultadoBusqueda
   /* Sin filtros de acá: la categoría y el estado ACTIVO ya vienen aplicados en la consulta
      (`REGLAS_CLIENTE_OPERABLE`), así que lo que llega es directamente operable. */
   return { personas: personas.map(mapCliente), truncado }
+}
+
+/**
+ * Relee UN cliente de Monday, por su id de ítem.
+ *
+ * Es lo que se ejecuta al ELEGIR un cliente, y existe por una razón concreta: el padrón cacheado
+ * (ver `padronClientes.ts`) se refresca cada 5 minutos, y de ese objeto salen `disponible`,
+ * `limit` y `situation`, que son los números con los que `useBloqueoCredito` decide si una venta
+ * puede seguir. Cinco minutos de antigüedad ahí significan dejar pasar una venta contra una línea
+ * de crédito que ya se consumió. El caché sirve para ENCONTRAR al cliente; el que decide plata es
+ * el dato fresco.
+ *
+ * Una sola consulta por un solo ítem, con los mismos campos y el mismo mapeo que la búsqueda.
+ * Devuelve `null` si el ítem ya no existe.
+ */
+export async function refrescarCliente(id: string): Promise<Cliente | null> {
+  if (!mondayHabilitado()) return CLIENTES.find((c) => c.id === id) ?? null
+  const data = await mondayApi<{ items?: MondayItem[] }>(
+    `query ($ids: [ID!]) { items(ids: $ids) { ${CAMPOS_CLIENTE} } }`,
+    { ids: [id] },
+  )
+  const item = data.items?.[0]
+  return item ? mapCliente(item) : null
 }
 
 /**

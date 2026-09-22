@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useClickOutside } from '@/hooks/useClickOutside'
-import { buscarClientes } from '@/services/monday'
+import { buscarEnPadron, type EntradaPadron } from '@/lib/busquedaClientes'
+import { buscarClientes, getPadron, recordarClientes, refrescarCliente } from '@/services/monday'
 import { useDispatch } from '@/state/hooks'
 import type { Cliente } from '@/types'
 
@@ -13,39 +14,92 @@ interface BuscarClienteProps {
 }
 
 /**
- * Búsqueda del cliente contra el tablero de Personas de Monday (capa de servicio). Detecta
- * si se ingresó nombre, código (4 díg) o CUIT (11 díg) y no exige coincidencia exacta. Si hay
- * una sola coincidencia se carga directo; si hay varias —dos clientes con el mismo nombre—
- * se abren como desplegable para elegir cuál. El loading y el «no encontrado» los muestra la
- * vista en el lugar de la ficha, no acá.
+ * Búsqueda del cliente, en dos velocidades.
+ *
+ * 1. **Mientras se escribe**, sobre el padrón cacheado en el servidor por el Cron Job y bajado una
+ *    vez por sesión (`services/monday/padronClientes.ts`). No sale un solo pedido de red: los 2681
+ *    clientes se recorren en ~1 ms, así que la lista se rearma en cada tecla y el que más matchea
+ *    encabeza (ver `lib/busquedaClientes.ts`).
+ * 2. **El botón Buscar** sigue consultando Monday directo. Es la salida para el cliente que todavía
+ *    no está cacheado —uno dado de alta hace dos minutos— y para cuando el padrón no se pudo bajar.
+ *
+ * Al ELEGIR un cliente se lo relee de Monday antes de cargarlo. El padrón tiene hasta 5 minutos de
+ * antigüedad y de ese objeto salen el crédito disponible y la situación del cliente, que es con lo
+ * que se decide si una venta puede seguir: eso no se sirve de un caché.
  */
 export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
   const dispatch = useDispatch()
   // El campo arranca (y queda) vacío: no muestra el cliente elegido, para encadenar búsquedas.
   const [termino, setTermino] = useState('')
   const [errorInput, setErrorInput] = useState('')
-  const [resultados, setResultados] = useState<Cliente[]>([])
-  /* La búsqueda trajo el tope y quedaron coincidencias afuera. Se DICE: callarlo era el bug —con
-     50 resultados fijos, quien buscaba "MARIA" veía 50 de 135 y concluía que su cliente no estaba
-     cargado—. */
-  const [truncado, setTruncado] = useState(false)
+  /* Resultados de la consulta DIRECTA a Monday (botón Buscar). `null` = no se consultó, y entonces
+     manda el live search. Distinguir "no busqué" de "busqué y no hay" es lo que evita que la lista
+     local tape un "no encontrado" que el usuario acaba de pedir. */
+  const [remotos, setRemotos] = useState<Cliente[] | null>(null)
+  const [truncadoRemoto, setTruncadoRemoto] = useState(false)
+  const [padron, setPadron] = useState<readonly EntradaPadron[]>([])
   const [abierto, setAbierto] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useClickOutside(ref, useCallback(() => setAbierto(false), []), abierto)
   const buscando = estado === 'buscando'
-  /** Hay lista de resultados montada debajo del campo. */
+
+  /* El padrón se pide al montar el paso. Si falla, queda vacío y el componente sigue funcionando
+     con el botón Buscar: la pantalla no depende del caché para servir. */
+  useEffect(() => {
+    let vivo = true
+    void getPadron().then((p) => {
+      if (vivo) setPadron(p.entradas)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [])
+
+  /* La búsqueda local. `useMemo` y no estado: es una función del término y del padrón, y guardarla
+     en estado sólo abriría la puerta a que queden desincronizados. */
+  const locales = useMemo(() => buscarEnPadron(padron, termino), [padron, termino])
+
+  /* Lo que se muestra: lo que trajo Monday si se apretó Buscar, el live search si no. */
+  const resultados = remotos ?? locales.clientes
+  const truncado = remotos ? truncadoRemoto : locales.truncado
   const desplegado = abierto && resultados.length > 0
 
-  const elegir = (c: Cliente) => {
-    // El campo queda vacío tras elegir: el resultado se ve en la ficha, no en el buscador.
+  const limpiar = () => {
     setTermino('')
-    setResultados([])
-    setTruncado(false)
+    setRemotos(null)
+    setTruncadoRemoto(false)
     setAbierto(false)
-    dispatch({ type: 'setCliente', cliente: c })
-    onEstado('idle')
   }
 
+  /**
+   * Carga el cliente elegido, con los datos frescos.
+   *
+   * La relectura NO es opcional y su fallo NO cae al dato cacheado: de acá sale el crédito
+   * disponible, y operar sobre un saldo que no se pudo confirmar es exactamente lo que no se
+   * puede hacer. Se avisa con la ventana de siempre y no se carga nada, igual que cuando falla
+   * una búsqueda.
+   */
+  const elegir = async (c: Cliente) => {
+    setAbierto(false)
+    onEstado('buscando')
+    try {
+      const fresco = await refrescarCliente(c.id)
+      if (!fresco) {
+        /* Estaba en el padrón pero ya no está en Monday: lo borraron entre la última corrida del
+           cron y ahora. Se trata como no encontrado, que es lo que es. */
+        onEstado('no-encontrado')
+        return
+      }
+      limpiar()
+      dispatch({ type: 'setCliente', cliente: fresco })
+      onEstado('idle')
+    } catch {
+      onEstado('error')
+      dispatch({ type: 'errorMonday', accion: 'leer los datos del cliente' })
+    }
+  }
+
+  /** El botón Buscar: consulta directa a Monday, para el cliente que el padrón no tiene. */
   const buscar = async () => {
     const t = termino.trim()
     if (!t) {
@@ -57,7 +111,11 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
     onEstado('buscando')
     try {
       const { personas: encontrados, truncado: hayMas } = await buscarClientes(t)
-      setTruncado(hayMas)
+      setTruncadoRemoto(hayMas)
+      setRemotos(encontrados)
+      /* Lo que trajo Monday se suma al padrón de la sesión: sería absurdo encontrarlo por acá y
+         que el live search siguiera sin conocerlo dos segundos después. */
+      recordarClientes(encontrados)
       if (encontrados.length === 0) {
         onEstado('no-encontrado')
         return
@@ -66,10 +124,9 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
          Con la lista truncada NO se auto-carga aunque haya venido una sola: puede no ser la que el
          usuario busca, y elegirla por él sería decidir con información incompleta. */
       if (encontrados.length === 1 && !hayMas) {
-        elegir(encontrados[0])
+        await elegir(encontrados[0])
         return
       }
-      setResultados(encontrados)
       setAbierto(true)
       onEstado('idle')
     } catch {
@@ -113,15 +170,20 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
             onChange={(e) => {
               setTermino(e.target.value)
               if (errorInput) setErrorInput('')
-              if (abierto) setAbierto(false)
+              /* Editar descarta el resultado de la consulta directa: lo que se ve vuelve a ser el
+                 live search sobre lo nuevo que se está escribiendo. */
+              setRemotos(null)
+              setTruncadoRemoto(false)
+              setAbierto(true)
               // Editar la búsqueda limpia el resultado anterior (aviso / error).
               if (estado !== 'idle') onEstado('idle')
             }}
+            onFocus={() => setAbierto(true)}
             onKeyDown={(e) => e.key === 'Enter' && !buscando && buscar()}
           />
         </div>
 
-        {/* Varios clientes con el mismo nombre: se elige por código. */}
+        {/* Los resultados: los del padrón mientras se escribe, los de Monday si se apretó Buscar. */}
         {desplegado && (
           <div className="results">
             {/* La lista vino cortada: se avisa ARRIBA de los resultados, que es donde se mira antes
@@ -135,7 +197,7 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
               </div>
             )}
             {resultados.map((c) => (
-              <div className="ritem" key={c.id} onClick={() => elegir(c)}>
+              <div className="ritem" key={c.id} onClick={() => void elegir(c)}>
                 <span className="ritem-name">{c.name}</span>
                 <span className="ritem-code">{c.codigo}</span>
               </div>
@@ -158,7 +220,15 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
         </span>
       </div>
 
-      <button type="button" className="btn-buscar" onClick={buscar} disabled={buscando}>
+      {/* El botón dejó de ser el único camino: ahora es el escape para el cliente que el padrón
+          todavía no tiene. El título lo explica sin ocupar lugar en pantalla. */}
+      <button
+        type="button"
+        className="btn-buscar"
+        onClick={buscar}
+        disabled={buscando}
+        title="Buscar este cliente directamente en Monday, por si todavía no está en la lista"
+      >
         {buscando ? (
           <>
             <i className="fas fa-spinner fa-spin" /> Buscando...

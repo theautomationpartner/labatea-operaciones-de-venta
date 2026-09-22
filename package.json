@@ -80,7 +80,10 @@
     "test:condicion-venta": "esbuild tests/condicion-venta.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/condicion-venta.test.mjs && node node_modules/.cache/condicion-venta.test.mjs",
     "test:iva-alicuota": "esbuild tests/iva-alicuota-real.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/iva-alicuota.test.mjs && node node_modules/.cache/iva-alicuota.test.mjs",
     "test:envio-factura": "esbuild tests/envio-factura-medio.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/envio-factura.test.mjs && node node_modules/.cache/envio-factura.test.mjs",
-    "test:boton-continuar": "esbuild tests/boton-continuar.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/boton-continuar.test.mjs && node node_modules/.cache/boton-continuar.test.mjs"
+    "test:boton-continuar": "esbuild tests/boton-continuar.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/boton-continuar.test.mjs && node node_modules/.cache/boton-continuar.test.mjs",
+    "test:padron-columnas": "esbuild tests/padron-columnas.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/padron-columnas.test.mjs && node node_modules/.cache/padron-columnas.test.mjs",
+    "test:busqueda-local": "esbuild tests/busqueda-local.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/busqueda-local.test.mjs && node node_modules/.cache/busqueda-local.test.mjs",
+    "test:padron-sync": "esbuild tests/padron-sync.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/padron-sync.test.mjs && node node_modules/.cache/padron-sync.test.mjs"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.3",
