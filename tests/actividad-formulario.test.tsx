@@ -495,7 +495,7 @@ assert.ok(
 
 console.log('OK · contactos: se tildan por Persona, se confirman y se acumulan en su propia tabla')
 
-/* ---------- TablaActividades: opcional en las tres operaciones que la usan ---------- */
+/* ---------- TablaActividades: reclama la selección y rotula la fila ---------- */
 const actividad = {
   id: '1',
   nombre: 'Llamada telefónica - 07/09/2026 - La Batea S.A - Simón Paz, Ana Gómez',
@@ -508,17 +508,20 @@ const actividad = {
 
 const sinElegir = renderToStaticMarkup(
   createElement(TablaActividades, {
+    titulo: 'Actividades pendientes',
     actividades: [actividad],
     elegidas: [],
     cargando: false,
     onToggle: () => {},
   }),
 )
+/* Los DOS usos de la tabla exigen al menos una tildada —el de la venta, desde que se contesta que
+   sí la pregunta que encabeza la etapa—, así que la cabecera reclama y no ofrece seguir sin nada. */
+assert.ok(sinElegir.includes('act-tabla-req'), 'sin nada tildado la cabecera tiene que reclamar')
 assert.ok(
-  !sinElegir.includes('act-tabla-req'),
-  'no reclama nada sin tildar: presupuesto, venta y venta con proforma la tratan igual, opcional',
+  !sinElegir.includes('Opcional: podés continuar'),
+  'y no puede ofrecerse como opcional: no queda ningún uso en el que lo sea',
 )
-assert.ok(sinElegir.includes('Opcional: podés continuar sin tildar ninguna.'))
 
 /* La fila se rotula con el TIPO y con quién se hizo. El nombre del ítem lleva además la fecha y la
    Persona —que ya tienen su propia columna— y en una celda no se lee. El resto de los contactos
@@ -535,6 +538,7 @@ assert.ok(sinElegir.includes('Simón Paz, Ana Gómez'), 'los dos primeros se lee
 
 const conTres = renderToStaticMarkup(
   createElement(TablaActividades, {
+    titulo: 'Actividades pendientes',
     actividades: [{ ...actividad, contactos: ['Simón Paz', 'Ana Gómez', 'Luis Díaz'] }],
     elegidas: [],
     cargando: false,
@@ -554,6 +558,7 @@ assert.deepEqual(
    board no tiene. */
 const sinContactos = renderToStaticMarkup(
   createElement(TablaActividades, {
+    titulo: 'Actividades pendientes',
     actividades: [{ ...actividad, contactos: [] }],
     elegidas: [],
     cargando: false,
@@ -562,6 +567,6 @@ const sinContactos = renderToStaticMarkup(
 )
 assert.ok(sinContactos.includes('—'), 'sin contactos, guión')
 
-console.log('OK · TablaActividades: opcional en las tres operaciones (presupuesto, venta, venta con proforma)')
+console.log('OK · TablaActividades: reclama la actividad que falta y rotula la fila con el tipo y los contactos')
 
 console.log('OK · REGISTRO DE ACTIVIDADES: el formulario crece con las respuestas y la tabla lista contactos')

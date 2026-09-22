@@ -837,16 +837,28 @@ const columnasProducto = (lista: ListaPrecio): string =>
 /**
  * Columnas del ítem de stock del producto ("🧮Stock y Movimientos"). Se piden ANIDADAS en la
  * relación del maestro: una sola consulta trae el producto y su stock.
+ *
+ * ── Por qué los movimientos van aparte ──
+ * "Ingreso Total" y "Egreso Total" son MIRRORS de los subelementos de movimiento, y una mirror le
+ * cuesta a Monday evaluarla. Medido sobre 15 ítems, mediana de 5 corridas: las siete columnas
+ * juntas tardan 2059 ms; sin las dos mirrors, 1390 ms. Son ~700 ms fijos por pedir un tipo
+ * derivado, no por la cantidad de columnas —las `number` son casi gratis y no escalan: una cuesta
+ * 718 ms y veintiuna, 726 ms—.
+ *
+ * Y sólo hacen falta en la DEVOLUCIÓN: son las dos únicas cantidades que el panel de stock muestra
+ * en modo ingreso, y la única entrada de `stockConIngreso` que no está en los otros cinco valores.
+ * Presupuesto, venta y remito de entrega no las miran nunca, así que pagarlas ahí es regalar
+ * 700 ms en la etapa más usada de la app.
  */
-const COLUMNAS_STOCK = JSON.stringify([
-  COL.stockItem.ingresos,
-  COL.stockItem.egresos,
-  COL.stockItem.pendEntregaVta,
-  COL.stockItem.pendRecepcionCompra,
-  COL.stockItem.fisico,
-  COL.stockItem.comercial,
-  COL.stockItem.disponible,
-])
+const columnasStock = (conMovimientos: boolean): string =>
+  JSON.stringify([
+    COL.stockItem.pendEntregaVta,
+    COL.stockItem.pendRecepcionCompra,
+    COL.stockItem.fisico,
+    COL.stockItem.comercial,
+    COL.stockItem.disponible,
+    ...(conMovimientos ? [COL.stockItem.ingresos, COL.stockItem.egresos] : []),
+  ])
 
 /**
  * Selección GraphQL de un producto: es la misma en la primera página y en las siguientes.
@@ -860,8 +872,10 @@ const COLUMNAS_STOCK = JSON.stringify([
  * OJO con los fragmentos: el stock mezcla FÓRMULAS (los tres saldos) y MIRRORS (Ingreso y Egreso
  * Total, que espejan los subelementos de movimiento). Cada tipo necesita el suyo; el que falte
  * vuelve en cero sin avisar.
+ *
+ * `conMovimientos` sólo lo pide la devolución. Ver `columnasStock`.
  */
-const seleccionProducto = (lista: ListaPrecio): string => `
+const seleccionProducto = (lista: ListaPrecio, conMovimientos: boolean): string => `
   id name
   column_values(ids: ${columnasProducto(lista)}) {
     id text
@@ -871,7 +885,7 @@ const seleccionProducto = (lista: ListaPrecio): string => `
       linked_items {
         id
         name
-        column_values(ids: ${COLUMNAS_STOCK}) {
+        column_values(ids: ${columnasStock(conMovimientos)}) {
           id text
           ... on FormulaValue { display_value }
           # Ingreso y Egreso Total son MIRRORS de los subelementos de movimiento: sin este
@@ -988,13 +1002,14 @@ async function fetchPaginaProductos(
   queryParams: QueryParamsProductos | undefined,
   lista: ListaPrecio,
   conIva: boolean,
+  conMovimientos: boolean,
 ): Promise<PaginaProductos> {
   const data = await mondayApi<{ boards: { items_page: PaginaCruda }[] }>(
     `query ($limit: Int!, $qp: ItemsQuery) {
       boards(ids: [${BOARDS.productos}]) {
         items_page(limit: $limit, query_params: $qp) {
           cursor
-          items { ${seleccionProducto(lista)} }
+          items { ${seleccionProducto(lista, conMovimientos)} }
         }
       }
     }`,
@@ -1047,12 +1062,18 @@ export async function buscarProductos(
   lista: ListaPrecio,
   conIva: boolean,
   filtros: Filtro[] = [],
+  conMovimientos = false,
 ): Promise<PaginaProductos> {
   const t = termino.trim()
   // Sin conexión el prototipo sigue corriendo contra el mock, con las mismas ramas y páginas.
   if (!mondayHabilitado()) return primeraPaginaMock(t, filtros)
   const { indices } = await getTaxonomiaProductos()
-  return fetchPaginaProductos(construirQueryProductos(t, filtros, indices), lista, conIva)
+  return fetchPaginaProductos(
+    construirQueryProductos(t, filtros, indices),
+    lista,
+    conIva,
+    conMovimientos,
+  )
 }
 
 /**
@@ -1064,13 +1085,14 @@ export async function siguientePaginaProductos(
   cursor: string,
   lista: ListaPrecio,
   conIva: boolean,
+  conMovimientos = false,
 ): Promise<PaginaProductos> {
   if (!mondayHabilitado()) return siguientePaginaMock(cursor)
   const data = await mondayApi<{ next_items_page: PaginaCruda }>(
     `query ($limit: Int!, $cursor: String!) {
       next_items_page(limit: $limit, cursor: $cursor) {
         cursor
-        items { ${seleccionProducto(lista)} }
+        items { ${seleccionProducto(lista, conMovimientos)} }
       }
     }`,
     { limit: PRODUCTOS_POR_PAGINA, cursor },

@@ -32,14 +32,15 @@ for (const t of ['7001', '7000']) {
   console.log(`ventas con entrega pendiente: ${entrega.length}`)
   console.log(j(entrega.slice(0, 2)))
   console.log('destinos:', j((await getDestinosCliente(c.id)).slice(0, 3)))
+  // Las actividades sin asignar son POR CLIENTE: se sondean acá, no en el bloque global.
+  const sin = await getActividadesSinAsignar(c.id)
+  console.log(`actividades sin asignar: ${sin.length}`)
+  console.log(j(sin.slice(0, 5)))
 }
 
 console.log('\n##### GLOBAL #####')
 console.log('rutas:', j(await getRutasEntrega()))
 console.log('transportistas:', j((await getTransportistas()).slice(0, 3)))
-const sin = await getActividadesSinAsignar()
-console.log(`actividades sin asignar: ${sin.length}`)
-console.log(j(sin.slice(0, 5)))
 const pendAct = await getActividadesPendientes()
 console.log(`actividades pendientes: ${pendAct.length}`)
 console.log(j(pendAct.slice(0, 3)))

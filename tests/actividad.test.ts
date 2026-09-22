@@ -26,6 +26,7 @@ import {
 import { formatDate } from '@/lib/dates'
 import {
   ACTIVIDAD_COMPLETADA_INDEX,
+  ACTIVIDAD_MODO_MANUAL_INDEX,
   ACTIVIDAD_PENDIENTE_INDEX,
   COL,
 } from '@/services/monday/columns'
@@ -577,9 +578,11 @@ const llamadas: { name: string; cv: Record<string, unknown> }[] = []
    5) La etapa "Registrar Actividad" del documento: qué actividades se ofrecen y cómo se asocian.
    ========================================================================================== */
 let ultimaQuery = ''
+let ultimasVariables: unknown = null
 globalThis.fetch = (async (_url: string, init: { body: string }) => {
-  const { query } = JSON.parse(init.body) as { query: string }
+  const { query, variables } = JSON.parse(init.body) as { query: string; variables?: unknown }
   ultimaQuery = query
+  ultimasVariables = variables ?? null
   llamadas.push({ name: '', cv: {} })
   return {
     ok: true,
@@ -627,7 +630,10 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
   }
 }) as unknown as typeof fetch
 
-const listadas = await getActividadesSinAsignar()
+/** El cliente de la operación. La consulta se hace por cliente: las actividades son las SUYAS. */
+const CLIENTE_ID = '4242'
+
+const listadas = await getActividadesSinAsignar(CLIENTE_ID)
 
 /* El filtro va del lado del SERVIDOR: si se cayera, la etapa ofrecería gestiones que ya rindieron
    su documento (o que ni siquiera se completaron) y se asociaría dos veces la misma. */
@@ -644,6 +650,27 @@ assert.ok(
   ultimaQuery.includes(COL.actividad.estado) &&
     ultimaQuery.includes(`compare_value: [${ACTIVIDAD_COMPLETADA_INDEX}]`),
   'y sólo pide el estado Completado: Pendiente y Vencido no pueden originar un documento todavía',
+)
+/* Las actividades son las del CLIENTE de la operación: lo que se está por emitir es de un cliente,
+   y las gestiones de los demás no son opciones que el usuario descartó, son ruido que le tapa la
+   que busca. */
+assert.ok(
+  ultimaQuery.includes(`column_id: "${COL.actividad.persona}"`),
+  'la consulta filtra por la Persona del documento',
+)
+/* Y el id viaja como NÚMERO en la variable: como texto, la regla `any_of` sobre una board_relation
+   devuelve vacío sin avisar (verificado contra el board, ver `getActividadesPendientesImpl`). */
+assert.deepEqual(
+  ultimasVariables,
+  { cliente: [4242] },
+  'el id del cliente va como número, no como texto',
+)
+/* Modo de carga MANUAL: lo que asienta sola una automatización no es una gestión comercial que
+   pueda imputarse a un documento. */
+assert.ok(
+  ultimaQuery.includes(COL.actividad.modoCarga) &&
+    ultimaQuery.includes(`compare_value: [${ACTIVIDAD_MODO_MANUAL_INDEX}]`),
+  'y sólo las cargadas a mano: las automáticas se rechazan',
 )
 
 assert.deepEqual(
@@ -668,19 +695,23 @@ globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
   return fetchOriginal(...args)
 }) as unknown as typeof fetch
 
-const otraVez = await getActividadesSinAsignar()
+const otraVez = await getActividadesSinAsignar(CLIENTE_ID)
 assert.equal(fetches, 0, 'la segunda lectura NO vuelve a consultar Monday')
 assert.equal(otraVez, listadas, 'devuelve el MISMO array ya resuelto')
 assert.deepEqual(
-  actividadesSinAsignarEnCache(),
+  actividadesSinAsignarEnCache(CLIENTE_ID),
   listadas,
   'y queda disponible sin esperar, para pintar la tabla sin el "cargando" de un frame',
 )
 
 /* Cambiar de operación limpia la caché junto con el resto: la próxima etapa vuelve a consultar. */
 limpiarCachesConsultas()
-assert.equal(actividadesSinAsignarEnCache(), null, 'sin caché no hay nada que devolver sin esperar')
-await getActividadesSinAsignar()
+assert.equal(
+  actividadesSinAsignarEnCache(CLIENTE_ID),
+  null,
+  'sin caché no hay nada que devolver sin esperar',
+)
+await getActividadesSinAsignar(CLIENTE_ID)
 assert.equal(fetches, 1, 'tras limpiar la caché, la siguiente lectura sí consulta de nuevo')
 
 /* ---------- Una actividad que YA tiene presupuesto: no se vuelve a ofrecer ----------
@@ -692,27 +723,48 @@ assert.equal(fetches, 1, 'tras limpiar la caché, la siguiente lectura sí consu
    quien pregunta es PRESUPUESTAR, una VENTA DIRECTA o una VENTA PROFORMA con proforma DIRECTA:
    es LA MISMA consulta para las tres (ver `VentaActividadView`). */
 const PADRON_ACTIVIDADES = [
-  { id: 'A', presupuesto: null, venta: null, estado: 'Completado' }, // libre: tiene que listarse
-  { id: 'B', presupuesto: '777', venta: null, estado: 'Completado' }, // ya tiene presupuesto
-  { id: 'C', presupuesto: null, venta: '888', estado: 'Completado' }, // ya tiene venta
-  { id: 'D', presupuesto: null, venta: null, estado: 'Pendiente' }, // sin completar
+  // libre, del cliente y cargada a mano: la única que tiene que listarse
+  { id: 'A', presupuesto: null, venta: null, estado: 'Completado', cliente: '4242', modo: 'Manual' },
+  { id: 'B', presupuesto: '777', venta: null, estado: 'Completado', cliente: '4242', modo: 'Manual' },
+  { id: 'C', presupuesto: null, venta: '888', estado: 'Completado', cliente: '4242', modo: 'Manual' },
+  { id: 'D', presupuesto: null, venta: null, estado: 'Pendiente', cliente: '4242', modo: 'Manual' },
+  // de OTRO cliente: la gestión no es la que originó este documento
+  { id: 'E', presupuesto: null, venta: null, estado: 'Completado', cliente: '9999', modo: 'Manual' },
+  // la asentó una automatización: no hubo trabajo comercial que imputar
+  { id: 'F', presupuesto: null, venta: null, estado: 'Completado', cliente: '4242', modo: 'Automatico' },
 ]
 
-function actividadesQueHonranLasReglas(query: string) {
+function actividadesQueHonranLasReglas(
+  query: string,
+  variables: { cliente?: number[] } | null,
+) {
   const pideVacio = (col: string) => query.includes(`{ column_id: "${col}"`) && query.includes('is_empty')
+  /* El cliente llega por variable, así que el mock lo lee de donde lo lee Monday: si la consulta
+     mandara el id como texto, acá no habría número y el filtro no recortaría nada. */
+  const pideCliente = query.includes(`column_id: "${COL.actividad.persona}"`)
+    ? String(variables?.cliente?.[0] ?? '')
+    : null
+  const pideManual = query.includes(
+    `column_id: "${COL.actividad.modoCarga}", compare_value: [${ACTIVIDAD_MODO_MANUAL_INDEX}]`,
+  )
   return PADRON_ACTIVIDADES.filter((a) => {
     if (pideVacio(COL.actividad.presupuesto) && a.presupuesto) return false
     if (pideVacio(COL.actividad.venta) && a.venta) return false
     if (query.includes(`compare_value: [${ACTIVIDAD_COMPLETADA_INDEX}]`) && a.estado !== 'Completado') {
       return false
     }
+    if (pideCliente !== null && a.cliente !== pideCliente) return false
+    if (pideManual && a.modo !== 'Manual') return false
     return true
   })
 }
 
 globalThis.fetch = (async (_url: string, init: { body: string }) => {
-  const { query } = JSON.parse(init.body) as { query: string }
-  const items = actividadesQueHonranLasReglas(query).map((a) => ({
+  const { query, variables } = JSON.parse(init.body) as {
+    query: string
+    variables?: { cliente?: number[] }
+  }
+  const items = actividadesQueHonranLasReglas(query, variables ?? null).map((a) => ({
     id: a.id,
     name: `Actividad ${a.id}`,
     column_values: [
@@ -725,11 +777,11 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
 }) as unknown as typeof fetch
 
 limpiarCachesConsultas()
-const libres = await getActividadesSinAsignar()
+const libres = await getActividadesSinAsignar(CLIENTE_ID)
 assert.deepEqual(
   libres.map((a) => a.id).sort(),
   ['A'],
-  'con presupuesto (B), con venta (C) o sin completar (D) quedan afuera; sólo A está realmente libre',
+  'con presupuesto (B), con venta (C), sin completar (D), de otro cliente (E) o automática (F) quedan afuera; sólo A está realmente libre',
 )
 console.log('OK · una actividad con presupuesto asignado no vuelve a ofrecerse (PRESUPUESTAR / VENTA DIRECTA / VENTA PROFORMA DIRECTA comparten la misma consulta)')
 

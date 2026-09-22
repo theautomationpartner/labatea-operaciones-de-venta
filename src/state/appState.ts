@@ -190,6 +190,23 @@ export interface AppState {
   actividad: ActividadState
 
   /**
+   * Respuesta a "¿Querés asociar actividades al presupuesto/a la venta?", la pregunta que abre la
+   * etapa "Registrar Actividad" de la VENTA y el PRESUPUESTO.
+   *
+   * Arranca en NO, que es lo que la etapa siempre significó: asociar una gestión es OPCIONAL, y el
+   * documento puede no tener todavía en el tablero la que lo originó. Con NO la etapa no pide nada
+   * y "Continuar" pasa derecho.
+   *
+   * En SÍ cambian las DOS cosas: recién ahí se le pega a Monday por las actividades del cliente
+   * —antes la consulta salía siempre, incluso para quien no iba a asociar ninguna— y tildar al
+   * menos una pasa a ser OBLIGATORIO: el usuario dijo que quería asociar, así que irse sin ninguna
+   * es una respuesta a medias, no una decisión.
+   *
+   * Vive en el estado y no en la vista porque el stepper desmonta la etapa al salir: en un `useState`
+   * volver a entrar reabriría la pregunta en NO con actividades ya tildadas.
+   */
+  asociarActividades: boolean
+  /**
    * Etapa "Registrar Actividad" de la VENTA y el PRESUPUESTO: las actividades YA cargadas en el
    * tablero que originaron el documento. No se editan acá —se eligen—, y al emitirlo quedan
    * imputadas a él (ver `imputarActividades`).
@@ -337,6 +354,8 @@ export const initialState: AppState = {
 
   remito: remitoInicial,
   actividad: actividadInicial,
+  // La pregunta de la etapa "Registrar Actividad" arranca en NO: asociar una gestión es opcional.
+  asociarActividades: false,
   actividadesDocumento: [],
 }
 
@@ -460,6 +479,8 @@ export type Action =
   | { type: 'actividadesCompletadas' }
   /** Tilda o destilda una actividad del tablero para el documento en curso. */
   | { type: 'toggleActividadDocumento'; actividad: ActividadListada }
+  /** Contesta "¿Querés asociar actividades?": `false` (NO) es el valor con el que abre la etapa. */
+  | { type: 'setAsociarActividades'; value: boolean }
 
 const nuevoId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -689,7 +710,9 @@ export function reducer(state: AppState, action: Action): AppState {
            suyos, se busca otro y se suman los de ese—, y cada contacto ya sabe de qué Persona
            salió (ver `ContactoElegido`). Lo cargado en la etapa 2 tampoco se toca: buscar otra
            Persona para sumarle contactos no puede deshacer lo que ya se decidió sobre ella. */
-        // Las actividades asociadas eran las del documento del cliente anterior.
+        /* Las actividades asociadas eran las del documento del cliente anterior, y la pregunta
+           vuelve a abrir en NO: la consulta al tablero se dispara recién cuando se conteste que sí. */
+        asociarActividades: false,
         actividadesDocumento: [],
       }
 
@@ -1355,6 +1378,16 @@ export function reducer(state: AppState, action: Action): AppState {
           : [...state.actividadesDocumento, action.actividad],
       }
     }
+
+    /* Contestar que NO se lleva puesto lo tildado: lo que quedaba elegido era la respuesta al SÍ,
+       y dejarlo escondido imputaría al documento una gestión que el usuario ya dijo no querer. */
+    case 'setAsociarActividades':
+      if (state.asociarActividades === action.value) return state
+      return {
+        ...state,
+        asociarActividades: action.value,
+        actividadesDocumento: action.value ? state.actividadesDocumento : [],
+      }
 
     /* Las actividades ya están creadas en Monday. Guardar sus ids es lo que impide que un segundo
        click en "Finalizar Operación" cree todo de nuevo. */

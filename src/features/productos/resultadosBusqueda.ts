@@ -1,14 +1,29 @@
 /**
- * Estado de la lista de resultados paginada del buscador de productos.
+ * Estado de la lista de resultados del buscador de productos.
  *
  * Vive fuera del componente por una razón concreta: elegir un producto CIERRA la lista —para
  * dejar a la vista «Producto seleccionado», donde se ajusta cantidad y descuento— pero NO la
- * destruye. Las páginas ya traídas, la página actual y el cursor de Monday quedan en memoria,
- * y volver a hacer click en el buscador las muestra de nuevo: se puede elegir otro producto de
- * ese mismo resultado sin volver a consultar. Sólo una búsqueda nueva los reemplaza.
+ * destruye. Los resultados ya traídos, el cursor de Monday y la fila en la que estaba parado el
+ * usuario quedan en memoria, y volver a hacer click en el buscador los muestra de nuevo: se puede
+ * elegir otro producto de ese mismo resultado sin volver a consultar. Sólo una búsqueda nueva los
+ * reemplaza.
  *
- * Las transiciones son puras y no tocan la red: la única que trae datos es la de la página
- * siguiente, y recibe la página ya resuelta por el servicio.
+ * ── Una sola lista, no páginas ──
+ * Antes esto guardaba `Producto[][]` y un índice de página, y se navegaba con botones «Anterior» y
+ * «Siguiente». Ahora es UNA lista que crece: se recorre con las flechas del teclado de punta a
+ * punta y, cuando el resaltado se acerca al final de lo traído, el componente pide el tramo
+ * siguiente y lo agrega acá. El usuario nunca ve un borde de página.
+ *
+ * El cursor sigue existiendo porque Monday pagina igual —no hay forma de pedirle "todo"—, pero pasó
+ * a ser un detalle de cómo se rellena la lista, no algo que el usuario tenga que manejar.
+ *
+ * ── El resaltado es del estado, no del DOM ──
+ * `activo` es el índice de la fila marcada. Está acá y no como `:focus` de un botón porque el foco
+ * real nunca se va del input: el usuario sigue escribiendo mientras navega. Es el mismo patrón de
+ * un combobox accesible (`aria-activedescendant`).
+ *
+ * Las transiciones son puras y no tocan la red: la única que trae datos es la de más resultados, y
+ * recibe el tramo ya resuelto por el servicio.
  */
 import type { PaginaProductos } from '@/services/monday'
 import type { Producto } from '@/types'
@@ -24,13 +39,20 @@ import type { Producto } from '@/types'
  */
 export type OrigenResultados = 'monday' | 'cache'
 
+/** Ninguna fila resaltada. */
+export const SIN_ACTIVO = -1
+
 export interface ResultadosBusqueda {
-  /** Páginas ya traídas, en orden. Volver atrás no vuelve a consultar: el cursor sólo avanza. */
-  paginas: Producto[][]
-  /** Cursor devuelto DESPUÉS de cada página: `cursores[i]` trae la i+1. null = no hay más. */
-  cursores: (string | null)[]
-  pagina: number
-  /** Visibilidad de la lista. Sólo la bajan una búsqueda nueva, el botón de cierre o el click afuera. */
+  /** Todo lo traído hasta ahora, en una sola lista y en orden. */
+  productos: Producto[]
+  /**
+   * Cursor de Monday para traer el tramo siguiente. `null` = no hay más, o los resultados salieron
+   * del caché (que ya vino entero).
+   */
+  cursor: string | null
+  /** Índice de la fila resaltada, o `SIN_ACTIVO`. Es lo que carga Enter. */
+  activo: number
+  /** Visibilidad de la lista. Sólo la bajan una búsqueda nueva, elegir, Escape o el click afuera. */
   abierto: boolean
   origen: OrigenResultados
   /**
@@ -40,125 +62,124 @@ export interface ResultadosBusqueda {
   truncado: boolean
 }
 
-/* Acá NO se guarda qué fila va marcada como "Seleccionado". Esa marca es del producto cargado
-   AHORA en «Producto seleccionado», y la aporta el padre. Cuando vivía en este estado se
-   ACUMULABA —era un Set de todo lo que se hubiera elegido en la búsqueda—, así que comparar tres
-   productos antes de decidirse dejaba a los tres en gris, con cara de "ya no se pueden tomar". */
-
-/** Sin búsqueda activa: es también el estado al que se vuelve al cerrar o al buscar de nuevo. */
+/** Sin búsqueda activa: es también el estado al que se vuelve al buscar de nuevo. */
 export const SIN_RESULTADOS: ResultadosBusqueda = {
-  paginas: [],
-  cursores: [],
-  pagina: 0,
+  productos: [],
+  cursor: null,
+  activo: SIN_ACTIVO,
   abierto: false,
   origen: 'monday',
   truncado: false,
 }
 
-/** Primera página de una búsqueda nueva contra Monday: reinicia la paginación entera. */
-export const conPrimeraPagina = (pagina: PaginaProductos): ResultadosBusqueda => ({
-  paginas: [pagina.productos],
-  cursores: [pagina.cursor],
-  pagina: 0,
-  abierto: true,
+/**
+ * Primer tramo de una búsqueda nueva contra Monday.
+ *
+ * Arranca con la primera fila ya resaltada: el caso abrumadoramente más común es que lo que se
+ * busca sea lo primero, y así Enter lo carga sin tocar una flecha.
+ */
+export const conPrimerosResultados = (pagina: PaginaProductos): ResultadosBusqueda => ({
+  productos: [...pagina.productos],
+  cursor: pagina.cursor,
+  activo: pagina.productos.length > 0 ? 0 : SIN_ACTIVO,
+  abierto: pagina.productos.length > 0,
   origen: 'monday',
   truncado: false,
 })
 
 /**
- * Resultados del live search sobre el caché, cortados en páginas del mismo tamaño que las de
- * Monday.
+ * Resultados del live search sobre el caché.
  *
- * Acá se conocen TODAS las coincidencias de entrada —la búsqueda se resolvió en memoria—, así que
- * la paginación es un `slice` y no hay cursores: todas las páginas existen desde el primer momento
- * y navegar entre ellas no consulta nada.
- *
- * Se pagina igual que la búsqueda directa, y no se muestra una lista larga y scrolleable, para que
- * las dos búsquedas se manejen igual: quien filtra por rubro y recibe ochenta productos navega con
- * las mismas flechas que venía usando.
- *
- * `porPagina` llega por parámetro y no importado de `services/monday` a propósito: este módulo es
- * el estado puro de la lista y no tiene que arrastrar el SDK de Monday —ni su lectura de
- * `import.meta.env`— sólo para conocer un número. Quien lo llama ya tiene la constante a mano.
+ * Vienen todos de una —la búsqueda se resolvió en memoria— así que no hay cursor: no hay nada más
+ * que pedir. La lista se recorre entera con las flechas.
  */
 export const conResultadosLocales = (
   productos: readonly Producto[],
-  porPagina: number,
   truncado = false,
-): ResultadosBusqueda => {
-  const paginas: Producto[][] = []
-  for (let i = 0; i < productos.length; i += Math.max(1, porPagina)) {
-    paginas.push(productos.slice(i, i + Math.max(1, porPagina)))
-  }
-  return {
-    paginas,
-    /* Sin cursores: `haySiguiente` se apoya sólo en que exista la página de al lado, que es
-       exactamente lo que corresponde cuando ya están todas traídas. */
-    cursores: paginas.map(() => null),
-    pagina: 0,
-    abierto: paginas.length > 0,
-    origen: 'cache',
-    truncado,
-  }
-}
-
-/**
- * Se eligió un producto: la lista se REPLIEGA para despejar el paso siguiente, pero la paginación
- * queda intacta —mismas páginas, misma página actual, mismo cursor— para poder volver a abrirla.
- *
- * No recibe el producto: cuál se eligió no es asunto de este estado (ver el comentario del
- * `ResultadosBusqueda`). Lo único que pasa acá es que la lista se cierra.
- */
-export const replegado = (estado: ResultadosBusqueda): ResultadosBusqueda => ({
-  ...estado,
-  abierto: false,
+): ResultadosBusqueda => ({
+  productos: [...productos],
+  cursor: null,
+  activo: productos.length > 0 ? 0 : SIN_ACTIVO,
+  abierto: productos.length > 0,
+  origen: 'cache',
+  truncado,
 })
 
 /**
- * Vuelta al buscador: se relistan los resultados que ya se habían traído, en la misma página
- * en la que estaba. Sin resultados guardados no hay nada que abrir.
+ * Llegó el tramo siguiente de Monday: se agrega al final y la lista sigue siendo una sola.
+ *
+ * El resaltado NO se mueve. El usuario está bajando con la flecha y esto ocurre por detrás; correrle
+ * la selección sería moverle el piso.
  */
-export const reabierto = (estado: ResultadosBusqueda): ResultadosBusqueda =>
-  estado.abierto || estado.paginas.length === 0 ? estado : { ...estado, abierto: true }
-
-/** Página siguiente recién traída: se apila al final y pasa a ser la visible. */
-export const conPaginaSiguiente = (
+export const conMasResultados = (
   estado: ResultadosBusqueda,
   siguiente: PaginaProductos,
 ): ResultadosBusqueda => ({
   ...estado,
-  paginas: [...estado.paginas, siguiente.productos],
-  cursores: [...estado.cursores, siguiente.cursor],
-  pagina: estado.paginas.length,
+  productos: [...estado.productos, ...siguiente.productos],
+  cursor: siguiente.cursor,
 })
 
-/** Navegación a una página ya traída: no consulta nada. */
-export const enPagina = (estado: ResultadosBusqueda, pagina: number): ResultadosBusqueda => ({
+/** El cursor no trajo nada: no hay más que pedir y se deja de intentar. */
+export const sinMasResultados = (estado: ResultadosBusqueda): ResultadosBusqueda => ({
   ...estado,
-  pagina,
+  cursor: null,
 })
 
-/** El cursor no trajo nada: se marca la página actual como última. */
-export const sinMasPaginas = (estado: ResultadosBusqueda): ResultadosBusqueda => ({
-  ...estado,
-  cursores: estado.cursores.map((c, i) => (i === estado.pagina ? null : c)),
-})
+/**
+ * Mueve el resaltado `delta` filas, sin dar la vuelta.
+ *
+ * No hay wrap a propósito: la lista CRECE sola cuando el resaltado se acerca al final, así que
+ * saltar del último al primero dejaría al usuario arriba justo cuando estaba por aparecer más.
+ * Frenar en el borde es lo que hace que bajar sostenido se sienta continuo.
+ *
+ * Sin nada resaltado, bajar entra por la primera fila y subir por la última.
+ */
+export function mover(estado: ResultadosBusqueda, delta: number): ResultadosBusqueda {
+  const total = estado.productos.length
+  if (total === 0) return estado
+  const desde = estado.activo === SIN_ACTIVO ? (delta > 0 ? -1 : total) : estado.activo
+  const activo = Math.min(total - 1, Math.max(0, desde + delta))
+  return activo === estado.activo ? estado : { ...estado, activo }
+}
 
-/** Click afuera del buscador: se oculta la lista, sin perder lo traído. */
-export const cerrado = (estado: ResultadosBusqueda): ResultadosBusqueda => ({
-  ...estado,
-  abierto: false,
-})
+/** Resalta una fila por índice. Lo usa el mouse; el teclado va por `mover`. */
+export const resaltar = (estado: ResultadosBusqueda, activo: number): ResultadosBusqueda =>
+  activo < 0 || activo >= estado.productos.length || activo === estado.activo
+    ? estado
+    : { ...estado, activo }
 
-export const paginaActual = (estado: ResultadosBusqueda): Producto[] =>
-  estado.paginas[estado.pagina] ?? []
+/** El producto resaltado, si hay alguno y la lista está a la vista. */
+export const productoActivo = (estado: ResultadosBusqueda): Producto | null =>
+  estado.abierto && estado.activo >= 0 ? (estado.productos[estado.activo] ?? null) : null
 
-export const hayAnterior = (estado: ResultadosBusqueda): boolean => estado.pagina > 0
+/**
+ * ¿Conviene ir pidiendo el tramo siguiente?
+ *
+ * Se dispara ANTES de llegar al final —`margen` filas antes— para que el tramo llegue mientras el
+ * usuario todavía está bajando. Si se esperara a tocar la última fila, la flecha se quedaría
+ * clavada un segundo y medio en cada borde, que es exactamente lo que este cambio vino a sacar.
+ */
+export const convieneTraerMas = (estado: ResultadosBusqueda, margen: number): boolean =>
+  estado.cursor !== null && estado.activo >= estado.productos.length - margen
 
-/** Hay siguiente si ya se trajo (se volvió atrás) o si Monday dejó un cursor para pedirla. */
-export const haySiguiente = (estado: ResultadosBusqueda): boolean =>
-  estado.pagina < estado.paginas.length - 1 || Boolean(estado.cursores[estado.pagina])
+/**
+ * Se eligió un producto: la lista se REPLIEGA para despejar el paso siguiente, pero los resultados
+ * quedan intactos —mismas filas, mismo resaltado, mismo cursor— para poder volver a abrirla.
+ *
+ * No recibe el producto: cuál se eligió no es asunto de este estado. Lo único que pasa acá es que
+ * la lista se cierra.
+ */
+export const replegado = (estado: ResultadosBusqueda): ResultadosBusqueda =>
+  estado.abierto ? { ...estado, abierto: false } : estado
 
-/** Cursor con el que pedir la próxima página, si hay que traerla. */
-export const cursorActual = (estado: ResultadosBusqueda): string | null =>
-  estado.cursores[estado.pagina] ?? null
+/**
+ * Vuelta al buscador: se relistan los resultados que ya se habían traído, con el resaltado donde
+ * estaba. Sin resultados guardados no hay nada que abrir.
+ */
+export const reabierto = (estado: ResultadosBusqueda): ResultadosBusqueda =>
+  estado.abierto || estado.productos.length === 0 ? estado : { ...estado, abierto: true }
+
+/** Click afuera o Escape: se oculta la lista, sin perder lo traído. */
+export const cerrado = (estado: ResultadosBusqueda): ResultadosBusqueda =>
+  estado.abierto ? { ...estado, abierto: false } : estado

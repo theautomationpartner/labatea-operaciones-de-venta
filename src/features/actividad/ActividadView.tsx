@@ -280,7 +280,6 @@ export function ActividadView() {
                 registrá una actividad nueva.
               </>
             }
-            requerida
             avisoRequerida="Tildá al menos una actividad para pasarla a Completado"
           />
         )}

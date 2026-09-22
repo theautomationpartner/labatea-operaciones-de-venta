@@ -230,16 +230,30 @@ export function productoDesdeCache(
 
 /* ── El stock, que nunca se cachea ──────────────────────────────────────────────────────────── */
 
-/** Columnas del ítem de "🧮Stock y Movimientos". Mismas que usa la búsqueda directa. */
-const COLUMNAS_STOCK = JSON.stringify([
-  COL.stockItem.ingresos,
-  COL.stockItem.egresos,
-  COL.stockItem.pendEntregaVta,
-  COL.stockItem.pendRecepcionCompra,
-  COL.stockItem.fisico,
-  COL.stockItem.comercial,
-  COL.stockItem.disponible,
-])
+/**
+ * Columnas del ítem de "🧮Stock y Movimientos". Mismas que usa la búsqueda directa.
+ *
+ * ── Los movimientos se piden sólo en la devolución ──
+ * "Ingreso Total" y "Egreso Total" son MIRRORS, y evaluarlas le cuesta a Monday ~700 ms fijos.
+ * Medido sobre 15 ítems, mediana de 5 corridas:
+ *
+ *   piso de red (sin columnas) .............  597 ms
+ *   las 5 `number`/fórmula de siempre ....... 1390 ms
+ *   las 7, con las dos mirrors .............. 2059 ms
+ *
+ * Presupuesto, venta y remito de entrega no usan esas dos cantidades: el panel de stock sólo las
+ * muestra en modo ingreso, y `stockConIngreso` es la única función que las lee. Pedirlas ahí serían
+ * 700 ms regalados en la etapa más tipeada de la app.
+ */
+const columnasStock = (conMovimientos: boolean): string =>
+  JSON.stringify([
+    COL.stockItem.pendEntregaVta,
+    COL.stockItem.pendRecepcionCompra,
+    COL.stockItem.fisico,
+    COL.stockItem.comercial,
+    COL.stockItem.disponible,
+    ...(conMovimientos ? [COL.stockItem.ingresos, COL.stockItem.egresos] : []),
+  ])
 
 const SIN_STOCK: StockProducto = {
   ingresos: 0,
@@ -260,7 +274,10 @@ const SIN_STOCK: StockProducto = {
  * Egreso Total, que espejan los subelementos de movimiento). Cada tipo necesita el suyo; el que
  * falte vuelve en cero sin avisar.
  */
-export async function leerStock(stockIds: readonly string[]): Promise<Map<string, StockProducto>> {
+export async function leerStock(
+  stockIds: readonly string[],
+  conMovimientos = false,
+): Promise<Map<string, StockProducto>> {
   const ids = [...new Set(stockIds.filter(Boolean))]
   if (ids.length === 0) return new Map()
 
@@ -268,7 +285,7 @@ export async function leerStock(stockIds: readonly string[]): Promise<Map<string
     `query ($ids: [ID!]!) {
       items(ids: $ids) {
         id
-        column_values(ids: ${COLUMNAS_STOCK}) {
+        column_values(ids: ${columnasStock(conMovimientos)}) {
           id text
           ... on FormulaValue { display_value }
           ... on MirrorValue { display_value }
@@ -283,7 +300,8 @@ export async function leerStock(stockIds: readonly string[]): Promise<Map<string
     const s = byId(item)
     porStock.set(item.id, {
       /* Ingresos y egresos son MIRRORS de los subelementos de movimiento: su `display_value` puede
-         venir como lista separada por comas, así que hay que sumarla y no pasarla por `num()`. */
+         venir como lista separada por comas, así que hay que sumarla y no pasarla por `num()`.
+         Sin `conMovimientos` no se pidieron y quedan en 0; sólo la devolución las lee. */
       ingresos: sumaMirror(s[COL.stockItem.ingresos]),
       egresos: sumaMirror(s[COL.stockItem.egresos]),
       pendEntregaVta: numCol(s[COL.stockItem.pendEntregaVta]),
@@ -303,15 +321,23 @@ export async function leerStock(stockIds: readonly string[]): Promise<Map<string
  * Un producto sin `stockId` —el maestro tiene alguno— queda en cero, que es lo que ya devolvía la
  * búsqueda directa para ese mismo caso. Lo que no puede pasar es que un producto QUE SÍ tiene ítem
  * de stock se muestre en cero porque la lectura falló: eso se propaga y lo maneja quien llama.
+ *
+ * `conMovimientos` lo pide sólo la devolución, que es la única pantalla que muestra "Ingresos" y la
+ * única que proyecta con `stockConIngreso`. Sin él, `ingresos` y `egresos` vuelven en 0 porque NO SE
+ * PIDIERON —no porque valgan cero—, y ahorran ~700 ms. Nadie más los lee; si alguna vista nueva los
+ * necesitara, tiene que pedir el stock con esta bandera, no asumir que el 0 es un dato.
  */
-export async function conStockFresco(producto: Producto): Promise<Producto> {
+export async function conStockFresco(
+  producto: Producto,
+  conMovimientos = false,
+): Promise<Producto> {
   if (!producto.stockId) return producto
   /* En modo local el stock sale del propio mock: no hay Monday a quien preguntarle, y devolverlo en
      cero dejaría el panel de stock inservible para desarrollar. */
   if (import.meta.env.DEV || !mondayHabilitado()) {
     return { ...producto, ...(stockMock.get(producto.stockId) ?? SIN_STOCK) }
   }
-  const stock = await leerStock([producto.stockId])
+  const stock = await leerStock([producto.stockId], conMovimientos)
   return { ...producto, ...(stock.get(producto.stockId) ?? SIN_STOCK) }
 }
 

@@ -106,27 +106,31 @@
   max-height: 260px;
 }
 /* Con paginación el alto lo pone la lista: la barra de navegación no scrollea. */
-.productos-v2 .results--paged {
+.productos-v2 .results--nav {
   max-height: none;
 }
-.productos-v2 .results--paged .results-list {
-  max-height: 260px;
+.productos-v2 .results--nav .results-list {
+  max-height: 300px;
 }
-.productos-v2 .results-pager {
+.productos-v2 .results-foot {
   border-color: var(--p-border);
   background: var(--p-bg-input);
 }
-.productos-v2 .results-pager-btn {
-  color: var(--p-primary);
-  background: var(--p-bg-card);
-  border-color: var(--p-border);
-  border-radius: var(--p-radius-md);
-}
-.productos-v2 .results-pager-info {
+.productos-v2 .results-foot-info,
+.productos-v2 .results-foot-ayuda {
   color: var(--p-text-secondary);
 }
-/* La barra del paso de productos es un flex row: si la pista entrara como un hijo más, se
-   acomodaría al lado del botón Buscar y apretaría el campo. Se cuelga debajo, igual que la lista. */
+.productos-v2 kbd {
+  color: var(--p-text-secondary);
+  background: var(--p-bg-card);
+  border-color: var(--p-border);
+}
+/* Mismo criterio que en views.css: el resaltado del teclado es azul, no el gris del hover. */
+.productos-v2 .ritem--activo,
+.productos-v2 .ritem--activo:hover {
+  background: color-mix(in srgb, var(--p-primary) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--p-primary);
+}
 .productos-v2 .search-hint {
   position: absolute;
   top: 100%;

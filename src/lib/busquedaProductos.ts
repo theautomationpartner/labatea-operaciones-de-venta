@@ -25,9 +25,11 @@ import type { CampoFiltro, Filtro, ProductoCache } from '@/types'
 import { normBusqueda, similitud, UMBRAL_SIMILITUD } from './similitud'
 
 /**
- * Cuántas coincidencias se conservan. No es el tamaño de la página: la lista se pagina después
- * (ver `PRODUCTOS_POR_PAGINA`). Es el techo de lo que tiene sentido ofrecer — más allá de esto no
- * se navega, se afina la búsqueda o se filtra.
+ * Cuántas coincidencias se conservan.
+ *
+ * La lista no se pagina: se recorre entera con las flechas del teclado. Esto es el techo de lo que
+ * tiene sentido ofrecer — ciento cincuenta filas ya no se navegan una por una, se afina la búsqueda
+ * o se filtra—. Cuando se corta, `buscarEnCatalogo` lo marca en `truncado` y la vista lo dice.
  */
 export const TOPE_RESULTADOS_LOCALES = 150
 

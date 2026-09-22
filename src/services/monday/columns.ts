@@ -339,6 +339,20 @@ export const CATEGORIA_CLIENTE_INDEX = 1
 export const ACTIVIDAD_COMPLETADA_INDEX = 4
 
 /**
+ * Índice del label "Manual" en "🤖Modo de Carga" (color_mm7eaytq) del board de Actividades. Los
+ * labels del board son `1 → Manual` y `2 → Automatico` (leídos del board el 22/09/2026).
+ *
+ * El tablero se llena por dos vías: la gestión que carga un vendedor y la que asienta sola una
+ * automatización. Sólo la primera responde a algo que pasó con el cliente, así que es la única que
+ * puede originar un presupuesto o una venta; una automática imputada a un documento diría que hubo
+ * una gestión comercial que nadie hizo.
+ *
+ * Se filtra por índice —no por el texto "Manual"—, igual que el resto de los status: es lo que
+ * aguanta que le reescriban la etiqueta al label.
+ */
+export const ACTIVIDAD_MODO_MANUAL_INDEX = 1
+
+/**
  * Índice de "Pendiente" en la misma columna. Es el estado de las actividades que la operación
  * REGISTRO DE ACTIVIDADES ofrece cerrar ("COMPLETAR ACTIVIDAD PENDIENTE"): lo que quedó agendado y
  * todavía no se resolvió. Por índice y no por label, por lo mismo que arriba.
@@ -455,6 +469,12 @@ export const COL = {
     vendedor: 'activity_owner',
     /** "✋Personas": a quién se le asienta la actividad (board de Personas, 18420688238). */
     persona: 'board_relation_mm588ws8',
+    /**
+     * "🤖Modo de Carga" (status): Manual / Automatico. Dice si la gestión la cargó una persona o
+     * una automatización del tablero. Sólo las MANUALES pueden originar un documento (ver
+     * `ACTIVIDAD_MODO_MANUAL_INDEX`).
+     */
+    modoCarga: 'color_mm7eaytq',
     /** "✋Contactos": con quiénes se hizo (board de Contactos, 18420688239). */
     contactos: 'board_relation_mm58wj7q',
     /**

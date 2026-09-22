@@ -723,18 +723,21 @@
   text-align: center;
   font-size: 13px;
 }
-/* Desplegable paginado: scrollea la lista, no la barra de navegación (queda siempre visible). */
-.results--paged {
+/* Desplegable navegable con el teclado: scrollea la lista, no el pie (queda siempre visible, y es
+   donde se lee en qué posición del resultado se está parado). */
+.results--nav {
   max-height: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.results--paged .results-list {
-  max-height: 200px;
+.results--nav .results-list {
+  max-height: 260px;
   overflow-y: auto;
 }
-.results-pager {
+/* Pie del desplegable: en qué posición del resultado se está parado y cómo se navega. Reemplaza a
+   los botones Anterior/Siguiente, que ya no existen: la lista es una sola y crece sola. */
+.results-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -743,31 +746,44 @@
   border-top: 1px solid var(--border);
   background: #f8f9fa;
 }
-.results-pager-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--primary-blue);
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.results-pager-btn:hover:not(:disabled) {
-  background: #f0f5ff;
-}
-.results-pager-btn:disabled {
-  color: var(--text-gray);
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.results-pager-info {
+.results-foot-info {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-gray);
+}
+.results-foot-ayuda {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-gray);
+  white-space: nowrap;
+}
+/* Teclas en el pie y en las pistas. Son una ayuda, no un control: no se pueden apretar. */
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-dark);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+/* Fila resaltada por el teclado. Es un AZUL claro y no el gris del hover a propósito: el hover es
+   "el mouse está por acá" y esto es "Enter carga esta"; tienen que distinguirse cuando el mouse
+   quedó quieto sobre otra fila mientras se navega con las flechas. La barra izquierda marca la
+   posición aunque la fila esté también en el gris de "ya seleccionado". */
+.ritem--activo,
+.ritem--activo:hover,
+.ritem--elegido.ritem--activo {
+  background: #eaf2ff;
+  box-shadow: inset 3px 0 0 var(--primary-blue);
 }
 /* Carga de línea: parte de la card de búsqueda, separada por un filete. */
 .carga {

@@ -23,9 +23,10 @@ import type {
   EstadoActividad,
   TipoActividad,
 } from '@/types'
-import { memoGlobal, registrarLimpieza } from './cache'
+import { memoGlobal, memoPorCliente, registrarLimpieza } from './cache'
 import {
   ACTIVIDAD_COMPLETADA_INDEX,
+  ACTIVIDAD_MODO_MANUAL_INDEX,
   ACTIVIDAD_PENDIENTE_INDEX,
   BOARDS,
   COL,
@@ -532,7 +533,14 @@ const TOPE_ACTIVIDADES = 100
  *
  * El filtro va del lado del SERVIDOR, no en memoria: una gestión que no puede elegirse no tiene por
  * qué viajar hasta el navegador para que después se la descarte, y con el tablero creciendo la
- * lista traería sobre todo actividades que sobran.
+ * lista traería sobre todo actividades que sobran. Son cuatro reglas, y todas tienen que dar:
+ *   · La PERSONA es el cliente de la operación. Lo que se está por emitir es de un cliente, y la
+ *     gestión que lo originó tiene que ser de ese mismo cliente: las de los demás no son opciones
+ *     que el usuario descartó, son ruido que le tapa la que busca.
+ *   · "🤖Modo de Carga" en MANUAL: se rechazan las que asienta sola una automatización del tablero.
+ *     Una gestión automática no responde a nada que haya pasado con el cliente, así que imputarla a
+ *     un documento diría que hubo un trabajo comercial que nadie hizo (ver
+ *     `ACTIVIDAD_MODO_MANUAL_INDEX`).
  *   · `is_empty` en las dos relaciones: sin presupuesto y sin venta asignados. Una actividad con
  *     presupuesto YA asignado no se ofrece de nuevo —ni para cargar OTRO presupuesto, ni para una
  *     VENTA DIRECTA, ni para una VENTA PROFORMA armada con una proforma DIRECTA—: quedó atada a la
@@ -542,24 +550,34 @@ const TOPE_ACTIVIDADES = 100
  *   · Estado "Completado": una Pendiente o Vencida todavía no tiene una gestión resuelta que
  *     imputar a un documento; recién al completarla tiene sentido ofrecerla acá.
  *
+ * El id del cliente va como NÚMERO en una variable, no interpolado como texto: una regla `any_of`
+ * sobre una `board_relation` filtra bien con `[123]` y devuelve VACÍO sin avisar con `["123"]`
+ * —verificado contra el board el 11/09/2026, ver `getActividadesPendientesImpl`—.
+ *
  * Es LA MISMA consulta para las tres etapas "Registrar Actividad" que existen (PRESUPUESTAR,
  * VENTA DIRECTA, VENTA PROFORMA con proforma DIRECTA — ver `VentaActividadView`): no hay una
- * variante por operación, así que esta regla rige para las tres por igual.
+ * variante por operación, así que estas reglas rigen para las tres por igual.
  *
  * Se ordenan de la más nueva a la más vieja: la gestión que originó lo que se está por emitir
  * suele ser de estos días.
  */
-async function getActividadesSinAsignarImpl(): Promise<ActividadListada[]> {
+async function getActividadesSinAsignarImpl(clienteId: string): Promise<ActividadListada[]> {
   if (!mondayHabilitado()) return []
+  /* Sin un id numérico no hay a quién filtrarle las actividades, y la consulta sin la regla las
+     traería TODAS: antes de eso, ninguna. */
+  const idNumerico = Number(clienteId)
+  if (!Number.isFinite(idNumerico)) return []
   const data = await mondayApi<{
     boards: { items_page: { items: MondayItemActividad[] } }[]
   }>(
-    `query {
+    `query ($cliente: CompareValue!) {
       boards(ids: [${BOARDS.actividades}]) {
         items_page(
           limit: ${TOPE_ACTIVIDADES}
           query_params: {
             rules: [
+              { column_id: "${COL.actividad.persona}", compare_value: $cliente, operator: any_of }
+              { column_id: "${COL.actividad.modoCarga}", compare_value: [${ACTIVIDAD_MODO_MANUAL_INDEX}], operator: any_of }
               { column_id: "${COL.actividad.presupuesto}", compare_value: [null], operator: is_empty }
               { column_id: "${COL.actividad.venta}", compare_value: [null], operator: is_empty }
               { column_id: "${COL.actividad.estado}", compare_value: [${ACTIVIDAD_COMPLETADA_INDEX}], operator: any_of }
@@ -579,39 +597,42 @@ async function getActividadesSinAsignarImpl(): Promise<ActividadListada[]> {
         }
       }
     }`,
+    { cliente: [idNumerico] },
   )
   const items = data.boards[0]?.items_page.items ?? []
   return (await listarActividades(items)).sort(masNuevaPrimero)
 }
 
-/* Caché de la consulta + un índice con lo YA resuelto.
+/* Caché de la consulta POR CLIENTE + un índice con lo YA resuelto, también por cliente.
 
    El índice existe para poder contestar SIN esperar: volver a la etapa con el stepper tiene que
    mostrar la tabla ya armada, y no un "cargando" de un frame contra un resultado que ya estaba.
+   Va por cliente y no en una variable suelta porque la consulta depende del cliente: guardado a
+   secas, volver atrás a cambiar de cliente mostraba de entrada las actividades del anterior.
    Se vacía junto con el resto de las cachés al cambiar de operación. */
-const actividadesMemo = memoGlobal(getActividadesSinAsignarImpl)
-let actividadesResueltas: ActividadListada[] | null = null
-registrarLimpieza(() => {
-  actividadesResueltas = null
-})
+const actividadesMemo = memoPorCliente(getActividadesSinAsignarImpl, (id) => id)
+const actividadesResueltas = new Map<string, ActividadListada[]>()
+registrarLimpieza(() => actividadesResueltas.clear())
 
 /**
- * Las actividades que TODAVÍA no se asociaron a ningún documento: sin presupuesto y sin venta
- * asignados. Son las que se ofrecen en la etapa "Registrar Actividad" de la venta y el presupuesto.
+ * Las actividades del CLIENTE que todavía no se asociaron a ningún documento: cargadas a mano, sin
+ * presupuesto y sin venta asignados, y completadas. Son las que se ofrecen en la etapa "Registrar
+ * Actividad" de la venta y el presupuesto.
  *
- * CACHEADA: se consulta UNA sola vez por operación, como el resto de las lecturas de la app. Ir y
- * volver a la etapa con el stepper no vuelve a pegarle a Monday —no cambia nada que pueda alterar
- * el resultado—, y la caché se vacía al cambiar de operación (`limpiarCachesConsultas`), que es
- * cuando una gestión cargada mientras tanto tiene que aparecer.
+ * CACHEADA POR CLIENTE: se consulta UNA sola vez por cliente y por operación, como el resto de las
+ * lecturas de la app. Ir y volver a la etapa con el stepper no vuelve a pegarle a Monday —no cambia
+ * nada que pueda alterar el resultado—, y la caché se vacía al cambiar de operación
+ * (`limpiarCachesConsultas`), que es cuando una gestión cargada mientras tanto tiene que aparecer.
  */
-export async function getActividadesSinAsignar(): Promise<ActividadListada[]> {
-  const actividades = await actividadesMemo()
-  actividadesResueltas = actividades
+export async function getActividadesSinAsignar(clienteId: string): Promise<ActividadListada[]> {
+  const actividades = await actividadesMemo(clienteId)
+  actividadesResueltas.set(clienteId, actividades)
   return actividades
 }
 
-/** Lo ya traído, sin esperar. `null` = todavía no se consultó en esta operación. */
-export const actividadesSinAsignarEnCache = (): ActividadListada[] | null => actividadesResueltas
+/** Lo ya traído para ESE cliente, sin esperar. `null` = todavía no se consultó en esta operación. */
+export const actividadesSinAsignarEnCache = (clienteId: string): ActividadListada[] | null =>
+  actividadesResueltas.get(clienteId) ?? null
 
 interface MondayItemActividad {
   id: string

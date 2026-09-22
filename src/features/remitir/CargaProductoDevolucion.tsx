@@ -62,6 +62,10 @@ export function CargaProductoDevolucion() {
              que se fue eligiendo: al agregarlo a la tabla se descarga y la marca se va sola. */
           codigoCargado={seleccionado?.codigo}
           variante="v2"
+          /* La ÚNICA pantalla que necesita "Ingreso Total" y "Egreso Total": el panel proyecta con
+             ellas cómo quedaría el stock si la devolución se registrara. En el resto de la app no
+             se piden, porque son mirrors y cuestan ~700 ms por lectura. */
+          modoStock="ingreso"
           onAviso={(a) => {
             setAvisoBusqueda(a)
             if (a) setRechazado(null)

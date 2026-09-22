@@ -301,12 +301,17 @@
 
 /* ===== Lo que se despliega =====
    Cada bloque entra deslizándose desde arriba, así se ve DE DÓNDE salió: es la respuesta que se
-   acaba de dar la que hace crecer el formulario. */
+   acaba de dar la que hace crecer el formulario —o la que abre la tabla de actividades—.
+
+   La animación vive SOLA, sin layout, porque la comparten dos bloques que por dentro no se parecen:
+   el formulario, que apila campos en columna, y el cuerpo de la tabla, que no. */
+.actividad-v2 .act-plegable {
+  animation: act-desplegar 0.28s ease;
+}
 .actividad-v2 .act-extra {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: act-desplegar 0.28s ease;
 }
 @keyframes act-desplegar {
   from {
@@ -321,7 +326,7 @@
 /* El plegado es la misma animación al revés: el bloque se va POR DONDE VINO. Sin esto, contestar
    "Pendiente" borraba media pantalla de un cuadro para el otro. Mientras se va no se toca —el
    contenido que muestra ya es una copia congelada—, y al terminar la vista lo desmonta. */
-.actividad-v2 .act-extra--saliendo {
+.actividad-v2 .act-plegable--saliendo {
   animation: act-plegar 0.26s ease forwards;
   pointer-events: none;
 }
@@ -339,9 +344,12 @@
    cero: el desmontaje escucha el fin de la animación, y sin animación ese aviso no llega nunca
    (queda el reloj de respaldo de la vista, pero el bloque tardaría de más en irse). */
 @media (prefers-reduced-motion: reduce) {
-  .actividad-v2 .act-extra,
-  .actividad-v2 .act-extra--saliendo {
+  .actividad-v2 .act-plegable,
+  .actividad-v2 .act-plegable--saliendo {
     animation-duration: 1ms;
+  }
+  .actividad-v2 .act-tabla-head {
+    transition: none;
   }
 }
 
@@ -503,17 +511,29 @@
    Mismo diseño que la tabla de anticipos: caja con cabecera propia, encabezados en gris sobre el
    fondo de la card, filas separadas por un filete y el dato principal en dos renglones (nombre
    arriba, código abajo). */
+/* Sin sombra: la caja se apoya en el borde y nada más. La sombra la levantaba de la página, y
+   plegada —una sola línea con la pregunta y el SÍ/NO— eso la hacía leer como un cartel flotando
+   sobre la etapa en vez de como el primer renglón de lo que se está por completar. */
 .actividad-v2 .act-tabla-caja {
   background: var(--a-surface);
   border: 1px solid var(--a-border);
   border-radius: var(--a-radius-lg);
-  box-shadow: var(--a-shadow);
   overflow: hidden;
 }
+/* Plegada, la caja es UNA línea: la cabecera no puede dejar su raya de separación colgando contra
+   el borde de abajo, que es lo único que quedaría debajo. Se DESVANECE en vez de desaparecer, y en
+   el mismo tiempo que tarda el cuerpo en irse: cortarla de un cuadro para el otro dejaba la raya
+   suelta arriba de una tabla que todavía se estaba plegando. */
+.actividad-v2 .act-tabla-caja--plegada .act-tabla-head {
+  border-bottom-color: transparent;
+}
 .actividad-v2 .act-tabla-head {
+  transition: border-bottom-color 0.26s ease;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  /* Centrado, y no por línea de base: la cabecera ya no es sólo texto —lleva el SÍ/NO—, y una caja
+     de 31px alineada por la base de su texto queda colgando contra el título. */
+  align-items: center;
   /* El reclamo (y el contador que lo reemplaza) van PEGADOS al título, no contra el borde opuesto
      de la card: a un metro de distancia se leía como un dato suelto y no como lo que le falta a
      esta tabla. */
@@ -550,6 +570,87 @@
   font-weight: 600;
   color: var(--a-red);
 }
+/* SÍ/NO de "¿Querés asociar actividades…?".
+
+   Va PEGADO a la pregunta, en el lugar donde el resto de las tablas pone el contador: es lo que se
+   contesta, y contra el borde opuesto se leía como un accesorio de la card. El reclamo en rojo
+   queda detrás, que es el orden en que se lee: la pregunta, la respuesta, y lo que falta por esa
+   respuesta. */
+.actividad-v2 .act-asoc-toggle {
+  display: flex;
+  border: 1px solid var(--a-border-fuerte);
+  border-radius: var(--a-radius-md);
+  overflow: hidden;
+  background: var(--a-surface);
+}
+.actividad-v2 .act-asoc-btn {
+  min-width: 56px;
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+  cursor: pointer;
+}
+.actividad-v2 .act-asoc-btn + .act-asoc-btn {
+  border-left: 1px solid var(--a-border-fuerte);
+}
+.actividad-v2 .act-asoc-btn:hover:not(.is-on) {
+  background: var(--a-panel);
+  color: var(--a-text-main);
+}
+/* La respuesta elegida en el azul de la app: es la misma marca de "esto es lo que está activo" que
+   la fila tildada de la tabla. */
+.actividad-v2 .act-asoc-btn.is-on {
+  background: var(--a-primary-soft);
+  color: var(--a-primary);
+}
+
+/* Pie del paginador: aparece recién a partir de la segunda página.
+
+   Mismo lugar y mismo peso que el resto de los pies de la app —filete arriba, fondo del panel y el
+   dato al medio entre los dos botones—, para que se lea como parte de la card y no como una barra
+   nueva. Vive acá, en el namespace de la etapa, y no sobre las clases globales del buscador de
+   productos: son otra card, con otro borde y otro radio. */
+.actividad-v2 .act-tabla-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--a-border);
+  background: var(--a-panel);
+}
+.actividad-v2 .act-tabla-pager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--a-primary);
+  background: var(--a-surface);
+  border: 1px solid var(--a-border-fuerte);
+  border-radius: var(--a-radius-md);
+  cursor: pointer;
+}
+.actividad-v2 .act-tabla-pager-btn:hover:not(:disabled) {
+  background: var(--a-primary-soft);
+}
+/* En la primera y en la última página el botón que no lleva a ningún lado se apaga, no se esconde:
+   si desapareciera, el que queda se correría de lugar en cada extremo. */
+.actividad-v2 .act-tabla-pager-btn:disabled {
+  color: var(--a-text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.actividad-v2 .act-tabla-pager-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-text-muted);
+}
+
 /* En anchos angostos la tabla scrollea sola: la página no se desborda. */
 .actividad-v2 .act-tabla-scroll {
   overflow-x: auto;
@@ -574,6 +675,17 @@
   vertical-align: middle;
 }
 .actividad-v2 .act-tabla tbody tr:last-child td {
+  border-bottom: 0;
+}
+/* Las filas que rellenan la última página hasta diez. `visibility` y no `display: none`: lo que se
+   busca es justamente que OCUPEN el lugar de la fila que falta —el alto de la tabla no puede
+   depender de cuántas gestiones cayeron en la página— sin que se vea ni se pueda tocar nada. */
+.actividad-v2 .act-tabla-fila--hueca {
+  visibility: hidden;
+}
+/* El filete de la ÚLTIMA fila con datos se apaga aunque detrás vengan huecos: si no, la última
+   página cerraba con una raya suelta y media caja en blanco debajo. */
+.actividad-v2 .act-tabla tbody tr:has(+ .act-tabla-fila--hueca) td {
   border-bottom: 0;
 }
 .actividad-v2 .act-tabla-chk {
