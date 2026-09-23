@@ -22,6 +22,19 @@ export const normBusqueda = (s: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
+/**
+ * La forma COMPACTA de un texto: sin acentos, en minúsculas y **sin espacios ni puntuación**.
+ *
+ * Existe porque nadie escribe los nombres como están cargados. Quien busca "The Automation Partner
+ * S.A TEST" tipea "theautomationpartner" de un tirón, y hasta que esto existió no encontraba nada:
+ * el buscador exigía reproducir cada espacio del nombre. Comparando las dos puntas compactadas, el
+ * espacio deja de ser un carácter que haya que adivinar.
+ *
+ *   "The Automation Partner S.A TEST" → "theautomationpartnersatest"
+ *   "theautomationpartner"            → "theautomationpartner"   (y ahí sí, uno empieza con el otro)
+ */
+export const compactar = (s: string): string => normBusqueda(s).replace(/[^a-z0-9]/g, '')
+
 export function levenshtein(a: string, b: string): number {
   const m = a.length
   const n = b.length

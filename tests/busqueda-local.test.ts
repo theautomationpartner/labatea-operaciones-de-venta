@@ -14,7 +14,7 @@
  * Se corre con `npm run test:busqueda-local`; vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { buscarEnPadron, indexarPadron, nombreSinCodigo } from '@/lib/busquedaClientes'
+import { buscarEnPadron, indexarPadron, nombreSinCodigo, puntuar } from '@/lib/busquedaClientes'
 import type { Cliente } from '@/types'
 
 /** Un cliente con lo mínimo que mira el buscador; el resto no interviene en el orden. */
@@ -176,4 +176,39 @@ assert.equal(
   'ni siquiera buscándolo por su código exacto',
 )
 
-console.log('búsqueda local: OK · el que más matchea va primero, y ningún proveedor se ofrece')
+/* ---------- 11) El espacio no es un carácter que haya que adivinar ----------
+   Nadie reproduce los espacios del nombre tal como quedó cargado en Monday: se tipea de un tirón.
+   Antes, "theautomationpartner" no encontraba NADA y había que escribir "the automation partner"
+   con los espacios exactos. */
+
+const conEspacios = indexarPadron([
+  cliente('e1', '7000', '7000 - The Automation Partner S.A TEST'),
+  cliente('e2', '4077', '4077 - RAYCLE S.A. (LA GLICINA)'),
+  cliente('e3', '693', '693 - MARTÍNEZ HNOS'),
+])
+
+const busca = (t: string) => buscarEnPadron(conEspacios, t).clientes.map((c) => c.codigo)
+
+assert.deepEqual(busca('theautomationpartner'), ['7000'], 'escrito de un tirón, lo encuentra igual')
+assert.deepEqual(busca('the automation partner'), ['7000'], 'y con los espacios, también')
+assert.deepEqual(busca('theautom'), ['7000'], 'basta con el principio, sin espacios')
+assert.deepEqual(busca('The  Automation'), ['7000'], 'los espacios de más tampoco molestan')
+
+/* La puntuación NO cambia por escribirlo de una forma u otra: las dos son la misma búsqueda, así
+   que tienen que dar el mismo orden. Si difirieran, la lista se reordenaría al borrar un espacio. */
+assert.equal(
+  puntuar(conEspacios[0], 'theautomationpartner'),
+  puntuar(conEspacios[0], 'the automation partner'),
+  'con y sin espacios puntúan igual',
+)
+
+/* La puntuación por prefijo de PALABRA sigue existiendo: es la que encuentra algo por el comienzo
+   de una palabra del medio, y compactada no existiría. */
+assert.deepEqual(busca('MARTINEZ'), ['693'], 'el apellido, que encabeza el nombre')
+assert.deepEqual(busca('HNOS'), ['693'], 'y una palabra del medio')
+
+/* Y compactar no puede convertir el buscador en un colador: lo que no está, sigue sin aparecer. */
+assert.equal(busca('partnerautomation').length, 0, 'el orden de las palabras sigue importando')
+assert.equal(busca('zzzqqq').length, 0, 'y lo que no existe no aparece')
+
+console.log('búsqueda local: OK · el que más matchea va primero, sin proveedores y sin exigir espacios')

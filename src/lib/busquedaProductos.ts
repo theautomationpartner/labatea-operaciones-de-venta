@@ -22,7 +22,7 @@
  * arrancar alguna palabra del nombre, en cualquier orden.
  */
 import type { CampoFiltro, Filtro, ProductoCache } from '@/types'
-import { normBusqueda, similitud, UMBRAL_SIMILITUD } from './similitud'
+import { compactar, normBusqueda, similitud, UMBRAL_SIMILITUD } from './similitud'
 
 /**
  * Cuántas coincidencias se conservan.
@@ -53,6 +53,12 @@ const PUNTOS = {
 export interface EntradaCatalogo {
   producto: ProductoCache
   nombre: string
+  /**
+   * El nombre sin espacios ni puntuación. Contra esto van las capas de "empieza con" y "contiene",
+   * para que el espacio deje de ser un carácter que el usuario tenga que adivinar: "acaroxultra"
+   * encuentra "ACAROX ULTRA 500 ML".
+   */
+  compacto: string
   palabras: string[]
   codigo: string
   /** Taxonomía en tokens normalizados. Una columna dropdown puede traer varias etiquetas. */
@@ -79,6 +85,7 @@ export function indexarCatalogo(productos: readonly ProductoCache[]): EntradaCat
     return {
       producto,
       nombre,
+      compacto: compactar(nombre),
       palabras: nombre.split(/[^a-z0-9]+/).filter(Boolean),
       codigo: normBusqueda(producto.codigo),
       rubro: etiquetas(producto.rubro),
@@ -123,6 +130,8 @@ export function pasaFiltros(entrada: EntradaCatalogo, filtros: readonly Filtro[]
 export function puntuar(entrada: EntradaCatalogo, termino: string): number {
   const t = normBusqueda(termino)
   if (!t) return 0
+  /* Lo escrito, también compactado: es con lo que se comparan las capas de nombre. */
+  const tCompacto = compactar(t)
 
   /* El código o es el que se buscó o no lo es. Va primero y exacto: ofrecer códigos "parecidos"
      invita a cargar el producto que no era, y de ahí sale un presupuesto mal hecho. */
@@ -132,7 +141,9 @@ export function puntuar(entrada: EntradaCatalogo, termino: string): number {
      Va sólo si lo escrito es numérico, para que buscar "ML" no liste códigos. */
   if (esCodigo(t) && entrada.codigo.startsWith(t)) return PUNTOS.codigoEmpieza
 
-  if (entrada.nombre.startsWith(t)) return PUNTOS.nombreEmpieza
+  /* Contra la forma COMPACTA, en las dos puntas: así "acarox ultra" y "acaroxultra" son la misma
+     búsqueda y no hay que reproducir los espacios del nombre tal como quedó cargado. */
+  if (entrada.compacto.startsWith(tCompacto)) return PUNTOS.nombreEmpieza
 
   const buscadas = t.split(/[^a-z0-9]+/).filter(Boolean)
   if (buscadas.length === 1) {
@@ -143,12 +154,14 @@ export function puntuar(entrada: EntradaCatalogo, termino: string): number {
     return PUNTOS.todasLasPalabras
   }
 
-  if (entrada.nombre.includes(t)) return PUNTOS.nombreContiene
+  if (entrada.compacto.includes(tCompacto)) return PUNTOS.nombreContiene
 
   /* Último recurso: el error de tipeo. Con menos de cuatro letras no se aplica —con dos o tres, la
      distancia de edición empareja medio catálogo y el resultado es ruido—. */
   if (t.length >= 4) {
-    const s = similitud(t, entrada.nombre)
+    /* También compactada: si no, cada espacio del nombre contaría como una edición y los nombres
+       largos del maestro nunca llegarían al umbral. */
+    const s = similitud(tCompacto, entrada.compacto)
     if (s >= UMBRAL_SIMILITUD) return Math.round(s * PUNTOS.difusaMax)
   }
   return 0

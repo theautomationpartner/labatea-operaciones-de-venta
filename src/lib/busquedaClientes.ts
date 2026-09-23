@@ -15,7 +15,7 @@
  * en esos dígitos.
  */
 import type { Cliente } from '@/types'
-import { normBusqueda, similitud, UMBRAL_SIMILITUD } from './similitud'
+import { compactar, normBusqueda, similitud, UMBRAL_SIMILITUD } from './similitud'
 
 /** Cuántos resultados se ofrecen. Más que esto no se lee: se afina la búsqueda. */
 export const TOPE_RESULTADOS_LOCALES = 30
@@ -52,6 +52,13 @@ const digitos = (s: string): string => s.replace(/\D/g, '')
 export interface EntradaPadron {
   cliente: Cliente
   nombre: string
+  /**
+   * El nombre sin espacios ni puntuación. Es contra esto que se comparan las capas de "empieza
+   * con" y "contiene", para que el espacio deje de ser un carácter que el usuario tenga que
+   * adivinar: quien escribe "theautomationpartner" de un tirón encuentra a "The Automation
+   * Partner S.A TEST".
+   */
+  compacto: string
   palabras: string[]
   codigo: string
   cuit: string
@@ -81,6 +88,7 @@ export function indexarPadron(personas: readonly Cliente[]): EntradaPadron[] {
     return {
       cliente,
       nombre,
+      compacto: compactar(nombre),
       palabras: nombre.split(/[^a-z0-9]+/).filter(Boolean),
       codigo: normBusqueda(cliente.codigo),
       cuit: digitos(cliente.cuit),
@@ -97,6 +105,8 @@ export function puntuar(entrada: EntradaPadron, termino: string): number {
   const t = normBusqueda(termino)
   if (!t) return 0
   const tDigitos = digitos(t)
+  /* Lo escrito, también compactado: es con lo que se comparan las capas de nombre. */
+  const tCompacto = compactar(t)
 
   /* Identificadores primero, y EXACTOS. Un código o un CUIT o es el que se buscó o no lo es:
      ofrecer parecidos ahí invita a elegir al cliente que no era, y de ahí sale una venta
@@ -108,14 +118,21 @@ export function puntuar(entrada: EntradaPadron, termino: string): number {
      Va sólo si lo escrito es numérico, para que buscar "SA" no liste códigos. */
   if (tDigitos === t && entrada.codigo.startsWith(t)) return PUNTOS.codigoEmpieza
 
-  if (entrada.nombre.startsWith(t)) return PUNTOS.nombreEmpieza
+  /* Las dos capas de nombre van contra la forma COMPACTA, en las dos puntas. Así "the autom",
+     "theautom" y "The  Autom" son la misma búsqueda, y el usuario no tiene que reproducir los
+     espacios del nombre tal como quedaron cargados en Monday. */
+  if (entrada.compacto.startsWith(tCompacto)) return PUNTOS.nombreEmpieza
+  /* Ésta SÍ necesita las palabras sueltas: es la que encuentra "MARTINEZ" dentro de
+     "693 - MARTINEZ HNOS" por el comienzo de una palabra del medio. Compactada no existiría. */
   if (entrada.palabras.some((p) => p.startsWith(t))) return PUNTOS.palabraEmpieza
-  if (entrada.nombre.includes(t)) return PUNTOS.nombreContiene
+  if (entrada.compacto.includes(tCompacto)) return PUNTOS.nombreContiene
 
   /* Último recurso: el error de tipeo. Con menos de cuatro letras no se aplica —con dos o tres,
      la distancia de edición empareja a media base y el resultado es ruido—. */
   if (t.length >= 4) {
-    const s = similitud(t, entrada.nombre)
+    /* También compactada: si no, cada espacio del nombre contaría como una edición y un nombre
+       largo nunca llegaría al umbral por más que se lo haya escrito bien. */
+    const s = similitud(tCompacto, entrada.compacto)
     if (s >= UMBRAL_SIMILITUD) return Math.round(s * PUNTOS.difusaMax)
   }
   return 0

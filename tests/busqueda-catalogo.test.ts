@@ -153,4 +153,26 @@ ok('matchea por la primera etiqueta', pasaFiltros(multi[0], [{ campo: 'Rubro', v
 ok('y también por la segunda', pasaFiltros(multi[0], [{ campo: 'Rubro', valor: 'SANIDAD' }]))
 ok('pero no por una que no tiene', !pasaFiltros(multi[0], [{ campo: 'Rubro', valor: 'LIMPIEZA' }]))
 
+
+console.log('\nCaso final · El espacio no es un carácter que haya que adivinar:')
+/* Los nombres del maestro están llenos de espacios ("ACAROX ULTRA 500 ML") y nadie los reproduce
+   al tipear rápido. Antes había que escribirlos con los espacios exactos. */
+ok('escrito de un tirón encuentra igual', nombres('acaroxultra').includes('ACAROX ULTRA 500 ML'))
+ok('y con los espacios, también', nombres('acarox ultra').includes('ACAROX ULTRA 500 ML'))
+ok('los espacios de más no molestan', nombres('acarox  ultra').includes('ACAROX ULTRA 500 ML'))
+ok(
+  'con y sin espacios dan el MISMO orden',
+  JSON.stringify(nombres('acaroxultra')) === JSON.stringify(nombres('acarox ultra')),
+)
+ok(
+  'y la puntuación tampoco cambia',
+  puntuar(entradaAcarox, 'acaroxultra') === puntuar(entradaAcarox, 'acarox ultra'),
+)
+/* La capa de TODAS LAS PALABRAS sigue siendo la que más trabaja: encuentra pedazos sueltos y en
+   desorden, que compactado no se podría. */
+ok('los pedazos sueltos siguen funcionando', nombres('acarox 500').includes('ACAROX ULTRA 500 ML'))
+ok('y en cualquier orden', nombres('500 acarox').includes('ACAROX ULTRA 500 ML'))
+/* Y compactar no convierte al buscador en un colador. */
+ok('lo que no existe sigue sin aparecer', nombres('zzzqqq').length === 0)
+
 console.log(`\n${asserts} verificaciones OK`)
