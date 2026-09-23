@@ -4,7 +4,7 @@
  * Esquema en `db/personas.sql`. Todo lo que toca la base vive acá para que el cron se ocupe sólo de
  * hablar con Monday y decidir qué entra, y el endpoint de lectura sólo de servir.
  */
-import { consultar } from './_db.js'
+import { VERSION_CACHE, consultar } from './_db.js'
 import type { PersonaCache } from './_padron.js'
 
 /** Cuántas filas entran en cada `insert` del upsert por lotes. */
@@ -214,14 +214,14 @@ export async function estadoPadron(): Promise<EstadoPadron> {
     proveedores: string
     ambas: string
     sin_categoria: string
-    version: Date | null
+    version: string | null
   }>(
     `select count(*)                                                     as filas,
             count(*) filter (where categorias @> '{cliente}')            as clientes,
             count(*) filter (where categorias @> '{proveedor}')          as proveedores,
             count(*) filter (where categorias @> '{cliente,proveedor}')  as ambas,
             count(*) filter (where cardinality(categorias) = 0)          as sin_categoria,
-            max(actualizado_en)                                          as version
+            ${VERSION_CACHE}                                              as version
        from personas_cache`,
   )
 
@@ -239,7 +239,7 @@ export async function estadoPadron(): Promise<EstadoPadron> {
     ambas: n(conteos?.ambas),
     sinCategoria: n(conteos?.sin_categoria),
     entregaALaApp: n(conteos?.clientes),
-    version: conteos?.version?.toISOString() ?? null,
+    version: conteos?.version ?? null,
     muestra,
     sync: await leerEstado(),
   }
@@ -274,15 +274,13 @@ export async function leerDelta(
      se mueve si los datos no cambian, así que ningún barrido posterior la rescata—. Leída antes, el
      peor caso es repetir una fila en el pedido siguiente, que es inofensivo.
 
-     Se formatea en JS y no con `to_char`: el driver devuelve un `Date` y `toISOString()` da UTC sin
-     ambigüedad, mientras que una máscara de `to_char` hay que leerla dos veces para saber si la
-     "Z" que emite es de verdad UTC o un literal que quedó pegado. Lo que viaja al consumidor es la
-     clave con la que después pide el delta: no es lugar para adivinar husos.
+     Sale como TEXTO y con la precisión completa (ver `VERSION_CACHE`): leerla como `Date` pierde
+     los microsegundos y deja a la fila más nueva afuera de su propia versión.
 
      La versión sale de TODA la tabla y no sólo de las filas del delta: con el delta vacío igual hay
      que poder devolver la versión vigente, o se pediría de nuevo desde la misma marca para siempre. */
-  const marca = await consultar<{ version: Date | null }>(
-    `select max(actualizado_en) as version from personas_cache`,
+  const marca = await consultar<{ version: string | null }>(
+    `select ${VERSION_CACHE} as version from personas_cache`,
   )
   const version = marca[0]?.version ?? null
 
@@ -320,7 +318,7 @@ export async function leerDelta(
     : []
 
   return {
-    version: version?.toISOString() ?? null,
+    version,
     personas: personas.map((p) => p.datos),
     bajas: bajas.map((b) => b.item_id),
   }

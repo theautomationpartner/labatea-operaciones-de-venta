@@ -83,6 +83,7 @@
     "test:envio-factura": "esbuild tests/envio-factura-medio.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/envio-factura.test.mjs && node node_modules/.cache/envio-factura.test.mjs",
     "test:boton-continuar": "esbuild tests/boton-continuar.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/boton-continuar.test.mjs && node node_modules/.cache/boton-continuar.test.mjs",
     "test:actividad-persona": "esbuild tests/actividad-persona.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/actividad-persona.test.mjs && node node_modules/.cache/actividad-persona.test.mjs",
+    "test:version-cache": "esbuild tests/version-cache.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/version-cache.test.mjs && node node_modules/.cache/version-cache.test.mjs",
     "test:consultas-servidor": "esbuild tests/consultas-servidor.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/consultas-servidor.test.mjs && node node_modules/.cache/consultas-servidor.test.mjs",
     "test:personas-columnas": "esbuild tests/personas-columnas.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN='\"x\"' --outfile=node_modules/.cache/personas-columnas.test.mjs && node node_modules/.cache/personas-columnas.test.mjs",
     "test:busqueda-local": "esbuild tests/busqueda-local.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/busqueda-local.test.mjs && node node_modules/.cache/busqueda-local.test.mjs",
@@ -105,6 +106,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.23.1",

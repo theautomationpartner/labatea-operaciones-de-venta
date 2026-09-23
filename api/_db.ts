@@ -86,6 +86,27 @@ export function conSslExplicito(url: string): {
 }
 
 /**
+ * La VERSIÓN de un caché: el `actualizado_en` más nuevo de la tabla, como texto y con la precisión
+ * completa. Se embebe en el `select` de cada caché (`select ${VERSION_CACHE} as version from …`).
+ *
+ * Por qué no se lee como fecha, que sería lo obvio: `timestamptz` guarda MICROSEGUNDOS y el `Date`
+ * de JavaScript sólo llega al milisegundo. Al leer el máximo como `Date` y volver a usarlo para
+ * acotar las filas (`actualizado_en <= version`), la fila que PRODUJO ese máximo queda afuera de su
+ * propia versión por los microsegundos que se perdieron al redondear.
+ *
+ * Y no es un caso de laboratorio: la fila con el `actualizado_en` más alto es, por definición, la
+ * última que se modificó —justo la que alguien acaba de tocar en Monday y sale a buscar—. Medido
+ * contra la base real: `10:56:29.463732` volvía como `10:56:29.463`, y ese cliente no llegaba nunca
+ * al buscador. Ninguna corrida posterior lo rescataba, porque `actualizado_en` no se mueve si los
+ * datos no cambian.
+ *
+ * `to_json` de un `timestamptz` emite ISO 8601 con microsegundos Y con el huso explícito
+ * ("2026-09-23T07:56:29.463732-03:00"), así que vuelve a `::timestamptz` sin ambigüedad y sin
+ * depender del huso del servidor. El `#>>'{}'` es lo que lo saca del JSON como texto pelado.
+ */
+export const VERSION_CACHE = `to_json(max(actualizado_en))#>>'{}'`
+
+/**
  * Una consulta parametrizada. Los valores van SIEMPRE por `params` ($1, $2, …), nunca interpolados
  * en el texto: es lo que hace imposible una inyección SQL, y acá entran datos que vienen del token
  * de un usuario.

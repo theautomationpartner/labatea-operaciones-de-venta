@@ -10,7 +10,7 @@
  * Un helper con un booleano para esa diferencia esconde justo lo que hay que poder leer de un
  * vistazo cuando algo no se sincroniza.
  */
-import { consultar } from './_db.js'
+import { VERSION_CACHE, consultar } from './_db.js'
 import type { ProductoCache } from './_productos.js'
 
 /** Cuántas filas entran en cada `insert` del upsert por lotes. */
@@ -192,19 +192,37 @@ export interface Delta {
  * vacíos y el pedido se resuelve en nada.
  */
 export async function leerDelta(desde: string | null): Promise<Delta> {
-  const productos = await consultar<{ datos: ProductoCache }>(
-    desde
-      ? `select datos from productos_cache where actualizado_en > $1::timestamptz order by nombre`
-      : `select datos from productos_cache order by nombre`,
-    desde ? [desde] : [],
-  )
+  /* La versión se lee ANTES que las filas, y las filas se acotan a ella. El orden importa: leída
+     después, una escritura del cron colada entre las dos consultas quedaría fuera del delta pero
+     dentro de la versión, y el navegador no volvería a pedir esa fila NUNCA —`actualizado_en` no se
+     mueve si los datos no cambian, así que ningún barrido posterior la rescata—. Leída antes, el
+     peor caso es repetir una fila en el pedido siguiente, que es inofensivo.
 
-  /* La versión sale de TODA la tabla, no de las filas del delta: con el delta vacío igual hay que
-     poder devolver la versión vigente, o el navegador pediría de nuevo desde la misma marca para
-     siempre. */
+     Sale como TEXTO y con la precisión completa (ver `VERSION_CACHE`): leerla como `Date` pierde
+     los microsegundos y deja al producto más nuevo afuera de su propia versión.
+
+     La versión sale de TODA la tabla y no sólo de las filas del delta: con el delta vacío igual hay
+     que poder devolver la versión vigente, o se pediría de nuevo desde la misma marca para siempre. */
   const marca = await consultar<{ version: string | null }>(
-    `select to_char(max(actualizado_en) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.USZ') as version
-       from productos_cache`,
+    `select ${VERSION_CACHE} as version from productos_cache`,
+  )
+  const version = marca[0]?.version ?? null
+
+  const condiciones: string[] = []
+  const params: unknown[] = []
+  if (desde) {
+    params.push(desde)
+    condiciones.push(`actualizado_en > $${params.length}::timestamptz`)
+  }
+  if (version) {
+    params.push(version)
+    condiciones.push(`actualizado_en <= $${params.length}::timestamptz`)
+  }
+  const donde = condiciones.length ? `where ${condiciones.join(' and ')}` : ''
+
+  const productos = await consultar<{ datos: ProductoCache }>(
+    `select datos from productos_cache ${donde} order by nombre`,
+    params,
   )
 
   const bajas = desde
@@ -215,7 +233,7 @@ export async function leerDelta(desde: string | null): Promise<Delta> {
     : []
 
   return {
-    version: marca[0]?.version ?? null,
+    version,
     productos: productos.map((p) => p.datos),
     bajas: bajas.map((b) => b.item_id),
   }
