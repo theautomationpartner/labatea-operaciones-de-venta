@@ -11,6 +11,18 @@ export type BusquedaEstado = 'idle' | 'buscando' | 'no-encontrado' | 'error'
 interface BuscarClienteProps {
   estado: BusquedaEstado
   onEstado: (estado: BusquedaEstado) => void
+  /**
+   * ¿Esta operación decide PLATA con el cliente?
+   *
+   * En `true` (lo normal) al elegirlo se lo relee de Monday, porque de ese objeto salen el crédito
+   * disponible y la situación, y el padrón tiene hasta 5 minutos de antigüedad.
+   *
+   * En `false` no se relee nada y el cliente se carga en el acto, con lo que ya está en el padrón.
+   * Lo usa REGISTRAR ACTIVIDAD: ahí no se vende ni se factura, la ficha muestra código, nombre,
+   * dirección y estado —todo eso ya viene en el padrón— y una consulta a Monday sólo agregaría
+   * medio segundo de espera y un modo de fallar, a cambio de nada.
+   */
+  conCredito?: boolean
 }
 
 /**
@@ -27,6 +39,10 @@ interface BuscarClienteProps {
  * antigüedad y de ese objeto salen el crédito disponible y la situación del cliente, que es con lo
  * que se decide si una venta puede seguir: eso no se sirve de un caché.
  *
+ * Con `conCredito={false}` esa relectura no ocurre y el cliente se carga en el acto. Es para las
+ * operaciones que no deciden plata —REGISTRAR ACTIVIDAD— donde el dato del padrón alcanza y la
+ * consulta sólo agregaría espera.
+ *
  * ── Teclado ──
  * Las flechas recorren los resultados y Enter carga el resaltado; la primera fila —la que más
  * matchea— arranca marcada, así que Enter siempre confirma algo que se está viendo. Enter sale a
@@ -34,7 +50,7 @@ interface BuscarClienteProps {
  * la red. No hay ningún cartel que lo explique, a propósito: es el gesto que todo el mundo prueba
  * primero en un buscador con lista.
  */
-export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
+export function BuscarCliente({ estado, onEstado, conCredito = true }: BuscarClienteProps) {
   const dispatch = useDispatch()
   // El campo arranca (y queda) vacío: no muestra el cliente elegido, para encadenar búsquedas.
   const [termino, setTermino] = useState('')
@@ -132,6 +148,17 @@ export function BuscarCliente({ estado, onEstado }: BuscarClienteProps) {
    */
   const elegir = async (c: Cliente) => {
     setAbierto(false)
+
+    /* Sin plata de por medio no hay nada que releer: el padrón ya trae código, nombre, dirección y
+       estado, que es todo lo que se muestra. Se carga en el acto, sin pasar por 'buscando', así
+       que la ficha aparece sin el parpadeo del skeleton. */
+    if (!conCredito) {
+      limpiar()
+      dispatch({ type: 'setCliente', cliente: c })
+      onEstado('idle')
+      return
+    }
+
     onEstado('buscando')
     try {
       const fresco = await refrescarCliente(c.id)

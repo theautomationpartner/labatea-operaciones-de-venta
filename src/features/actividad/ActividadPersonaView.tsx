@@ -33,9 +33,15 @@ import { TablaContactosElegidos } from './TablaContactosElegidos'
  * cuenta es lo confirmado. Por eso se vacían al cambiar de Persona —los contactos son otros— y por
  * eso, si quedan tildados sin confirmar, "Continuar" lo dice en vez de perderlos en silencio.
  *
- * El buscador es el MISMO del resto de la app (`BuscarCliente`): por código, nombre o CUIT, con
- * las mismas reglas de coincidencia. Se reutiliza tal cual —no se clona— para que un cambio en
+ * El buscador es el MISMO del resto de la app (`BuscarCliente`): live search sobre el padrón
+ * cacheado mientras se escribe, por código, nombre o CUIT, con las mismas reglas de coincidencia y
+ * la misma navegación con las flechas. Se reutiliza tal cual —no se clona— para que un cambio en
  * cómo se busca una Persona valga en todas las operaciones a la vez.
+ *
+ * Con una diferencia, y es `conCredito={false}`: acá NO se relee la Persona de Monday al elegirla.
+ * Esa relectura existe para traer el crédito disponible fresco antes de decidir una venta, y esta
+ * etapa no vende nada —la ficha muestra código, nombre, dirección y estado, todo lo cual ya viene
+ * en el padrón—. Los contactos, en cambio, SÍ se piden a Monday: no están cacheados.
  */
 export function ActividadPersonaView() {
   const { operacion, tipoVenta, tipoEntrega, remito, actividad, cliente, vendedor } = useApp()
@@ -223,7 +229,16 @@ export function ActividadPersonaView() {
           <div className="cliente-v2 act-buscador">
             <div className="toolbar-wrapper">
               <div className="card unified-toolbar">
-                <BuscarCliente estado={estadoBusqueda} onEstado={setEstadoBusqueda} />
+                {/* `conCredito={false}`: acá no se vende nada. Sin eso, elegir una Persona disparaba una
+                    consulta a Monday para traer su cuenta corriente —límite, saldo, crédito
+                    disponible— que esta etapa no muestra ni usa. Media espera de regalo, y un modo
+                    de fallar que podía frenar la carga de una actividad por un dato que a nadie le
+                    importa acá. */}
+                <BuscarCliente
+                  estado={estadoBusqueda}
+                  onEstado={setEstadoBusqueda}
+                  conCredito={false}
+                />
               </div>
             </div>
           </div>
