@@ -116,9 +116,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const inicio = new Date()
   try {
     const estado = await leerEstado()
-    /* Sin marca previa no hay "desde dónde": la primera corrida de la vida es completa, aunque la
-       haya disparado el cron de 5 minutos. */
-    const completo = forzado === 'completo' || programa === CRON_COMPLETO || !estado.marca
+    const completo = decidirCompleto({ forzado, programa, marca: estado.marca, error: estado.error })
 
     const resultado = completo
       ? await barridoCompleto(inicio, arranque)
@@ -151,6 +149,37 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
        que vence. Por eso va en `finally` y no al final del `try`. */
     await soltarLock().catch(() => {})
   }
+}
+
+/**
+ * ¿Esta corrida barre el tablero entero o sólo lo modificado?
+ *
+ * Cuatro motivos para barrer entero, y el último es el que más importa:
+ *
+ * · `?modo=completo`, que es el disparo a mano.
+ * · La expresión del cron diario.
+ * · No hay marca de agua: la primera corrida de la vida no tiene "desde dónde".
+ * · **La corrida anterior falló.** Sin esto, un barrido completo que muere a mitad deja la tabla
+ *   CARGADA A MEDIAS y las incrementales no la reparan nunca: siguen desde la marca vieja —que no
+ *   avanzó— y sólo traen lo que cambió, así que las páginas que faltaron siguen faltando hasta el
+ *   barrido del día siguiente. Pasó: el padrón quedó incompleto casi un día y en pantalla se veía
+ *   como clientes que "no existen".
+ *
+ * Es pura y se exporta para poder testearla: es una decisión de cuatro ramas de la que depende que
+ * el padrón se recupere solo o se quede roto.
+ */
+export function decidirCompleto(estado: {
+  forzado: string | null
+  programa: string
+  marca: Date | null
+  error: string | null
+}): boolean {
+  return (
+    estado.forzado === 'completo' ||
+    estado.programa === CRON_COMPLETO ||
+    !estado.marca ||
+    !!estado.error
+  )
 }
 
 interface Resultado {

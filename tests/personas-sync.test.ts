@@ -19,6 +19,7 @@
  */
 import assert from 'node:assert/strict'
 import { COL_CLIENTE, clasificarPagina, type ItemMonday } from '../api/_padron'
+import { decidirCompleto } from '../api/cron/personas'
 
 const iso = (ms: number): string => new Date(ms).toISOString()
 
@@ -190,5 +191,30 @@ const MINUTO = 60_000
   assert.equal(r.entran.length, 1, 'y se procesa igual')
   assert.equal(r.masNueva, null, 'pero no aporta marca')
 }
+
+/* ---------- 7) Cuándo se barre entero ----------
+   La rama que importa es la última: si la corrida anterior falló, la siguiente NO puede ser
+   incremental. Un barrido completo que muere a mitad deja la tabla cargada a medias, y las
+   incrementales no la reparan —siguen desde la marca vieja, que no avanzó, y sólo traen lo que
+   cambió—. Sin esta regla el padrón queda roto hasta el barrido del día siguiente, que es
+   exactamente lo que pasó en producción. */
+
+const base = { forzado: null, programa: '', marca: new Date(AHORA), error: null }
+
+assert.equal(decidirCompleto(base), false, 'en régimen, la corrida de 5 minutos es incremental')
+assert.equal(
+  decidirCompleto({ ...base, error: 'Monday: cupo por minuto agotado' }),
+  true,
+  'si la corrida anterior FALLÓ, la siguiente barre entero: es lo único que repara una tabla ' +
+    'cargada a medias',
+)
+assert.equal(decidirCompleto({ ...base, marca: null }), true, 'la primera corrida de la vida barre entero')
+assert.equal(decidirCompleto({ ...base, forzado: 'completo' }), true, '?modo=completo fuerza el barrido')
+assert.equal(decidirCompleto({ ...base, programa: '0 6 * * *' }), true, 'y el cron diario también')
+assert.equal(
+  decidirCompleto({ ...base, programa: '*/5 * * * *' }),
+  false,
+  'pero el de 5 minutos, con todo sano, no: barrer entero cada 5 min son ~5,4 h/día de función',
+)
 
 console.log('personas/sync: OK · entran clientes y proveedores, lo demás se da de baja y la marca avanza')
