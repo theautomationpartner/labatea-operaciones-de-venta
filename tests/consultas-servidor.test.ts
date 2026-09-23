@@ -74,4 +74,28 @@ const padron = readFileSync('src/services/monday/padronPersonas.ts', 'utf8')
 ok('si el servidor reporta un error, se avisa en la consola', padron.includes('[padrón] el servidor no pudo actualizarlo'))
 ok('y si el padrón llega vacío, también', padron.includes('[padrón] llegó VACÍO'))
 
+/* La trampa que dejaba el buscador muerto para siempre: un espejo VACÍO restaurado CON su versión
+   convierte el pedido siguiente en un delta, el servidor contesta —con razón— que no cambió nada,
+   y recargar no arregla nada porque cada recarga repite el mismo delta. */
+ok(
+  'un espejo vacío no se restaura con su versión',
+  padron.includes('if (guardado.clientes.length === 0) return'),
+)
+const restaura = padron.slice(padron.indexOf('function desdeSesion'), padron.indexOf('function guardarEnSesion'))
+ok(
+  'y el corte va ANTES de tomar la versión guardada',
+  restaura.indexOf('guardado.clientes.length === 0') < restaura.indexOf('version = guardado.version'),
+)
+
+console.log('\nCaso 4 · Se puede ver el estado del padrón sin abrir la base:')
+const cron = readFileSync('api/cron/personas.ts', 'utf8')
+ok('existe `?modo=estado`', cron.includes("forzado === 'estado'"))
+/* De SÓLO LECTURA: si tomara el lock, consultar el estado bloquearía la corrida siguiente, y si
+   barriera, "mirar cómo está" cambiaría lo que se está mirando. */
+const antesDelLock = cron.slice(0, cron.indexOf('await tomarLock()'))
+ok('y se responde ANTES de tomar el lock', antesDelLock.includes("forzado === 'estado'"))
+const db = readFileSync('api/_padronDb.ts', 'utf8')
+ok('informa cuántas filas entrega la app', db.includes('entregaALaApp'))
+ok('y cuántas quedaron sin categoría, que es el fallo mudo', db.includes('sinCategoria'))
+
 console.log(`\n${asserts} verificaciones OK · las consultas del servidor piden lo que existe y aguantan el cupo`)

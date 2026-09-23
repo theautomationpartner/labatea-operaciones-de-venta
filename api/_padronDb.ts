@@ -186,6 +186,65 @@ export async function anularBajas(ids: string[]): Promise<void> {
   await consultar(`delete from personas_bajas where item_id = any($1::text[])`, [ids])
 }
 
+/**
+ * Una foto de lo que hay en la tabla, para diagnosticar desde afuera.
+ *
+ * Existe porque el padrón puede fallar de formas que en pantalla se ven todas iguales —un buscador
+ * que no encuentra nada—: la tabla vacía, la tabla a medias, o llena pero con las categorías sin
+ * guardar (y ahí el filtro por categoría no devuelve a nadie). Distinguirlas leyendo el código es
+ * adivinar; con esto se sabe en un comando.
+ */
+export interface EstadoPadron {
+  filas: number
+  clientes: number
+  proveedores: number
+  ambas: number
+  sinCategoria: number
+  /** Lo que devolvería `/api/personas` a la app de ventas. Es EL número que importa. */
+  entregaALaApp: number
+  version: string | null
+  muestra: { item_id: string; nombre: string; categorias: string[] }[]
+  sync: EstadoSync
+}
+
+export async function estadoPadron(): Promise<EstadoPadron> {
+  const [conteos] = await consultar<{
+    filas: string
+    clientes: string
+    proveedores: string
+    ambas: string
+    sin_categoria: string
+    version: Date | null
+  }>(
+    `select count(*)                                                     as filas,
+            count(*) filter (where categorias @> '{cliente}')            as clientes,
+            count(*) filter (where categorias @> '{proveedor}')          as proveedores,
+            count(*) filter (where categorias @> '{cliente,proveedor}')  as ambas,
+            count(*) filter (where cardinality(categorias) = 0)          as sin_categoria,
+            max(actualizado_en)                                          as version
+       from personas_cache`,
+  )
+
+  /* Tres filas de muestra CON sus categorías: si vinieran vacías, se ve acá y no hay que deducirlo
+     de un contador en cero. */
+  const muestra = await consultar<{ item_id: string; nombre: string; categorias: string[] }>(
+    `select item_id, nombre, categorias from personas_cache order by nombre limit 3`,
+  )
+
+  const n = (v: string | undefined): number => Number(v ?? 0)
+  return {
+    filas: n(conteos?.filas),
+    clientes: n(conteos?.clientes),
+    proveedores: n(conteos?.proveedores),
+    ambas: n(conteos?.ambas),
+    sinCategoria: n(conteos?.sin_categoria),
+    entregaALaApp: n(conteos?.clientes),
+    version: conteos?.version?.toISOString() ?? null,
+    muestra,
+    sync: await leerEstado(),
+  }
+}
+
 export interface Delta {
   /** Identidad del snapshot y cursor del próximo pedido: el `actualizado_en` más nuevo. */
   version: string | null

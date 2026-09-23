@@ -197,6 +197,16 @@ function desdeSesion(): void {
     if (!crudo) return
     const guardado = JSON.parse(crudo) as { version: string | null; clientes: Cliente[] }
     if (!Array.isArray(guardado.clientes)) return
+
+    /* Un espejo VACÍO no se restaura con su versión, y ésta es la trampa que evita: con el padrón
+       en cero y una versión guardada, el pedido siguiente es un delta —"dame lo que cambió desde
+       entonces"— y el servidor contesta, correctamente, que no cambió nada. El padrón se queda
+       vacío PARA SIEMPRE: recargar no lo arregla, porque cada recarga vuelve a pedir el mismo
+       delta. Pasó de verdad, mientras la tabla del servidor estuvo a medias.
+       Sin versión, el pedido es por el padrón entero, que es lo que corresponde cuando no se tiene
+       nada. */
+    if (guardado.clientes.length === 0) return
+
     porId = new Map(guardado.clientes.map((c) => [c.id, c]))
     version = guardado.version
     invalidarIndice()

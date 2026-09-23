@@ -53,6 +53,7 @@ import {
   cerrarCorrida,
   darDeBaja,
   guardarPersonas,
+  estadoPadron,
   leerEstado,
   soltarLock,
   tomarLock,
@@ -104,6 +105,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const url = new URL(req.url ?? '/', 'http://localhost')
   const forzado = url.searchParams.get('modo')
+
+  /* `?modo=estado` no barre nada: cuenta lo que hay y lo devuelve. Es de sólo lectura, no toma el
+     lock y no toca Monday, así que se puede correr en cualquier momento —incluso con una corrida
+     en curso— para ver si el padrón está sano sin abrir la base. */
+  if (forzado === 'estado') {
+    return responder(res, 200, await estadoPadron())
+  }
   const programa = cabecera(req, 'x-vercel-cron-schedule')
 
   if (!(await tomarLock())) {
