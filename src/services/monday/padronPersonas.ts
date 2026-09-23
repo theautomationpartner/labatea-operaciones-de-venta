@@ -158,6 +158,22 @@ function aplicar(data: RespuestaPadron): void {
   ultimaRevalidacion = Date.now()
   invalidarIndice()
   guardarEnSesion()
+
+  /* Que un padrón roto NO se vea como un buscador que simplemente no encuentra nada.
+     Pasó: una corrida del cron murió a mitad del barrido, la tabla quedó cargada a medias, y en
+     pantalla eso se veía igual que "ese cliente no existe" —sin un solo mensaje—. El servidor ya
+     guardaba el motivo; nadie lo miraba. */
+  if (errorServidor) {
+    console.warn(
+      `[padrón] el servidor no pudo actualizarlo: ${errorServidor}. Los resultados pueden estar ` +
+        'incompletos; usá el botón Buscar, que consulta Monday directo.',
+    )
+  } else if (porId.size === 0) {
+    console.warn(
+      '[padrón] llegó VACÍO. El live search no va a encontrar nada hasta que el cron ' +
+        '(/api/cron/personas) complete un barrido; el botón Buscar sigue funcionando.',
+    )
+  }
 }
 
 /**

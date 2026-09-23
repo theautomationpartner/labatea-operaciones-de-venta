@@ -18,6 +18,18 @@
  * encontrar, casi siempre, cero cambios —el padrón se toca un puñado de veces por día—. Pedirle a
  * Monday sólo lo modificado deja el mismo frescor por ~2 s por corrida.
  *
+ * ── El cupo por campo de Monday ──
+ * Las consultas van por `mondayServidorConEspera`, no por `mondayServidor` pelado, y no es una
+ * precaución de manual: aparte del límite general de la cuenta, Monday tiene un cupo POR CAMPO y
+ * POR MINUTO, y el que se agota primero es `display_value` —el único que devuelve el valor
+ * calculado de una fórmula o una mirror—. Cada persona trae su Cta Cte anidada con TRES mirrors
+ * (total ventas, total cobros y límite), así que el barrido completo las pide 3906 veces.
+ *
+ * Mientras el padrón fue sólo de clientes eran 27 páginas y pasaba raspando. Con proveedores son
+ * 40, y ahí el cupo se agota a mitad del barrido: sin reintento, la corrida muere y la tabla queda
+ * CARGADA A MEDIAS —con parte del padrón adentro y parte afuera—, que es mucho peor que no tener
+ * caché: el buscador no encuentra clientes que existen y nada en pantalla dice por qué.
+ *
  * ── Idempotencia ──
  * Vercel documenta que la entrega es "best effort": puede saltearse una corrida y puede repetir
  * otra. Todo acá es reconciliación, no incrementos: correrlo dos veces con los mismos datos deja
@@ -25,7 +37,7 @@
  * una corrida se recupera sola en la siguiente, porque la marca de agua no avanzó.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { mondayServidor } from '../_mondayApi.js'
+import { mondayServidorConEspera } from '../_mondayApi.js'
 import {
   BOARD_PERSONAS,
   CAMPOS_PERSONA,
@@ -260,7 +272,7 @@ async function barridoIncremental(
  */
 async function traerPagina(cursor: string | null, operables: boolean): Promise<PaginaItems> {
   if (cursor) {
-    const data = await mondayServidor<{ next_items_page: PaginaItems }>(
+    const data = await mondayServidorConEspera<{ next_items_page: PaginaItems }>(
       `query { next_items_page(limit: ${PAGINA}, cursor: ${JSON.stringify(cursor)}) {
          cursor items { ${CAMPOS_PERSONA} }
        } }`,
@@ -273,7 +285,7 @@ async function traerPagina(cursor: string | null, operables: boolean): Promise<P
     ? `query_params: {rules: [${REGLAS_OPERABLE}]}`
     : `query_params: {order_by: [{column_id: "__last_updated__", direction: desc}]}`
 
-  const data = await mondayServidor<{ boards: { items_page: PaginaItems }[] }>(
+  const data = await mondayServidorConEspera<{ boards: { items_page: PaginaItems }[] }>(
     `query { boards(ids: [${BOARD_PERSONAS}]) {
        items_page(limit: ${PAGINA}, ${params}) {
          cursor items { ${CAMPOS_PERSONA} }

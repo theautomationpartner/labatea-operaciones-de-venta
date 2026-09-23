@@ -23,8 +23,8 @@ import { mondayServidor } from './_mondayApi.js'
 interface UsuarioMonday {
   id: string
   name: string
-  /** `admin` = admin de la CUENTA, que manda aunque no esté en el equipo de administradores. */
-  kind?: string
+  /** Admin de la CUENTA, que manda aunque no esté en el equipo de administradores. */
+  is_admin?: boolean | null
   teams?: { id: string }[]
 }
 
@@ -40,14 +40,27 @@ interface RespuestaUsuarios {
  * de esa persona. Sin esto, la app dejaba que un admin aplicara un descuento del 20% a nombre de
  * un vendedor que sólo puede llegar al 5%.
  *
- * `kind` distingue al admin de la cuenta, que manda aunque no esté en el equipo de administradores.
+ * `is_admin` distingue al admin de la cuenta, que manda aunque no esté en el equipo de
+ * administradores.
+ *
+ * ── OJO con qué campos se piden acá ──
+ * La app fija `API-Version: 2024-10` (ver `_mondayApi.ts`), y en esa versión `User.kind` NO EXISTE.
+ * Esta consulta lo pedía, y Monday no ignora un campo desconocido: rechaza el DOCUMENTO ENTERO con
+ * "Cannot query field \"kind\" on type \"User\"". O sea que no fallaba el admin: fallaba la lectura
+ * de equipos completa, el `catch` de abajo dejaba `rolesLeidos: false` y TODO EL MUNDO —incluidos
+ * los administradores— quedaba con el rol más restrictivo, sin poder pisar un precio ni aprobar un
+ * descuento. Y se veía sólo como una advertencia en la consola del navegador.
+ *
+ * `is_admin` sí existe en 2024-10 y es lo que ya usaba la rama de desarrollo de este mismo archivo,
+ * que tenía esta trampa documentada. Antes de agregar un campo acá, comprobar que exista en la
+ * versión fijada.
  */
 const QUERY_USUARIOS = `
   query ($ids: [ID!]) {
     users(ids: $ids) {
       id
       name
-      kind
+      is_admin
       teams {
         id
       }
@@ -113,7 +126,7 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
            * desconcertante: los privilegios desaparecen sin que nada cambie.
            */
           esAdminDeCuenta:
-            (v.id === sesion.userId && sesion.isAdmin) || enMonday?.kind === 'admin',
+            (v.id === sesion.userId && sesion.isAdmin) || enMonday?.is_admin === true,
         }
       }),
       usuario: {
