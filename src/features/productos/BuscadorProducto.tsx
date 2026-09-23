@@ -348,7 +348,10 @@ export function BuscadorProducto({
     } catch {
       /* El fallo de la API lo comunica la ventana global: acá no se deja ningún aviso en línea,
          que además se confundía con los avisos de "sin resultados" del propio buscador. */
-      dispatch({ type: 'errorMonday', accion: 'buscar productos en el catálogo' })
+      dispatch({
+        type: 'errorMonday',
+        accion: 'buscar productos en el catálogo',
+      })
     } finally {
       setCargando(false)
       /* El foco vuelve al campo. Quien apretó «Buscar» con el mouse dejó el foco en el botón, y sin
@@ -465,15 +468,23 @@ export function BuscadorProducto({
               onMouseEnter={() => {
                 if (!conTeclado.current) setResultados((r) => resaltar(r, i))
               }}
-              title={elegido ? 'Ya seleccionado. Volvé a hacer click para cargarlo de nuevo.' : undefined}
+              title={
+                elegido ? 'Ya seleccionado. Volvé a hacer click para cargarlo de nuevo.' : undefined
+              }
             >
               <span className="ritem-name">{p.nombre}</span>
               <span className="ritem-meta">
                 <span className="ritem-code">{p.codigo}</span>
                 {buscandoStock && (
-                  <span className="ritem-tag">
-                    <i className="fas fa-spinner fa-spin" /> Stock...
-                  </span>
+                  /* Sólo la animación. El rótulo que había acá ("Stock...") no agregaba nada que el
+                     spinner no dijera, y por un instante metía una palabra suelta al lado del
+                     nombre del producto. El texto sigue estando para quien usa lector de pantalla,
+                     que no ve girar nada. */
+                  <i
+                    className="fas fa-spinner fa-spin ritem-cargando"
+                    role="status"
+                    aria-label="Leyendo el stock del producto"
+                  />
                 )}
                 {elegido && !buscandoStock && (
                   <span className="ritem-tag">
@@ -539,36 +550,40 @@ export function BuscadorProducto({
 
   if (variante === 'v2') {
     return (
-      <div className="search-row" ref={ref} onKeyDown={alPresionarTecla}>
-        <div className="search-input-wrapper">
-          <i className="fas fa-search" />
-          <input
-            {...propsInput}
-            className="search-input"
-            placeholder="Buscar por nombre, código o filtros aplicados"
-            /* Escribir rearma la lista contra el caché; sólo el botón Buscar va a Monday. */
-            onChange={(e) => {
-              setTermino(e.target.value)
-              directaRef.current = null
-              if (error) setError('')
-              onAviso?.('')
-            }}
-          />
-        </div>
-        <button type="button" className="btn-primary" onClick={buscar} disabled={cargando}>
-          {cargando ? (
-            <>
-              <i className="fas fa-spinner fa-spin" /> Buscando...
-            </>
-          ) : (
-            <>
-              <i className="fas fa-search" /> Buscar
-            </>
-          )}
-        </button>
-        {desplegable}
+      /* El aviso va ARRIBA del campo y en el flujo normal, no flotando: la card tiene 24 px de
+         padding y un mensaje de dos líneas colgado por encima se le saldría por el borde. */
+      <div className="search-bloque">
         {avisoSinCoincidencias}
-        {error && <div className="search-error">{error}</div>}
+        <div className="search-row" ref={ref} onKeyDown={alPresionarTecla}>
+          <div className="search-input-wrapper">
+            <i className="fas fa-search" />
+            <input
+              {...propsInput}
+              className="search-input"
+              placeholder="Buscar por nombre, código o filtros aplicados"
+              /* Escribir rearma la lista contra el caché; sólo el botón Buscar va a Monday. */
+              onChange={(e) => {
+                setTermino(e.target.value)
+                directaRef.current = null
+                if (error) setError('')
+                onAviso?.('')
+              }}
+            />
+          </div>
+          <button type="button" className="btn-primary" onClick={buscar} disabled={cargando}>
+            {cargando ? (
+              <>
+                <i className="fas fa-spinner fa-spin" /> Buscando...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-search" /> Buscar
+              </>
+            )}
+          </button>
+          {desplegable}
+          {error && <div className="search-error">{error}</div>}
+        </div>
       </div>
     )
   }
@@ -576,6 +591,7 @@ export function BuscadorProducto({
   return (
     <div className="ig" style={{ maxWidth: 500 }}>
       <label htmlFor="prod-search">Buscar producto por nombre o código</label>
+      {avisoSinCoincidencias}
       <div className="searchc" ref={ref} onKeyDown={alPresionarTecla}>
         <div className="iw">
           <i className="fas fa-search" />
@@ -604,7 +620,6 @@ export function BuscadorProducto({
 
         {desplegable}
       </div>
-      {avisoSinCoincidencias}
       {error && (
         <div className="helper" style={{ color: 'var(--red)', marginTop: 6 }}>
           {error}

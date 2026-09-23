@@ -368,9 +368,7 @@ function cacheDesdeMock(p: Producto): ProductoCache {
     comercial: p.comercial,
     disponible: p.disponible,
   })
-  const precios = Object.fromEntries(
-    LISTAS.map((l) => [l, precio]),
-  ) as Record<ListaPrecio, number>
+  const precios = Object.fromEntries(LISTAS.map((l) => [l, precio])) as Record<ListaPrecio, number>
   return {
     id,
     codigo: p.codigo,

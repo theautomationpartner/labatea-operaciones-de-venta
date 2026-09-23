@@ -112,6 +112,9 @@
 .productos-v2 .results--nav .results-list {
   max-height: 300px;
 }
+.productos-v2 .ritem-cargando {
+  color: var(--p-text-secondary);
+}
 .productos-v2 .results-foot {
   border-color: var(--p-border);
   background: var(--p-bg-input);
@@ -131,16 +134,22 @@
   background: color-mix(in srgb, var(--p-primary) 10%, transparent);
   box-shadow: inset 3px 0 0 var(--p-primary);
 }
+/* La barra del paso de productos es un flex row, así que el aviso no puede ser un hijo suyo: se
+   acomodaría al lado del botón Buscar y apretaría el campo. Va en este bloque, arriba de la fila.
+
+   En el flujo y NO flotando por encima: la card tiene 24 px de padding, y un aviso de dos líneas
+   colgado ahí arriba se le saldría por el borde. */
+.productos-v2 .search-bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .productos-v2 .search-hint {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 6px;
-  color: var(--p-text-secondary);
+  margin-bottom: 0;
+  color: var(--p-danger);
 }
 .productos-v2 .search-hint strong {
-  color: var(--p-primary);
+  color: inherit;
 }
 .productos-v2 .search-error {
   font-size: 12px;
