@@ -25,7 +25,7 @@
 import { PRODUCTOS } from '@/data/mock'
 import { indexarCatalogo, type EntradaCatalogo } from '@/lib/busquedaProductos'
 import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import type { ListaPrecio, Producto, ProductoCache, StockProducto } from '@/types'
 import { COL } from './columns'
 import { byId, numCol, sumaMirror, type MondayItem } from './parse'
@@ -199,7 +199,7 @@ export function productoDesdeCache(
     nombre: pc.nombre,
     precio: precioConIva(precioLista, pc.iva, conIva),
     precioBase: precioListaSinRedondear(precioLista, pc.iva, conIva),
-    precioSinIva: round2(precioLista),
+    precioSinIva: trunc2(precioLista),
     /* El "Margen" sólo existe para L1..L3 en el board; para el resto no hay dato y va 0, igual que
        en la búsqueda directa (`margenCol ? numCol(...) : 0`). */
     rentabilidad: pc.margenes[lista] ?? 0,

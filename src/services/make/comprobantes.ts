@@ -23,7 +23,7 @@
  * campo acepta varios nombres (ver `ALIAS`): el escenario se arma del otro lado y no tiene por qué
  * calzar letra por letra con el modelo de la app. Un error se declara con `{ ok: false, error }`.
  */
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import type { FormaPago, FormatoCheque } from '@/types'
 import {
   mensajeDelEscenario,
@@ -483,7 +483,7 @@ const aDigitos = (v: unknown): string | undefined => {
  * dos son centavos, tres son miles ("1.234" son mil doscientos treinta y cuatro pesos).
  */
 function aNumero(v: unknown): number | undefined {
-  if (typeof v === 'number') return Number.isFinite(v) ? round2(v) : undefined
+  if (typeof v === 'number') return Number.isFinite(v) ? trunc2(v) : undefined
   const limpio = crudo(v).replace(/[^\d.,-]/g, '')
   if (!/\d/.test(limpio)) return undefined
 
@@ -494,7 +494,7 @@ function aNumero(v: unknown): number | undefined {
   const dec = hayDecimales ? limpio.slice(iDec + 1) : ''
 
   const n = Number(`${entero || '0'}.${dec || '0'}`)
-  return Number.isFinite(n) ? round2(n) : undefined
+  return Number.isFinite(n) ? trunc2(n) : undefined
 }
 
 /**

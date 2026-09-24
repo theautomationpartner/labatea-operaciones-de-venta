@@ -16,7 +16,7 @@ import {
   ivaLinea,
   netoLinea,
 } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { redondearPct, trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { esFlujoRemito } from '@/lib/pasos'
 import type {
@@ -100,7 +100,7 @@ export const tasaComision = (
  * total ya aplicado—. Un producto no comisionable no aporta nada.
  */
 export const comisionLinea = (neto: number, comisionable: boolean, tasa: number): number =>
-  comisionable ? round2((neto * tasa) / 100) : 0
+  comisionable ? trunc2((neto * tasa) / 100) : 0
 
 /** Umbrales de semáforo sobre el % de crédito utilizado. */
 const CREDITO_ALERTA = 50
@@ -110,7 +110,7 @@ const CREDITO_FOOTER_CRITICO = 95
 
 /** Importe de la línea, ya bonificado. Como todo monto, redondeado a dos decimales. */
 export const totalLinea = (l: LineaPresupuesto): number =>
-  round2(l.producto.precio * l.cantidad * (1 - l.descuento / 100))
+  trunc2(l.producto.precio * l.cantidad * (1 - l.descuento / 100))
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
    RENTABILIDAD
@@ -151,6 +151,13 @@ export const totalLinea = (l: LineaPresupuesto): number =>
    La cuenta que NO hay que hacer —y que la app hacía— es (125.834,69 / 102.162,35 − 1) = 23,17%:
    se olvida del flete y lo cuenta como ganancia.
 
+   ── Decimales ──
+
+   Los importes (precio, costo, flete, nuevo costo, nota de crédito) van con dos decimales
+   TRUNCADOS (`trunc2`); los porcentajes que salen de la cuenta, con dos decimales REDONDEADOS
+   (`redondearPct`). Truncar el % lo dejaría una centésima abajo: el precio de la planilla se lee
+   125.834,69 y rinde 22,9999995%, que se muestra 23,00% y no 22,99%.
+
    Con un 10% de descuento sobre ese mismo precio la rentabilidad no es (1,23 × 0,90 − 1) = 10,70%:
    el descuento se come parte del precio pero el flete sigue costando lo mismo. La cuenta con
    importes da (113.251,22 − 102.162,35 − 175) / 102.162,35 = 10,68%. */
@@ -184,7 +191,7 @@ export function rentabilidadDe(
   if (costoSinIva <= 0) return 0
   const precio = Math.max(precioVentaSinIva, 0)
   const flete = fleteDe({ flete: fleteSinIva })
-  return round2(((precio - costoSinIva - flete) / costoSinIva) * 100)
+  return redondearPct(((precio - costoSinIva - flete) / costoSinIva) * 100)
 }
 
 /**
@@ -222,7 +229,7 @@ export function costoDe(p: {
   if (p.precioCosto && p.precioCosto > 0) return p.precioCosto
   const precio = p.precioSinIva ?? p.precio
   const markup = 1 + p.rentabilidad / 100
-  return markup > 0 ? round2(Math.max(precio - fleteDe(p), 0) / markup) : 0
+  return markup > 0 ? trunc2(Math.max(precio - fleteDe(p), 0) / markup) : 0
 }
 
 /** Precio de lista SIN IVA de un producto. Sin el dato cargado se cae al precio a secas. */
@@ -300,9 +307,9 @@ export const aceptaRentabForzada = (
    multiplica por (1 − %), que sería ganar el % sobre el precio de venta.
 
    Ejemplo: Costo 102.162,35 · Flete 175 · Precio (pisado por el administrador) 110.000 · 23%
-     Nuevo Costo     = (110.000 − 175) / 1,23             = 89.288,62
-     Nota de Crédito = 102.162,35 − 89.288,62             = 12.873,73 por unidad
-     Control         = (110.000 − 89.288,62 − 175) / 89.288,62 = 23,00%
+     Nuevo Costo     = (110.000 − 175) / 1,23             = 89.288,61  (89.288,617… truncado)
+     Nota de Crédito = 102.162,35 − 89.288,61             = 12.873,74 por unidad
+     Control         = (110.000 − 89.288,61 − 175) / 89.288,61 = 23,00%
 
    Si el producto YA rinde el % forzado o más, el costo necesario sale igual o MAYOR al real y la
    nota de crédito daría cero o negativa: el proveedor no le cobra al comercio por ganar de más. En
@@ -335,8 +342,8 @@ export function rentabForzadaDe(
   const costo = costoDe(p)
   if (!(costo > 0) || !Number.isFinite(pct) || pct < 0) return null
   const precio = precioNetoDe(p) * (1 - pctDescuento(descuentoPct) / 100)
-  const nuevoCosto = round2((precio - fleteDe(p)) / (1 + pct / 100))
-  const notaCredito = round2(costo - nuevoCosto)
+  const nuevoCosto = trunc2((precio - fleteDe(p)) / (1 + pct / 100))
+  const notaCredito = trunc2(costo - nuevoCosto)
   if (!(notaCredito > 0)) return null
   return { nuevoCosto, notaCredito, rentabilidad: pct }
 }
@@ -377,7 +384,7 @@ export const notaCreditoLinea = (l: LineaPresupuesto, descFormaPago = 0): number
  * la mercadería de la operación, no por una unidad de cada producto.
  */
 export const notaCreditoTotal = (lineas: LineaPresupuesto[], descFormaPago = 0): number =>
-  round2(
+  trunc2(
     lineas.reduce((acc, l) => acc + (notaCreditoLinea(l, descFormaPago) ?? 0) * l.cantidad, 0),
   )
 
@@ -428,8 +435,8 @@ export function rentabilidadItemPresupuesto(
     return rentabilidadConDescuento(it.precio, it.costo, it.flete ?? 0, descuentoTotalPct)
   }
   const registrado = 1 - pctDescuento(it.descuento ?? 0) / 100
-  if (!(registrado > 0)) return round2(it.rent)
-  return round2(
+  if (!(registrado > 0)) return redondearPct(it.rent)
+  return redondearPct(
     (((1 + it.rent / 100) * (1 - pctDescuento(descuentoTotalPct) / 100)) / registrado - 1) * 100,
   )
 }
@@ -452,12 +459,12 @@ export function rentabilidadItemRemito(
   descuentoPct: number,
 ): number {
   const d = pctDescuento(descuentoPct)
-  if (d === 0) return round2(it.rent)
+  if (d === 0) return redondearPct(it.rent)
   if (it.costo && it.costo > 0) {
     const precioSinIva = it.costo * (1 + it.rent / 100) + fleteDe(it)
     return rentabilidadConDescuento(precioSinIva, it.costo, fleteDe(it), d)
   }
-  return round2(((1 + it.rent / 100) * (1 - d / 100) - 1) * 100)
+  return redondearPct(((1 + it.rent / 100) * (1 - d / 100) - 1) * 100)
 }
 
 /* ── Rentabilidad GENERAL ────────────────────────────────────────────────────────────────────
@@ -511,7 +518,7 @@ export function rentabilidadGeneral(aportes: AporteRentabilidad[]): number {
     (acc, a) => acc + (a.costo > 0 ? a.rentabilidad * a.costo : 0),
     0,
   )
-  return round2(ponderada / costoTotal)
+  return redondearPct(ponderada / costoTotal)
 }
 
 /** Aporte de una línea de la selección de productos: su rentabilidad FINAL y su costo efectivo. */
@@ -521,7 +528,7 @@ export const aporteLinea = (l: LineaPresupuesto, descFormaPago = 0): AporteRenta
 })
 
 export const subtotalLinea = (l: LineaPresupuesto): number =>
-  round2(l.producto.precio * l.cantidad)
+  trunc2(l.producto.precio * l.cantidad)
 
 export interface ResumenPresupuesto {
   /**
@@ -568,8 +575,8 @@ export function resumenPresupuesto(
   const totalCon = (l: LineaPresupuesto) =>
     netoLinea(l.producto.precio, l.cantidad, l.descuento, descFormaPago)
   // Los dos suman líneas ya redondeadas: es lo mismo que se ve producto por producto.
-  const subtotal = round2(lineas.reduce((acc, l) => acc + subtotalLinea(l), 0))
-  const neto = round2(lineas.reduce((acc, l) => acc + totalCon(l), 0))
+  const subtotal = trunc2(lineas.reduce((acc, l) => acc + subtotalLinea(l), 0))
+  const neto = trunc2(lineas.reduce((acc, l) => acc + totalCon(l), 0))
   /* Cada línea aporta su rentabilidad FINAL —la misma de la columna de la tabla, con el % forzado
      cuando corre— y pesa por su COSTO (Σ resultado / Σ costo). A dos decimales, no a entero: una
      general de 36,17% es un valor real y redondearla la deja diciendo 36%. */
@@ -577,7 +584,7 @@ export function resumenPresupuesto(
   /* El IVA se suma por línea, con la alícuota que esa línea va a declarar en el comprobante: es lo
      único que garantiza que el total del documento y el total facturado sean el mismo número. */
   const iva = conIva
-    ? round2(
+    ? trunc2(
         lineas.reduce(
           (acc, l) => acc + ivaLinea(totalCon(l), alicuotaDeclarada(l.producto.iva)),
           0,
@@ -586,10 +593,10 @@ export function resumenPresupuesto(
     : 0
   return {
     subtotal,
-    descuento: round2(subtotal - neto),
+    descuento: trunc2(subtotal - neto),
     neto,
     iva,
-    total: round2(neto + iva),
+    total: trunc2(neto + iva),
     rentabilidad,
   }
 }
@@ -658,7 +665,7 @@ export function resumenPresupuestoBimoneda(
   return {
     ars: totalMoneda(ars),
     usd: totalMoneda(usd),
-    netoProyectado: round2(ars.neto + usd.neto * t),
+    netoProyectado: trunc2(ars.neto + usd.neto * t),
     rentabilidad,
     hayDolares: usdLineas.length > 0,
   }
@@ -678,7 +685,7 @@ export function comisionLineas(
   conActividades = false,
 ): number {
   const tasa = tasaComision(comisiones, tipoVenta, conActividades)
-  return round2(
+  return trunc2(
     lineas.reduce(
       (acc, l) =>
         acc +
@@ -772,7 +779,7 @@ export function impactoCredito(
     disponible: creditoDisponibleProyectado(cliente, importe),
     resultante: cliente
       ? creditoResultante(cliente, importe)
-      : round2(disponibleActual - importe),
+      : trunc2(disponibleActual - importe),
     usadoPct,
     critico: usadoPct >= CREDITO_FOOTER_CRITICO,
     aplica: true,
@@ -799,7 +806,7 @@ const esItemDeProforma = (it: VentaItem): boolean => it.descFormaPago != null
  * graba en Monday.
  */
 export function rentabilidadVentaItem(it: VentaItem, descFormaPago = 0): number {
-  if (esItemDeProforma(it)) return round2(it.rent)
+  if (esItemDeProforma(it)) return redondearPct(it.rent)
   return rentabilidadItemPresupuesto(it, descuentoCompuesto(it.desc ?? 0, descFormaPago))
 }
 
@@ -858,11 +865,11 @@ export function resumenVenta(
   const importeItem = (it: VentaItem) =>
     netoLinea(it.precio, it.aVender, it.desc ?? 0, descFpDe(it))
   // El bruto es el de la columna Subtotal: cantidad × precio, antes de bonificar.
-  const subtotal = round2(items.reduce((acc, it) => acc + round2(it.precio * it.aVender), 0))
-  const total = round2(items.reduce((acc, it) => acc + importeItem(it), 0))
+  const subtotal = trunc2(items.reduce((acc, it) => acc + trunc2(it.precio * it.aVender), 0))
+  const total = trunc2(items.reduce((acc, it) => acc + importeItem(it), 0))
   /* IVA de cada línea sobre su NETO ya bonificado, con la alícuota propia del producto (21% por
      defecto). El total se suma al neto para el importe con impuestos. */
-  const iva = round2(
+  const iva = trunc2(
     items.reduce((acc, it) => acc + ivaLinea(importeItem(it), alicuotaDeclarada(it.iva)), 0),
   )
   /* Rentabilidad general: cada línea aporta la MISMA rentabilidad que muestra la tabla
@@ -875,7 +882,7 @@ export function resumenVenta(
      venta (ver `TASA_POR_COMBINACION`). La base es el neto de la línea: sin IVA y con el descuento
      total ya aplicado. */
   const tasa = tasaComision(comisiones, tipoVenta, conActividades)
-  const comision = round2(
+  const comision = trunc2(
     items.reduce(
       (acc, it) => acc + comisionLinea(importeItem(it), it.comisionable === true, tasa),
       0,
@@ -887,12 +894,12 @@ export function resumenVenta(
   /* Lo que la venta consume de la línea es el TOTAL CON IVA: es el importe que se asienta en la
      cuenta corriente cuando la venta va a cuenta. Medirlo sobre el neto dejaba entrar el IVA por
      encima del límite. */
-  const consumeLinea = round2(total + iva)
+  const consumeLinea = trunc2(total + iva)
   const impacto = impactoCredito(cliente, consumeLinea, credito)
 
   return {
     subtotal,
-    descuento: round2(subtotal - total),
+    descuento: trunc2(subtotal - total),
     total,
     iva,
     comision,
@@ -959,10 +966,10 @@ export interface StockProyectado {
  * pisa ninguno de los valores leídos, que se siguen mostrando como base.
  */
 export function stockConIngreso(p: Producto, cantidad: number): StockProyectado {
-  const ingresos = round2(p.ingresos + cantidad)
-  const fisico = round2(ingresos - p.egresos)
-  const comercial = round2(fisico - p.pendEntregaVta)
-  return { ingresos, fisico, comercial, disponible: round2(comercial + p.pendRecepcionCompra) }
+  const ingresos = trunc2(p.ingresos + cantidad)
+  const fisico = trunc2(ingresos - p.egresos)
+  const comercial = trunc2(fisico - p.pendEntregaVta)
+  return { ingresos, fisico, comercial, disponible: trunc2(comercial + p.pendRecepcionCompra) }
 }
 
 /** Cuánto del stock disponible se lleva la cantidad en curso. No altera el stock. */
@@ -1029,24 +1036,24 @@ export function resumenFactura(
   const netoDe = (it: FacturaItem) => netoLinea(it.precio, it.aFacturar, 0, descFormaPago)
 
   // Bruto: precio de lista × cantidad a facturar, sin bonificar.
-  const subtotal = round2(items.reduce((acc, it) => acc + round2(it.precio * it.aFacturar), 0))
+  const subtotal = trunc2(items.reduce((acc, it) => acc + trunc2(it.precio * it.aFacturar), 0))
   /* Lo bonificado: el descuento por forma de pago de cada línea más, si viniera, un descuento
      global del remito (hoy los dos llamadores pasan 0). Nunca puede superar al bruto. */
-  const bonifFormaPago = round2(
+  const bonifFormaPago = trunc2(
     items.reduce((acc, it) => acc + bonificacionLinea(it.precio, it.aFacturar, 0, descFormaPago), 0),
   )
   const descuentoAplicado =
-    subtotal > 0 ? round2(Math.min(descuento + bonifFormaPago, subtotal)) : 0
-  const neto = round2(subtotal - descuentoAplicado)
+    subtotal > 0 ? trunc2(Math.min(descuento + bonifFormaPago, subtotal)) : 0
+  const neto = trunc2(subtotal - descuentoAplicado)
   /* IVA total: el de cada producto sobre su importe YA bonificado, con la alícuota propia del
      producto (21% por defecto si no vino). */
-  const iva = round2(
+  const iva = trunc2(
     items.reduce((acc, it) => acc + ivaLinea(netoDe(it), alicuotaDeclarada(it.iva)), 0),
   )
   /* Comisión: MISMA regla que el resto de las ventas —sólo los productos comisionables, con la tasa
      única del tipo de venta, sobre el importe GRAVADO de la línea: Subtotal − Descuento Total (el
      descuento por forma de pago ya aplicado), SIN IVA—. */
-  const comision = round2(
+  const comision = trunc2(
     items.reduce(
       (acc, it) => acc + comisionLinea(netoDe(it), it.comisionable === true, comisionTasa),
       0,
@@ -1065,7 +1072,7 @@ export function resumenFactura(
   const disponible = cliente?.disponible ?? 0
   /* Igual que en la venta armada desde el catálogo: lo que consume la línea es el TOTAL CON IVA,
      que es lo que se asienta en la cuenta corriente. */
-  const total = round2(neto + iva)
+  const total = trunc2(neto + iva)
   const impacto = impactoCredito(cliente, total, credito)
 
   return {
@@ -1135,7 +1142,7 @@ export function totalVentaOperacion(d: DatosTotalVenta): { neto: number; total: 
      la operación (0, porque este flujo no tiene paso de forma de pago) lo inflaba. El neto —base
      del crédito— es la suma de los totales de línea guardados en la proforma (SIN IVA). */
   if (d.operacion === 'VENTA PROFORMA' && d.proformaImporte != null) {
-    const neto = round2(d.ventaItems.reduce((acc, it) => acc + (it.totalLinea ?? 0), 0))
+    const neto = trunc2(d.ventaItems.reduce((acc, it) => acc + (it.totalLinea ?? 0), 0))
     return { neto, total: d.proformaImporte }
   }
   // CON PRESUPUESTO PREVIO (y VENTA PROFORMA sin importe cargado) arman la venta en `ventaItems`.
@@ -1146,7 +1153,7 @@ export function totalVentaOperacion(d: DatosTotalVenta): { neto: number; total: 
       d.tipoVenta ?? 'CON PRESUPUESTO PREVIO',
       d.descFormaPago,
     )
-    return { neto: r.total, total: round2(r.total + r.iva) }
+    return { neto: r.total, total: trunc2(r.total + r.iva) }
   }
   // Venta DIRECTA armada desde el catálogo: mismo cálculo que el ResumenBox de la venta.
   const r = resumenPresupuesto(d.lineas, true, d.descFormaPago)
@@ -1192,7 +1199,7 @@ export const AVANCE_LABEL_ENTREGA: Record<AvanceLinea, string> = {
  * pendiente original − cantidad a entregar. Se recalcula en vivo con cada cambio de cantidad.
  */
 export const pendienteResultante = (pendiente: number, aEntregar: number): number =>
-  round2(pendiente - aEntregar)
+  trunc2(pendiente - aEntregar)
 
 export const ESTADO_RESULTANTE_COMPLETO = '100% Entregada'
 export const ESTADO_RESULTANTE_PARCIAL = 'Parcialmente Entregada'

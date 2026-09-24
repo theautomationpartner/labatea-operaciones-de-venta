@@ -8,7 +8,7 @@
 import { chequear, esperar, paso } from './base'
 import { addDays, aIso } from '@/lib/dates'
 import { netoLinea as netoConDesc } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { ivaPorDefecto, letraComprobante } from '@/lib/factura'
 import { comprobantesDeVenta, precioNetoUnitario, totalesComprobantes } from '@/lib/facturacion'
 import { lineasDeVenta } from '@/lib/lineasVenta'
@@ -98,11 +98,11 @@ export const linea = (producto: Producto, cantidad: number, descuento = 0): Line
 /** Convierte a pesos un producto en dólares, como hace `useCotizacionProducto` en la VENTA. */
 export const aPesos = (p: Producto, tasa: number): Producto => {
   const usd = p.precioBase ?? p.precio
-  const conv = (v: number | undefined) => (v && v > 0 ? round2(v * tasa) : v)
+  const conv = (v: number | undefined) => (v && v > 0 ? trunc2(v * tasa) : v)
   return {
     ...p,
     precioUsd: p.precio,
-    precio: round2(usd * tasa),
+    precio: trunc2(usd * tasa),
     precioSinIva: conv(p.precioSinIva),
     precioCosto: conv(p.precioCosto),
     precioBase: undefined,
@@ -129,7 +129,7 @@ export async function correrPresupuesto(d: DatosPresupuestoQA) {
   const resumen = resumenPresupuesto(d.lineas, false)
   const bimoneda = resumenPresupuestoBimoneda(d.lineas, d.config.tasaCambio ?? 0)
 
-  paso(`PRESUPUESTO · ${d.lineas.length} productos · neto ${round2(resumen.neto)}`)
+  paso(`PRESUPUESTO · ${d.lineas.length} productos · neto ${trunc2(resumen.neto)}`)
   const creado = await crearPresupuesto({
     cliente: d.cliente,
     vendedor: d.vendedor,
@@ -248,7 +248,7 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
 
   paso(
     `VENTA · ${comprobantes.length} comprobante(s) [${comprobantes.map((c) => c.titulo).join(' | ')}] · ` +
-      `facturado ${round2(totalFacturado)} · total venta ${round2(totalVenta)} · descFP ${descFormaPago}%`,
+      `facturado ${trunc2(totalFacturado)} · total venta ${trunc2(totalVenta)} · descFP ${descFormaPago}%`,
   )
 
   /* --- Botón "Emitir comprobantes" --- */
@@ -300,7 +300,7 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
   const rentabilidadVenta =
     base <= 0
       ? 0
-      : round2(
+      : trunc2(
           productos.reduce(
             (acc, p) =>
               acc +
@@ -361,9 +361,9 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
   if (cobroSimultaneoOperacion(d.formaPago, d.operacion)) {
     const resumen = resumenCobro(balances, totalVenta)
     chequear(
-      round2(resumen.cancelado) === round2(resumen.totalACobrar),
+      trunc2(resumen.cancelado) === trunc2(resumen.totalACobrar),
       'Cobro simultáneo cubre el 100% de la venta',
-      `cancelado ${round2(resumen.cancelado)} vs total ${round2(resumen.totalACobrar)}`,
+      `cancelado ${trunc2(resumen.cancelado)} vs total ${trunc2(resumen.totalACobrar)}`,
     )
     const facturasCanceladas = comprobantes.flatMap((c, i) => {
       const e = creados[i]
@@ -401,7 +401,7 @@ export async function correrVenta(d: DatosVentaQA): Promise<ResultadoVenta> {
     ...p,
     neto: netoConDesc(p.precioUnitario, p.cantidad, p.descuento ?? 0, p.descFormaPago ?? descFormaPago),
   }))
-  const comisionEsperada = round2(
+  const comisionEsperada = trunc2(
     lineasComision.reduce((acc, l) => acc + comisionLinea(l.neto, l.comisionable === true, tasa), 0),
   )
   await crearComisiones({

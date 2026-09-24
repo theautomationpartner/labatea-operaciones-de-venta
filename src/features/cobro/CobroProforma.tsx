@@ -5,7 +5,7 @@ import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
-import { money, round2 } from '@/lib/format'
+import { money, trunc2 } from '@/lib/format'
 import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import { documentoDeVentaItem } from '@/lib/selectors'
 import {
@@ -82,7 +82,7 @@ export function CobroProforma() {
     () =>
       productos.map((l) => {
         const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFormaPago).total
-        const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
+        const totalLinea = trunc2((l.precioUnitario - bonifUnit) * l.cantidad)
         return { ...l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
       }),
     [productos, descFormaPago],
@@ -92,10 +92,10 @@ export function CobroProforma() {
      "Total" de cada línea; el descuento, su diferencia; y el IVA, la suma del de cada línea. Son
      exactamente los cuatro que `crearProforma` guarda en la cabecera del ítem. */
   const { bruto, neto, descuento, iva, total } = useMemo(() => {
-    const n = round2(filas.reduce((acc, f) => acc + f.totalLinea, 0))
-    const b = round2(filas.reduce((acc, f) => acc + f.precioUnitario * f.cantidad, 0))
-    const impuesto = round2(filas.reduce((acc, f) => acc + f.ivaLinea, 0))
-    return { bruto: b, neto: n, descuento: round2(b - n), iva: impuesto, total: round2(n + impuesto) }
+    const n = trunc2(filas.reduce((acc, f) => acc + f.totalLinea, 0))
+    const b = trunc2(filas.reduce((acc, f) => acc + f.precioUnitario * f.cantidad, 0))
+    const impuesto = trunc2(filas.reduce((acc, f) => acc + f.ivaLinea, 0))
+    return { bruto: b, neto: n, descuento: trunc2(b - n), iva: impuesto, total: trunc2(n + impuesto) }
   }, [filas])
 
   /* Rentabilidad general: la de cada línea ponderada por su costo, con la misma función que la

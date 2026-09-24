@@ -5,7 +5,7 @@
  * la operación decía que iba a hacer. Todo por la MISMA API que usa la app.
  */
 import { anotar, chequear, esperar, paso } from './base'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { BOARDS, COL } from '@/services/monday/columns'
 import { mondayApi } from '@/services/monday/sdk'
 import type { ResultadoVenta } from './flujos'
@@ -188,7 +188,7 @@ export async function verificarVenta(e: EsperadoVenta): Promise<ItemLeido | null
     'Venta · un subelemento por producto',
     `${v.subitems.length} de ${e.r.productos.length}`,
   )
-  const totalSubs = round2(v.subitems.reduce((a, s) => a + num(s, COL.ventaSub.subtotal), 0))
+  const totalSubs = trunc2(v.subitems.reduce((a, s) => a + num(s, COL.ventaSub.subtotal), 0))
   paso(`subtotal de subelementos: ${totalSubs}`)
 
   /* El board renombra los subelementos con su customKey, así que el match va por el PRODUCTO
@@ -204,8 +204,8 @@ export async function verificarVenta(e: EsperadoVenta): Promise<ItemLeido | null
     if (!casi(num(s, COL.ventaSub.cantidad), p.cantidad)) {
       anotar('BUG', 'Venta · cantidad del subelemento no coincide', `${p.nombre}: board ${num(s, COL.ventaSub.cantidad)} vs ${p.cantidad}`)
     }
-    if (!casi(num(s, COL.ventaSub.precioUnit), round2(p.precioUnitario), 0.05)) {
-      anotar('BUG', 'Venta · precio unitario del subelemento no coincide', `${p.nombre}: board ${num(s, COL.ventaSub.precioUnit)} vs ${round2(p.precioUnitario)}`)
+    if (!casi(num(s, COL.ventaSub.precioUnit), trunc2(p.precioUnitario), 0.05)) {
+      anotar('BUG', 'Venta · precio unitario del subelemento no coincide', `${p.nombre}: board ${num(s, COL.ventaSub.precioUnit)} vs ${trunc2(p.precioUnitario)}`)
     }
     /* Entrega: la simultánea sale con la factura, la anterior ya salió, la posterior no salió. */
     const simult = num(s, COL.ventaSub.cantEntregadaSimult)

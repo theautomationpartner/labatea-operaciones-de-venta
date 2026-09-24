@@ -13,7 +13,7 @@
  * Se corre con esbuild + node (`npm run test:rentabilidad`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { productoConPrecio } from '@/lib/precios'
 import {
   costoDe,
@@ -46,13 +46,13 @@ const PRECIO_L1 = Math.round((COSTO + FLETE + COSTO * (MARGEN_L1 / 100)) * 1000)
 igual(PRECIO_L1, 125_834.691, 'el precio L1 se arma como Costo + Flete + Costo × Margen')
 igual(rentabilidadDe(PRECIO_L1, COSTO, FLETE), 23, 'la rentabilidad es 23,00%: el Margen L1 tal cual')
 igual(
-  round2(((PRECIO_L1 - COSTO) / COSTO) * 100),
+  trunc2(((PRECIO_L1 - COSTO) / COSTO) * 100),
   23.17,
   'la cuenta vieja —sin restar el flete— daba 23,17% (el error que marca la planilla)',
 )
 igual(rentabilidadDe(PRECIO_L1, COSTO), 23.17, 'y es lo que da la fórmula si se le olvida el flete')
 igual(
-  round2(((PRECIO_L1 - COSTO - FLETE) / (COSTO + FLETE)) * 100),
+  trunc2(((PRECIO_L1 - COSTO - FLETE) / (COSTO + FLETE)) * 100),
   22.96,
   'dividir por Costo + Flete también da mal (22,96%): el flete NO va en el denominador',
 )
@@ -69,7 +69,7 @@ igual(
   'L1 con 10% de descuento rinde 10,68% (el flete se sigue pagando entero)',
 )
 igual(
-  round2((1.23 * 0.9 - 1) * 100),
+  trunc2((1.23 * 0.9 - 1) * 100),
   10.7,
   'el atajo del markup —(1 + m)(1 − d) − 1— daba 10,70%: se olvida de que el flete no se descuenta',
 )
@@ -91,7 +91,7 @@ console.log('\nCaso 3 · El IVA no es ganancia:')
 
 /** El producto de la planilla, cargado para un Consumidor Final: el precio le llega con el 21%. */
 const CON_IVA = {
-  precio: round2(PRECIO_L1 * 1.21),
+  precio: trunc2(PRECIO_L1 * 1.21),
   precioSinIva: PRECIO_L1,
   precioCosto: COSTO,
   flete: FLETE,

@@ -10,7 +10,7 @@ import { abrirCaso, anotar, chequear, paso } from './base'
 import { correrVenta, type Config } from './flujos'
 import { casi, esperarEmisionElectronica, leerItem, num, txt, verificarComision, verificarVenta } from './verificar'
 import { descuentoUnitario, ivaLinea } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { IVA_RATE, tasaComision, ventaItemUid } from '@/lib/selectors'
 import { clienteLlevaIva } from '@/lib/precios'
 import { descuentoDeFormaPago } from '@/lib/cobros'
@@ -81,23 +81,23 @@ const lineas = [
 /* (a) Lo que MUESTRA la pantalla "Emitir Proforma" (CobroProforma.tsx): descuentos SUMADOS y un
    IVA plano del 21%. */
 const descPantalla = Math.min(DESC_MANUAL + descFormaPago, 100)
-const bonifPantalla = round2((prod.precio * descPantalla) / 100)
-const netoPantalla = round2((prod.precio - bonifPantalla) * CANT)
-const ivaPantalla = round2(netoPantalla * IVA_RATE)
-const totalPantalla = round2(netoPantalla + ivaPantalla)
+const bonifPantalla = trunc2((prod.precio * descPantalla) / 100)
+const netoPantalla = trunc2((prod.precio - bonifPantalla) * CANT)
+const ivaPantalla = trunc2(netoPantalla * IVA_RATE)
+const totalPantalla = trunc2(netoPantalla + ivaPantalla)
 
 /* (b) Lo que ESCRIBE `crearProforma` en el tablero: descuentos EN CASCADA y el IVA del producto. */
 const bonifBoard = descuentoUnitario(prod.precio, DESC_MANUAL, descFormaPago).total
-const netoBoard = round2((prod.precio - bonifBoard) * CANT)
+const netoBoard = trunc2((prod.precio - bonifBoard) * CANT)
 const ivaBoard = ivaLinea(netoBoard, prod.iva ?? 21)
-const totalBoard = round2(netoBoard + ivaBoard)
+const totalBoard = trunc2(netoBoard + ivaBoard)
 
 paso(`pantalla → bonif/u ${bonifPantalla} · neto ${netoPantalla} · IVA ${ivaPantalla} · TOTAL ${totalPantalla}`)
 paso(`tablero  → bonif/u ${bonifBoard} · neto ${netoBoard} · IVA ${ivaBoard} · TOTAL ${totalBoard}`)
 chequear(
   casi(totalPantalla, totalBoard, 0.02),
   'Proforma · el total que ve el vendedor es el que queda en el tablero',
-  `pantalla ${totalPantalla} vs tablero ${totalBoard} · diferencia ${round2(totalBoard - totalPantalla)}`,
+  `pantalla ${totalPantalla} vs tablero ${totalBoard} · diferencia ${trunc2(totalBoard - totalPantalla)}`,
 )
 
 const creada = await crearProforma({

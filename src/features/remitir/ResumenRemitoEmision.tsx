@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { useApp, useDispatch } from '@/state/hooks'
 
 interface ResumenRemitoEmisionProps {
@@ -53,7 +53,7 @@ export function ResumenRemitoEmision({
 
   // Peso total del remito: suma del peso de cada línea (cantidad × peso unitario).
   const pesoTotal = useMemo(
-    () => round2(items.reduce((acc, it) => acc + it.cantidad * (it.peso ?? 0), 0)),
+    () => trunc2(items.reduce((acc, it) => acc + it.cantidad * (it.peso ?? 0), 0)),
     [items],
   )
   // Unidades de medida presentes, sin repetir y concatenadas.

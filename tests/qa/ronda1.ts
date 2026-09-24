@@ -21,7 +21,7 @@ import {
   verificarRecibo,
   verificarVenta,
 } from './verificar'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { ventaItemUid } from '@/lib/selectors'
 import { COL, BOARDS } from '@/services/monday/columns'
 import { mondayApi } from '@/services/monday/sdk'
@@ -279,7 +279,7 @@ if (proformas.length === 0) {
       {
         id: 'M-QA-1',
         formaPago: 'Efectivo',
-        importe: round2(pf.importe / (1 - descuentosPago.Efectivo / 100)),
+        importe: trunc2(pf.importe / (1 - descuentosPago.Efectivo / 100)),
         chequeFechaPago: '',
       },
     ],

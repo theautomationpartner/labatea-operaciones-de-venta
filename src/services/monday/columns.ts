@@ -353,11 +353,17 @@ export const ACTIVIDAD_COMPLETADA_INDEX = 4
 export const ACTIVIDAD_MODO_MANUAL_INDEX = 1
 
 /**
- * Índice de "Pendiente" en la misma columna. Es el estado de las actividades que la operación
+ * Índices de "Pendiente" y "Vencido" en la misma columna. Son los DOS estados que la operación
  * REGISTRO DE ACTIVIDADES ofrece cerrar ("COMPLETAR ACTIVIDAD PENDIENTE"): lo que quedó agendado y
  * todavía no se resolvió. Por índice y no por label, por lo mismo que arriba.
+ *
+ * Van los dos porque son el mismo trabajo sin hacer: "Vencido" no es un desenlace de la gestión
+ * —el desenlace es "Completado"—, es una pendiente a la que se le pasó la fecha. Ofreciendo sólo
+ * las Pendientes quedaban afuera justamente las más viejas, que son las que más falta hace cerrar,
+ * y desde la app no había ninguna forma de resolverlas.
  */
 export const ACTIVIDAD_PENDIENTE_INDEX = 3
+export const ACTIVIDAD_VENCIDA_INDEX = 0
 
 export const COL = {
   cliente: {

@@ -10,7 +10,7 @@
  * así no pueden quedar desincronizados con lo que ve el usuario.
  */
 import { descuentoUnitario } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { fleteDe, rentabForzadaLinea, rentabilidadFinalLinea } from '@/lib/selectors'
 import type { LineaPresupuesto } from '@/types'
@@ -49,13 +49,13 @@ export function fragmentoSubitem(
 ): FragmentoSubitem {
   const p = linea.producto
   const alias = `s${indice}`
-  const precio = round2(p.precio)
+  const precio = trunc2(p.precio)
   /* Descuento de la línea por unidad: el MANUAL del vendedor sobre el precio de lista, en la
      moneda del producto. El presupuesto no aplica descuento por forma de pago —su check sólo pide
      la leyenda en el PDF—, así que no hay cascada que componer. */
   const dto = descuentoUnitario(p.precio, linea.descuento)
   // Total de la línea, ya bonificado: precio final × cantidad, en la moneda del producto.
-  const total = round2(dto.precioFinal * linea.cantidad)
+  const total = trunc2(dto.precioFinal * linea.cantidad)
   const usd = esDolar(p.moneda)
   // ¿La línea lleva descuento?
   const tieneDescuento = dto.total > 0
@@ -94,7 +94,7 @@ export function fragmentoSubitem(
   const costoEfectivo = forzada ? forzada.nuevoCosto : p.precioCosto
   if (costoEfectivo != null) {
     columnas[usd ? COL.presupuestoSub.costoUsd : COL.presupuestoSub.costoPesos] =
-      String(round2(costoEfectivo))
+      String(trunc2(costoEfectivo))
   }
   if (forzada) {
     columnas[COL.presupuestoSub.notaCreditoComision] = String(forzada.notaCredito)
@@ -102,7 +102,7 @@ export function fragmentoSubitem(
   /* Flete por unidad, en la moneda del producto (igual que el precio y el costo): la venta CON
      PRESUPUESTO PREVIO lo lee de acá para restarlo de la rentabilidad. Se escribe siempre, 0 si el
      producto no tiene, para que el subelemento diga explícitamente que no hay flete. */
-  columnas[COL.presupuestoSub.flete] = String(round2(fleteDe(p)))
+  columnas[COL.presupuestoSub.flete] = String(trunc2(fleteDe(p)))
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
   // Se arrastra el ítem de stock del maestro para que viaje del presupuesto a la venta.
   if (p.stockId) columnas[COL.presupuestoSub.stock] = { item_ids: [Number(p.stockId)] }

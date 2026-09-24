@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { getCotizacionDolar } from '@/services/monday'
 import { useApp } from '@/state/hooks'
@@ -17,11 +17,11 @@ const aPesos = (producto: Producto, tasa: number): Producto => {
   const usd = producto.precioBase ?? producto.precio
   /* Todo lo que está en la moneda del producto viaja a pesos con la misma tasa: si el costo, el
      flete o el precio sin IVA se quedaran en dólares, la rentabilidad mezclaría dos monedas. */
-  const aMoneda = (v: number | undefined) => (v && v > 0 ? round2(v * tasa) : v)
+  const aMoneda = (v: number | undefined) => (v && v > 0 ? trunc2(v * tasa) : v)
   return {
     ...producto,
     precioUsd: producto.precio,
-    precio: round2(usd * tasa),
+    precio: trunc2(usd * tasa),
     precioSinIva: aMoneda(producto.precioSinIva),
     precioCosto: aMoneda(producto.precioCosto),
     // El flete está en la moneda del producto, igual que el costo: viaja a pesos con la misma tasa.

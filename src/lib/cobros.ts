@@ -3,7 +3,7 @@
  * movimiento y trackeo de lo cobrado contra el total de la venta.
  */
 import { addDays, parseDate } from '@/lib/dates'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import type {
   Cliente,
   CondicionPago,
@@ -215,7 +215,7 @@ export function resumenCobro(balances: BalancePago[], totalVenta: number): Resum
      del lado de lo que hay que CANCELAR —igual que una factura— y no del de lo recibido. Sumarlo
      como un cobro más agrandaría el excedente en vez de absorberlo, que es justo lo contrario de
      para lo que existe. */
-  const anticipos = round2(
+  const anticipos = trunc2(
     balances.filter((b) => esAnticipo(b.movimiento.formaPago)).reduce((a, b) => a + b.movimiento.importe, 0),
   )
   const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
@@ -225,7 +225,7 @@ export function resumenCobro(balances: BalancePago[], totalVenta: number): Resum
   const cancelado = recibido
   /* Lo que hay que cubrir: la venta MÁS lo que se decidió dejar a favor. Con el anticipo cargado
      por el excedente exacto, la diferencia cierra en cero sola. */
-  const aCubrir = round2(totalVenta + anticipos)
+  const aCubrir = trunc2(totalVenta + anticipos)
   const cobradoPct = aCubrir > 0 ? Math.min((cancelado / aCubrir) * 100, 100) : 0
 
   return {
@@ -622,7 +622,7 @@ export const requiereRegistroDeuda = (
  * Se compara con la misma precisión con la que se escribe en Monday: dos decimales.
  */
 export const cobroCompleto = (resumen: ResumenCobro): boolean =>
-  round2(resumen.cancelado) === round2(resumen.totalACobrar)
+  trunc2(resumen.cancelado) === trunc2(resumen.totalACobrar)
 
 /**
  * DIFERENCIA del cobro: lo que falta cobrar (>0) o lo que se cobró de más (<0). Se redondea a dos
@@ -630,7 +630,7 @@ export const cobroCompleto = (resumen: ResumenCobro): boolean =>
  * muestra la cabecera.
  */
 export const diferenciaCobro = (resumen: ResumenCobro): number =>
-  round2(resumen.totalACobrar - resumen.cancelado)
+  trunc2(resumen.totalACobrar - resumen.cancelado)
 
 /**
  * La diferencia quedó en CERO exacto. Es la única condición que habilita el avance de etapa en el
@@ -672,7 +672,7 @@ export function estadoCtaCte(
   cancelado: number,
 ): EstadoCtaCte {
   const saldoPendiente = cliente.saldoCtaCte
-  const resultante = round2(saldoPendiente + totalVenta - cancelado)
+  const resultante = trunc2(saldoPendiente + totalVenta - cancelado)
   return {
     cuenta: cliente.codigo || cliente.id,
     limite: cliente.limit,
@@ -680,7 +680,7 @@ export function estadoCtaCte(
     remitosPendFacturar: cliente.remitosPendFacturar,
     cancelado,
     resultante,
-    lineaResultante: round2(resultante + cliente.remitosPendFacturar),
+    lineaResultante: trunc2(resultante + cliente.remitosPendFacturar),
   }
 }
 

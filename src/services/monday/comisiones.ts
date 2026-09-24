@@ -13,7 +13,7 @@
  * Maestro en la venta DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO—, así
  * que este servicio no vuelve a consultar el Maestro.
  */
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { comisionLinea, tasaComision } from '@/lib/selectors'
 import type { ComisionesVenta, TipoPago, TipoVenta } from '@/types'
 import { BOARDS, COL, COMISION_ESTADO_PENDIENTE_LABEL, personCol } from './columns'
@@ -94,12 +94,12 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
   const pctComision = tasaComision(comisiones, tipoVenta, conActividades)
   /* Comisión FINAL de la venta: la tasa sobre el neto de cada línea comisionable. Es exactamente
      el número que el vendedor vio en el resumen, calculado con el mismo helper. */
-  const comisionTotal = round2(
+  const comisionTotal = trunc2(
     comisionables.reduce((acc, l) => acc + comisionLinea(l.neto, true, pctComision), 0),
   )
 
   // MÓDULO 1: monto pendiente de cobro. POSTERIOR = total de la venta; SIMULTANEO = 0 explícito.
-  const montoPendiente = tipoPago === 'POSTERIOR' ? round2(importeTotalVenta) : 0
+  const montoPendiente = tipoPago === 'POSTERIOR' ? trunc2(importeTotalVenta) : 0
 
   /* Ítem padre de la comisión. La relación con el cobro sólo va si es POSTERIOR. Los importes van
      como NÚMERO (no string) y el estado nace en "Pend de Cobro" (por label). */
@@ -137,9 +137,9 @@ export async function crearComisiones(datos: DatosComision): Promise<void> {
   const campos = comisionables.map((l, i) => {
     const cv: Record<string, unknown> = {
       [COL.comisionSub.producto]: { item_ids: [Number(l.productoId)] },
-      [COL.comisionSub.cantidad]: String(round2(l.cantidad)),
-      [COL.comisionSub.precioUnit]: String(round2(l.precioUnitario)),
-      [COL.comisionSub.comision]: String(round2(pctComision)),
+      [COL.comisionSub.cantidad]: String(trunc2(l.cantidad)),
+      [COL.comisionSub.precioUnit]: String(trunc2(l.precioUnitario)),
+      [COL.comisionSub.comision]: String(trunc2(pctComision)),
     }
     variables[`sn${i}`] = l.nombre
     variables[`scv${i}`] = JSON.stringify(cv)

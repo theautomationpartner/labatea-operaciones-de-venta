@@ -24,7 +24,7 @@ const DESCRIPCION: Record<TipoOperacionActividad, string> = {
   'REGISTRAR NUEVA ACTIVIDAD':
     'Registra la actividad comercial, tipo, fecha, y estado de la actividad',
   'COMPLETAR ACTIVIDAD PENDIENTE':
-    'Selecciona cuáles de las actividades pendientes pasan a Completado',
+    'Selecciona cuáles de las actividades pendientes o vencidas pasan a Completado',
 }
 
 /**
@@ -276,8 +276,8 @@ export function ActividadView() {
             vacio={
               <>
                 <i className="fas fa-calendar-xmark" /> La gente seleccionada no tiene actividades
-                pendientes en el tablero. Volvé a la etapa anterior para sumar otra Persona, o
-                registrá una actividad nueva.
+                pendientes ni vencidas en el tablero. Volvé a la etapa anterior para sumar otra
+                Persona, o registrá una actividad nueva.
               </>
             }
             avisoRequerida="Tildá al menos una actividad para pasarla a Completado"

@@ -12,7 +12,7 @@
  * y obliga a corregirla a mano antes de cerrar (ver `lineaInvalida`).
  */
 import { parseDate } from '@/lib/dates'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 
 /** Días corridos máximos entre la emisión del remito de entrega y la devolución. */
 export const DIAS_MAX_DEVOLUCION = 30
@@ -188,7 +188,7 @@ export function imputarDevolucion(
     for (const remito of remitos) {
       for (const linea of remito.lineas) {
         if (!prod.productoId || linea.productoId !== prod.productoId) continue
-        const disponible = round2(linea.entregada - linea.devuelta)
+        const disponible = trunc2(linea.entregada - linea.devuelta)
         // Línea agotada: ya se devolvió todo lo que había salido. No aporta ni informa nada.
         if (disponible <= 0) continue
         const dias = diasCorridos(remito.fecha, fechaDevolucion)
@@ -243,9 +243,9 @@ export function imputarDevolucion(
     for (const c of candidatos) {
       if (restante <= 0) break
       if (c.motivo !== null) continue
-      const imputada = round2(Math.min(c.disponible, restante))
+      const imputada = trunc2(Math.min(c.disponible, restante))
       if (imputada <= 0) continue
-      restante = round2(restante - imputada)
+      restante = trunc2(restante - imputada)
       const { motivo: _motivo, ...linea } = c
       lineas.push({ ...linea, imputada })
     }
@@ -258,16 +258,16 @@ export function imputarDevolucion(
        como sin cubrir, y no se emite remito de devolución. */
     if (restante > 0 && lineas.length > 0) {
       const ultima = lineas[lineas.length - 1]
-      lineas[lineas.length - 1] = { ...ultima, imputada: round2(ultima.imputada + restante) }
+      lineas[lineas.length - 1] = { ...ultima, imputada: trunc2(ultima.imputada + restante) }
       restante = 0
     }
 
-    const imputada = round2(lineas.reduce((acc, l) => acc + l.imputada, 0))
+    const imputada = trunc2(lineas.reduce((acc, l) => acc + l.imputada, 0))
     return {
       ...prod,
       solicitada: prod.cantidad,
       imputada,
-      sinCubrir: round2(Math.max(prod.cantidad - imputada, 0)),
+      sinCubrir: trunc2(Math.max(prod.cantidad - imputada, 0)),
       lineas,
       descartados,
     }
@@ -403,8 +403,8 @@ export function construirNotasCredito(
       const venta = porLinea.get(l.subitemId)
       const precioUnitario = venta?.precioUnitario ?? 0
       const iva = venta?.iva ?? 0
-      const subtotal = round2(l.imputada * precioUnitario)
-      const ivaImporte = round2(subtotal * (iva / 100))
+      const subtotal = trunc2(l.imputada * precioUnitario)
+      const ivaImporte = trunc2(subtotal * (iva / 100))
 
       const linea: LineaNotaCredito = {
         remitoId: l.remitoId,
@@ -420,7 +420,7 @@ export function construirNotasCredito(
         iva,
         subtotal,
         ivaImporte,
-        total: round2(subtotal + ivaImporte),
+        total: trunc2(subtotal + ivaImporte),
         sinPrecio: venta === undefined,
       }
 
@@ -444,7 +444,7 @@ export function construirNotasCredito(
   }
 
   const suma = (lineas: LineaNotaCredito[], moneda: 'Pesos' | 'Dólares') =>
-    round2(lineas.filter((l) => l.moneda === moneda).reduce((acc, l) => acc + l.total, 0))
+    trunc2(lineas.filter((l) => l.moneda === moneda).reduce((acc, l) => acc + l.total, 0))
 
   return [...notas.values()].map((nota) => ({
     ...nota,
@@ -493,7 +493,7 @@ export interface NotaCreditoAEmitir {
 
 /** Importe de una línea llevado a pesos con el tipo de cambio de su factura original. */
 const aPesos = (l: LineaNotaCredito, valor: number): number =>
-  round2(l.moneda === 'Dólares' && l.tipoCambio ? valor * l.tipoCambio : valor)
+  trunc2(l.moneda === 'Dólares' && l.tipoCambio ? valor * l.tipoCambio : valor)
 
 /**
  * Convierte la nota de crédito calculada en lo que se escribe en el tablero.
@@ -521,9 +521,9 @@ export function notaCreditoAMonday(nc: NotaCreditoPendiente): NotaCreditoAEmitir
       subtotal: aPesos(l, l.subtotal),
     }))
 
-  const subtotal = round2(lineas.reduce((acc, l) => acc + l.subtotal, 0))
+  const subtotal = trunc2(lineas.reduce((acc, l) => acc + l.subtotal, 0))
   // El IVA del documento es la suma del de sus líneas: se calcula una vez, en un solo lugar.
-  const iva = round2(lineas.reduce((acc, l) => acc + l.iva, 0))
+  const iva = trunc2(lineas.reduce((acc, l) => acc + l.iva, 0))
 
   return {
     origenId: nc.origenId,
@@ -534,7 +534,7 @@ export function notaCreditoAMonday(nc: NotaCreditoPendiente): NotaCreditoAEmitir
     iva,
     /* Como en el resto de los documentos de la app (ver la venta), el TOTAL incluye el IVA y la
        columna de IVA detalla qué parte de ese total es impuesto. */
-    total: round2(subtotal + iva),
+    total: trunc2(subtotal + iva),
     lineas,
   }
 }

@@ -15,7 +15,7 @@ import {
   ivaLinea,
   netoLinea,
 } from '@/lib/descuentos'
-import { money, round2 } from '@/lib/format'
+import { money, trunc2 } from '@/lib/format'
 import { resumenPresupuesto } from '@/lib/selectors'
 import type { LineaPresupuesto, Producto } from '@/types'
 
@@ -45,9 +45,9 @@ assert.equal(d.formaPago, 600, 'monto forma de pago = precio × %fp')
 assert.equal(d.manual, 470, 'monto manual = (precio − monto fp) × %manual')
 assert.equal(d.total, 1070, 'descuento total = fp + manual (cascada, NO 1100 sumando %)')
 assert.equal(d.precioFinal, 8930, 'precio final = precio − descuento total')
-assert.equal(round2(d.pct), 10.7, '% compuesto = 1 − (1−fp)(1−manual)')
+assert.equal(trunc2(d.pct), 10.7, '% compuesto = 1 − (1−fp)(1−manual)')
 // La suma simple de porcentajes (lógica vieja) daría de más: es justamente lo que se corrigió.
-assert.notEqual(d.total, round2((PRECIO * (MANUAL + FP)) / 100), 'volvió la suma de porcentajes')
+assert.notEqual(d.total, trunc2((PRECIO * (MANUAL + FP)) / 100), 'volvió la suma de porcentajes')
 // Casos borde: sin descuentos, sólo uno, y bonificación total.
 assert.equal(descuentoUnitario(PRECIO, 0, 0).total, 0, 'sin descuentos no hay bonificación')
 assert.equal(descuentoUnitario(PRECIO, 0, FP).total, 600, 'sólo forma de pago')
@@ -61,24 +61,24 @@ assert.equal(descuentoUnitario(PRECIO, 999, 999).precioFinal, 0, 'el descuento n
 for (const cantidad of [1, 3, 20]) {
   assert.equal(
     netoLinea(PRECIO, cantidad, MANUAL, FP),
-    round2(8930 * cantidad),
+    trunc2(8930 * cantidad),
     `subtotal = precio final × cantidad (cantidad ${cantidad})`,
   )
   assert.equal(
     ivaLinea(netoLinea(PRECIO, cantidad, MANUAL, FP), 21),
-    round2(8930 * cantidad * 0.21),
+    trunc2(8930 * cantidad * 0.21),
     `IVA = subtotal × alícuota (cantidad ${cantidad})`,
   )
   // "Importe Bonif $" del subelemento de facturación: la bonificación de la LÍNEA entera.
   assert.equal(
     bonificacionLinea(PRECIO, cantidad, MANUAL, FP),
-    round2(1070 * cantidad),
+    trunc2(1070 * cantidad),
     `bonificación = (desc. forma de pago + desc. manual) × cantidad (cantidad ${cantidad})`,
   )
   // Precio de lista = neto cobrado + bonificación: no se pierde ni se duplica plata.
   assert.equal(
-    round2(netoLinea(PRECIO, cantidad, MANUAL, FP) + bonificacionLinea(PRECIO, cantidad, MANUAL, FP)),
-    round2(PRECIO * cantidad),
+    trunc2(netoLinea(PRECIO, cantidad, MANUAL, FP) + bonificacionLinea(PRECIO, cantidad, MANUAL, FP)),
+    trunc2(PRECIO * cantidad),
     `neto + bonificación = precio de lista × cantidad (cantidad ${cantidad})`,
   )
 }
@@ -133,12 +133,12 @@ const lineas: LineaPresupuesto[] = [
   { id: 'b', producto: { ...producto, precio: 4500 }, cantidad: 2, descuento: 0 },
 ]
 const resumen = resumenPresupuesto(lineas, true, FP)
-const sumaFilas = round2(
+const sumaFilas = trunc2(
   lineas.reduce((acc, l) => acc + netoLinea(l.producto.precio, l.cantidad, l.descuento, FP), 0),
 )
 assert.equal(resumen.neto, sumaFilas, 'el neto del resumen no es la suma de los subtotales')
-assert.equal(resumen.neto, round2(44650 + 8460), 'neto esperado con la cascada')
-assert.equal(resumen.iva, round2(resumen.neto * 0.21), 'el IVA del resumen sale del neto')
-assert.equal(resumen.total, round2(resumen.neto + resumen.iva), 'total = neto + IVA')
+assert.equal(resumen.neto, trunc2(44650 + 8460), 'neto esperado con la cascada')
+assert.equal(resumen.iva, trunc2(resumen.neto * 0.21), 'el IVA del resumen sale del neto')
+assert.equal(resumen.total, trunc2(resumen.neto + resumen.iva), 'total = neto + IVA')
 
 console.log('OK · descuento en cascada, subtotal e IVA')

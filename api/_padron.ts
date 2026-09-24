@@ -103,9 +103,17 @@ const byId = (item: { column_values?: CV[] }): Record<string, CV> =>
 
 const valor = (cv?: CV): string => cv?.display_value ?? cv?.text ?? ''
 
+/**
+ * DOS decimales TRUNCADOS, el criterio de toda la app (espejo de `trunc2` en `src/lib/format.ts`:
+ * `api/` es autocontenido y no puede importar de `src/`). 123456,789 → 123456,78. El
+ * `toPrecision(15)` limpia el arrastre del punto flotante antes de cortar.
+ */
+const trunc2 = (n: number): number => Math.trunc(Number((n * 100).toPrecision(15))) / 100
+
+/** Número a partir del texto de Monday, con dos decimales truncados: lo mismo que lee la app. */
 const num = (t?: string | null): number => {
   const n = Number(String(t ?? '').replace(/[^\d.-]/g, ''))
-  return Number.isFinite(n) ? n : 0
+  return Number.isFinite(n) ? trunc2(n) : 0
 }
 
 const numCol = (cv?: CV): number => num(valor(cv))

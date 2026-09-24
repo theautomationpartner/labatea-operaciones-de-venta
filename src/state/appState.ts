@@ -1,7 +1,7 @@
 /** Estado único del flujo de operaciones y su reducer. Sin dependencias de React. */
 import { DIAS_VENC_FACTURA_MOCK, DIAS_VIGENCIA_INICIAL } from '@/data/mock'
 import { ahora, hoy } from '@/lib/dates'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { pasoDeProductos, pasoInicialDe, pasosKeysDe } from '@/lib/pasos'
 import { productoConPrecio } from '@/lib/precios'
@@ -510,15 +510,15 @@ export function convertirProductoAPesos(
   if (!esDolar(prod.moneda) || !tasa || tasa <= 0) return prod
   return {
     ...prod,
-    precio: round2(prod.precio * tasa),
+    precio: trunc2(prod.precio * tasa),
     /* El costo y el flete del maestro están en la moneda del producto, igual que el precio: viajan
        a pesos con la misma tasa. Si se quedaran en dólares, la rentabilidad mezclaría monedas. */
-    costo: prod.costo != null ? round2(prod.costo * tasa) : prod.costo,
-    flete: prod.flete != null ? round2(prod.flete * tasa) : prod.flete,
+    costo: prod.costo != null ? trunc2(prod.costo * tasa) : prod.costo,
+    flete: prod.flete != null ? trunc2(prod.flete * tasa) : prod.flete,
     // El importe bonificado guardado (en dólares) se convierte con la misma tasa: es la base sobre
     // la que la venta aplica el descuento por forma de pago, ya en pesos.
     impBonificado:
-      prod.impBonificado != null ? round2(prod.impBonificado * tasa) : prod.impBonificado,
+      prod.impBonificado != null ? trunc2(prod.impBonificado * tasa) : prod.impBonificado,
     moneda: 'Pesos',
   }
 }
@@ -921,7 +921,7 @@ export function reducer(state: AppState, action: Action): AppState {
        Al conservarse el costo, pisar el precio dos veces seguidas da el mismo resultado que
        pisarlo una sola vez con el valor final. */
     case 'setPrecioLinea': {
-      const precio = round2(action.precio)
+      const precio = trunc2(action.precio)
       // Un precio de 0 o negativo no es un precio: se ignora y la celda queda marcada en rojo.
       if (!(precio > 0)) return state
       return {

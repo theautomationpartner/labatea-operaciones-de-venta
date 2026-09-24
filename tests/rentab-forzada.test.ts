@@ -20,7 +20,7 @@
  * Se corre con esbuild + node (`npm run test:rentab-forzada`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { lineasDeVenta } from '@/lib/lineasVenta'
 import { productoConPrecio } from '@/lib/precios'
 import {
@@ -97,25 +97,25 @@ igual(linea.rentabForzadaAplicada, PCT, 'el reducer marca el % en la línea')
 igual(rentabilidadDe(110_000, COSTO, FLETE), 7.5, 'sin forzar, ese precio rinde 7,50%')
 
 const f = rentabForzadaLinea(linea)!
-igual(f.nuevoCosto, 89_288.62, 'Nuevo Costo = (110.000 − 175) / 1,23 = 89.288,62')
-igual(f.notaCredito, 12_873.73, 'Nota de Crédito = 102.162,35 − 89.288,62 = 12.873,73 por unidad')
+igual(f.nuevoCosto, 89_288.61, 'Nuevo Costo = (110.000 − 175) / 1,23 = 89.288,61 (truncado: 89.288,617…)')
+igual(f.notaCredito, 12_873.74, 'Nota de Crédito = 102.162,35 − 89.288,61 = 12.873,74 por unidad')
 igual(rentabilidadDe(110_000, f.nuevoCosto, FLETE), 23, 'control: con el costo nuevo rinde exactamente 23,00%')
 igual(rentabilidadFinalLinea(linea), PCT, 'la rentabilidad FINAL de la línea es el % forzado')
-igual(costoEfectivoLinea(linea), 89_288.62, 'y la línea pesa en la general con el costo nuevo')
+igual(costoEfectivoLinea(linea), 89_288.61, 'y la línea pesa en la general con el costo nuevo')
 igual(linea.producto.precio, 110_000, 'el precio de venta no cambia')
 
 /* La cuenta vieja: Nuevo Costo = Precio × (1 − %) = 84.700 → NC 17.462,35, y dejaba 29,66%. */
-igual(round2(COSTO - 110_000 * 0.77), 17_462.35, 'la fórmula vieja le reclamaba $4.588,62 de más al proveedor')
+igual(trunc2(COSTO - 110_000 * 0.77), 17_462.35, 'la fórmula vieja le reclamaba $4.588,61 de más al proveedor')
 
 /* ---------- 3) El IVA no entra ---------- */
 
 console.log('\nCaso 3 · Cliente que paga IVA:')
 
 // El precio le llega con el 21%; el precio sin IVA sigue siendo 110.000.
-const conIva = { ...pisado, precio: round2(110_000 * 1.21) }
+const conIva = { ...pisado, precio: trunc2(110_000 * 1.21) }
 igual(
   rentabForzadaLinea(conForzada(conIva))?.notaCredito,
-  12_873.73,
+  12_873.74,
   'la nota de crédito es la misma: se mide sobre el precio SIN IVA (antes daba −15.077,83 con IVA)',
 )
 
@@ -125,8 +125,8 @@ console.log('\nCaso 4 · Descuentos:')
 
 // 10% por forma de pago: se cobra 99.000 → Nuevo Costo (99.000 − 175) / 1,23 = 80.345,53
 const conDesc = rentabForzadaLinea(linea, 10)!
-igual(conDesc.nuevoCosto, 80_345.53, 'con 10% por forma de pago, Nuevo Costo = (99.000 − 175) / 1,23')
-igual(conDesc.notaCredito, round2(COSTO - 80_345.53), 'y la nota de crédito crece en la misma medida')
+igual(conDesc.nuevoCosto, 80_345.52, 'con 10% por forma de pago, Nuevo Costo = (99.000 − 175) / 1,23')
+igual(conDesc.notaCredito, trunc2(COSTO - 80_345.52), 'y la nota de crédito crece en la misma medida')
 
 // El descuento manual cambiado DESPUÉS de forzar: la nota de crédito se recalcula sola.
 const reducida = { ...linea, descuento: 10 }
@@ -151,11 +151,11 @@ igual(rentabilidadFinalLinea(yaRinde), 23, 'y la línea muestra su rentabilidad 
 console.log('\nCaso 6 · TOTAL Nota de Crédito x Comisión:')
 
 const tres = conForzada(pisado, 3)
-igual(notaCreditoLinea(tres), 12_873.73, 'la nota de crédito de la línea sigue siendo POR UNIDAD')
-igual(notaCreditoTotal([tres]), 38_621.19, 'el TOTAL la multiplica por la cantidad: 12.873,73 × 3')
+igual(notaCreditoLinea(tres), 12_873.74, 'la nota de crédito de la línea sigue siendo POR UNIDAD')
+igual(notaCreditoTotal([tres]), 38_621.22, 'el TOTAL la multiplica por la cantidad: 12.873,74 × 3')
 igual(
   notaCreditoTotal([tres, conForzada(PRODUCTO, 5)]),
-  38_621.19,
+  38_621.22,
   'las líneas sin rentabilidad forzada no suman',
 )
 
@@ -164,14 +164,14 @@ igual(
 console.log('\nCaso 7 · Lo que se graba:')
 
 const [lv] = lineasDeVenta({ ...initialState, lineas: [tres] } as never)
-igual(lv.notaCreditoComision, 12_873.73, 'la venta lleva la nota de crédito por unidad en la línea')
+igual(lv.notaCreditoComision, 12_873.74, 'la venta lleva la nota de crédito por unidad en la línea')
 igual(lv.rentabilidad, PCT, 'y la rentabilidad de la línea es el % forzado')
-igual(lv.costoUnitario, 89_288.62, 'y el costo con el que pesa en la general es el nuevo')
+igual(lv.costoUnitario, 89_288.61, 'y el costo con el que pesa en la general es el nuevo')
 
 const cv = JSON.parse(fragmentoSubitem(tres, 0).variables.cv0 as string) as Record<string, unknown>
 igual(cv[COL.presupuestoSub.rentabilidad], '23', 'el subelemento del presupuesto graba la rentabilidad final')
-igual(cv[COL.presupuestoSub.costoPesos], '89288.62', 'el costo que graba es el nuevo')
-igual(cv[COL.presupuestoSub.notaCreditoComision], '12873.73', 'y la nota de crédito, por unidad')
+igual(cv[COL.presupuestoSub.costoPesos], '89288.61', 'el costo que graba es el nuevo')
+igual(cv[COL.presupuestoSub.notaCreditoComision], '12873.74', 'y la nota de crédito, por unidad')
 igual(cv[COL.presupuestoSub.flete], '175', 'el subelemento del presupuesto graba el flete por unidad')
 igual(lv.flete, FLETE, 'y la línea de venta lo lleva, para grabarlo en la proforma')
 

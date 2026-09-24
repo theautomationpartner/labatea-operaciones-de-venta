@@ -10,7 +10,7 @@
  */
 import { VENTAS_ENTREGA } from '@/data/mock'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { memoPorCliente } from './cache'
 import type {
   Moneda,
@@ -198,36 +198,36 @@ const columnasLinea = (
      Bonificado, IVA en $ y Subtotal (total ya bonificado, SIN IVA). Mismas fórmulas que la
      tabla de productos: lo que ve el vendedor es lo que se asienta en el board. */
   const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFp).total
-  const impBonifLinea = round2(bonifUnit * l.cantidad)
-  const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
+  const impBonifLinea = trunc2(bonifUnit * l.cantidad)
+  const totalLinea = trunc2((l.precioUnitario - bonifUnit) * l.cantidad)
   const ivaMonto = ivaLinea(totalLinea, alicuotaDeclarada(l.iva))
   /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto se calcula sobre el precio de
      LISTA por separado (NO en cascada), y su "precio con dto" = precio − ese monto. Son columnas
      informativas del board, distintas del Imp. Bonificado / Precio Bonif (que van en cascada). */
-  const descProdUnit = round2((l.precioUnitario * l.descuento) / 100)
-  const descFpUnit = round2((l.precioUnitario * descFp) / 100)
+  const descProdUnit = trunc2((l.precioUnitario * l.descuento) / 100)
+  const descFpUnit = trunc2((l.precioUnitario * descFp) / 100)
 
   const cv: Record<string, unknown> = {
     [COL.ventaSub.cantidad]: String(l.cantidad),
-    [COL.ventaSub.precioUnit]: String(round2(l.precioUnitario)),
+    [COL.ventaSub.precioUnit]: String(trunc2(l.precioUnitario)),
     [COL.ventaSub.descuento]: String(l.descuento),
     // Descuento por forma de pago: de la proforma (venta sobre proforma) o de la operación.
     [COL.ventaSub.descFormaPago]: String(descFp),
     // Desglose independiente de cada descuento por unidad (montos y precio ya descontado).
     [COL.ventaSub.descProdMonto]: String(descProdUnit),
-    [COL.ventaSub.precioConDescProd]: String(round2(l.precioUnitario - descProdUnit)),
+    [COL.ventaSub.precioConDescProd]: String(trunc2(l.precioUnitario - descProdUnit)),
     [COL.ventaSub.descFpMonto]: String(descFpUnit),
-    [COL.ventaSub.precioConDescFp]: String(round2(l.precioUnitario - descFpUnit)),
+    [COL.ventaSub.precioConDescFp]: String(trunc2(l.precioUnitario - descFpUnit)),
     // Imp. Bonificado de la línea = descuento por unidad (en cascada) × cantidad.
     [COL.ventaSub.impBonificado]: String(impBonifLinea),
     // Precio Bonif = precio unitario (en pesos, ya convertido) menos la bonificación por unidad.
-    [COL.ventaSub.precioBonif]: String(round2(l.precioUnitario - bonifUnit)),
+    [COL.ventaSub.precioBonif]: String(trunc2(l.precioUnitario - bonifUnit)),
     // IVA en $ de la línea, sobre el total ya bonificado.
     [COL.ventaSub.iva]: String(ivaMonto),
     // Subtotal de la línea = el "Importe Total" de la tabla de productos (ya bonificado, SIN IVA).
     [COL.ventaSub.subtotal]: String(totalLinea),
     // Rentabilidad de la línea CON DECIMALES: redondear a entero asignaba un margen incorrecto.
-    [COL.ventaSub.rentabilidad]: String(round2(l.rentabilidad)),
+    [COL.ventaSub.rentabilidad]: String(trunc2(l.rentabilidad)),
   }
   if (entregaSimultanea) {
     cv[COL.ventaSub.cantEntregadaSimult] = String(l.cantidad)
@@ -249,14 +249,14 @@ const columnasLinea = (
     }
   }
   // Auditoría USD: sólo para productos que estaban en dólares, el precio original antes de convertir.
-  if (l.precioUsd != null) cv[COL.ventaSub.precioUnitUsd] = String(round2(l.precioUsd))
+  if (l.precioUsd != null) cv[COL.ventaSub.precioUnitUsd] = String(trunc2(l.precioUsd))
   // En el flujo de entrega ANTERIOR las líneas vienen del remito y no traen el producto.
   if (l.productoId) cv[COL.ventaSub.producto] = { item_ids: [Number(l.productoId)] }
   // Ítem de stock del producto (heredado del maestro o del presupuesto): se enlaza en el subítem.
   if (l.stockId) cv[COL.ventaSub.stock] = { item_ids: [Number(l.stockId)] }
   // Nota de Crédito x Comisión por unidad (Costo Original − Nuevo Precio de Costo). Se escribe SIEMPRE:
   // 0 si no se activó la rentabilidad forzada o el producto no la acepta.
-  cv[COL.ventaSub.notaCreditoComision] = String(round2(l.notaCreditoComision ?? 0))
+  cv[COL.ventaSub.notaCreditoComision] = String(trunc2(l.notaCreditoComision ?? 0))
   return cv
 }
 
@@ -305,7 +305,7 @@ async function crearPendientesEntrega(
     /* La venta NO se escribe acá: el tablero de pendientes no tiene columna de venta a nivel ítem.
        Se llega a ella por el subelemento de venta que se enlaza más abajo (ver `COL`). */
     const cv: Record<string, unknown> = {
-      [COL.pendienteEntregaItem.cantidad]: String(round2(l.cantidad)),
+      [COL.pendienteEntregaItem.cantidad]: String(trunc2(l.cantidad)),
     }
     if (clienteId) cv[COL.pendienteEntregaItem.cliente] = { item_ids: [Number(clienteId)] }
     if (l.productoId) cv[COL.pendienteEntregaItem.producto] = { item_ids: [Number(l.productoId)] }
@@ -398,7 +398,7 @@ async function crearMovimientosStockSimultanea(
   const variables: Record<string, unknown> = {}
   const campos = conStock.map((l, i) => {
     const cv: Record<string, unknown> = {
-      [COL.stockMovSub.egreso]: String(round2(l.cantidad)),
+      [COL.stockMovSub.egreso]: String(trunc2(l.cantidad)),
       [COL.stockMovSub.fecha]: { date: fecha },
     }
     if (idx != null) cv[COL.stockMovSub.estado] = { index: idx }
@@ -461,16 +461,16 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
     (acc, l) => {
       // Mismo descuento por forma de pago que el subelemento: de la proforma si la venta sale de una.
       const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, l.descFormaPago ?? descFormaPago).total
-      const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-      acc.desc += round2(bonifUnit * l.cantidad)
+      const totalLinea = trunc2((l.precioUnitario - bonifUnit) * l.cantidad)
+      acc.desc += trunc2(bonifUnit * l.cantidad)
       acc.neto += totalLinea
       acc.iva += ivaLinea(totalLinea, alicuotaDeclarada(l.iva))
       return acc
     },
     { desc: 0, neto: 0, iva: 0 },
   )
-  const descuentoTotal = round2(totales.desc)
-  const ivaTotal = round2(totales.iva)
+  const descuentoTotal = trunc2(totales.desc)
+  const ivaTotal = trunc2(totales.iva)
 
   if (!mondayHabilitado()) {
     return { id: `mock-venta-${Date.now()}`, subitemsCreados: lineas.length }
@@ -512,11 +512,11 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
         tipoPago === 'SIMULTANEO' ? VENTA_COBRO_INDEX.simultaneo : VENTA_COBRO_INDEX.posterior,
     },
     // Rentabilidad general CON DECIMALES (no se redondea a entero).
-    [COL.venta.rentabilidad]: String(round2(rentabilidad)),
+    [COL.venta.rentabilidad]: String(trunc2(rentabilidad)),
   }
   // Auditoría: tasa de cambio del dólar usada en la venta (registro inmutable).
   if (tasaCambio != null && tasaCambio > 0) {
-    cabecera[COL.venta.tasaCambio] = round2(tasaCambio)
+    cabecera[COL.venta.tasaCambio] = trunc2(tasaCambio)
   }
   /* Totales de la venta: descuento total e IVA total. El TOTAL va en "🤖TOTAL $"
      (`importeTotalPesos`), que es el que llega más abajo desde la vista; no hay una segunda columna
@@ -529,15 +529,15 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
      mercadería vendida, no por una unidad de cada producto. */
   const lineaForzada = lineas.find((l) => l.notaCreditoComision != null)
   if (lineaForzada) {
-    cabecera[COL.venta.rentabForzada] = String(round2(lineaForzada.rentabilidad))
-    const totalNotaCredito = round2(
+    cabecera[COL.venta.rentabForzada] = String(trunc2(lineaForzada.rentabilidad))
+    const totalNotaCredito = trunc2(
       lineas.reduce((acc, l) => acc + (l.notaCreditoComision ?? 0) * l.cantidad, 0),
     )
     cabecera[COL.venta.notaCreditoComision] = String(totalNotaCredito)
   }
   // Total en pesos de la venta: se envía como NÚMERO (no string) para las fórmulas del board.
   if (importeTotalPesos != null) {
-    cabecera[COL.venta.importeTotalPesos] = round2(importeTotalPesos)
+    cabecera[COL.venta.importeTotalPesos] = trunc2(importeTotalPesos)
   }
   // Con entrega simultánea la mercadería sale con la venta: nace "100% Entregada" (por índice).
   if (entregaSimultanea) {
@@ -864,7 +864,7 @@ export async function actualizarCantEntregada(lineas: CantEntregada[]): Promise<
       const n = desde + i
       variables[`item${n}`] = l.subitemId
       variables[`cv${n}`] = JSON.stringify({
-        [COL.ventaSub.cantEntregadaPosterior]: String(round2(l.cantEntregada)),
+        [COL.ventaSub.cantEntregadaPosterior]: String(trunc2(l.cantEntregada)),
       })
       return `u${n}: change_multiple_column_values(item_id: $item${n}, board_id: $board, column_values: $cv${n}) { id }`
     })

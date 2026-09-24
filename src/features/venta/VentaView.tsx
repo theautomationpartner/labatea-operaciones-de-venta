@@ -8,7 +8,7 @@ import { FormaPagoSelect } from '@/features/productos/FormaPagoSelect'
 import { PendientesSelector, type PendienteFila } from '@/features/shared/PendientesSelector'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { descuentoUnitario } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
@@ -117,8 +117,8 @@ export function VentaView() {
            en el subelemento (numeric_mm5w3qtg); para los dolarizados —que no tienen ese total en
            pesos— se convierte el precio unitario a pesos y se multiplica por la cant. disponible. */
         const subtotal = esDolar(prod.moneda)
-          ? round2(prod.precio * (tasaCambio ?? 0) * prod.pend)
-          : prod.subtotalPesos || round2(prod.precio * prod.pend)
+          ? trunc2(prod.precio * (tasaCambio ?? 0) * prod.pend)
+          : prod.subtotalPesos || trunc2(prod.precio * prod.pend)
         filas.push({
           uid,
           codigo: prod.codigo,
@@ -157,7 +157,7 @@ export function VentaView() {
            el pronto pago que se eligió allá, que no tiene por qué ser el de la venta. */
         const impBonif = descuentoUnitario(precio, it.desc ?? 0, descFormaPago).total
         // Importe Total de la línea, ya bonificado (con la forma de pago aplicada).
-        const totalLinea = round2((precio - impBonif) * it.aVender)
+        const totalLinea = trunc2((precio - impBonif) * it.aVender)
         return {
           id: it.uid,
           codigo: it.codigo,

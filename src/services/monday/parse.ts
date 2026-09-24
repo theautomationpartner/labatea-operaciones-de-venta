@@ -3,6 +3,8 @@
  * todos los tableros, así que viven acá y no en la capa de servicio de cada etapa.
  */
 
+import { trunc2 } from '@/lib/format'
+
 export interface CV {
   id: string
   text: string | null
@@ -38,10 +40,15 @@ export const byId = (item: { column_values?: CV[] }): Record<string, CV> =>
 /** Valor de una columna: usa display_value (fórmulas) o text (numéricas/comunes). */
 export const valor = (cv?: CV): string => cv?.display_value ?? cv?.text ?? ''
 
-/** Número a partir del texto de Monday (que puede venir formateado). */
+/**
+ * Número a partir del texto de Monday (que puede venir formateado), con DOS decimales TRUNCADOS
+ * (`trunc2`). Las fórmulas del board muestran hasta tres —un precio de lista llega como
+ * 125834,691—, pero la app trabaja con dos desde que lee el dato: así ninguna cuenta arrastra un
+ * tercer decimal que el usuario no ve. Un entero (cantidad, id) no cambia.
+ */
 export const num = (t?: string | null): number => {
   const n = Number(String(t ?? '').replace(/[^\d.-]/g, ''))
-  return Number.isFinite(n) ? n : 0
+  return Number.isFinite(n) ? trunc2(n) : 0
 }
 
 /** Número de una columna, tomando display_value o text según corresponda. */

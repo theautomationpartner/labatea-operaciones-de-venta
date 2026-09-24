@@ -22,7 +22,7 @@
  *   En los dos casos los REMITOS PENDIENTES DE FACTURAR cuentan como línea ya tomada (ver
  *   `creditoUsado`): es mercadería entregada que todavía no se facturó.
  */
-import { money, round2 } from '@/lib/format'
+import { money, trunc2 } from '@/lib/format'
 import type { Cliente, CondicionPago, FormaPagoVenta, Operacion, TipoEntrega } from '@/types'
 
 /** Condiciones de pago que HABILITAN operar por cuenta corriente. */
@@ -164,7 +164,7 @@ export const MENSAJE_CLIENTE_BLOQUEADO =
  * venta y para el presupuesto: la mercadería entregada sin facturar toma línea en los dos.
  */
 export const creditoUsado = (c: Cliente): number =>
-  round2(c.saldoCtaCte + c.remitosPendFacturar)
+  trunc2(c.saldoCtaCte + c.remitosPendFacturar)
 
 /**
  * Crédito disponible PROYECTADO si la operación en curso consume `importe`. Fórmula única y
@@ -180,7 +180,7 @@ export function creditoDisponibleProyectado(
   importe = 0,
 ): number {
   if (!c) return 0
-  return round2(Math.max(0, c.limit - creditoUsado(c) - importe))
+  return trunc2(Math.max(0, c.limit - creditoUsado(c) - importe))
 }
 
 /**
@@ -193,7 +193,7 @@ export function creditoDisponibleProyectado(
  * centésimas por punto flotante (−0,000001) daría "excedido" con la línea justa.
  */
 export const creditoResultante = (c: Cliente, importe: number): number =>
-  round2(c.limit - creditoUsado(c) - importe)
+  trunc2(c.limit - creditoUsado(c) - importe)
 
 /**
  * LÍNEA que quedaría comprometida tras la operación: lo ya usado (saldo + remitos pendientes de
@@ -202,7 +202,7 @@ export const creditoResultante = (c: Cliente, importe: number): number =>
  * solo ignora los remitos y da verde donde el bloqueo frena.
  */
 export const lineaResultante = (c: Cliente, importe: number): number =>
-  round2(creditoUsado(c) + importe)
+  trunc2(creditoUsado(c) + importe)
 
 /**
  * El límite está alcanzado. La regla es una sola: el crédito resultante da NEGATIVO, o sea

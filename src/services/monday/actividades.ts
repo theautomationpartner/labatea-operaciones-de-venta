@@ -28,6 +28,7 @@ import {
   ACTIVIDAD_COMPLETADA_INDEX,
   ACTIVIDAD_MODO_MANUAL_INDEX,
   ACTIVIDAD_PENDIENTE_INDEX,
+  ACTIVIDAD_VENCIDA_INDEX,
   BOARDS,
   COL,
   personCol,
@@ -786,6 +787,11 @@ export async function asociarActividades(
 /**
  * TODAS las pendientes del tablero, con las relaciones que dicen a quién involucran.
  *
+ * "Pendientes" acá son DOS estados del board: Pendiente y Vencido. Una vencida sigue siendo una
+ * gestión sin resolver —lo único que le pasó es que se le fue la fecha—, así que se ofrece para
+ * cerrar igual que cualquier otra; trayendo sólo las Pendientes, las más viejas quedaban fuera de
+ * la app y había que ir a resolverlas al tablero (ver `ACTIVIDAD_VENCIDA_INDEX`).
+ *
  * El filtro por Persona y por contacto va EN MEMORIA (ver `filtrarPendientesDe`), no en la
  * consulta. No es porque Monday no pueda: una regla `any_of` sobre la `board_relation` SÍ filtra por
  * el id del ítem conectado, pero sólo si va como NÚMERO (`compare_value: [123]`); como texto
@@ -804,7 +810,7 @@ async function getActividadesPendientesImpl(): Promise<ActividadPendiente[]> {
           limit: ${TOPE_ACTIVIDADES}
           query_params: {
             rules: [
-              { column_id: "${COL.actividad.estado}", compare_value: [${ACTIVIDAD_PENDIENTE_INDEX}], operator: any_of }
+              { column_id: "${COL.actividad.estado}", compare_value: [${ACTIVIDAD_PENDIENTE_INDEX}, ${ACTIVIDAD_VENCIDA_INDEX}], operator: any_of }
             ]
           }
         ) {

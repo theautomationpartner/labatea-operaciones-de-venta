@@ -9,7 +9,7 @@
 import { PRESUPUESTOS } from '@/data/mock'
 import { num, numCol, valor, byId, type CV, type MondayItem } from './parse'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { memoPorCliente } from './cache'
 import type { MedioEnvio, PresupuestoProducto, TipoEntrega, TipoVenta } from '@/types'
 import { BOARDS, COL, MEDIO_ENVIO_LABELS, personCol } from './columns'
@@ -199,7 +199,7 @@ async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaV
     const totalBoard = num(c[COL.proforma.total]?.text)
     const importe =
       totalBoard ||
-      round2(productos.reduce((acc, p) => acc + (p.totalLinea ?? 0) + (p.ivaMonto ?? 0), 0)) ||
+      trunc2(productos.reduce((acc, p) => acc + (p.totalLinea ?? 0) + (p.ivaMonto ?? 0), 0)) ||
       num(valor(c[COL.proforma.importe]))
     // "✋️Tipo De Vta" (color_mm5142e4): "C/ Presup Previo" → CON PRESUPUESTO PREVIO (comisión Activa);
     // cualquier otro ("Directa") → DIRECTA (comisión Pasiva).
@@ -344,14 +344,14 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   const filas = lineas.map((l) => {
     // Descuento por unidad compuesto EN CASCADA (forma de pago primero, manual sobre el resto).
     const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFormaPago).total
-    const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
+    const totalLinea = trunc2((l.precioUnitario - bonifUnit) * l.cantidad)
     return { l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
   })
   // Totales de la venta: descuento (suma de importes bonificados), IVA total y TOTAL (neto + IVA).
-  const descuentoTotal = round2(filas.reduce((a, f) => a + f.bonifUnit * f.l.cantidad, 0))
-  const ivaTotal = round2(filas.reduce((a, f) => a + f.ivaLinea, 0))
-  const netoTotal = round2(filas.reduce((a, f) => a + f.totalLinea, 0))
-  const totalVenta = round2(netoTotal + ivaTotal)
+  const descuentoTotal = trunc2(filas.reduce((a, f) => a + f.bonifUnit * f.l.cantidad, 0))
+  const ivaTotal = trunc2(filas.reduce((a, f) => a + f.ivaLinea, 0))
+  const netoTotal = trunc2(filas.reduce((a, f) => a + f.totalLinea, 0))
+  const totalVenta = trunc2(netoTotal + ivaTotal)
 
   // 1) Cabecera de la proforma. Los status van con el label EXACTO del board (grafía propia).
   const cabecera: Record<string, unknown> = {
@@ -362,11 +362,11 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
     // Nace disponible: "Pendiente de Venta". Al facturarse pasa a "Usada" (ver marcarProformaUsada).
     [COL.proforma.estadoVenta]: { label: PROFORMA_ESTADO_PENDIENTE },
     // Rentabilidad general CON DECIMALES (no se redondea a entero).
-    [COL.proforma.rentabilidad]: round2(rentabilidad),
+    [COL.proforma.rentabilidad]: trunc2(rentabilidad),
     // Totales de la venta (auditoría a nivel ítem).
     [COL.proforma.descuentoTotal]: descuentoTotal,
     ...(tasaCambio != null && tasaCambio > 0
-      ? { [COL.proforma.tasaCambio]: round2(tasaCambio) }
+      ? { [COL.proforma.tasaCambio]: trunc2(tasaCambio) }
       : {}),
     [COL.proforma.ivaTotal]: ivaTotal,
     [COL.proforma.total]: totalVenta,
@@ -396,8 +396,8 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
   for (const { l, bonifUnit, totalLinea, ivaLinea } of filas) {
     /* Desglose INDEPENDIENTE de cada descuento por unidad: cada monto sobre el precio de LISTA por
        separado (NO en cascada), con su "precio con dto" = precio − ese monto. Informativas. */
-    const descProdUnit = round2((l.precioUnitario * l.descuento) / 100)
-    const descFpUnit = round2((l.precioUnitario * descFormaPago) / 100)
+    const descProdUnit = trunc2((l.precioUnitario * l.descuento) / 100)
+    const descFpUnit = trunc2((l.precioUnitario * descFormaPago) / 100)
     const cv: Record<string, unknown> = {
       [COL.proformaSub.cantidad]: l.cantidad,
       // Precio unitario en pesos (ya convertido si el producto estaba en dólares).
@@ -408,31 +408,31 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
       [COL.proformaSub.descFormaPago]: descFormaPago,
       // Desglose independiente de cada descuento por unidad (montos y precio ya descontado).
       [COL.proformaSub.descProdMonto]: descProdUnit,
-      [COL.proformaSub.precioConDescProd]: round2(l.precioUnitario - descProdUnit),
+      [COL.proformaSub.precioConDescProd]: trunc2(l.precioUnitario - descProdUnit),
       [COL.proformaSub.descFpMonto]: descFpUnit,
-      [COL.proformaSub.precioConDescFp]: round2(l.precioUnitario - descFpUnit),
+      [COL.proformaSub.precioConDescFp]: trunc2(l.precioUnitario - descFpUnit),
       // Imp. Bonificado POR UNIDAD (desc manual + desc forma de pago).
       [COL.proformaSub.impBonificado]: bonifUnit,
       // Precio Bonif = precio unitario (en pesos, ya convertido) menos la bonificación por unidad.
-      [COL.proformaSub.precioBonif]: round2(l.precioUnitario - bonifUnit),
+      [COL.proformaSub.precioBonif]: trunc2(l.precioUnitario - bonifUnit),
       // IVA ($) de la línea sobre el total ya bonificado.
       [COL.proformaSub.iva]: ivaLinea,
       // Total de la línea (precio − Imp. Bonificado) × cantidad.
       [COL.proformaSub.total]: totalLinea,
       // Rentabilidad de la línea CON DECIMALES (no se redondea a entero).
-      [COL.proformaSub.rentabilidad]: round2(l.rentabilidad),
+      [COL.proformaSub.rentabilidad]: trunc2(l.rentabilidad),
       /* Flete por unidad del producto, en pesos: viaja con la línea a la VENTA PROFORMA. 0 si el
          producto no tiene. */
-      [COL.proformaSub.flete]: round2(l.flete ?? 0),
+      [COL.proformaSub.flete]: trunc2(l.flete ?? 0),
     }
     /* Costo por unidad con el que se midió la rentabilidad de la línea, en pesos: el Costo Final, o
        el nuevo costo si se forzó la rentabilidad. Sin costo conocido no se escribe (queda vacío, y
        la venta pondera la línea por el costo que se despeja de su importe y su rentabilidad). */
     if (l.costoUnitario != null && l.costoUnitario > 0) {
-      cv[COL.proformaSub.costoPesos] = round2(l.costoUnitario)
+      cv[COL.proformaSub.costoPesos] = trunc2(l.costoUnitario)
     }
     // Precio en DÓLARES: sólo si el producto estaba en dólares (auditoría de la conversión).
-    if (l.precioUsd != null) cv[COL.proformaSub.precioUnitUsd] = round2(l.precioUsd)
+    if (l.precioUsd != null) cv[COL.proformaSub.precioUnitUsd] = trunc2(l.precioUsd)
     const prodNum = numId(l.productoId)
     if (prodNum != null) cv[COL.proformaSub.producto] = { item_ids: [prodNum] }
     const stockNum = numId(l.stockId)

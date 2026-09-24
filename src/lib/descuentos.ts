@@ -16,7 +16,7 @@
  * Todo lo de acá es POR UNIDAD: el descuento no escala con la cantidad. Lo que sí escala es el
  * neto de la línea (`netoLinea`), que multiplica por la cantidad el precio ya descontado.
  */
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { FACT_ALICUOTAS_IVA } from '@/services/monday/columns'
 
 /** Alícuota de IVA por defecto cuando el producto no trae la suya, en puntos porcentuales. */
@@ -73,16 +73,16 @@ export function descuentoUnitario(
   descFormaPago = 0,
 ): DescuentoUnitario {
   const lista = Number.isFinite(precio) ? precio : 0
-  const formaPago = round2((lista * pctValido(descFormaPago)) / 100)
+  const formaPago = trunc2((lista * pctValido(descFormaPago)) / 100)
   // El descuento manual muerde el precio YA rebajado por la forma de pago, no el de lista.
-  const intermedio = round2(lista - formaPago)
-  const manual = round2((intermedio * pctValido(descManual)) / 100)
-  const total = round2(formaPago + manual)
+  const intermedio = trunc2(lista - formaPago)
+  const manual = trunc2((intermedio * pctValido(descManual)) / 100)
+  const total = trunc2(formaPago + manual)
   return {
     formaPago,
     manual,
     total,
-    precioFinal: round2(lista - total),
+    precioFinal: trunc2(lista - total),
     pct: descuentoCompuesto(descManual, descFormaPago),
   }
 }
@@ -96,7 +96,7 @@ export const netoLinea = (
   cantidad: number,
   descManual: number,
   descFormaPago = 0,
-): number => round2(descuentoUnitario(precio, descManual, descFormaPago).precioFinal * cantidad)
+): number => trunc2(descuentoUnitario(precio, descManual, descFormaPago).precioFinal * cantidad)
 
 /**
  * Bonificación total de la línea, en $: descuento total POR UNIDAD × cantidad. Es el "Descuento
@@ -109,11 +109,11 @@ export const bonificacionLinea = (
   descManual: number,
   descFormaPago = 0,
 ): number =>
-  round2(
+  trunc2(
     descuentoUnitario(precio, descManual, descFormaPago).total *
       (Number.isFinite(cantidad) ? cantidad : 0),
   )
 
 /** IVA en $ de la línea: se calcula SIEMPRE sobre su neto ya descontado, nunca sobre el de lista. */
 export const ivaLinea = (neto: number, tasaIva = IVA_DEFECTO): number =>
-  round2((neto * (tasaIva ?? IVA_DEFECTO)) / 100)
+  trunc2((neto * (tasaIva ?? IVA_DEFECTO)) / 100)

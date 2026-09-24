@@ -9,7 +9,7 @@
 import { abrirCaso, anotar, chequear, paso } from './base'
 import { correrVenta, type Config } from './flujos'
 import { casi, esperarEmisionElectronica, leerItem, links, num, txt, verificarComision, verificarComprobantes, verificarDeuda, verificarVenta } from './verificar'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { facturaItemUid } from '@/lib/selectors'
 import { COL } from '@/services/monday/columns'
 import { clienteLlevaIva } from '@/lib/precios'
@@ -101,7 +101,7 @@ if (talonario.estado !== 'ok') {
       precioUnitario: pRem.precio,
     },
   ]
-  const importePend = round2(items.reduce((a, i) => a + round2(i.cantidad * (i.precioUnitario ?? 0)), 0))
+  const importePend = trunc2(items.reduce((a, i) => a + trunc2(i.cantidad * (i.precioUnitario ?? 0)), 0))
   paso(`remito de ${items[0].cantidad} x "${pRem.nombre}" a $${pRem.precio} → pendiente de facturar ${importePend}`)
 
   const remito = await crearRemito({
@@ -293,7 +293,7 @@ chequear(
 )
 
 /* Crédito: una venta por encima del disponible tiene que frenar. */
-const excede = round2(c7000.disponible + 1000)
+const excede = trunc2(c7000.disponible + 1000)
 /* El crédito sólo rige cuando la operación usa la cuenta corriente. */
 const opCtaCte = { operacion: 'VENTA', formaPago: 'CUENTA CORRIENTE', tipoEntrega: 'SIMULTANEA' } as const
 const opContado = { operacion: 'VENTA', formaPago: 'CONTADO', tipoEntrega: 'SIMULTANEA' } as const

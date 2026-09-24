@@ -28,6 +28,7 @@ import {
   ACTIVIDAD_COMPLETADA_INDEX,
   ACTIVIDAD_MODO_MANUAL_INDEX,
   ACTIVIDAD_PENDIENTE_INDEX,
+  ACTIVIDAD_VENCIDA_INDEX,
   COL,
 } from '@/services/monday/columns'
 import {
@@ -876,6 +877,20 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
                     { id: COL.actividad.contactos, text: '', linked_item_ids: ['11', '22'] },
                   ],
                 },
+                /* VENCIDA: se le pasó la fecha y nadie la cerró. Sigue siendo trabajo sin hacer,
+                   así que tiene que ofrecerse para completar igual que una Pendiente. */
+                {
+                  id: '41',
+                  name: 'Visitar el campo',
+                  column_values: [
+                    { id: COL.actividad.tipo, text: 'Visita al Campo' },
+                    { id: COL.actividad.fecha, text: '2026-01-10 08:00' },
+                    { id: COL.actividad.estado, text: 'Vencido' },
+                    { id: COL.actividad.resolucion, text: '' },
+                    { id: COL.actividad.persona, text: '', linked_item_ids: ['555'] },
+                    { id: COL.actividad.contactos, text: '', linked_item_ids: ['11'] },
+                  ],
+                },
               ],
             },
           },
@@ -886,7 +901,17 @@ globalThis.fetch = (async (_url: string, init: { body: string }) => {
 }) as unknown as typeof fetch
 
 const pendientes = await getActividadesPendientes()
-assert.equal(pendientes.length, 1)
+/* Las dos: la Pendiente y la Vencida. Una vencida no es una gestión resuelta —es una pendiente a
+   la que se le fue la fecha—, y dejarla afuera escondía justo las más viejas, que son las que más
+   falta hace cerrar. Van ordenadas de la más nueva a la más vieja, como el resto. */
+assert.deepEqual(
+  pendientes.map((a) => [a.id, a.estado]),
+  [
+    ['40', 'Pendiente'],
+    ['41', 'Vencido'],
+  ],
+  'se ofrecen las Pendientes Y las Vencidas',
+)
 assert.deepEqual(pendientes[0].personaIds, ['555'], 'las relaciones viajan con la actividad')
 assert.deepEqual(pendientes[0].contactosIds, ['11', '22'])
 assert.equal(
@@ -913,8 +938,14 @@ const sinContactos = etiquetaActividad({ ...pendientes[0], contactos: [] })
 assert.equal(sinContactos.visible, 'Visita al Campo', 'sin contactos no queda un guión colgando')
 assert.equal(sinContactos.ocultas, 0)
 assert.ok(
-  llamadas[0].includes(`compare_value: [${ACTIVIDAD_PENDIENTE_INDEX}]`),
-  'la única regla del servidor es el estado Pendiente, por índice',
+  llamadas[0].includes(
+    `compare_value: [${ACTIVIDAD_PENDIENTE_INDEX}, ${ACTIVIDAD_VENCIDA_INDEX}]`,
+  ),
+  'la única regla del servidor es el estado —Pendiente o Vencido—, por índice',
+)
+assert.ok(
+  !llamadas[0].includes(`compare_value: [${ACTIVIDAD_PENDIENTE_INDEX}]`),
+  'y no puede volver a pedir sólo las Pendientes: las vencidas quedarían fuera de la app',
 )
 assert.ok(
   !llamadas[0].includes(COL.actividad.presupuesto),

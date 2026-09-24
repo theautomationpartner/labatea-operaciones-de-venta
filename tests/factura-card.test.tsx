@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ComprobantesAGenerar } from '@/features/factura/ComprobantesAGenerar'
 import { bonificacionLinea, netoLinea as netoConDescuento } from '@/lib/descuentos'
 import { bonifLinea, comprobantesDeVenta, netoLinea } from '@/lib/facturacion'
-import { money, round2 } from '@/lib/format'
+import { money, trunc2 } from '@/lib/format'
 import { resumenPresupuesto } from '@/lib/selectors'
 import type { LineaVenta } from '@/services/monday/venta'
 import type { LineaPresupuesto, Producto } from '@/types'
@@ -66,20 +66,20 @@ assert.equal(comp.total, resumen.total, 'el TOTAL de la card no es el de la sele
 // El descuento del pie es la suma de la columna Imp.Bonif, no una diferencia calculada aparte.
 assert.equal(
   comp.descuento,
-  round2(lineasVenta.reduce((acc, l) => acc + bonifLinea(l, FP), 0)),
+  trunc2(lineasVenta.reduce((acc, l) => acc + bonifLinea(l, FP), 0)),
   'el Descuento del pie no suma la columna Imp.Bonif',
 )
-assert.equal(round2(comp.bruto - comp.descuento), comp.subtotal, 'Subtotal − Descuento ≠ Gravado')
+assert.equal(trunc2(comp.bruto - comp.descuento), comp.subtotal, 'Subtotal − Descuento ≠ Gravado')
 
 // ---------- Las fórmulas del board sobre lo que se escribe en cada subelemento ----------
 let subtotalBoard = 0
 for (const l of lineasVenta) {
   // Lo que va a las columnas: cantidad, precio de LISTA y la bonificación de la línea entera.
   const cantidad = l.cantidad
-  const precioUnit = round2(l.precioUnitario)
+  const precioUnit = trunc2(l.precioUnitario)
   const importeBonif = bonificacionLinea(l.precioUnitario, l.cantidad, l.descuento, FP)
   // formula_mm2kwwvk, tal cual está definida en el board.
-  const subtotal = round2(cantidad * precioUnit - importeBonif)
+  const subtotal = trunc2(cantidad * precioUnit - importeBonif)
   assert.equal(
     subtotal,
     netoLinea(l, FP),
@@ -90,7 +90,7 @@ for (const l of lineasVenta) {
     netoConDescuento(l.precioUnitario, l.cantidad, l.descuento, FP),
     `el Subtotal $ del board no da el subtotal de la selección de productos (${l.codigo})`,
   )
-  subtotalBoard = round2(subtotalBoard + subtotal)
+  subtotalBoard = trunc2(subtotalBoard + subtotal)
 }
 assert.equal(subtotalBoard, comp.subtotal, 'la suma de los subelementos no da el Gravado de la card')
 

@@ -23,7 +23,7 @@ import {
 } from './verificar'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { descuentoDeFormaPago } from '@/lib/cobros'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { clienteLlevaIva } from '@/lib/precios'
 import { tasaComision, ventaItemUid } from '@/lib/selectors'
@@ -96,7 +96,7 @@ paso(`total venta ${r1.totalVenta} · total facturado ${r1.totalFacturado}`)
 chequear(
   casi(r1.totalVenta, r1.totalFacturado, 0.02),
   'Bug #1 · el total de la VENTA es el total FACTURADO',
-  `venta ${r1.totalVenta} vs facturas ${r1.totalFacturado} · diferencia ${round2(r1.totalVenta - r1.totalFacturado)}`,
+  `venta ${r1.totalVenta} vs facturas ${r1.totalFacturado} · diferencia ${trunc2(r1.totalVenta - r1.totalFacturado)}`,
 )
 await verificarVenta({
   cliente: c7001,
@@ -123,19 +123,19 @@ await verificarRecibo(r1)
 if (r1.reciboId) {
   const recibo = await leerItem(r1.reciboId)
   if (recibo) {
-    const cancelado = round2(
+    const cancelado = trunc2(
       recibo.subitems
         .filter((s) => txt(s, COL.cobroSub.formaPago) === 'Fact Cancelada')
         .reduce((a, s) => a + num(s, COL.cobroSub.importeCancelado), 0),
     )
-    const recibido = round2(
+    const recibido = trunc2(
       recibo.subitems.reduce((a, s) => a + num(s, COL.cobroSub.importeRecibido), 0),
     )
     paso(`recibo ${recibo.id}: facturas canceladas ${cancelado} · recibido ${recibido} · cabecera ${num(recibo, COL.cobro.totalVenta)}`)
     chequear(
       casi(cancelado, recibido, 0.02),
       'Bug #1 · el recibo cancela exactamente lo que recibe',
-      `canceladas ${cancelado} vs recibido ${recibido} · diferencia ${round2(recibido - cancelado)}`,
+      `canceladas ${cancelado} vs recibido ${recibido} · diferencia ${trunc2(recibido - cancelado)}`,
     )
     chequear(
       casi(num(recibo, COL.cobro.totalVenta), cancelado, 1),
@@ -174,9 +174,9 @@ paso(`producto ${prod.codigo} $${prod.precio} iva ${prod.iva}% · desc manual ${
 
 /* Los números de la card, con las MISMAS funciones que ahora usa `CobroProforma`. */
 const bonifUnit = descuentoUnitario(prod.precio, DESC_MANUAL, descFP).total
-const netoCard = round2((prod.precio - bonifUnit) * CANT)
+const netoCard = trunc2((prod.precio - bonifUnit) * CANT)
 const ivaCard = ivaLinea(netoCard, alicuotaDeclarada(prod.iva))
-const totalCard = round2(netoCard + ivaCard)
+const totalCard = trunc2(netoCard + ivaCard)
 paso(`card → bonif/u ${bonifUnit} · neto ${netoCard} · IVA ${ivaCard} · TOTAL ${totalCard}`)
 
 const creada = await crearProforma({
@@ -291,8 +291,8 @@ if (!pf) {
     desc: p.descuento ?? 0,
   }))
   const tasaEsperada = tasaComision(comisiones, pf.tipoVenta, true)
-  const netoComisionable = round2(items.reduce((a, it) => a + it.precio * it.aVender, 0))
-  const comisionEsperada = round2((netoComisionable * tasaEsperada) / 100)
+  const netoComisionable = trunc2(items.reduce((a, it) => a + it.precio * it.aVender, 0))
+  const comisionEsperada = trunc2((netoComisionable * tasaEsperada) / 100)
   paso(`proforma ${pf.nro} · ${pf.tipoVenta} · neto ${netoComisionable} · comisión que ve el vendedor ${comisionEsperada} (${tasaEsperada}%)`)
 
   const r2 = await correrVenta({

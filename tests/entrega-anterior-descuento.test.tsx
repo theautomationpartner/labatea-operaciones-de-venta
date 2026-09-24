@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { AppProvider } from '@/state/AppProvider'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { descuentoUnitario, netoLinea } from '@/lib/descuentos'
-import { money, round2 } from '@/lib/format'
+import { money, trunc2 } from '@/lib/format'
 import { resumenFactura, totalVentaOperacion } from '@/lib/selectors'
 import type { Cliente, FacturaItem } from '@/types'
 
@@ -57,30 +57,30 @@ const neto = (it: FacturaItem) => netoLinea(it.precio, it.aFacturar, 0, FP)
 const sin = resumenFactura(items, cliente, 0, 10, 0)
 const con = resumenFactura(items, cliente, 0, 10, FP)
 
-const bruto = round2(items.reduce((acc, it) => acc + it.precio * it.aFacturar, 0))
+const bruto = trunc2(items.reduce((acc, it) => acc + it.precio * it.aFacturar, 0))
 assert.equal(sin.subtotal, bruto, 'el bruto no depende de la forma de pago')
 assert.equal(con.subtotal, bruto, 'el bruto no debería cambiar con el descuento')
 assert.equal(sin.descuento, 0, 'sin forma de pago no hay descuento')
 assert.equal(
   con.descuento,
-  round2(items.reduce((acc, it) => acc + dtoUnit(it.precio) * it.aFacturar, 0)),
+  trunc2(items.reduce((acc, it) => acc + dtoUnit(it.precio) * it.aFacturar, 0)),
   'el descuento no es la bonificación por forma de pago de cada línea',
 )
 assert.equal(
   con.neto,
-  round2(items.reduce((acc, it) => acc + neto(it), 0)),
+  trunc2(items.reduce((acc, it) => acc + neto(it), 0)),
   'el neto no aplica el descuento por forma de pago',
 )
-assert.equal(round2(con.subtotal - con.descuento), con.neto, 'Subtotal − Descuento ≠ Neto')
+assert.equal(trunc2(con.subtotal - con.descuento), con.neto, 'Subtotal − Descuento ≠ Neto')
 assert.ok(con.neto < sin.neto, 'el descuento por forma de pago no bajó el neto')
 // El IVA se liquida sobre el importe YA bonificado, con la alícuota de cada producto.
-assert.equal(con.iva, round2(con.neto * 0.21), 'el IVA no sale del neto bonificado')
+assert.equal(con.iva, trunc2(con.neto * 0.21), 'el IVA no sale del neto bonificado')
 assert.ok(con.iva < sin.iva, 'el IVA sigue calculándose sobre el bruto')
 // "TOTAL A FACTURAR" = gravado + IVA. No puede ser el neto pelado.
-assert.equal(con.total, round2(con.neto + con.iva), 'el TOTAL a facturar no incluye el IVA')
+assert.equal(con.total, trunc2(con.neto + con.iva), 'el TOTAL a facturar no incluye el IVA')
 assert.ok(con.total > con.neto, 'el TOTAL a facturar sigue siendo el neto sin IVA')
 // La comisión (10%) sólo cuenta el producto comisionable, sobre su neto bonificado.
-assert.equal(con.comision, round2(neto(items[0]) * 0.1), 'la comisión no usa el neto bonificado')
+assert.equal(con.comision, trunc2(neto(items[0]) * 0.1), 'la comisión no usa el neto bonificado')
 // La rentabilidad general baja: se cobra menos por la misma mercadería.
 assert.ok(con.rentabilidad < sin.rentabilidad, 'la rentabilidad ignora el descuento')
 
@@ -130,7 +130,7 @@ for (const it of items) {
     `la fila no muestra el descuento por forma de pago (${it.codigo})`,
   )
   assert.ok(
-    html.includes(money(round2(it.precio - dtoUnit(it.precio)))),
+    html.includes(money(trunc2(it.precio - dtoUnit(it.precio)))),
     `la fila no muestra el precio unitario ya rebajado (${it.codigo})`,
   )
   assert.ok(html.includes(money(neto(it))), `el subtotal de la fila no está bonificado (${it.codigo})`)

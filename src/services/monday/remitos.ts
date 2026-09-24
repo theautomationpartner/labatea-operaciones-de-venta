@@ -6,7 +6,7 @@
  * sin token cae al mock para que el prototipo siga corriendo en local.
  */
 import { CHOFERES, COMISIONISTAS, DESTINOS, REMITOS, VEHICULOS } from '@/data/mock'
-import { round2 } from '@/lib/format'
+import { trunc2 } from '@/lib/format'
 import { memoGlobal, memoPorCliente } from './cache'
 import type {
   Chofer,
@@ -257,7 +257,7 @@ export interface RemitoCreado {
 }
 
 /** Peso de una línea: cantidad remitada × peso unitario del producto. */
-const pesoLinea = (l: LineaRemito): number => round2(l.cantidad * (l.pesoUnitario || 0))
+const pesoLinea = (l: LineaRemito): number => trunc2(l.cantidad * (l.pesoUnitario || 0))
 
 /**
  * Columnas de un subelemento del remito: cantidad entregada, peso y —sólo POSTERIOR— el "🤖Total $"
@@ -266,7 +266,7 @@ const pesoLinea = (l: LineaRemito): number => round2(l.cantidad * (l.pesoUnitari
  */
 const columnasLineaRemito = (l: LineaRemito, totalProducto: number | null): Record<string, unknown> => {
   const cv: Record<string, unknown> = {
-    [COL.remitoSub.cantEntregada]: String(round2(l.cantidad)),
+    [COL.remitoSub.cantEntregada]: String(trunc2(l.cantidad)),
     [COL.remitoSub.peso]: String(pesoLinea(l)),
   }
   if (totalProducto != null) {
@@ -282,7 +282,7 @@ const columnasLineaRemito = (l: LineaRemito, totalProducto: number | null): Reco
 }
 
 /** Importe de una línea del remito: cantidad × precio unitario (0 si no hay precio). */
-const totalLineaRemito = (l: LineaRemito): number => round2(l.cantidad * (l.precioUnitario ?? 0))
+const totalLineaRemito = (l: LineaRemito): number => trunc2(l.cantidad * (l.precioUnitario ?? 0))
 
 /**
  * Índice del primer label cuyo texto coincide con alguno de los candidatos, leído de la metadata
@@ -351,7 +351,7 @@ export async function crearRemito(datos: DatosRemito): Promise<RemitoCreado> {
 
   const cabecera: Record<string, unknown> = {
     [COL.remito.venta]: { index: ventaIndex },
-    [COL.remito.pesoTotal]: String(round2(pesoTotal)),
+    [COL.remito.pesoTotal]: String(trunc2(pesoTotal)),
   }
   if (clienteId) cabecera[COL.remito.cliente] = { item_ids: [Number(clienteId)] }
   // Vendedor de la operación (columna Person): el seleccionado en el encabezado.
@@ -489,7 +489,7 @@ export async function crearVtaPendienteFacturar(
 
   const cabecera: Record<string, unknown> = {
     [COL.vtaPendFacturar.remito]: { item_ids: [Number(remitoId)] },
-    [COL.vtaPendFacturar.importeAFacturar]: String(round2(importeTotal)),
+    [COL.vtaPendFacturar.importeAFacturar]: String(trunc2(importeTotal)),
     [COL.vtaPendFacturar.importeFacturado]: '0',
   }
   // Cliente obligatorio: es la columna por la que se filtran las ventas pendientes al facturar.
@@ -508,9 +508,9 @@ export async function crearVtaPendienteFacturar(
   // Columnas de un subelemento: producto, precio unitario, cantidad facturada 0 y estado 0% Facturado.
   const columnasSub = (l: LineaVtaPendiente): Record<string, unknown> => {
     const cv: Record<string, unknown> = {
-      [COL.vtaPendFacturarSub.precioUnit]: String(round2(l.precioUnitario)),
+      [COL.vtaPendFacturarSub.precioUnit]: String(trunc2(l.precioUnitario)),
       // Cantidad remitada = cantidad entregada del producto (pendiente de facturar).
-      [COL.vtaPendFacturarSub.cantEntregada]: String(round2(l.cantidad)),
+      [COL.vtaPendFacturarSub.cantEntregada]: String(trunc2(l.cantidad)),
       [COL.vtaPendFacturarSub.cantFacturada]: '0',
     }
     if (l.productoId) cv[COL.vtaPendFacturarSub.producto] = { item_ids: [Number(l.productoId)] }
@@ -520,7 +520,7 @@ export async function crearVtaPendienteFacturar(
     if (idxTipo != null) cv[COL.vtaPendFacturarSub.tipoMercaderia] = { index: idxTipo }
     // Rentabilidad del producto según la lista del cliente: se guarda para reusarla al facturar.
     if (l.rentabilidad != null) {
-      cv[COL.vtaPendFacturarSub.rentabilidad] = String(round2(l.rentabilidad))
+      cv[COL.vtaPendFacturarSub.rentabilidad] = String(trunc2(l.rentabilidad))
     }
     /* Unidad de venta: el MISMO valor que se asienta en el subelemento del remito
        (dropdown_mm5g9mp). De acá la toma la línea de la factura al facturar la entrega ANTERIOR. */
@@ -561,7 +561,7 @@ export async function crearVtaPendienteFacturar(
  * (numeric_mm5np70x − numeric_mm5n938k), en vez de leer la fórmula directo.
  */
 export const montoPendienteFacturar = (r: RemitoPendiente): number =>
-  round2(r.importeAFacturar - r.importeFacturado)
+  trunc2(r.importeAFacturar - r.importeFacturado)
 
 /** Un subelemento de "Vtas Pends de Facturar" mapeado a la forma `RemitoProducto` que consume la UI. */
 function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProducto {
@@ -622,7 +622,7 @@ async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<Remito
       fecha: r.fecha,
       estadoFacturacion: r.estado,
       // Mock: el importe a facturar/facturado se aproxima con los productos pendientes.
-      importeAFacturar: round2(r.productos.reduce((acc, p) => acc + p.pendiente * p.precio, 0)),
+      importeAFacturar: trunc2(r.productos.reduce((acc, p) => acc + p.pendiente * p.precio, 0)),
       importeFacturado: 0,
       productos: r.productos.map((p) => ({ ...p, seleccionable: p.pendiente > 0 })),
     }))
@@ -726,7 +726,7 @@ export async function registrarFacturacionVtasPend(
   const porSub = new Map<string, number>()
   for (const it of items) {
     if (it.subitemId && it.aFacturar > 0) {
-      porSub.set(it.subitemId, round2((porSub.get(it.subitemId) ?? 0) + it.aFacturar))
+      porSub.set(it.subitemId, trunc2((porSub.get(it.subitemId) ?? 0) + it.aFacturar))
     }
   }
   const subIds = [...porSub.keys()]
@@ -739,7 +739,7 @@ export async function registrarFacturacionVtasPend(
     for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
     const vars: Record<string, unknown> = {}
     const campos = subIds.map((id, i) => {
-      const nuevo = round2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
+      const nuevo = trunc2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
       vars[`i${i}`] = id
       vars[`cv${i}`] = JSON.stringify({ [COL.vtaPendFacturarSub.cantFacturada]: String(nuevo) })
       return `a${i}: change_multiple_column_values(item_id: $i${i}, board_id: ${BOARDS.vtasPendFacturarSub}, column_values: $cv${i}) { id }`
@@ -754,7 +754,7 @@ export async function registrarFacturacionVtasPend(
     if (it.ventaPendId && it.aFacturar > 0) {
       montoPorPadre.set(
         it.ventaPendId,
-        round2((montoPorPadre.get(it.ventaPendId) ?? 0) + it.aFacturar * it.precio),
+        trunc2((montoPorPadre.get(it.ventaPendId) ?? 0) + it.aFacturar * it.precio),
       )
     }
   }
@@ -768,7 +768,7 @@ export async function registrarFacturacionVtasPend(
   for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
   const vars: Record<string, unknown> = {}
   const campos = padres.map((id, i) => {
-    const nuevo = round2((actual.get(id) ?? 0) + (montoPorPadre.get(id) ?? 0))
+    const nuevo = trunc2((actual.get(id) ?? 0) + (montoPorPadre.get(id) ?? 0))
     const cv: Record<string, unknown> = { [COL.vtaPendFacturar.importeFacturado]: String(nuevo) }
     if (ventaId && Number.isFinite(Number(ventaId))) {
       cv[COL.vtaPendFacturar.venta] = { item_ids: [Number(ventaId)] }
@@ -868,7 +868,7 @@ async function bulkAEntrega(
   const decls: string[] = []
   conPend.forEach((l, i) => {
     const cv: Record<string, unknown> = {
-      [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
+      [COL.pendienteEntregaSub.cantRto]: String(trunc2(l.cantidad)),
     }
     if (idx != null) cv[COL.pendienteEntregaSub.tipoRto] = { index: idx }
     /* Con qué remito salió. SÓLO si hay número: aparece cuando la emisión termina, y una columna
@@ -901,7 +901,7 @@ async function bulkBVenta(items: LineaEntregaAnterior[]): Promise<void> {
   const porSub = new Map<string, number>()
   for (const l of conSub) {
     const id = l.ventaSubitemId as string
-    porSub.set(id, round2((porSub.get(id) ?? 0) + l.cantidad))
+    porSub.set(id, trunc2((porSub.get(id) ?? 0) + l.cantidad))
   }
   const subIds = [...porSub.keys()]
   const data = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
@@ -912,7 +912,7 @@ async function bulkBVenta(items: LineaEntregaAnterior[]): Promise<void> {
   for (const it of data.items ?? []) actual.set(it.id, Number(it.column_values?.[0]?.text) || 0)
   const vars: Record<string, unknown> = {}
   const campos = subIds.map((id, i) => {
-    const nuevo = round2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
+    const nuevo = trunc2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
     vars[`i${i}`] = id
     vars[`cv${i}`] = JSON.stringify({ [COL.ventaSub.cantEntregadaPosterior]: String(nuevo) })
     return `b${i}: change_multiple_column_values(item_id: $i${i}, board_id: ${BOARDS.ventasSub}, column_values: $cv${i}) { id }`
@@ -989,7 +989,7 @@ export async function afectarEntregaRemito(
     const variables: Record<string, unknown> = {}
     const campos = conPend.map((l, i) => {
       const cv: Record<string, unknown> = {
-        [COL.pendienteEntregaSub.cantRto]: String(round2(l.cantidad)),
+        [COL.pendienteEntregaSub.cantRto]: String(trunc2(l.cantidad)),
       }
       if (tipoRtoIdx != null) cv[COL.pendienteEntregaSub.tipoRto] = { index: tipoRtoIdx }
       variables[`p${i}`] = l.pendienteEntregaId
@@ -1008,7 +1008,7 @@ export async function afectarEntregaRemito(
     const variables: Record<string, unknown> = {}
     const campos = conStock.map((l, i) => {
       const cv: Record<string, unknown> = {
-        [COL.stockMovSub.egreso]: String(round2(l.cantidad)),
+        [COL.stockMovSub.egreso]: String(trunc2(l.cantidad)),
         [COL.stockMovSub.fecha]: { date: fecha },
         [COL.stockMovSub.comprobante]: hojaNombre,
       }
@@ -1027,7 +1027,7 @@ export async function afectarEntregaRemito(
   const porStock = new Map<string, number>()
   for (const l of conStock) {
     const id = l.stockId as string
-    porStock.set(id, round2((porStock.get(id) ?? 0) + l.cantidad))
+    porStock.set(id, trunc2((porStock.get(id) ?? 0) + l.cantidad))
   }
   const stockIds = [...porStock.keys()]
   const saldo = await mondayApi<{ items: { id: string; column_values: { text: string | null }[] }[] }>(
@@ -1043,7 +1043,7 @@ export async function afectarEntregaRemito(
   }
   const upVars: Record<string, unknown> = {}
   const upCampos = stockIds.map((id, i) => {
-    const nuevo = round2((actualPorId.get(id) ?? 0) - (porStock.get(id) ?? 0))
+    const nuevo = trunc2((actualPorId.get(id) ?? 0) - (porStock.get(id) ?? 0))
     upVars[`u${i}`] = id
     upVars[`ucv${i}`] = JSON.stringify({ [COL.stockItem.pendEntregaVta]: String(nuevo) })
     return `u${i}: change_multiple_column_values(item_id: $u${i}, board_id: ${BOARDS.stockMovimientos}, column_values: $ucv${i}) { id }`
