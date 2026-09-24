@@ -13,7 +13,7 @@
  */
 import { addDays, desdeIso, hoy } from '@/lib/dates'
 import type { PrecioLinea, RemitoEntrega } from '@/lib/devoluciones'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { memoPorCliente, registrarLimpieza } from './cache'
 import {
   BOARDS,
@@ -584,7 +584,7 @@ export async function registrarDevolucionStock(
     const campos = tanda.map((l, i) => {
       const n = desde + i
       const cv: Record<string, unknown> = {
-        [COL.stockMovSub.ingreso]: String(trunc2(l.cantidad)),
+        [COL.stockMovSub.ingreso]: String(round2(l.cantidad)),
         [COL.stockMovSub.fecha]: { date: fechaIso },
       }
       if (estadoIdx != null) cv[COL.stockMovSub.estado] = { index: estadoIdx }
@@ -628,7 +628,7 @@ export async function registrarDevolucionEnRemitos(
   const porSub = new Map<string, number>()
   for (const it of imputaciones) {
     if (it.imputada > 0) {
-      porSub.set(it.subitemId, trunc2((porSub.get(it.subitemId) ?? 0) + it.imputada))
+      porSub.set(it.subitemId, round2((porSub.get(it.subitemId) ?? 0) + it.imputada))
     }
   }
   const subIds = [...porSub.keys()]
@@ -649,7 +649,7 @@ export async function registrarDevolucionEnRemitos(
     const vars: Record<string, unknown> = {}
     const campos = tanda.map((id, i) => {
       const n = desde + i
-      const nuevo = trunc2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
+      const nuevo = round2((actual.get(id) ?? 0) + (porSub.get(id) ?? 0))
       vars[`i${n}`] = id
       vars[`cv${n}`] = JSON.stringify({ [col]: String(nuevo) })
       return `d${n}: change_multiple_column_values(item_id: $i${n}, board_id: ${BOARDS.remitosSub}, column_values: $cv${n}) { id }`
@@ -721,8 +721,8 @@ export async function crearNotaCredito(
   ])
 
   const cabecera: Record<string, unknown> = {
-    [COL.notaCredito.total]: String(trunc2(total)),
-    [COL.notaCredito.iva]: String(trunc2(iva)),
+    [COL.notaCredito.total]: String(round2(total)),
+    [COL.notaCredito.iva]: String(round2(iva)),
     // Todavía no se emitió nada: el pendiente de emitir (fórmula del board) arranca en el total.
     [COL.notaCredito.importeEmitido]: '0',
   }
@@ -752,10 +752,10 @@ export async function crearNotaCredito(
     const campos = tanda.map((l, i) => {
       const n = desde + i
       const cv: Record<string, unknown> = {
-        [COL.notaCreditoSub.cantImputada]: String(trunc2(l.cantidad)),
-        [COL.notaCreditoSub.precioUnit]: String(trunc2(l.precioUnitario)),
-        [COL.notaCreditoSub.iva]: String(trunc2(l.iva)),
-        [COL.notaCreditoSub.subtotal]: String(trunc2(l.subtotal)),
+        [COL.notaCreditoSub.cantImputada]: String(round2(l.cantidad)),
+        [COL.notaCreditoSub.precioUnit]: String(round2(l.precioUnitario)),
+        [COL.notaCreditoSub.iva]: String(round2(l.iva)),
+        [COL.notaCreditoSub.subtotal]: String(round2(l.subtotal)),
         [COL.notaCreditoSub.cantEmitida]: '0',
       }
       if (l.productoId) cv[COL.notaCreditoSub.producto] = { item_ids: [Number(l.productoId)] }

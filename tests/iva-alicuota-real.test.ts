@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { comprobantesDeVenta, totalesComprobantes } from '@/lib/facturacion'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import {
   resumenPresupuesto,
   resumenPresupuestoBimoneda,
@@ -78,17 +78,17 @@ const DESC_FP = 6
 
 /* El resumen que ve el vendedor en "Seleccionar Productos" (ResumenBox). */
 const resumen = resumenPresupuesto(LINEAS, true, DESC_FP)
-const ivaEsperado = trunc2(
+const ivaEsperado = round2(
   LINEAS.reduce((acc, l) => {
     const bonif = descuentoUnitario(l.producto.precio, l.descuento, DESC_FP).total
-    const neto = trunc2((l.producto.precio - bonif) * l.cantidad)
+    const neto = round2((l.producto.precio - bonif) * l.cantidad)
     return acc + ivaLinea(neto, alicuotaDeclarada(l.producto.iva))
   }, 0),
 )
 assert.equal(resumen.iva, ivaEsperado, 'el IVA del resumen es la suma del IVA de cada línea')
 assert.notEqual(
   resumen.iva,
-  trunc2(resumen.neto * 0.21),
+  round2(resumen.neto * 0.21),
   'y NO el 21% plano sobre el neto (si fueran iguales, el caso no prueba nada)',
 )
 
@@ -130,12 +130,12 @@ assert.equal(
    funciones que usa la vista: cascada + alícuota declarada. */
 const filasCard = lineasVenta.map((l) => {
   const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, DESC_FP).total
-  const totalLinea = trunc2((l.precioUnitario - bonifUnit) * l.cantidad)
+  const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
   return { bonifUnit, totalLinea, iva: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
 })
-const netoCard = trunc2(filasCard.reduce((a, f) => a + f.totalLinea, 0))
-const ivaCard = trunc2(filasCard.reduce((a, f) => a + f.iva, 0))
-const totalCard = trunc2(netoCard + ivaCard)
+const netoCard = round2(filasCard.reduce((a, f) => a + f.totalLinea, 0))
+const ivaCard = round2(filasCard.reduce((a, f) => a + f.iva, 0))
+const totalCard = round2(netoCard + ivaCard)
 
 /* Y lo que `crearProforma` manda a Monday, capturado del `fetch`. */
 interface Llamada {

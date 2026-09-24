@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
-import { formatearImporteAR, importeATexto, money, moneyU, pctDec, trunc2 } from '@/lib/format'
+import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { puedeEditarPrecio, topesDescuentoDe, usuarioDeLaOperacion } from '@/lib/permisos'
 import { productoConPrecio } from '@/lib/precios'
@@ -178,7 +178,7 @@ export function CargaLinea({
     : 0
 
   /** Subtotal de la configuración, SIN IVA: precio final por unidad × cantidad. */
-  const subtotal = trunc2(dto.precioFinal * cantidad)
+  const subtotal = round2(dto.precioFinal * cantidad)
 
   /* Producto en dólares (presupuesto bimonetario): el precio y el importe se muestran en su moneda
      original, con prefijo `$u` y en verde. En la venta el producto ya llega convertido a pesos. */

@@ -21,7 +21,7 @@ import {
   verificarRecibo,
   verificarVenta,
 } from './verificar'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { ventaItemUid } from '@/lib/selectors'
 import { COL } from '@/services/monday/columns'
@@ -103,7 +103,7 @@ paso(`total venta ${r4.totalVenta} · total facturado ${r4.totalFacturado}`)
 chequear(
   casi(r4.totalVenta, r4.totalFacturado, 1),
   'El total de la VENTA coincide con el total FACTURADO',
-  `venta ${r4.totalVenta} vs facturas ${r4.totalFacturado} · diferencia ${trunc2(r4.totalVenta - r4.totalFacturado)}`,
+  `venta ${r4.totalVenta} vs facturas ${r4.totalFacturado} · diferencia ${round2(r4.totalVenta - r4.totalFacturado)}`,
 )
 
 await verificarVenta({

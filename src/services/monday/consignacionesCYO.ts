@@ -10,7 +10,7 @@
  * JSON de column_values rompe la API. El PDF de la factura se adjunta APARTE, best-effort, en segundo
  * plano, referenciando el asset del comprobante ya emitido (asset_ids) — la UI no espera por esto.
  */
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { BOARDS, COL } from './columns'
 import { mondayApi, mondayHabilitado } from './sdk'
 
@@ -92,8 +92,8 @@ export async function crearConsignacionesCYO(
     const cv: Record<string, unknown> = {
       [COL.consignacionCYO.producto]: { item_ids: [Number(l.productoId)] },
       [COL.consignacionCYO.fecha]: { date: fecha },
-      [COL.consignacionCYO.cantidad]: trunc2(l.cantidad),
-      [COL.consignacionCYO.precio]: trunc2(l.precioUnitario),
+      [COL.consignacionCYO.cantidad]: round2(l.cantidad),
+      [COL.consignacionCYO.precio]: round2(l.precioUnitario),
     }
     /* Nombre del ítem con el template "Proveedor - Producto": la liquidación CYO se lee por proveedor.
        Si el producto no trae proveedor, se cae al nombre del producto solo (no deja un guion suelto). */

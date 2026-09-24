@@ -4,7 +4,7 @@ import { NRO_REMITO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
   afectarEntregaAnterior,
@@ -175,8 +175,8 @@ export function RemitoEmisionView() {
            La app ya NO acumula ese importe en la cuenta corriente del cliente: ese requerimiento
            se descartó y el tablero de Cta Cte no se escribe desde acá. */
         if ((remito.tipoEmision ?? 'POSTERIOR') === 'POSTERIOR') {
-          const importePendFacturar = trunc2(
-            remito.items.reduce((acc, it) => acc + trunc2(it.cantidad * (it.precioUnitario ?? 0)), 0),
+          const importePendFacturar = round2(
+            remito.items.reduce((acc, it) => acc + round2(it.cantidad * (it.precioUnitario ?? 0)), 0),
           )
           try {
             await crearVtaPendienteFacturar({

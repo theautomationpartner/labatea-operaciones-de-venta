@@ -7,7 +7,7 @@ import {
   money,
   moneyU,
   pctDec,
-  trunc2,
+  round2,
 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import type { Producto } from '@/types'
@@ -106,8 +106,8 @@ function calculosDe(f: FilaProducto, descFormaPago: number) {
   const d = descuentoUnitario(f.precio, f.descuento, descFormaPago)
   const total = f.impBonif ?? d.total
   const formaPago = Math.min(d.formaPago, total)
-  const precioFinal = f.impBonif === undefined ? d.precioFinal : trunc2(f.precio - total)
-  const subtotal = f.totalLinea ?? trunc2(precioFinal * f.cantidad)
+  const precioFinal = f.impBonif === undefined ? d.precioFinal : round2(f.precio - total)
+  const subtotal = f.totalLinea ?? round2(precioFinal * f.cantidad)
   /* Desglose por origen: la venta CON PROFORMA lo trae GUARDADO de la proforma (independiente por
      origen: Desc $ x Prod = numeric_mm5xxrkw, Desc $ x Forma de Pago = numeric_mm5x79vt) y se muestra
      tal cual. El resto de las ventas reparte el total calculado (forma de pago primero, luego el resto). */
@@ -116,7 +116,7 @@ function calculosDe(f: FilaProducto, descFormaPago: number) {
     /** $ por unidad que aporta la forma de pago. */
     dtoPago: guardado ? f.descFpMonto ?? 0 : formaPago,
     /** $ por unidad que aporta el % manual, sobre el precio ya rebajado. */
-    dtoPrecio: guardado ? f.descProdMonto ?? 0 : trunc2(total - formaPago),
+    dtoPrecio: guardado ? f.descProdMonto ?? 0 : round2(total - formaPago),
     /** $ por unidad de descuento total. */
     dtoTotal: total,
     /** % compuesto: alimenta la rentabilidad efectiva de la línea. */

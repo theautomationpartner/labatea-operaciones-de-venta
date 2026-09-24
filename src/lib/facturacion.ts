@@ -19,7 +19,7 @@ import {
   IVA_DEFECTO,
   netoLinea as netoConDescuento,
 } from '@/lib/descuentos'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import type { LineaVenta } from '@/services/monday/venta'
 
 /** Alícuota que se asume cuando el producto no la trae cargada en el maestro. */
@@ -86,7 +86,7 @@ const descFpDe = (l: LineaVenta, descFormaPago: number): number => l.descFormaPa
  * Bruto de la línea: precio unitario de LISTA × cantidad, sin bonificar. Es la columna "Subtotal"
  * que suma el resumen de la selección de productos.
  */
-export const brutoLinea = (l: LineaVenta): number => trunc2(l.precioUnitario * l.cantidad)
+export const brutoLinea = (l: LineaVenta): number => round2(l.precioUnitario * l.cantidad)
 
 /**
  * Importe bonificado de la línea entera: el "Descuento Total" por unidad de la selección de
@@ -112,7 +112,7 @@ export const netoLinea = (l: LineaVenta, descFormaPago = 0): number =>
 
 /** IVA de la línea, con la alícuota que se va a declarar, sobre el neto ya bonificado. */
 export const ivaLinea = (l: LineaVenta, descFormaPago = 0): number =>
-  trunc2((netoLinea(l, descFormaPago) * alicuotaDe(l)) / 100)
+  round2((netoLinea(l, descFormaPago) * alicuotaDe(l)) / 100)
 
 /**
  * Cómo se identifica el proveedor de una línea consignada: el ítem del board si lo tiene y,
@@ -152,10 +152,10 @@ export function comprobantesDeVenta(
     const proveedorNombre = consignada
       ? lineasGrupo[0].proveedorNombre?.trim() || SIN_PROVEEDOR
       : null
-    const bruto = trunc2(lineasGrupo.reduce((acc, l) => acc + brutoLinea(l), 0))
-    const descuento = trunc2(lineasGrupo.reduce((acc, l) => acc + bonifLinea(l, descFormaPago), 0))
-    const subtotal = trunc2(lineasGrupo.reduce((acc, l) => acc + netoLinea(l, descFormaPago), 0))
-    const iva = trunc2(lineasGrupo.reduce((acc, l) => acc + ivaLinea(l, descFormaPago), 0))
+    const bruto = round2(lineasGrupo.reduce((acc, l) => acc + brutoLinea(l), 0))
+    const descuento = round2(lineasGrupo.reduce((acc, l) => acc + bonifLinea(l, descFormaPago), 0))
+    const subtotal = round2(lineasGrupo.reduce((acc, l) => acc + netoLinea(l, descFormaPago), 0))
+    const iva = round2(lineasGrupo.reduce((acc, l) => acc + ivaLinea(l, descFormaPago), 0))
     comprobantes.push({
       clave,
       tipo: consignada ? 'CONSIGNADA' : 'COMUN',
@@ -167,7 +167,7 @@ export function comprobantesDeVenta(
       descuento,
       subtotal,
       iva,
-      total: trunc2(subtotal + iva),
+      total: round2(subtotal + iva),
     })
   }
 
@@ -180,8 +180,8 @@ export function comprobantesDeVenta(
 /** Totales de todos los comprobantes juntos: es lo que tiene que cerrar contra la venta. */
 export function totalesComprobantes(comprobantes: ComprobanteAGenerar[]) {
   return {
-    subtotal: trunc2(comprobantes.reduce((acc, c) => acc + c.subtotal, 0)),
-    iva: trunc2(comprobantes.reduce((acc, c) => acc + c.iva, 0)),
-    total: trunc2(comprobantes.reduce((acc, c) => acc + c.total, 0)),
+    subtotal: round2(comprobantes.reduce((acc, c) => acc + c.subtotal, 0)),
+    iva: round2(comprobantes.reduce((acc, c) => acc + c.iva, 0)),
+    total: round2(comprobantes.reduce((acc, c) => acc + c.total, 0)),
   }
 }

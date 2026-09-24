@@ -2,7 +2,7 @@
  * Reglas de la factura: qué líneas la componen según el flujo de venta, sus totales
  * y los datos que se derivan del cliente.
  */
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { esFlujoRemito } from '@/lib/pasos'
 import { IVA_RATE } from '@/lib/selectors'
 import type {
@@ -75,7 +75,7 @@ export function lineasDeVenta(f: FuenteLineas): LineaFactura[] {
 }
 
 export const totalLineaFactura = (l: LineaFactura): number =>
-  trunc2(l.precio * l.cantidad * (1 - l.descuento / 100))
+  round2(l.precio * l.cantidad * (1 - l.descuento / 100))
 
 export interface TotalesFactura {
   subtotal: number
@@ -84,9 +84,9 @@ export interface TotalesFactura {
 }
 
 export function totalesFactura(lineas: LineaFactura[]): TotalesFactura {
-  const subtotal = trunc2(lineas.reduce((acc, l) => acc + totalLineaFactura(l), 0))
-  const iva = trunc2(subtotal * IVA_RATE)
-  return { subtotal, iva, total: trunc2(subtotal + iva) }
+  const subtotal = round2(lineas.reduce((acc, l) => acc + totalLineaFactura(l), 0))
+  const iva = round2(subtotal * IVA_RATE)
+  return { subtotal, iva, total: round2(subtotal + iva) }
 }
 
 /** La condición frente al IVA del receptor sale de la del cliente. */

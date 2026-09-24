@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { ProveedorLinea, StockPanel, type ModoStock } from '@/features/productos/StockPanel'
-import { money, trunc2 } from '@/lib/format'
+import { money, round2 } from '@/lib/format'
 import {
   AVANCE_COLOR,
   ESTADO_RESULTANTE_COMPLETO,
@@ -51,7 +51,7 @@ interface TablaRemitoProps {
 }
 
 /** Total de la línea: cantidad a entregar × precio unitario. */
-const totalLinea = (it: RemitoItem): number => trunc2(it.cantidad * (it.precioUnitario ?? 0))
+const totalLinea = (it: RemitoItem): number => round2(it.cantidad * (it.precioUnitario ?? 0))
 
 /**
  * Líneas a remitar. En ANTERIOR es un documento de cantidades (código, producto, cantidad y u.m.).
@@ -89,7 +89,7 @@ export function TablaRemito({
     (mostrarResultante ? 2 : 0) +
     (mostrarStock ? 1 : 0) -
     (soloLectura ? 1 : 0)
-  const importePendFacturar = trunc2(items.reduce((acc, it) => acc + totalLinea(it), 0))
+  const importePendFacturar = round2(items.reduce((acc, it) => acc + totalLinea(it), 0))
 
   const tabla = (
     <div className="tablec">

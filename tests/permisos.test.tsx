@@ -26,7 +26,7 @@ import {
   TEAM_ADMINISTRADORES,
   TEAM_VENDEDORES,
 } from '@/lib/permisos'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { costoDe, rentabilidadDe } from '@/lib/selectors'
 import { TOPES_DESCUENTO_DEFAULT } from '@/lib/validaciones'
 import { initialState, reducer, type AppState } from '@/state/appState'
@@ -139,7 +139,7 @@ const idLinea = conLinea.lineas[0].id
 /* El costo sale de `costoDe`: del "🤖Costo Final" si el maestro lo trajo y, si no, despejado del
    precio y el margen ORIGINALES. Al pisar el precio queda fijado, así que ya no se puede volver a
    despejar del margen —que a propósito NO se recalcula—. */
-const costo = (s: typeof conLinea) => trunc2(costoDe(s.lineas[0].producto))
+const costo = (s: typeof conLinea) => round2(costoDe(s.lineas[0].producto))
 
 const costoOriginal = costo(conLinea)
 const pisado = reducer(conLinea, { type: 'setPrecioLinea', id: idLinea, precio: 8000 })
@@ -154,7 +154,7 @@ assert.equal(
 )
 assert.equal(
   rentabilidadDe(pisado.lineas[0].producto.precioSinIva!, costoOriginal),
-  trunc2((8000 / costoOriginal - 1) * 100),
+  round2((8000 / costoOriginal - 1) * 100),
   'la rentabilidad FINAL no siguió al precio pisado',
 )
 // Pisarlo dos veces equivale a pisarlo una sola con el valor final (el costo se conserva).
@@ -164,8 +164,8 @@ const unaVez = reducer(conLinea, { type: 'setPrecioLinea', id: idLinea, precio: 
    flotante, así que difieren en el orden de 1e-14 (68 vs 67.99999999999997). Lo que importa es que
    describan el mismo margen, no que compartan los últimos bits. */
 assert.equal(
-  trunc2(dosVeces.lineas[0].producto.precioSinIva ?? 0),
-  trunc2(unaVez.lineas[0].producto.precioSinIva ?? 0),
+  round2(dosVeces.lineas[0].producto.precioSinIva ?? 0),
+  round2(unaVez.lineas[0].producto.precioSinIva ?? 0),
   'el override no es idempotente: el precio neto se arrastra',
 )
 assert.equal(costo(dosVeces), costoOriginal, 'el costo se corrió tras dos overrides')

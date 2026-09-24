@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { datosCobroVenta, descuentoDeFormaPago } from '@/lib/cobros'
 import { alicuotaDeclarada, ivaLinea, netoLinea as netoLineaConDesc } from '@/lib/descuentos'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import { documentoDeVentaItem } from '@/lib/selectors'
 import {
@@ -106,7 +106,7 @@ export function useCrearVenta() {
        pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual.
        Antes se aplicaba un 21% plano sobre el neto del documento, y una venta con un producto al
        10,5% se registraba por encima de lo que decían sus propias facturas. */
-    const importeTotalPesos = trunc2(
+    const importeTotalPesos = round2(
       productos.reduce((acc, p) => {
         const neto = netoLineaConDesc(
           p.precioUnitario,

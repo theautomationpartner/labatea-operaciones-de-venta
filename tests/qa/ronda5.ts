@@ -10,7 +10,7 @@
 import { abrirCaso, anotar, chequear, paso } from './base'
 import { correrVenta, type Config } from './flujos'
 import { esperarEmisionElectronica, leerItem, leerItems, links, num, txt } from './verificar'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { tasaComision, ventaItemUid } from '@/lib/selectors'
 import { clienteLlevaIva } from '@/lib/precios'
 import { BOARDS, COL } from '@/services/monday/columns'
@@ -150,8 +150,8 @@ if (!pf) {
     observaciones: 'QA E2E M13',
   })
 
-  const netoLinea = trunc2(items.reduce((a, it) => a + it.precio * it.aVender, 0))
-  const comisionMostrada = trunc2((netoLinea * tasaMostrada) / 100)
+  const netoLinea = round2(items.reduce((a, it) => a + it.precio * it.aVender, 0))
+  const comisionMostrada = round2((netoLinea * tasaMostrada) / 100)
   paso(`neto comisionable ${netoLinea} · comisión que ve el vendedor ${comisionMostrada} (${tasaMostrada}%)`)
 
   /* Lo que quedó en el tablero. */

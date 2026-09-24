@@ -73,7 +73,7 @@ import {
   rentabForzadaLinea,
 } from '@/lib/selectors'
 import { norm, similitud, UMBRAL_SIMILITUD } from '@/lib/similitud'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
 import { construirBulkSubitems } from './carritoSubitems'
@@ -759,7 +759,7 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     ),
     /* Precio de lista SIN IVA: es el que se compara contra el costo para medir la rentabilidad.
        `precio` puede traer la alícuota sumada, y contra un costo neto la inflaría. */
-    precioSinIva: trunc2(numCol(c[columnaPrecio(lista)])),
+    precioSinIva: round2(numCol(c[columnaPrecio(lista)])),
     /* "✋Margen" del maestro. OJO: es un MARKUP SOBRE EL COSTO
        (`precio = costo + flete + costo × margen/100`), no la rentabilidad que se muestra. Se sigue
        leyendo sólo como respaldo para despejar el costo cuando el maestro no lo trae (`costoDe`):
@@ -1407,7 +1407,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     [COL.presupuesto.cliente]: { item_ids: [Number(cliente.id)] },
     [COL.presupuesto.diasVigencia]: String(diasVigencia),
     // Rentabilidad general CON DECIMALES (no se redondea a entero).
-    [COL.presupuesto.rentabilidad]: String(trunc2(rentabilidad)),
+    [COL.presupuesto.rentabilidad]: String(round2(rentabilidad)),
     [COL.presupuesto.vigencia]: { label: PRESUP_VIGENCIA_LABEL },
     // Un presupuesto recién creado no vendió nada: "0% Vendido" (por índice, no por label).
     [COL.presupuesto.estadoVenta]: { index: PRESUP_ESTADO_VENTA_INDEX.sinVender },
@@ -1415,8 +1415,8 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
     // formula_mm5f75gm ($u x prod) y en "Pesos", formula_mm58pwc ($ x prod).
     [COL.presupuesto.moneda]: { label: MONEDA_LABEL[moneda] },
     // Totales globales calculados en la UI (desglose bimonetario): pesos y dólares por separado.
-    [COL.presupuesto.totalPesos]: String(trunc2(totalPesos)),
-    [COL.presupuesto.totalUsd]: String(trunc2(totalUsd)),
+    [COL.presupuesto.totalPesos]: String(round2(totalPesos)),
+    [COL.presupuesto.totalUsd]: String(round2(totalUsd)),
     /* Casilla de la leyenda de formas de pago del PDF: se tilda cuando el presupuesto salió con un
        descuento por forma de pago aplicado. Sin él va destildada (los precios son los de lista). */
     [COL.presupuesto.descuentoFormaPago]: { checked: descuentoPagoAplicado ? 'true' : 'false' },
@@ -1433,7 +1433,7 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
      de pago, así que no hay ninguno que componer. Se escriben sólo si alguna línea se forzó. */
   const lineaForzada = lineas.find((l) => rentabForzadaLinea(l) != null)
   if (lineaForzada?.rentabForzadaAplicada != null) {
-    cabecera[COL.presupuesto.rentabForzadaPct] = String(trunc2(lineaForzada.rentabForzadaAplicada))
+    cabecera[COL.presupuesto.rentabForzadaPct] = String(round2(lineaForzada.rentabForzadaAplicada))
     cabecera[COL.presupuesto.notaCreditoComision] = String(notaCreditoTotal(lineas))
   }
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
@@ -1654,7 +1654,7 @@ export interface PresupuestoVigente {
 
 /** Importe de una línea del presupuesto: cantidad × precio unitario, ya bonificado. */
 const importeLinea = (p: PresupuestoProducto): number =>
-  trunc2(p.total * p.precio * (1 - (p.descuento ?? 0) / 100))
+  round2(p.total * p.precio * (1 - (p.descuento ?? 0) / 100))
 
 /**
  * Un producto del presupuesto. `presupuestoItemId` es el ítem PADRE: se estampa en cada línea para
@@ -1844,7 +1844,7 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
       vigencia: c[COL.presupuesto.vigencia]?.text ?? '',
       vencimiento: c[COL.presupuesto.fechaVencimiento]?.text ?? '',
       rentabilidad: num(c[COL.presupuesto.rentabilidad]?.text),
-      importe: trunc2(productos.reduce((acc, p) => acc + importeLinea(p), 0)),
+      importe: round2(productos.reduce((acc, p) => acc + importeLinea(p), 0)),
       productos,
     }
   })

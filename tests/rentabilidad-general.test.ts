@@ -16,7 +16,7 @@
  * Se corre con esbuild + node (`npm run test:rentabilidad-general`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
-import { pctDec, trunc2 } from '@/lib/format'
+import { pctDec, round2 } from '@/lib/format'
 import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import {
   rentabilidadFinalLinea,
@@ -57,7 +57,7 @@ igual(rentabilidadFinalLinea(A), 50, 'A rinde 50%')
 igual(rentabilidadFinalLinea(B), 10, 'B rinde 10%')
 igual(resumenPresupuesto([A, B], false).rentabilidad, 13.64, 'la general es Σ resultado / Σ costo = 13,64%')
 igual(
-  trunc2((50 * 150 + 10 * 1100) / 1250),
+  round2((50 * 150 + 10 * 1100) / 1250),
   14.8,
   'ponderar por el importe de venta —como se hacía— daba 14,80%',
 )
@@ -76,7 +76,7 @@ const descFP = 3
 const resultado = (precio: number, costo: number, flete: number, cant: number, desc: number) =>
   (precio * (1 - desc / 100) - costo - flete) * cant
 const descOtro = (1 - (1 - 0.03) * (1 - 0.1)) * 100
-const esperado = trunc2(
+const esperado = round2(
   ((resultado(125_834.691, 102_162.35, 175, 2, 3) + resultado(2_000, 1_500, 20, 5, descOtro)) /
     (102_162.35 * 2 + 1_500 * 5)) *
     100,

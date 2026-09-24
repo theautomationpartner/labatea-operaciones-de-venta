@@ -6,7 +6,7 @@
  * suma el IVA del producto, que cada ítem trae en su propia columna.
  */
 
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { costoDe } from '@/lib/selectors'
 
 /** Condiciones fiscales a las que el precio les va con IVA incluido. */
@@ -20,21 +20,21 @@ export const clienteLlevaIva = (condicionFiscal: string): boolean =>
  * Precio final de una unidad: el de la lista, más el IVA del producto cuando corresponde.
  * Un producto sin IVA cargado no suma nada, así que el precio queda en el de lista.
  *
- * Se lleva a dos decimales (truncados) acá y no más adelante: éste es el precio con el que se
- * calculan los subtotales y el que se escribe en Monday, así que tiene que ser uno solo.
+ * Se lleva a dos decimales acá y no más adelante: éste es el precio con el que se calculan los
+ * subtotales y el que se escribe en Monday, así que tiene que ser uno solo.
  */
 export function precioConIva(precioLista: number, ivaPct: number, llevaIva: boolean): number {
-  if (!llevaIva || !ivaPct) return trunc2(precioLista)
-  return trunc2(precioLista * (1 + ivaPct / 100))
+  if (!llevaIva || !ivaPct) return round2(precioLista)
+  return round2(precioLista * (1 + ivaPct / 100))
 }
 
 /**
  * Precio de lista con IVA (si corresponde) que usa la conversión de un producto en dólares.
  *
  * Antes era a precisión completa, para conservar el tercer decimal del dólar al multiplicar por la
- * tasa. El criterio acordado con el comercio es que TODO valor se toma con dos decimales
- * truncados, también el precio en dólares: 55,803 U$ es 55,80 U$ y en pesos se convierte ESE
- * valor. Por eso ahora da lo mismo que `precioConIva`; se conserva como punto único de la
+ * tasa. El criterio acordado con el comercio es que TODO valor se toma con dos decimales, también
+ * el precio en dólares —que ya llega así del maestro, con ROUND(x, 2)—, y en pesos se convierte
+ * ESE valor. Por eso ahora da lo mismo que `precioConIva`; se conserva como punto único de la
  * conversión para que el criterio quede escrito donde se decide.
  */
 export function precioListaSinRedondear(
@@ -67,11 +67,11 @@ export function productoConPrecio<
     flete?: number
   },
 >(producto: T, precio: number): T {
-  const nuevo = trunc2(precio)
+  const nuevo = round2(precio)
   if (!(nuevo > 0) || !(producto.precio > 0)) return producto
   const netoAnterior = producto.precioSinIva ?? producto.precio
   const costo = costoDe(producto)
   // El precio SIN IVA acompaña al override en la misma proporción: la alícuota no cambió.
-  const netoNuevo = trunc2(netoAnterior * (nuevo / producto.precio))
+  const netoNuevo = round2(netoAnterior * (nuevo / producto.precio))
   return { ...producto, precio: nuevo, precioSinIva: netoNuevo, precioCosto: costo }
 }

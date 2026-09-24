@@ -25,7 +25,7 @@ import {
   vencimientoCheque,
 } from '@/lib/cobros'
 import { aIso, desdeIso } from '@/lib/dates'
-import { formatearImporteAR, importeATexto, money, trunc2 } from '@/lib/format'
+import { formatearImporteAR, importeATexto, money, round2 } from '@/lib/format'
 import type { DatosComprobante } from '@/services/make'
 import { chequeDuplicado } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -551,7 +551,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     /* Al elegir ANTICIPO el importe se precarga con el EXCEDENTE —lo que se recibió de más—, que es
        el único valor con el que la diferencia cierra en cero. Se deja editable igual: el usuario
        puede querer dejar a favor sólo una parte y ajustar el resto. */
-    const excedente = trunc2(Math.max(-diferencia, 0))
+    const excedente = round2(Math.max(-diferencia, 0))
     const importe = esAnticipo(formaPago) ? excedente : borrador.importe
     setBorrador({ ...BORRADOR_VACIO, formaPago, importe })
     setImporteTexto(importe > 0 ? importeATexto(importe) : '')

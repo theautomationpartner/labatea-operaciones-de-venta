@@ -24,7 +24,7 @@ import {
   type BalancePago,
 } from '@/lib/cobros'
 import { aIso } from '@/lib/dates'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import type { MovimientoPago } from '@/types'
 import {
   BOARDS,
@@ -85,7 +85,7 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
   const cv: Record<string, unknown> = {
     [COL.cobroSub.formaPago]: { label: FORMA_PAGO_LABEL[m.formaPago] ?? m.formaPago },
     // Lo RECIBIDO por este medio. Lo cancelado es de la factura, y va en su propio subelemento.
-    [COL.cobroSub.importeRecibido]: String(trunc2(m.importe)),
+    [COL.cobroSub.importeRecibido]: String(round2(m.importe)),
   }
 
   if (m.formaPago === 'Transferencia') {
@@ -175,7 +175,7 @@ const columnasFactura = (f: FacturaCancelada): Record<string, unknown> => {
   const cv: Record<string, unknown> = {
     // Etiqueta de sistema: va por índice, no por label (no se puede crear al vuelo).
     [COL.cobroSub.formaPago]: { index: CAJA_INDEX.factCancelada },
-    [COL.cobroSub.importeCancelado]: String(trunc2(f.importe)),
+    [COL.cobroSub.importeCancelado]: String(round2(f.importe)),
   }
   // El ítem de "🧾Facturación" (18422405731). Sin id válido la columna se omite, no se manda vacía.
   const comprobante = relacion(f.facturaId)
@@ -216,7 +216,7 @@ const ANTICIPO_LABEL = 'Anticipo'
 const columnasAnticipo = (importe: number): Record<string, unknown> => ({
   // Etiqueta de sistema: va por índice, no por label (no se puede crear al vuelo).
   [COL.cobroSub.formaPago]: { index: CAJA_INDEX.anticipo },
-  [COL.cobroSub.importeCancelado]: String(trunc2(importe)),
+  [COL.cobroSub.importeCancelado]: String(round2(importe)),
 })
 
 /** Una factura emitida por la venta, que este cobro cancela. */
@@ -271,8 +271,8 @@ export interface DatosCobro {
 export class ReciboDesbalanceado extends Error {
   constructor(cancelado: number, recibido: number) {
     super(
-      `El recibo no cierra: se imputan ${trunc2(cancelado)} y se reciben ${trunc2(recibido)} ` +
-        `(diferencia ${trunc2(cancelado - recibido)}).`,
+      `El recibo no cierra: se imputan ${round2(cancelado)} y se reciben ${round2(recibido)} ` +
+        `(diferencia ${round2(cancelado - recibido)}).`,
     )
     this.name = 'ReciboDesbalanceado'
   }
@@ -302,7 +302,7 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
      separa acá para que cada uno vaya a su lugar. */
   const anticipos = balances.filter((b) => esAnticipo(b.movimiento.formaPago))
   const cobros = balances.filter((b) => !esAnticipo(b.movimiento.formaPago))
-  const anticipo = trunc2(anticipos.reduce((acc, b) => acc + b.movimiento.importe, 0))
+  const anticipo = round2(anticipos.reduce((acc, b) => acc + b.movimiento.importe, 0))
 
   /* Los TRES totales de la cabecera se derivan de lo mismo que declaran los subelementos, para que
      no puedan contradecirse entre sí ni contradecir a la pantalla:
@@ -315,9 +315,9 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
      que ignoraba el anticipo: con la pantalla mostrando $ 0,00 el recibo asentaba el excedente
      entero en negativo, y el tablero quedaba diciendo que faltaba cobrar una plata que ya estaba
      cobrada y asignada. */
-  const recibido = trunc2(cobros.reduce((acc, b) => acc + b.movimiento.importe, 0))
-  const cancelado = trunc2(totalVenta + anticipo)
-  const diferencia = trunc2(cancelado - recibido)
+  const recibido = round2(cobros.reduce((acc, b) => acc + b.movimiento.importe, 0))
+  const cancelado = round2(totalVenta + anticipo)
+  const diferencia = round2(cancelado - recibido)
 
   /* Con ANTICIPO se exige que el recibo cierre EXACTO: el anticipo existe justamente para absorber
      la diferencia, así que si después de sumarlo sigue sin cerrar, su importe está mal y asentarlo
@@ -523,7 +523,7 @@ export async function registrarDeudaPosterior(
 
   const cv: Record<string, unknown> = {
     [COL.factPendiente.venta]: { item_ids: [Number(ventaId)] },
-    [COL.factPendiente.total]: String(trunc2(total)),
+    [COL.factPendiente.total]: String(round2(total)),
     // Nace sin un peso cobrado: el estado lo irán moviendo los cobros posteriores.
     [COL.factPendiente.estado]: { index: FACT_PENDIENTE_ESTADO_INDEX.pendienteDeCobro },
     /* Y nace SIN mora: la deuda se crea junto con la factura, así que en ese momento todavía no

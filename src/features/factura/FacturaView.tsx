@@ -5,7 +5,7 @@ import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { addDays } from '@/lib/dates'
 import { netoLinea } from '@/lib/descuentos'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { ivaPorDefecto, letraComprobante, PUNTO_VENTA_DEFAULT } from '@/lib/factura'
 import {
   balancePagos,
@@ -151,7 +151,7 @@ export function FacturaView() {
   const comisionVenta = useMemo(() => {
     if (cargandoActividades) return null
     const tasa = tasaComision(state.comisiones, tipoVentaComision, conActividades)
-    return trunc2(
+    return round2(
       lineasComision.reduce(
         (acc, l) => acc + comisionLinea(l.neto, l.comisionable === true, tasa),
         0,

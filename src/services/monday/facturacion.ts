@@ -13,7 +13,7 @@
 import { tipoPagoOperacion } from '@/lib/cobros'
 import { addDays } from '@/lib/dates'
 import { alicuotaDe, bonifLinea, type ComprobanteAGenerar } from '@/lib/facturacion'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import type {
   Cliente,
   ComprobanteEmitido,
@@ -218,7 +218,7 @@ function columnasLinea(
   descFormaPago: number,
 ): Record<string, unknown> {
   // "Unitario" de la card: el precio de lista del producto, sin ningún descuento aplicado.
-  const precio = String(trunc2(linea.precioUnitario))
+  const precio = String(round2(linea.precioUnitario))
   const cv: Record<string, unknown> = {
     [COL.facturacionSub.unidadMedida]: { labels: [FACT_SUB_UNIDAD_MEDIDA] },
     [COL.facturacionSub.cantidad]: String(linea.cantidad),

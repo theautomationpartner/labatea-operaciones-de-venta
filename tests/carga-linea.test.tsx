@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { AppProvider } from '@/state/AppProvider'
 import { CargaLinea } from '@/features/productos/CargaLinea'
 import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
-import { money, pctDec, trunc2 } from '@/lib/format'
+import { money, pctDec, round2 } from '@/lib/format'
 import { rentabilidadDe } from '@/lib/selectors'
 import type { Producto } from '@/types'
 
@@ -94,7 +94,7 @@ assert.ok(
 )
 // Precio actual = precio de lista − descuento por forma de pago.
 const soloFp = descuentoUnitario(PRECIO, 0, FP)
-assert.equal(soloFp.formaPago, trunc2((PRECIO * FP) / 100), 'monto del pronto pago')
+assert.equal(soloFp.formaPago, round2((PRECIO * FP) / 100), 'monto del pronto pago')
 assert.ok(html.includes(money(soloFp.precioFinal)), 'la sub-card no muestra el precio actual')
 // Columna de stock: título, las tres cajas y la barra de cobertura.
 assert.ok(html.includes('Stock</h4>'), 'falta el encabezado "Stock"')
@@ -180,15 +180,14 @@ assert.ok(
 // Con el producto recién elegido (sin descuento manual) el precio final es el precio actual.
 assert.ok(html.includes(money(soloFp.precioFinal)), 'el precio final unitario no coincide')
 
-// ---------- Equivalencia % → $ del descuento manual ----------
-/* El campo en pesos es el mismo descuento que el %, calculado sobre el PRECIO ACTUAL y con dos
-   decimales TRUNCADOS, como todo importe. Es de una sola mano: el descuento se teclea en % y el
-   monto se deriva (la app nunca convierte pesos a %). Con importes truncados la vuelta no cierra
-   exacta —840,73 / 84.073,74 da 0,99999%—, así que no se exige. */
+// ---------- Equivalencia %↔$ del descuento manual ----------
+/* El campo en pesos es el mismo descuento que el %, calculado sobre el PRECIO ACTUAL: teclear
+   uno tiene que dar exactamente el otro (ida y vuelta), que es lo que hace la card. */
 const precioActual = soloFp.precioFinal
 for (const pct of [1, 2.5, 5]) {
-  const enPesos = trunc2((precioActual * pct) / 100)
+  const enPesos = round2((precioActual * pct) / 100)
   assert.equal(descuentoUnitario(PRECIO, pct, FP).manual, enPesos, `${pct}% en pesos`)
+  assert.equal(round2((enPesos / precioActual) * 100), pct, `${enPesos} pesos en %`)
 }
 
 // ---------- Remito: documento logístico, sin datos financieros ----------

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CompBody } from '@/features/shared/CompBody'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoUnitario } from '@/lib/descuentos'
-import { money, moneyU, trunc2 } from '@/lib/format'
+import { money, moneyU, round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import type { LineaPresupuesto } from '@/types'
 
@@ -32,17 +32,17 @@ const bonifUnitDe = (l: LineaPresupuesto): number =>
 
 /** Total de la línea, ya bonificado: (precio − bonif) × cantidad. En la moneda del producto. */
 const totalDe = (l: LineaPresupuesto): number =>
-  trunc2(descuentoUnitario(l.producto.precio, l.descuento).precioFinal * l.cantidad)
+  round2(descuentoUnitario(l.producto.precio, l.descuento).precioFinal * l.cantidad)
 
 /** Suma de los totales (ya bonificados) de las líneas de una moneda (pesos o dólares). */
 const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
-  trunc2(
+  round2(
     lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l), 0),
   )
 
 /** Suma del BRUTO (precio × cantidad, sin bonificar) de las líneas de una moneda. */
 const brutoMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
-  trunc2(
+  round2(
     lineas
       .filter((l) => esUsd(l) === usd)
       .reduce((acc, l) => acc + l.producto.precio * l.cantidad, 0),
@@ -71,7 +71,7 @@ export function PresupuestoAGenerar({
   // Totales estándar en pesos: bruto, descuento (bruto − neto) y gravado (= neto). El presupuesto
   // NO liquida IVA, así que el IVA es 0 y el Total coincide con el Gravado.
   const brutoPesos = brutoMoneda(lineas, false)
-  const descuentoPesos = trunc2(brutoPesos - totalPesos)
+  const descuentoPesos = round2(brutoPesos - totalPesos)
 
   return (
     <div className="comprobantes">
@@ -152,7 +152,7 @@ export function PresupuestoAGenerar({
                       </td>
                       <td className="ta-c">{l.cantidad}</td>
                       <td className="ta-r" style={{ color: colUsd }}>
-                        {fmt(trunc2(l.producto.precio))}
+                        {fmt(round2(l.producto.precio))}
                       </td>
                       <td className="ta-r" style={{ color: colUsd }}>
                         {fmt(bonifUnitDe(l))}

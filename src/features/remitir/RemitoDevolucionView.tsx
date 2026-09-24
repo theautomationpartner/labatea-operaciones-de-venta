@@ -17,7 +17,7 @@ import {
   type NotaCreditoPendiente,
   type RemitoEntrega,
 } from '@/lib/devoluciones'
-import { money, moneyU, trunc2 } from '@/lib/format'
+import { money, moneyU, round2 } from '@/lib/format'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
 import {
   crearNotaCredito,
@@ -180,12 +180,12 @@ export function RemitoDevolucionView() {
       const lineas = p.lineas.map((l) =>
         l.subitemId in corregidas ? { ...l, imputada: corregidas[l.subitemId] } : l,
       )
-      const imputada = trunc2(lineas.reduce((acc, l) => acc + l.imputada, 0))
+      const imputada = round2(lineas.reduce((acc, l) => acc + l.imputada, 0))
       return {
         ...p,
         lineas,
         imputada,
-        sinCubrir: trunc2(Math.max(p.solicitada - imputada, 0)),
+        sinCubrir: round2(Math.max(p.solicitada - imputada, 0)),
       }
     })
   }, [calculadas, corregidas])
@@ -495,7 +495,7 @@ function TablaImputacion({
    * ya decidió cuánto se devuelve— y el aviso se va.
    */
   const sinDevolver = (p: ImputacionProducto): number => {
-    const excedente = trunc2(
+    const excedente = round2(
       p.lineas.reduce((acc, l) => acc + Math.max(0, l.imputada - l.disponible), 0),
     )
     if (excedente > 0) return excedente
@@ -694,8 +694,8 @@ function NotaCreditoPanel({
   const lineas = cargando || !nc ? [] : nc.lineas
 
   const enPesos = lineas.filter((l) => l.moneda === 'Pesos')
-  const subtotal = trunc2(enPesos.reduce((acc, l) => acc + l.subtotal, 0))
-  const iva = trunc2(enPesos.reduce((acc, l) => acc + l.ivaImporte, 0))
+  const subtotal = round2(enPesos.reduce((acc, l) => acc + l.subtotal, 0))
+  const iva = round2(enPesos.reduce((acc, l) => acc + l.ivaImporte, 0))
   const totalPesos = nc && !cargando ? nc.totalPesos : 0
   const hayDolares = Boolean(nc) && !cargando && (nc?.totalDolares ?? 0) > 0
 

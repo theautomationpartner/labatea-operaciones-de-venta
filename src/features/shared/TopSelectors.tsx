@@ -4,7 +4,7 @@ import { Dropdown } from '@/components/ui/Dropdown'
 import { LogoEmpresa } from '@/components/ui/LogoEmpresa'
 import { Modal } from '@/components/ui/Modal'
 import { hoy } from '@/lib/dates'
-import { trunc2 } from '@/lib/format'
+import { round2 } from '@/lib/format'
 import { OPERACIONES } from '@/lib/pasos'
 import {
   excesosDeLaOperacion,
@@ -26,8 +26,8 @@ function TopSel({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** Formato del valor de la tasa: mismo estilo de miles/decimales que el resto de la app. El valor
- *  se trunca a dos decimales antes de formatear (`Intl` redondearía el tercero). */
+/** Formato del valor de la tasa: mismo estilo de miles/decimales que el resto de la app, llevado
+ *  a dos decimales con `round2` (el mismo criterio que Monday). */
 const TASA_FMT = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -50,7 +50,7 @@ function TasaCambio() {
       <div className="tasa-card-body">
         <span className="tasa-card-lbl">Tipo de Cambio ({hoy()})</span>
         <span className="tasa-card-val">
-          {tasaCambio != null ? `$ ${TASA_FMT.format(trunc2(tasaCambio))}` : '—'}
+          {tasaCambio != null ? `$ ${TASA_FMT.format(round2(tasaCambio))}` : '—'}
         </span>
       </div>
     </div>

@@ -90,16 +90,19 @@ const byId = (item: { column_values?: CV[] }): Record<string, CV> =>
 const valor = (cv?: CV): string => cv?.display_value ?? cv?.text ?? ''
 
 /**
- * DOS decimales TRUNCADOS, el criterio de toda la app (espejo de `trunc2` en `src/lib/format.ts`:
- * `api/` es autocontenido y no puede importar de `src/`). 123456,789 → 123456,78. El
- * `toPrecision(15)` limpia el arrastre del punto flotante antes de cortar.
+ * DOS decimales REDONDEADOS, el criterio de toda la app y de ROUND(x, 2) de Monday (espejo de
+ * `round2` en `src/lib/format.ts`: `api/` es autocontenido y no puede importar de `src/`). El 5
+ * se aleja del cero, y el `toPrecision(15)` limpia el arrastre del punto flotante antes.
  */
-const trunc2 = (n: number): number => Math.trunc(Number((n * 100).toPrecision(15))) / 100
+const round2 = (n: number): number => {
+  const r = (Math.sign(n) * Math.round(Number((Math.abs(n) * 100).toPrecision(15)))) / 100
+  return r === 0 ? 0 : r
+}
 
-/** Número a partir del texto de Monday, con dos decimales truncados: lo mismo que lee la app. */
+/** Número a partir del texto de Monday, con dos decimales redondeados: lo mismo que lee la app. */
 const num = (t?: string | null): number => {
   const n = Number(String(t ?? '').replace(/[^\d.-]/g, ''))
-  return Number.isFinite(n) ? trunc2(n) : 0
+  return Number.isFinite(n) ? round2(n) : 0
 }
 
 const numCol = (cv?: CV): number => num(valor(cv))
