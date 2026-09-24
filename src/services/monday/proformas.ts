@@ -60,8 +60,15 @@ function mapProformaProducto(sub: MondayItem): PresupuestoProducto {
     vend: 0,
     pend: cantidad,
     precio: numCol(c[COL.proformaSub.precioUnit]),
-    // Rentabilidad de la línea, leída del subelemento (numeric_mm4cmpa6).
+    /* Rentabilidad FINAL de la línea, leída del subelemento (numeric_mm4cmpa6): la proforma es de
+       sólo lectura, así que es la que se muestra y se lleva a la venta (`rentabilidadVentaItem`). */
     rent: numCol(c[COL.proformaSub.rentabilidad]),
+    /* Costo por unidad grabado en el propio subelemento al crear la proforma ("🤖Costo $", en pesos):
+       pondera la línea en la rentabilidad general. La rentabilidad de la proforma no se recalcula:
+       es la registrada. */
+    costo: numCol(c[COL.proformaSub.costoPesos]),
+    // Flete por unidad grabado en el propio subelemento al crear la proforma (en pesos).
+    flete: numCol(c[COL.proformaSub.flete]),
     // "🤖Comision" espejada del Maestro (lookup_mm5zgkdr): "SI" habilita la comisión de la venta.
     comisionable: valor(c[COL.proformaSub.comisionable]).trim().toUpperCase() === 'SI',
     // Descuento manual del producto tal como quedó guardado en la proforma (numeric_mm472cqy).
@@ -164,7 +171,7 @@ async function getProformasClienteImpl(clienteItemId: string): Promise<ProformaV
         }
         subitems {
           id name
-          column_values(ids: ["${COL.proformaSub.producto}","${COL.proformaSub.stock}","${COL.proformaSub.comisionable}","${COL.proformaSub.unidadMedida}","${COL.proformaSub.cantidad}","${COL.proformaSub.precioUnit}","${COL.proformaSub.descuento}","${COL.proformaSub.descFormaPago}","${COL.proformaSub.descProdMonto}","${COL.proformaSub.descFpMonto}","${COL.proformaSub.impBonificado}","${COL.proformaSub.iva}","${COL.proformaSub.total}","${COL.proformaSub.rentabilidad}","${COL.proformaSub.subtotal}"]) {
+          column_values(ids: ["${COL.proformaSub.producto}","${COL.proformaSub.stock}","${COL.proformaSub.comisionable}","${COL.proformaSub.unidadMedida}","${COL.proformaSub.cantidad}","${COL.proformaSub.precioUnit}","${COL.proformaSub.descuento}","${COL.proformaSub.descFormaPago}","${COL.proformaSub.descProdMonto}","${COL.proformaSub.descFpMonto}","${COL.proformaSub.impBonificado}","${COL.proformaSub.iva}","${COL.proformaSub.total}","${COL.proformaSub.rentabilidad}","${COL.proformaSub.subtotal}","${COL.proformaSub.flete}","${COL.proformaSub.costoPesos}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on FormulaValue { display_value }
@@ -414,6 +421,15 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
       [COL.proformaSub.total]: totalLinea,
       // Rentabilidad de la línea CON DECIMALES (no se redondea a entero).
       [COL.proformaSub.rentabilidad]: round2(l.rentabilidad),
+      /* Flete por unidad del producto, en pesos: viaja con la línea a la VENTA PROFORMA. 0 si el
+         producto no tiene. */
+      [COL.proformaSub.flete]: round2(l.flete ?? 0),
+    }
+    /* Costo por unidad con el que se midió la rentabilidad de la línea, en pesos: el Costo Final, o
+       el nuevo costo si se forzó la rentabilidad. Sin costo conocido no se escribe (queda vacío, y
+       la venta pondera la línea por el costo que se despeja de su importe y su rentabilidad). */
+    if (l.costoUnitario != null && l.costoUnitario > 0) {
+      cv[COL.proformaSub.costoPesos] = round2(l.costoUnitario)
     }
     // Precio en DÓLARES: sólo si el producto estaba en dólares (auditoría de la conversión).
     if (l.precioUsd != null) cv[COL.proformaSub.precioUnitUsd] = round2(l.precioUsd)

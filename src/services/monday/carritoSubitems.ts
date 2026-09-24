@@ -12,6 +12,7 @@
 import { descuentoUnitario } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
+import { fleteDe, rentabForzadaLinea, rentabilidadFinalLinea } from '@/lib/selectors'
 import type { LineaPresupuesto } from '@/types'
 import { COL, PRESUP_SUB_ESTADO_USO_INDEX } from './columns'
 
@@ -60,8 +61,11 @@ export function fragmentoSubitem(
   const tieneDescuento = dto.total > 0
   const columnas: Record<string, unknown> = {
     [COL.presupuestoSub.cantidad]: String(linea.cantidad),
-    // Rentabilidad del producto CON DECIMALES (no se redondea a entero).
-    [COL.presupuestoSub.rentabilidad]: String(round2(p.rentabilidad)),
+    /* Rentabilidad FINAL de la línea CON DECIMALES: la misma que el vendedor vio en la tabla —con
+       el descuento manual y el flete restado, o el % forzado cuando corre—. Antes se grababa el
+       "Margen" del maestro tal cual, que no es la rentabilidad de la línea. El presupuesto no aplica
+       descuento por forma de pago, así que no hay ninguno que componer. */
+    [COL.presupuestoSub.rentabilidad]: String(rentabilidadFinalLinea(linea)),
     [COL.presupuestoSub.descuento]: String(linea.descuento),
     /* "Desc $ x Prod" (numeric_mm5x3wee): monto del descuento por unidad, en la moneda del
        producto. */
@@ -82,20 +86,23 @@ export function fragmentoSubitem(
   /* Sin descuento: el "Precio Unit $" (numeric_mkw85hdw) también lleva el precio unitario original,
      además de la columna de la moneda del producto. */
   if (!tieneDescuento) columnas[COL.presupuestoSub.precioUnit] = String(precio)
-  /* Rentabilidad forzada: cuando está aplicada, la línea trae la "Nota de Crédito x Comisión" (Costo
-     Original − Nuevo Precio de Costo) y su costo pasa a ser el NUEVO (= Costo Original − ese monto);
-     sin forzar, el costo es el original del maestro. El costo va a la columna de su moneda. */
-  const montoNC = linea.montoDifNotaDeCreditoComision
-  const forzada = montoNC != null
-  const costoEfectivo =
-    forzada && p.precioCosto != null ? round2(p.precioCosto - montoNC) : p.precioCosto
+  /* Rentabilidad forzada: cuando corre, la línea lleva la "Nota de Crédito x Comisión" POR UNIDAD
+     (Costo Final − Nuevo Precio de Costo) y su costo pasa a ser el NUEVO, con el que el producto rinde
+     exactamente el % forzado (ver `rentabForzadaDe`). Sin forzar, el costo es el Costo Final del
+     maestro. El costo va a la columna de su moneda. */
+  const forzada = rentabForzadaLinea(linea)
+  const costoEfectivo = forzada ? forzada.nuevoCosto : p.precioCosto
   if (costoEfectivo != null) {
     columnas[usd ? COL.presupuestoSub.costoUsd : COL.presupuestoSub.costoPesos] =
       String(round2(costoEfectivo))
   }
-  if (montoNC != null) {
-    columnas[COL.presupuestoSub.notaCreditoComision] = String(round2(montoNC))
+  if (forzada) {
+    columnas[COL.presupuestoSub.notaCreditoComision] = String(forzada.notaCredito)
   }
+  /* Flete por unidad, en la moneda del producto (igual que el precio y el costo): la venta CON
+     PRESUPUESTO PREVIO lo lee de acá para restarlo de la rentabilidad. Se escribe siempre, 0 si el
+     producto no tiene, para que el subelemento diga explícitamente que no hay flete. */
+  columnas[COL.presupuestoSub.flete] = String(round2(fleteDe(p)))
   if (p.id) columnas[COL.presupuestoSub.producto] = { item_ids: [Number(p.id)] }
   // Se arrastra el ítem de stock del maestro para que viaje del presupuesto a la venta.
   if (p.stockId) columnas[COL.presupuestoSub.stock] = { item_ids: [Number(p.stockId)] }

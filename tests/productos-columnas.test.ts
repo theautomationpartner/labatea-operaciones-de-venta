@@ -104,6 +104,8 @@ const ITEM: ItemMonday = {
     cv(COL_PRODUCTO.comisionable, 'SI'),
     cv(COL_PRODUCTO.rentabForzada, 'Con Rentab Forzada'),
     formula(COL_PRODUCTO.precioCosto, '727.935'),
+    // "✋️Flete" es numérico: viene en `text`.
+    cv(COL_PRODUCTO.flete, '12.5'),
     /* El código del proveedor es una MIRROR: sin `display_value` vuelve vacío. */
     { id: COL_PRODUCTO.proveedorCodigo, text: null, display_value: '7003' },
     {
@@ -138,6 +140,7 @@ ok('el margen sale de la columna de cada lista', cache.margenes.L2 === MARGENES.
 ok('el ítem de stock viaja sólo como id, sin cantidades', cache.stockId === '12642355157')
 ok('el proveedor sale del ítem conectado', cache.provNombre === 'PROVEEDOR TEST')
 ok('el código del proveedor sale de la mirror', cache.provCod === '7003')
+ok('el flete se guarda: sin él la rentabilidad lo contaría como ganancia', cache.flete === 12.5)
 
 /* ---------- 3) Los dos caminos arman el MISMO producto ---------- */
 

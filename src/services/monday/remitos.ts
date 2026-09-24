@@ -580,8 +580,13 @@ function mapVtaPendProducto(sub: MondayItem, ventaPendId: string): RemitoProduct
     // Pendiente de facturar = entregada − facturada. Nunca baja de cero.
     pendiente,
     precio: numCol(c[COL.vtaPendFacturarSub.precioUnit]),
-    // Rentabilidad guardada al remitir ("🤖Rentab %"): alimenta la rentabilidad general al facturar.
+    /* Rentabilidad BASE guardada al remitir ("🤖Rentab %"): al facturar se le aplica el descuento
+       por forma de pago de la venta (`rentabilidadItemRemito`). */
     rent: numCol(c[COL.vtaPendFacturarSub.rentabilidad]),
+    /* Costo Final (fórmula: se lee por `display_value`) y Flete del producto del maestro conectado:
+       con ellos se reconstruye el precio SIN IVA que dio esa rentabilidad y se lo descuenta. */
+    costo: producto ? numCol(prodCols[COL.producto.precioCosto]) : undefined,
+    flete: producto ? numCol(prodCols[COL.producto.flete]) : undefined,
     // Subtotal de la línea (fórmula del board formula_mm5nc530, por display_value).
     subtotal: numCol(c[COL.vtaPendFacturarSub.subtotal]),
     // "Comision" espejada del Maestro (lookup_mm5z5hsc): "SI" habilita la comisión al facturar.
@@ -657,7 +662,7 @@ async function getVentasPendientesFacturarImpl(cliente: Cliente): Promise<Remito
                 ... on StatusValue { index }
                 ... on FormulaValue { display_value }
                 ... on MirrorValue { display_value }
-                ... on BoardRelationValue { linked_items { id name column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.unidadMedida}"]) { id text } } }
+                ... on BoardRelationValue { linked_items { id name column_values(ids: ["${COL.producto.codigo}","${COL.producto.iva}","${COL.producto.unidadMedida}","${COL.producto.precioCosto}","${COL.producto.flete}"]) { id text ... on FormulaValue { display_value } } } }
               }
             }
           }

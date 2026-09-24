@@ -5,7 +5,7 @@ import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
 import { pasoDeProductos, pasoInicialDe, pasosKeysDe } from '@/lib/pasos'
 import { productoConPrecio } from '@/lib/precios'
-import { aceptaRentabForzada } from '@/lib/selectors'
+import { aceptaRentabForzada, rentabilidadProductoDe } from '@/lib/selectors'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
@@ -511,6 +511,10 @@ export function convertirProductoAPesos(
   return {
     ...prod,
     precio: round2(prod.precio * tasa),
+    /* El costo y el flete del maestro están en la moneda del producto, igual que el precio: viajan
+       a pesos con la misma tasa. Si se quedaran en dólares, la rentabilidad mezclaría monedas. */
+    costo: prod.costo != null ? round2(prod.costo * tasa) : prod.costo,
+    flete: prod.flete != null ? round2(prod.flete * tasa) : prod.flete,
     // El importe bonificado guardado (en dólares) se convierte con la misma tasa: es la base sobre
     // la que la venta aplica el descuento por forma de pago, ya en pesos.
     impBonificado:
@@ -558,30 +562,25 @@ function pasoDelModo(
 }
 
 /**
- * Aplica la RENTABILIDAD FORZADA a una línea con el porcentaje dado, si su producto la acepta: o
- * porque el maestro lo habilita, o porque su precio quedó por debajo del costo (ver
- * `aceptaRentabForzada`). El porcentaje pasa a ser la rentabilidad FINAL de la línea (se guarda en
- * `rentabForzadaAplicada`); la rentabilidad BASE del producto (catálogo) y el PRECIO DE VENTA NO se
- * tocan. La "Nota de Crédito x Comisión" por unidad = Costo Original − Nuevo Precio de Costo, con
- * Nuevo Precio de Costo = Precio de Venta × (1 − %/100). Sin Costo Original conocido no hay monto.
+ * Marca la RENTABILIDAD FORZADA en una línea con el porcentaje dado, si su producto la acepta: o
+ * porque el maestro lo habilita, o porque su precio quedó por debajo de Costo + Flete (ver
+ * `aceptaRentabForzada`). El precio de venta y el producto NO se tocan.
+ *
+ * Sólo se guarda el % (`rentabForzadaAplicada`). El Nuevo Precio de Costo, la Nota de Crédito x
+ * Comisión y la rentabilidad resultante se derivan al leerlos, con el descuento vigente de la línea
+ * y la forma de pago de la operación (`rentabForzadaLinea` en `lib/selectors`): el reducer no conoce
+ * la forma de pago, y calcularlos acá los dejaba viejos en cuanto cambiaba un descuento.
  */
 function aplicarRentabForzadaLinea(l: LineaPresupuesto, pct: number): LineaPresupuesto {
   if (!aceptaRentabForzada(l.producto)) return l
-  const nuevoCosto = round2(l.producto.precio * (1 - pct / 100))
-  const monto =
-    l.producto.precioCosto != null ? round2(l.producto.precioCosto - nuevoCosto) : undefined
-  return {
-    ...l,
-    montoDifNotaDeCreditoComision: monto,
-    rentabForzadaAplicada: pct,
-  }
+  return { ...l, rentabForzadaAplicada: pct }
 }
 
-/** Revierte la rentabilidad forzada de una línea: limpia el % forzado y el monto. El producto (base
- *  y precio) nunca se tocó, así que no hay nada que restaurar; las no forzadas quedan intactas. */
+/** Revierte la rentabilidad forzada de una línea: limpia el % forzado. El producto (base y precio)
+ *  nunca se tocó, así que no hay nada que restaurar; las no forzadas quedan intactas. */
 function revertirRentabForzadaLinea(l: LineaPresupuesto): LineaPresupuesto {
   if (l.rentabForzadaAplicada == null) return l
-  const { montoDifNotaDeCreditoComision: _m, rentabForzadaAplicada: _r, ...resto } = l
+  const { rentabForzadaAplicada: _r, ...resto } = l
   return resto
 }
 
@@ -917,10 +916,10 @@ export function reducer(state: AppState, action: Action): AppState {
        deriva de él —descuentos, subtotal, IVA, resumen y lo que se escribe en Monday— se recalcula
        solo, sin tocar el catálogo ni el resto de las líneas.
 
-       La RENTABILIDAD se reajusta en el mismo paso: el COSTO del producto no cambia porque se
-       venda más barato, así que se conserva (costo = precio × (1 − rent/100)) y el margen se mide
-       contra el precio nuevo. Al conservarse el costo, pisar el precio dos veces seguidas da el
-       mismo resultado que pisarlo una sola vez con el valor final. */
+       La RENTABILIDAD se reajusta sola: el COSTO y el FLETE del producto no cambian porque se venda
+       más barato (ver `productoConPrecio`), así que la rentabilidad se mide contra el precio nuevo.
+       Al conservarse el costo, pisar el precio dos veces seguidas da el mismo resultado que
+       pisarlo una sola vez con el valor final. */
     case 'setPrecioLinea': {
       const precio = round2(action.precio)
       // Un precio de 0 o negativo no es un precio: se ignora y la celda queda marcada en rojo.
@@ -935,10 +934,10 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     /* Enciende/apaga la RENTABILIDAD FORZADA (no es por producto: es un modo global de la etapa).
-       Al ENCENDERLA, se le aplica el descuento a todas las líneas habilitadas ("Con Rentab Forzada")
-       con el `porcentaje` recibido, y queda activa: los productos que se agreguen después también lo
-       reciben (ver `addLinea`). Al APAGARLA, se revierte en todas las líneas (precio y rentabilidad
-       vuelven a su base). Los productos no habilitados nunca se tocan. */
+       Al ENCENDERLA, se marca el `porcentaje` en todas las líneas que la aceptan (maestro "Con Rentab
+       Forzada", o precio por debajo de Costo + Flete), y queda activa: los productos que se agreguen
+       después también lo reciben (ver `addLinea`). Al APAGARLA, se desmarca en todas las líneas. El
+       precio de venta nunca se toca; los productos que no la aceptan, tampoco. */
     case 'toggleRentabForzada': {
       const activar = !state.rentabForzadaActiva
       if (activar) {
@@ -1155,8 +1154,10 @@ export function reducer(state: AppState, action: Action): AppState {
               precioUnitario: action.producto.precio,
               // Tipo de mercadería (CO / COM): viaja a la "Vta Pend de Facturar" del remito POSTERIOR.
               tipo: action.producto.tipo,
-              // Rentabilidad según la lista del cliente: se guarda en la "Vta Pend de Facturar".
-              rentabilidad: action.producto.rentabilidad,
+              /* Rentabilidad BASE del producto a la lista del cliente —sin descuento, sin IVA y con
+                 el flete restado—: se guarda en la "Vta Pend de Facturar", y al facturar se le
+                 aplica el descuento por forma de pago (ver `rentabilidadItemRemito`). */
+              rentabilidad: rentabilidadProductoDe(action.producto),
               /* La ficha entera acompaña a la línea: con ella la tabla puede volver a mostrar el
                  stock del producto (y sus ingresos) sin salir a buscarlo de nuevo. */
               producto: action.producto,

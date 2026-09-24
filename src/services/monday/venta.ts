@@ -65,8 +65,15 @@ export interface LineaVenta {
    *  lee del subelemento de la proforma (no se recalcula con la forma de pago de la operación). Si
    *  no viene, la línea usa el descuento por forma de pago de la operación. */
   descFormaPago?: number
-  /** Rentabilidad de la línea, en %. */
+  /** Rentabilidad FINAL de la línea, en %: la misma que vio el vendedor en la tabla. */
   rentabilidad: number
+  /**
+   * Costo POR UNIDAD con el que se midió la rentabilidad (SIN IVA ni flete; el nuevo costo si se
+   * forzó). NO se escribe en Monday: pondera la rentabilidad general (`rentabilidadGeneralDeLineas`).
+   */
+  costoUnitario?: number
+  /** Flete POR UNIDAD del producto, SIN IVA, en pesos. Se graba en el subelemento de la proforma. */
+  flete?: number
   /**
    * El producto comisiona ("Comision" = SI). Se resuelve al seleccionar los productos: del Maestro
    * en la venta DIRECTA, del subelemento del presupuesto en la CON PRESUPUESTO PREVIO.
@@ -92,8 +99,8 @@ export interface LineaVenta {
    * enlazan todos (ver `presupuestosDeLasLineas`).
    */
   presupuestoId?: string
-  /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Sólo lo
-   *  traen las líneas de la venta DIRECTA cuyos productos son "Con Rentab Forzada" y se aplicó. */
+  /** Nota de Crédito x Comisión POR UNIDAD (rentabilidad forzada). Sólo la traen las líneas de la
+   *  venta DIRECTA en las que la rentabilidad forzada corre (ver `rentabForzadaLinea`). */
   notaCreditoComision?: number
 }
 
@@ -517,13 +524,14 @@ export async function crearVenta(datos: DatosVenta): Promise<VentaCreada> {
   cabecera[COL.venta.descuentoTotal] = descuentoTotal
   cabecera[COL.venta.ivaTotal] = ivaTotal
   /* Rentabilidad forzada: si alguna línea la aplicó, va su % (la rentabilidad final de esa línea, que
-     es estrictamente el % forzado) a "Rentab Forzada Aplicada", y la suma de la Nota de Crédito x
-     Comisión de cada producto (monto por unidad, sin multiplicar por cantidad) al TOTAL. */
+     es exactamente el % forzado) a "Rentab Forzada Aplicada", y al TOTAL la Nota de Crédito x
+     Comisión de cada producto MULTIPLICADA POR SU CANTIDAD: lo que el proveedor reconoce por toda la
+     mercadería vendida, no por una unidad de cada producto. */
   const lineaForzada = lineas.find((l) => l.notaCreditoComision != null)
   if (lineaForzada) {
     cabecera[COL.venta.rentabForzada] = String(round2(lineaForzada.rentabilidad))
     const totalNotaCredito = round2(
-      lineas.reduce((acc, l) => acc + (l.notaCreditoComision ?? 0), 0),
+      lineas.reduce((acc, l) => acc + (l.notaCreditoComision ?? 0) * l.cantidad, 0),
     )
     cabecera[COL.venta.notaCreditoComision] = String(totalNotaCredito)
   }

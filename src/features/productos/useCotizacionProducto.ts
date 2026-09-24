@@ -15,8 +15,8 @@ import type { Producto } from '@/types'
  */
 const aPesos = (producto: Producto, tasa: number): Producto => {
   const usd = producto.precioBase ?? producto.precio
-  /* Todo lo que está en la moneda del producto viaja a pesos con la misma tasa: si el costo o el
-     precio sin IVA se quedaran en dólares, la rentabilidad compararía dos monedas distintas. */
+  /* Todo lo que está en la moneda del producto viaja a pesos con la misma tasa: si el costo, el
+     flete o el precio sin IVA se quedaran en dólares, la rentabilidad mezclaría dos monedas. */
   const aMoneda = (v: number | undefined) => (v && v > 0 ? round2(v * tasa) : v)
   return {
     ...producto,
@@ -24,6 +24,8 @@ const aPesos = (producto: Producto, tasa: number): Producto => {
     precio: round2(usd * tasa),
     precioSinIva: aMoneda(producto.precioSinIva),
     precioCosto: aMoneda(producto.precioCosto),
+    // El flete está en la moneda del producto, igual que el costo: viaja a pesos con la misma tasa.
+    flete: aMoneda(producto.flete),
     precioBase: undefined,
     moneda: 'Pesos',
   }

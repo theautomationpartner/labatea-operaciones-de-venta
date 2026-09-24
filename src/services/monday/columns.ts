@@ -410,8 +410,13 @@ export const COL = {
     /** "🤖Código Sistema Prov": espeja el código del proveedor conectado. */
     proveedorCodigo: 'lookup_mm5fh97p',
     tipoMercaderia: 'color_mm48hm74',
-    /** "🤖Costo Final" (fórmula): precio de costo del producto. Se lee por `display_value`. */
+    /** "🤖Costo Final" (fórmula): precio de costo del producto, SIN IVA y SIN flete. Se lee por
+     *  `display_value`. Es el denominador de la rentabilidad (ver `rentabilidadDe`). */
     precioCosto: 'formula_mm54qnz9',
+    /** "✋️Flete" (numérico): costo de flete POR UNIDAD, sin IVA, en la moneda del producto. Las
+     *  listas L1, L7 y L8 lo suman al precio SIN margen encima (Costo + Flete + Costo × Margen), así
+     *  que es un costo que se descuenta del resultado, no parte de la ganancia. */
+    flete: 'numeric_mm589hex',
     /** "🤖Rentabilidad Forzada" (status): label "Con Rentab Forzada" habilita aplicarle al producto
      *  la rentabilidad forzada (nota de crédito x comisión) en la selección de productos. */
     rentabForzada: 'color_mm60m95h',
@@ -587,6 +592,10 @@ export const COL = {
     costoPesos: 'numeric_mm63w7c5',
     /** "🤖Costo U$": costo del producto en DÓLARES (original, o el nuevo si se forzó la rentabilidad). */
     costoUsd: 'numeric_mm63j2m7',
+    /** "Flete": flete POR UNIDAD del producto, SIN IVA, en la moneda del producto. Se graba al crear el
+     *  subelemento y lo lee la venta CON PRESUPUESTO PREVIO para medir la rentabilidad, sin ir a
+     *  buscarlo al producto del maestro. */
+    flete: 'numeric_mm7ghdsc',
     /** "🤖 Cant Vendida": unidades del producto ya llevadas a una venta. */
     cantVendida: 'numeric_mm54546t',
     /** "🤖Estado de Uso": 0% / Parcialmente / 100% Vendido. */
@@ -649,6 +658,13 @@ export const COL = {
   },
   // Columnas del subelemento de la Proforma (un producto cada uno):
   proformaSub: {
+    /** "🤖Costo $": costo POR UNIDAD con el que se midió la rentabilidad de la línea, SIN IVA ni flete,
+     *  en pesos (el nuevo costo si se forzó la rentabilidad). Se graba al crear la proforma y lo lee
+     *  la VENTA PROFORMA para ponderar la línea en la rentabilidad general. */
+    costoPesos: 'numeric_mm7gx4k8',
+    /** "Flete": flete POR UNIDAD del producto, SIN IVA, en pesos (la moneda de la proforma). Se graba
+     *  al crear la proforma y viaja a la VENTA PROFORMA con el producto. */
+    flete: 'numeric_mm7gbq0q',
     /** Producto conectado en el Maestro (id + nombre del ítem vinculado). */
     producto: 'board_relation_mkwctrv6',
     /** "🤖Comision" (mirror del Maestro, "SI"/"NO"): define si el producto comisiona en la venta. */

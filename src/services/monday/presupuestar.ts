@@ -66,7 +66,12 @@ import {
   PRESUP_ESTADO_EMITIR_LABEL,
   PRESUP_VIGENCIA_LABEL,
 } from './columns'
-import { DESCUENTO_MAX_DEFAULT, DESCUENTO_MIN_DEFAULT } from '@/lib/selectors'
+import {
+  DESCUENTO_MAX_DEFAULT,
+  DESCUENTO_MIN_DEFAULT,
+  notaCreditoTotal,
+  rentabForzadaLinea,
+} from '@/lib/selectors'
 import { norm, similitud, UMBRAL_SIMILITUD } from '@/lib/similitud'
 import { round2 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
@@ -755,13 +760,15 @@ function mapProducto(item: MondayItem, lista: ListaPrecio, conIva: boolean): Pro
     /* Precio de lista SIN IVA: es el que se compara contra el costo para medir la rentabilidad.
        `precio` puede traer la alícuota sumada, y contra un costo neto la inflaría. */
     precioSinIva: round2(numCol(c[columnaPrecio(lista)])),
-    /* "✋Margen" del maestro. OJO: es un MARKUP SOBRE EL COSTO (`precio = costo × (1 + margen/100)`),
-       no la rentabilidad —por eso hay productos con 223%—. Se sigue leyendo porque es el dato que
-       el board publica, pero la rentabilidad NO se deriva de acá: sale del costo (ver
-       `rentabilidadDe`). */
+    /* "✋Margen" del maestro. OJO: es un MARKUP SOBRE EL COSTO
+       (`precio = costo + flete + costo × margen/100`), no la rentabilidad que se muestra. Se sigue
+       leyendo sólo como respaldo para despejar el costo cuando el maestro no lo trae (`costoDe`):
+       la rentabilidad sale de los importes (ver `rentabilidadDe`). */
     rentabilidad: margenCol ? numCol(c[margenCol]) : 0,
-    // "Costo Final" (fórmula del maestro): el costo del producto, SIN IVA. Base de la rentabilidad.
+    // "Costo Final" (fórmula del maestro): el costo del producto, SIN IVA y SIN flete.
     precioCosto: numCol(c[COL.producto.precioCosto]),
+    // "✋️Flete" por unidad, SIN IVA: se resta del resultado de la venta.
+    flete: numCol(c[COL.producto.flete]),
     // El proveedor es el ítem conectado; su código, la mirror que espeja el del maestro.
     provCod: valor(c[COL.producto.proveedorCodigo]),
     provNombre: c[COL.producto.proveedor]?.linked_items?.[0]?.name ?? '',
@@ -825,6 +832,7 @@ const columnasProducto = (lista: ListaPrecio): string =>
     COL.producto.proveedorCodigo,
     COL.producto.tipoMercaderia,
     COL.producto.precioCosto,
+    COL.producto.flete,
     COL.producto.rentabForzada,
     COL.producto.moneda,
     COL.producto.iva,
@@ -1296,7 +1304,7 @@ export interface DatosPresupuesto {
   fechaEmision: string
   fechaVencimiento: string
   diasVigencia: number
-  /** Rentabilidad general ponderada (%). */
+  /** Rentabilidad general (%): la de cada línea ponderada por su costo (`rentabilidadGeneral`). */
   rentabilidad: number
   /** Moneda del presupuesto: define cuál de las dos fórmulas de subtotal se completa. */
   moneda: Moneda
@@ -1418,17 +1426,15 @@ export async function crearPresupuesto(datos: DatosPresupuesto): Promise<Presupu
   if (actividadesNum.length > 0) {
     cabecera[COL.presupuesto.actividades] = { item_ids: actividadesNum }
   }
-  /* Rentabilidad forzada: todas las líneas afectadas llevan el mismo % (el del interruptor), que queda
-     como rentabilidad del producto. Se toma de la primera línea forzada y va a "Rentabilidad Forzada %".
-     TOTAL Nota de Crédito x Comisión $: la suma de la Nota de Crédito x Comisión de CADA producto (el
-     monto por unidad de cada línea, sin multiplicar por cantidad). Se escriben si alguna se forzó. */
-  const lineaForzada = lineas.find((l) => l.montoDifNotaDeCreditoComision != null)
-  if (lineaForzada) {
-    cabecera[COL.presupuesto.rentabForzadaPct] = String(round2(lineaForzada.producto.rentabilidad))
-    const totalNotaCredito = round2(
-      lineas.reduce((acc, l) => acc + (l.montoDifNotaDeCreditoComision ?? 0), 0),
-    )
-    cabecera[COL.presupuesto.notaCreditoComision] = String(totalNotaCredito)
+  /* Rentabilidad forzada: todas las líneas en las que corre llevan el mismo % (el del interruptor),
+     que va a "Rentabilidad Forzada %". Antes se escribía el "Margen" del maestro del producto, que no
+     es el % forzado. TOTAL Nota de Crédito x Comisión $: la nota de crédito por unidad de cada línea
+     MULTIPLICADA POR SU CANTIDAD (`notaCreditoTotal`). El presupuesto no aplica descuento por forma
+     de pago, así que no hay ninguno que componer. Se escriben sólo si alguna línea se forzó. */
+  const lineaForzada = lineas.find((l) => rentabForzadaLinea(l) != null)
+  if (lineaForzada?.rentabForzadaAplicada != null) {
+    cabecera[COL.presupuesto.rentabForzadaPct] = String(round2(lineaForzada.rentabForzadaAplicada))
+    cabecera[COL.presupuesto.notaCreditoComision] = String(notaCreditoTotal(lineas))
   }
   if (emision) cabecera[COL.presupuesto.fechaEmision] = { date: emision }
   if (vencimiento) cabecera[COL.presupuesto.fechaVencimiento] = { date: vencimiento }
@@ -1693,6 +1699,15 @@ function mapPresupuestoProducto(sub: MondayItem, presupuestoItemId?: string): Pr
     pend: Math.max(presupuestada - vendida, 0),
     precio,
     rent: numCol(c[COL.presupuestoSub.rentabilidad]),
+    /* Costo por unidad grabado en el propio subelemento al presupuestar, en la columna de la moneda
+       del producto ("🤖Costo $" / "🤖Costo U$"). Con él y el flete la venta recalcula la rentabilidad
+       con importes (`rentabilidadItemPresupuesto`). En una línea con rentabilidad forzada es el
+       NUEVO costo, así que la venta sigue midiendo el % forzado: es el que corresponde reportar,
+       porque la nota de crédito del proveedor baja lo que el producto le cuesta al comercio. Vacío
+       (0), la venta se queda con la rentabilidad registrada. */
+    costo: numCol(c[esDolar(moneda) ? COL.presupuestoSub.costoUsd : COL.presupuestoSub.costoPesos]),
+    // Flete por unidad grabado en el propio subelemento al presupuestar (en la moneda del producto).
+    flete: numCol(c[COL.presupuestoSub.flete]),
     descuento: numCol(c[COL.presupuestoSub.descuento]),
     /* El tipo de mercadería sale de la mirror del subelemento; si no vino, del propio producto
        conectado. De él dependen los comprobantes: la consignada se factura aparte. */
@@ -1793,7 +1808,7 @@ async function getPresupuestosVigentesImpl(clienteItemId: string): Promise<Presu
         column_values(ids: ["${COL.presupuesto.pulseId}","${COL.presupuesto.rentabilidad}","${COL.presupuesto.vigencia}","${COL.presupuesto.fechaVencimiento}"]) { id text }
         subitems {
           id name
-          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.descTotal}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}"]) {
+          column_values(ids: ["${COL.presupuestoSub.producto}","${COL.presupuestoSub.cantidad}","${COL.presupuestoSub.cantVendida}","${COL.presupuestoSub.estadoUso}","${COL.presupuestoSub.tipoMercaderia}","${COL.presupuestoSub.comisionable}","${COL.presupuestoSub.unidadVenta}","${COL.presupuestoSub.precioUnit}","${COL.presupuestoSub.precioUnitUsd}","${COL.presupuestoSub.descTotal}","${COL.presupuestoSub.totalPesos}","${COL.presupuestoSub.iva}","${COL.presupuestoSub.moneda}","${COL.presupuestoSub.rentabilidad}","${COL.presupuestoSub.descuento}","${COL.presupuestoSub.stock}","${COL.presupuestoSub.flete}","${COL.presupuestoSub.costoPesos}","${COL.presupuestoSub.costoUsd}"]) {
             id text
             ... on MirrorValue { display_value }
             ... on BoardRelationValue {

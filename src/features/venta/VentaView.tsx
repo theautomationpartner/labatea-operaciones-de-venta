@@ -15,6 +15,7 @@ import {
   AVANCE_COLOR,
   AVANCE_LABEL,
   avanceLinea,
+  rentabilidadVentaItem,
   resumenVenta,
   ventaItemUid,
 } from '@/lib/selectors'
@@ -165,6 +166,9 @@ export function VentaView() {
           precio,
           descuento: it.desc,
           rentabilidad: it.rent,
+          /* Recalculada con el costo y el flete del maestro y los descuentos de ESTA venta (el de la
+             línea, editable, y el de la forma de pago): la misma que suma el resumen. */
+          rentabFinal: rentabilidadVentaItem(it, descFormaPago),
           // Ficha del catálogo para el desplegable de stock, cuando el código coincide.
           producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
           cantidadMax: maxAVender(it),

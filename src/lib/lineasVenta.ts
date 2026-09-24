@@ -6,8 +6,18 @@
  * `VentaItem` y la entrega ANTERIOR usa `FacturaItem`. La escritura en el board necesita una
  * sola forma, y es esta.
  */
+import { netoLinea } from '@/lib/descuentos'
 import { esFlujoRemito } from '@/lib/pasos'
-import { rentabilidadDeMarkup, rentabilidadLinea } from '@/lib/selectors'
+import {
+  costoEfectivoLinea,
+  costoParaPonderar,
+  fleteDe,
+  notaCreditoLinea,
+  rentabilidadFinalLinea,
+  rentabilidadGeneral,
+  rentabilidadItemRemito,
+  rentabilidadVentaItem,
+} from '@/lib/selectors'
 import type { LineaVenta } from '@/services/monday'
 import type {
   FacturaItem,
@@ -29,6 +39,12 @@ interface OrigenLineas {
   ventaItems: VentaItem[]
   /** Entrega ANTERIOR (cualquier tipo de venta): lo tomado de los remitos a facturar. */
   facturaItems: FacturaItem[]
+  /**
+   * Descuento por forma de pago de la operación, en %. Entra en la rentabilidad de cada línea: sin
+   * él, lo que se grababa en Monday era la rentabilidad con el descuento manual solo, un número
+   * distinto del que el vendedor vio en la tabla. Las líneas de una PROFORMA traen el suyo.
+   */
+  descFormaPago?: number
 }
 
 /** Las líneas de la venta en curso, vengan del remito, del presupuesto/proforma o del catálogo. */
@@ -36,6 +52,7 @@ export function lineasDeVenta({
   operacion,
   tipoVenta,
   tipoEntrega,
+  descFormaPago = 0,
   lineas,
   ventaItems,
   facturaItems,
@@ -50,7 +67,11 @@ export function lineasDeVenta({
       precioUnitario: it.precio,
       // El remito ya salió: lo que se factura no lleva descuento por línea.
       descuento: 0,
-      rentabilidad: it.rent,
+      /* La rentabilidad registrada al remitir, con el descuento por forma de pago de ESTA venta
+         aplicado encima: la misma que muestra la tabla y el resumen de la factura. */
+      rentabilidad: rentabilidadItemRemito(it, descFormaPago),
+      costoUnitario: it.costo,
+      flete: it.flete,
       /* Entrega ANTERIOR: la condición de comisión sale del subelemento de "Vtas Pends de Facturar"
          (espejo "Comision" del Maestro), resuelta al seleccionar el producto. Así la comisión que se
          registra coincide con la que vio el vendedor en el resumen. */
@@ -75,7 +96,11 @@ export function lineasDeVenta({
       // VENTA sobre PROFORMA: el descuento por forma de pago se toma del subelemento de la proforma
       // (no se recalcula). En CON PRESUPUESTO PREVIO viene indefinido (el presupuesto no lo tiene).
       descFormaPago: it.descFormaPago,
-      rentabilidad: rentabilidadDeMarkup(it.rent, it.desc ?? 0),
+      /* Presupuesto: recalculada con importes y los descuentos de esta venta. Proforma: la
+         registrada, porque sus descuentos no se tocan (ver `rentabilidadVentaItem`). */
+      rentabilidad: rentabilidadVentaItem(it, descFormaPago),
+      costoUnitario: it.costo,
+      flete: it.flete,
       // Comisión: mirror "🤖Comision" del subelemento del presupuesto (SI/NO).
       comisionable: it.comisionable === true,
       // U.M.: mirror "🤖Unidad de Venta" del subelemento del presupuesto.
@@ -101,9 +126,14 @@ export function lineasDeVenta({
     // Precio original en USD (sólo si el producto estaba en dólares): auditoría de la venta.
     precioUsd: l.producto.precioUsd,
     descuento: l.descuento,
-    /* Rentabilidad FINAL: el % forzado si la rentabilidad forzada está aplicada; si no, la ganancia
-       sobre el precio ya descontado, medida contra el costo del maestro. */
-    rentabilidad: l.rentabForzadaAplicada ?? rentabilidadLinea(l),
+    /* Rentabilidad FINAL, la MISMA de la columna de la tabla: con los dos descuentos compuestos
+       (manual y forma de pago) y el flete restado, o el % forzado cuando la rentabilidad forzada
+       corre. */
+    rentabilidad: rentabilidadFinalLinea(l, descFormaPago),
+    // Costo por unidad con el que se mide (el nuevo, si se forzó): pondera la rentabilidad general.
+    costoUnitario: costoEfectivoLinea(l, descFormaPago),
+    // Flete por unidad del producto (ya en pesos si estaba en dólares).
+    flete: fleteDe(l.producto),
     // Comisión: "✋️Comision" del Maestro (SI/NO), que la línea trae del catálogo.
     comisionable: l.producto.comisionable === true,
     codigo: l.producto.codigo,
@@ -114,7 +144,32 @@ export function lineasDeVenta({
     iva: l.producto.iva,
     // El ítem de stock viene directo del maestro (venta DIRECTA).
     stockId: l.producto.stockId,
-    // Nota de Crédito x Comisión por unidad (rentabilidad forzada), si se aplicó a la línea.
-    notaCreditoComision: l.montoDifNotaDeCreditoComision,
+    // Nota de Crédito x Comisión POR UNIDAD (rentabilidad forzada), si corre para la línea.
+    notaCreditoComision: notaCreditoLinea(l, descFormaPago),
   }))
+}
+
+/**
+ * Rentabilidad GENERAL de la venta a partir de sus líneas normalizadas: la de cada línea ponderada
+ * por su costo (ver `rentabilidadGeneral` en `lib/selectors`). Es lo que se graba en la cabecera
+ * del documento, y sale de la MISMA rentabilidad por línea que se graba en cada subelemento.
+ *
+ * Una línea sin costo conocido se pondera por el costo que se despeja de su importe neto y su
+ * rentabilidad (`costoParaPonderar`).
+ */
+export function rentabilidadGeneralDeLineas(lineas: LineaVenta[], descFormaPago = 0): number {
+  return rentabilidadGeneral(
+    lineas.map((l) => {
+      const neto = netoLinea(
+        l.precioUnitario,
+        l.cantidad,
+        l.descuento ?? 0,
+        l.descFormaPago ?? descFormaPago,
+      )
+      return {
+        rentabilidad: l.rentabilidad,
+        costo: costoParaPonderar(l.costoUnitario, l.cantidad, neto, l.rentabilidad),
+      }
+    }),
+  )
 }

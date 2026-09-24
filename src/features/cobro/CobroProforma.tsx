@@ -6,7 +6,7 @@ import { TotalesDoc } from '@/features/shared/TotalesDoc'
 import { descuentoDeFormaPago } from '@/lib/cobros'
 import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
 import { money, round2 } from '@/lib/format'
-import { lineasDeVenta } from '@/lib/lineasVenta'
+import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import { documentoDeVentaItem } from '@/lib/selectors'
 import {
   crearProforma,
@@ -44,6 +44,11 @@ export function CobroProforma() {
      y volver: el componente se desmonta, pero el `proformaId` global sobrevive. */
   const emitida = Boolean(proformaId)
 
+  /* Descuento por forma de pago (pronto pago): se compone con el descuento manual de cada línea,
+     igual que en la tabla de "Seleccionar productos" del paso anterior, y entra en la rentabilidad
+     de cada línea que se graba en la proforma. */
+  const descFormaPago = descuentoDeFormaPago(formaPago, descuentosPago)
+
   const productos = useMemo(
     () =>
       lineasDeVenta({
@@ -53,13 +58,18 @@ export function CobroProforma() {
         lineas: state.lineas,
         ventaItems: state.ventaItems,
         facturaItems: state.facturaItems,
+        descFormaPago,
       }),
-    [operacion, tipoVenta, tipoEntrega, state.lineas, state.ventaItems, state.facturaItems],
+    [
+      operacion,
+      tipoVenta,
+      tipoEntrega,
+      state.lineas,
+      state.ventaItems,
+      state.facturaItems,
+      descFormaPago,
+    ],
   )
-
-  /* Descuento por forma de pago (pronto pago): se compone con el descuento manual de cada línea,
-     igual que en la tabla de "Seleccionar productos" del paso anterior. */
-  const descFormaPago = descuentoDeFormaPago(formaPago, descuentosPago)
 
   /* Filas de la factura proforma con los MISMOS valores que va a escribir `crearProforma`, que es
      lo que termina en el tablero y en el PDF que ve el cliente:
@@ -88,12 +98,12 @@ export function CobroProforma() {
     return { bruto: b, neto: n, descuento: round2(b - n), iva: impuesto, total: round2(n + impuesto) }
   }, [filas])
 
-  // Rentabilidad general: promedio ponderado por el total de cada línea (ya bonificado).
-  const rentabilidadGeneral = useMemo(() => {
-    if (neto <= 0) return 0
-    // Con decimales: redondear a entero asignaba una rentabilidad general incorrecta en la proforma.
-    return round2(filas.reduce((acc, f) => acc + f.rentabilidad * f.totalLinea, 0) / neto)
-  }, [filas, neto])
+  /* Rentabilidad general: la de cada línea ponderada por su costo, con la misma función que la
+     venta. Con decimales: redondear a entero asignaba una rentabilidad incorrecta en la proforma. */
+  const rentabilidadGeneral = useMemo(
+    () => rentabilidadGeneralDeLineas(productos, descFormaPago),
+    [productos, descFormaPago],
+  )
 
   const [emitiendo, setEmitiendo] = useState(false)
   const [abierta, setAbierta] = useState(true)

@@ -4,12 +4,7 @@ import { formatearImporteAR, importeATexto, money, moneyU, pctDec, round2 } from
 import { esDolar } from '@/lib/moneda'
 import { puedeEditarPrecio, topesDescuentoDe, usuarioDeLaOperacion } from '@/lib/permisos'
 import { productoConPrecio } from '@/lib/precios'
-import {
-  aceptaRentabForzada,
-  costoDe,
-  precioNetoDe,
-  rentabilidadConDescuento,
-} from '@/lib/selectors'
+import { aceptaRentabForzada, rentabForzadaDe, rentabilidadProductoDe } from '@/lib/selectors'
 import {
   aplicarTecleoDescuento,
   BONIFICACION_TOTAL,
@@ -159,29 +154,28 @@ export function CargaLinea({
   /* El descuento en pesos NO se teclea: es el mismo descuento del %, mostrado en su importe. */
   const montoMostrado = descuento ? importeATexto(dto.manual) : ''
 
+  /* Descuento TOTAL que va a tener la línea: forma de pago + manual, compuestos en cascada. */
+  const descuentoTotal = descuentoCompuesto(pctManual, descFormaPago)
+  /* Rentabilidad BASE: la del producto a su precio de lista SIN IVA, sin descuentos, con el flete
+     restado (ver `rentabilidadProductoDe`). Se CALCULA —no se lee el "Margen" del maestro— para que
+     sin descuentos coincida exactamente con la "Rentabilidad Final" y con la columna de la tabla. Si
+     un administrador pisa el precio, refleja el precio nuevo: el costo y el flete no cambian. */
+  const rentabilidadLista = prod ? rentabilidadProductoDe(prod) : 0
   /* Rentabilidad Forzada en la PREVISUALIZACIÓN: si el interruptor está encendido y el producto la
-     acepta —lo habilita el maestro, o su precio quedó por debajo del costo—, el % forzado va a ser
-     la rentabilidad FINAL. Usa `aceptaRentabForzada`, la MISMA regla que aplica el reducer, así que
-     lo que se ve acá antes de agregar es lo que después se aplica.
-     El Nuevo Precio de Costo y la Nota de Crédito x Comisión se siguen calculando —los arma el
-     reducer al agregar la línea, y de ahí viajan a Monday—, pero ya no se muestran acá. */
-  const forzarRentab = rentabForzadaActiva && prod != null && aceptaRentabForzada(prod)
-  /* Rentabilidad BASE: el "Margen" del maestro para la lista del cliente, TAL CUAL. Es el punto de
-     partida y no se recalcula nunca —ni por descuentos, ni por el override del precio, ni por la
-     rentabilidad forzada—: es el dato de referencia que acompaña al precio y al costo en la ficha. */
-  const rentabilidadLista = round2(prod?.rentabilidad ?? 0)
-  /* Rentabilidad FINAL de la línea: con la forzada encendida es estrictamente el % forzado; si no, la
-     de catálogo bajada por el descuento TOTAL (forma de pago + manual, compuesto). Es la métrica
-     "Rentabilidad Final" del resumen. */
-  const rentabilidadPrevista = forzarRentab
-    ? rentabForzadaPctActiva
-    : prod
-      ? rentabilidadConDescuento(
-          precioNetoDe(prod),
-          costoDe(prod),
-          descuentoCompuesto(pctManual, descFormaPago),
-        )
-      : 0
+     acepta —lo habilita el maestro, o su precio no cubre Costo + Flete—, se calcula con el descuento
+     total que va a tener la línea. Son las MISMAS funciones que usa la línea ya agregada
+     (`aceptaRentabForzada` en el reducer, `rentabForzadaDe` al leerla), así que lo que se ve acá
+     antes de agregar es lo que después queda. `null` si el producto ya rinde el % pedido o más: no
+     hay nota de crédito que generar y se muestra la rentabilidad real. */
+  const forzada =
+    rentabForzadaActiva && prod != null && aceptaRentabForzada(prod)
+      ? rentabForzadaDe(prod, rentabForzadaPctActiva, descuentoTotal)
+      : null
+  /* Rentabilidad FINAL de la línea: el % forzado cuando corre; si no, la del producto con el
+     descuento TOTAL aplicado. Es la misma que va a mostrar la columna de la tabla al agregarlo. */
+  const rentabilidadPrevista = prod
+    ? (forzada?.rentabilidad ?? rentabilidadProductoDe(prod, descuentoTotal))
+    : 0
 
   /** Subtotal de la configuración, SIN IVA: precio final por unidad × cantidad. */
   const subtotal = round2(dto.precioFinal * cantidad)
@@ -314,10 +308,9 @@ export function CargaLinea({
                 </div>
                 <div className="cl-kpi">
                   <span className="cl-kpi-l">Rentabilidad</span>
-                  {/* Dato de CATÁLOGO: el margen del producto al precio que se está por cobrar,
-                      SIN descuentos. No se mueve al bonificar; la que baja con el descuento es
-                      "Rentabilidad Final", en el resumen. Mostraba la bonificada, y por eso las
-                      dos métricas decían siempre lo mismo. */}
+                  {/* Rentabilidad BASE: la del producto al precio de lista que se está por cobrar,
+                      SIN descuentos (sin IVA y con el flete restado). No se mueve al bonificar; la
+                      que baja con el descuento es "Rentabilidad Final", en el resumen. */}
                   <span
                     className="cl-kpi-v"
                     style={{

@@ -204,6 +204,8 @@ export function productoDesdeCache(
        en la búsqueda directa (`margenCol ? numCol(...) : 0`). */
     rentabilidad: pc.margenes[lista] ?? 0,
     precioCosto: pc.precioCosto,
+    // Filas del caché anteriores al dato no lo traen: sin flete, la cuenta lo toma como 0.
+    flete: pc.flete ?? 0,
     provCod: pc.provCod,
     provNombre: pc.provNombre,
     provId: pc.provId,
@@ -376,6 +378,7 @@ function cacheDesdeMock(p: Producto): ProductoCache {
     precios,
     margenes: { L1: p.rentabilidad, L2: p.rentabilidad, L3: p.rentabilidad },
     precioCosto: p.precioCosto ?? 0,
+    flete: p.flete ?? 0,
     iva: p.iva ?? 0,
     moneda: p.moneda ?? '',
     tipo: p.tipo,

@@ -38,6 +38,7 @@ export const COL_PRODUCTO = {
   proveedorCodigo: 'lookup_mm5fh97p',
   tipoMercaderia: 'color_mm48hm74',
   precioCosto: 'formula_mm54qnz9',
+  flete: 'numeric_mm589hex',
   rentabForzada: 'color_mm60m95h',
   moneda: 'color_mm4kwdj6',
   iva: 'numeric_mm5gyrnb',
@@ -140,8 +141,10 @@ export interface ProductoCache {
   precios: Record<ListaPrecio, number>
   /** "Margen" por lista. Es un MARKUP SOBRE EL COSTO, no la rentabilidad (ver `mapProducto`). */
   margenes: Partial<Record<ListaPrecio, number>>
-  /** "Costo Final" (fórmula): el costo del producto, SIN IVA. Base de la rentabilidad. */
+  /** "Costo Final" (fórmula): el costo del producto, SIN IVA y SIN flete. Base de la rentabilidad. */
   precioCosto: number
+  /** "✋️Flete": costo de flete por unidad, SIN IVA. Se resta del resultado de la venta. */
+  flete: number
   /** Alícuota de IVA del producto, en %. */
   iva: number
   moneda: string
@@ -179,6 +182,7 @@ export function mapProductoCache(item: ItemMonday): ProductoCache {
     precios,
     margenes,
     precioCosto: numCol(c[COL_PRODUCTO.precioCosto]),
+    flete: numCol(c[COL_PRODUCTO.flete]),
     iva: numCol(c[COL_PRODUCTO.iva]),
     moneda: valor(c[COL_PRODUCTO.moneda]),
     tipo: valor(c[COL_PRODUCTO.tipoMercaderia]),

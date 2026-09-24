@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { datosCobroVenta, descuentoDeFormaPago } from '@/lib/cobros'
 import { alicuotaDeclarada, ivaLinea, netoLinea as netoLineaConDesc } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
-import { lineasDeVenta } from '@/lib/lineasVenta'
+import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import { documentoDeVentaItem } from '@/lib/selectors'
 import {
   actualizarCantVendida,
@@ -60,8 +60,10 @@ export function useCrearVenta() {
   const [creando, setCreando] = useState(false)
   const [errorVenta, setErrorVenta] = useState<string | null>(null)
 
-  /* Rentabilidad general ponderada por el importe bonificado de cada línea, igual que el cierre. */
+  /* Rentabilidad general de la venta: la de cada línea —la misma que se graba en su subelemento, con
+     el descuento por forma de pago incluido— ponderada por su costo. Es la que muestra el resumen. */
   const rentabilidadVenta = useMemo(() => {
+    const descFp = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
     const productos = lineasDeVenta({
       operacion,
       tipoVenta,
@@ -69,25 +71,26 @@ export function useCrearVenta() {
       lineas: state.lineas,
       ventaItems: state.ventaItems,
       facturaItems: state.facturaItems,
+      descFormaPago: descFp,
     })
-    const base = productos.reduce(
-      (acc, p) => acc + p.precioUnitario * p.cantidad * (1 - p.descuento / 100),
-      0,
-    )
-    if (base <= 0) return 0
-    const ponderada = productos.reduce(
-      (acc, p) =>
-        acc + p.rentabilidad * ((p.precioUnitario * p.cantidad * (1 - p.descuento / 100)) / base),
-      0,
-    )
     // Con decimales: no se redondea a entero (rentabilidad general del ítem de venta).
-    return round2(ponderada)
-  }, [state.lineas, state.ventaItems, state.facturaItems, operacion, tipoVenta, tipoEntrega])
+    return rentabilidadGeneralDeLineas(productos, descFp)
+  }, [
+    state.lineas,
+    state.ventaItems,
+    state.facturaItems,
+    state.formaPago,
+    state.descuentosPago,
+    operacion,
+    tipoVenta,
+    tipoEntrega,
+  ])
 
   const crear = async (): Promise<string | null> => {
     if (!cliente) return null
     // El responsable/ruta sólo se pregunta en la entrega POSTERIOR.
     const esEntregaPosterior = tipoEntrega === 'POSTERIOR'
+    const descFormaPago = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
     const productos = lineasDeVenta({
       operacion,
       tipoVenta,
@@ -95,6 +98,7 @@ export function useCrearVenta() {
       lineas: state.lineas,
       ventaItems: state.ventaItems,
       facturaItems: state.facturaItems,
+      descFormaPago,
     })
 
     /* Total en pesos (con IVA): el neto bonificado de cada línea más SU IVA, liquidado con la
@@ -102,7 +106,6 @@ export function useCrearVenta() {
        pago (igual que los subelementos y la métrica TOTAL del resumen), no sólo el manual.
        Antes se aplicaba un 21% plano sobre el neto del documento, y una venta con un producto al
        10,5% se registraba por encima de lo que decían sus propias facturas. */
-    const descFormaPago = descuentoDeFormaPago(state.formaPago, state.descuentosPago)
     const importeTotalPesos = round2(
       productos.reduce((acc, p) => {
         const neto = netoLineaConDesc(

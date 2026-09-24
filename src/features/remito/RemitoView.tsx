@@ -14,6 +14,7 @@ import {
   AVANCE_LABEL_FACTURA,
   avanceLinea,
   facturaItemUid,
+  rentabilidadItemRemito,
   resumenFactura,
   tasaComision,
 } from '@/lib/selectors'
@@ -163,9 +164,12 @@ export function RemitoView() {
         precio: it.precio,
         descuento: 0,
         rentabilidad: it.rent,
+        /* La registrada al remitir, con el descuento por forma de pago de esta venta encima: la misma
+           que suma la rentabilidad general del resumen. */
+        rentabFinal: rentabilidadItemRemito(it, descFormaPago),
         producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
       })),
-    [facturaItems],
+    [facturaItems, descFormaPago],
   )
 
   if (!cliente) return null

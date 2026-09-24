@@ -10,7 +10,6 @@ import {
   round2,
 } from '@/lib/format'
 import { esDolar } from '@/lib/moneda'
-import { rentabilidadDeMarkup } from '@/lib/selectors'
 import type { Producto } from '@/types'
 import { LineaDetalle } from './LineaDetalle'
 
@@ -22,6 +21,8 @@ export interface FilaProducto {
   cantidad: number
   precio: number
   descuento: number
+  /** Rentabilidad registrada de la línea (%). Es la que muestra la columna sólo si el paso no pasó
+   *  `rentabFinal`. */
   rentabilidad: number
   /** Ficha de catálogo, para el desplegable de stock. */
   producto?: Producto
@@ -36,16 +37,14 @@ export interface FilaProducto {
   descFormaPago?: number
   descProdMonto?: number
   descFpMonto?: number
-  /** Monto $ por unidad descontado por rentabilidad forzada (nota de crédito x comisión). Se muestra
-   *  en el "Detalle" de los productos afectados. */
+  /** Nota de Crédito x Comisión POR UNIDAD (rentabilidad forzada). Se muestra en el "Detalle" de
+   *  los productos afectados. */
   notaCredito?: number
-  /** Rentabilidad FORZADA aplicada (%): es la rentabilidad FINAL del producto cuando el interruptor
-   *  está encendido. La base (columna Rentabilidad) no se toca. */
-  rentabForzada?: number
   /**
-   * Rentabilidad FINAL ya calculada por el paso, con el precio vigente (descuentos y override del
-   * administrador incluidos) contra el costo del producto. Cuando no viene, la tabla la deriva de
-   * la BASE y el descuento, que es lo mejor que puede hacer sin el costo a mano.
+   * Rentabilidad FINAL ya calculada por el paso con las funciones de `lib/selectors`: precio vigente
+   * SIN IVA, con los descuentos y el override del administrador, menos costo y flete, sobre el
+   * costo —o el % forzado cuando corre—. La tabla NO la recalcula: la muestra, así es la misma que
+   * vio el vendedor antes de agregar el producto y la misma que suma la rentabilidad general.
    */
   rentabFinal?: number
 }
@@ -245,15 +244,10 @@ export function TablaProductos({
             const tope = fila.cantidadMax
             const excede = tope !== undefined && fila.cantidad > tope
             const calc = calculosDe(fila, descFormaPago)
-            /* Rentabilidad FINAL de la fila: el % forzado si la rentabilidad forzada está aplicada;
-               si no, la base bajada por el descuento compuesto. La base (columna) no se toca. */
-            /* Rentabilidad FINAL de la fila, por orden de preferencia: el % forzado, la que ya
-               calculó el paso con el costo real, o —sin esos datos— la derivada de la BASE y el
-               descuento total. La BASE del producto NUNCA se recalcula: es el punto de partida. */
-            const rentFila =
-              fila.rentabForzada ??
-              fila.rentabFinal ??
-              rentabilidadDeMarkup(fila.rentabilidad, calc.descPct)
+            /* Rentabilidad FINAL de la fila: la que calculó el paso (con el % forzado ya resuelto
+               adentro); sin ella, la registrada. La tabla no hace cuentas de rentabilidad propias:
+               una fórmula acá podía decir otra cosa que el resumen. */
+            const rentFila = fila.rentabFinal ?? fila.rentabilidad
             /* Línea en dólares (presupuesto bimonetario): sus importes van con prefijo `$u` y en
                verde. En la venta —mono-moneda— nunca se cumple, así que no altera esa tabla. */
             const dolar = esDolar(fila.producto?.moneda)

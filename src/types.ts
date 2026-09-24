@@ -209,10 +209,19 @@ export interface Producto {
    *  resultado en pesos se redondea (convertir el precio ya redondeado a 2 dec pierde el 3er
    *  decimal del dólar, que al cambio son ~1,5 pesos). */
   precioBase?: number
+  /**
+   * "✋Margen" del maestro para la lista del cliente: un MARKUP sobre el costo, NO la rentabilidad
+   * que se muestra. Sólo es el respaldo para despejar el costo cuando falta el Costo Final
+   * (`costoDe`). La rentabilidad sale siempre de los importes (`rentabilidadProductoDe`).
+   */
   rentabilidad: number
-  /** "🤖Costo Final" del maestro (fórmula): precio de COSTO del producto, SIN IVA. Es la base de la
-   *  rentabilidad y del contraste con el "Nuevo Precio de Costo" de la rentabilidad forzada. */
+  /** "🤖Costo Final" del maestro (fórmula): precio de COSTO del producto, SIN IVA y SIN flete. Es
+   *  el denominador de la rentabilidad y el contraste del "Nuevo Precio de Costo" de la rentabilidad
+   *  forzada (ver `rentabilidadDe` y `rentabForzadaDe` en `lib/selectors`). */
   precioCosto?: number
+  /** "✋️Flete" del maestro: costo de flete POR UNIDAD, SIN IVA, en la moneda del producto. Se resta
+   *  del resultado de la venta pero NO entra en el denominador de la rentabilidad. Sin dato, 0. */
+  flete?: number
   /**
    * Precio de lista SIN IVA, en la misma moneda que `precio`. Es el que se compara contra el costo:
    * `precio` puede venir con la alícuota sumada (cuando el cliente paga IVA) y medir la ganancia
@@ -291,6 +300,9 @@ export interface ProductoCache {
   /** "✋Margen" por lista. Es un MARKUP SOBRE EL COSTO, no la rentabilidad. */
   margenes: Partial<Record<ListaPrecio, number>>
   precioCosto: number
+  /** "✋️Flete" por unidad, SIN IVA. Una fila guardada antes de que existiera el dato no lo trae:
+   *  se lee como 0 hasta que el barrido completo del cron la reescriba. */
+  flete?: number
   iva: number
   moneda: string
   tipo: string
@@ -338,14 +350,16 @@ export interface LineaPresupuesto {
   producto: Producto
   cantidad: number
   descuento: number
-  /** "Nota de Crédito x Comisión" por unidad = Costo Original − Nuevo Precio de Costo (con el Nuevo
-   *  Precio de Costo = Precio de Venta × (1 − %forzado/100)). Sólo lo tienen los productos "Con Rentab
-   *  Forzada" con el interruptor encendido; alimenta el feedback visual y las columnas de Monday. Sin
-   *  forzar (o sin Costo Original conocido) queda undefined. */
-  montoDifNotaDeCreditoComision?: number
-  /** Rentabilidad FORZADA aplicada a la línea (%). Pasa a ser la rentabilidad FINAL del producto; la
-   *  rentabilidad BASE (catálogo, junto al precio unitario y al costo) NO se toca. El precio de venta
-   *  tampoco cambia. undefined = interruptor apagado / producto no habilitado. */
+  /**
+   * % de rentabilidad FORZADA pedido para la línea. Lo marca el reducer cuando el interruptor está
+   * encendido y el producto la acepta (`aceptaRentabForzada`); undefined = interruptor apagado o
+   * producto no habilitado. El precio de venta no cambia.
+   *
+   * Es SÓLO el %: el Nuevo Precio de Costo y la Nota de Crédito x Comisión se derivan con el
+   * descuento vigente cada vez que se leen (`rentabForzadaLinea` en `lib/selectors`), porque
+   * guardados quedaban viejos si el vendedor cambiaba el descuento después de forzar. Si el producto
+   * ya rinde este % o más, no hay nota de crédito y la línea muestra su rentabilidad real.
+   */
   rentabForzadaAplicada?: number
 }
 
@@ -361,7 +375,14 @@ export interface PresupuestoProducto {
   /** Cantidad disponible = presupuestada − vendida. */
   pend: number
   precio: number
+  /** "Rentab %" registrada en el subelemento del documento (presupuesto o proforma). */
   rent: number
+  /** Costo POR UNIDAD, SIN IVA y SIN flete, grabado en el subelemento del documento ("🤖Costo $" /
+   *  "🤖Costo U$" del presupuesto, "🤖Costo $" de la proforma). Es el nuevo costo si se forzó la
+   *  rentabilidad. Con él la venta mide la rentabilidad con importes (ver `rentabilidadVentaItem`). */
+  costo?: number
+  /** Flete POR UNIDAD, SIN IVA, grabado en la columna "Flete" del subelemento del documento. */
+  flete?: number
   /** Descuento con el que se presupuestó la línea (%). */
   descuento?: number
   /** Descuento por forma de pago con el que se armó la línea (%). Sólo lo trae la venta CON
@@ -452,7 +473,13 @@ export interface RemitoProducto {
   /** Unidades entregadas que todavía no se facturaron. */
   pendiente: number
   precio: number
+  /** "🤖Rentab %" registrada al remitir: la BASE del producto, sin descuento y sin IVA. */
   rent: number
+  /** "🤖Costo Final" del producto del maestro conectado, SIN IVA y SIN flete. Con él se reconstruye
+   *  la rentabilidad al facturar con un descuento por forma de pago (`rentabilidadItemRemito`). */
+  costo?: number
+  /** "✋️Flete" por unidad del producto del maestro conectado, SIN IVA. */
+  flete?: number
   /** Unidad de medida del subelemento del remito. */
   um?: string
   /** Tipo de mercadería del producto remitido: 'CO' (consignada) o 'COM'. */

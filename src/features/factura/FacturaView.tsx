@@ -17,7 +17,7 @@ import {
 import { aIso } from '@/lib/dates'
 import { comprobantesDeVenta, precioNetoUnitario, totalesComprobantes } from '@/lib/facturacion'
 import { comisionLinea, tasaComision, totalVentaOperacion } from '@/lib/selectors'
-import { lineasDeVenta } from '@/lib/lineasVenta'
+import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
 import { indiceDePaso, pasoPrevioAEmision, pasosDe } from '@/lib/pasos'
 import { actividadesDeLaVenta } from '@/features/shared/useCrearVenta'
 import {
@@ -62,6 +62,14 @@ export function FacturaView() {
      compatibilidad con `diasDe`, pero ya no se modifica desde la UI. */
   const [dias] = useState<Record<string, number>>({})
 
+  /* Descuento por forma de pago (pronto pago) de la operación, en %. Es el que compone —en
+     cascada con el descuento manual de cada línea— la bonificación que muestra la card y la que
+     se declara en el comprobante, y el que entra en la rentabilidad de cada línea. Las líneas de
+     la VENTA sobre PROFORMA traen el suyo propio y pisan a este. */
+  const descFormaPago = useMemo(
+    () => descuentoDeFormaPago(formaPago, state.descuentosPago),
+    [formaPago, state.descuentosPago],
+  )
   /* Evaluación de la mercadería de la venta: en cuántos comprobantes se parte. Se hace sobre
      las líneas normalizadas, que son las que arrastran tipo de mercadería, proveedor e IVA. */
   const productos = useMemo(
@@ -73,16 +81,17 @@ export function FacturaView() {
         lineas: state.lineas,
         ventaItems: state.ventaItems,
         facturaItems: state.facturaItems,
+        descFormaPago,
       }),
-    [operacion, tipoVenta, tipoEntrega, state.lineas, state.ventaItems, state.facturaItems],
-  )
-  /* Descuento por forma de pago (pronto pago) de la operación, en %. Es el que compone —en
-     cascada con el descuento manual de cada línea— la bonificación que muestra la card y la que
-     se declara en el comprobante. Las líneas de la VENTA sobre PROFORMA traen el suyo propio y
-     pisan a este. */
-  const descFormaPago = useMemo(
-    () => descuentoDeFormaPago(formaPago, state.descuentosPago),
-    [formaPago, state.descuentosPago],
+    [
+      operacion,
+      tipoVenta,
+      tipoEntrega,
+      state.lineas,
+      state.ventaItems,
+      state.facturaItems,
+      descFormaPago,
+    ],
   )
 
   /* Los comprobantes llevan los MISMOS importes que la selección de productos: bruto, descuento
@@ -196,22 +205,12 @@ export function FacturaView() {
       state.descuentosPago,
     ],
   )
-  /* Rentabilidad general de la venta (ponderada por el importe bonificado de cada línea): es lo
-     que va a la cabecera del ítem en "📈Ventas". */
-  const rentabilidadVenta = useMemo(() => {
-    const base = productos.reduce(
-      (acc, p) => acc + p.precioUnitario * p.cantidad * (1 - p.descuento / 100),
-      0,
-    )
-    if (base <= 0) return 0
-    const ponderada = productos.reduce(
-      (acc, p) =>
-        acc + p.rentabilidad * ((p.precioUnitario * p.cantidad * (1 - p.descuento / 100)) / base),
-      0,
-    )
-    // Con decimales: redondear a entero asignaba una rentabilidad general incorrecta en el ítem.
-    return round2(ponderada)
-  }, [productos])
+  /* Rentabilidad general de la venta —la de cada línea ponderada por su costo—: es lo que va a la
+     cabecera del ítem en "📈Ventas". Con decimales: redondear a entero la falseaba. */
+  const rentabilidadVenta = useMemo(
+    () => rentabilidadGeneralDeLineas(productos, descFormaPago),
+    [productos, descFormaPago],
+  )
   /* Los movimientos del cobro, tal como van al recibo. No llevan descuento por medio de pago: el
      de la forma de pago ya está aplicado en el precio de la venta, y volver a descontarlo por
      movimiento lo contaría dos veces. */

@@ -12,16 +12,22 @@ import { AppProvider } from '@/state/AppProvider'
 import { CargaLinea } from '@/features/productos/CargaLinea'
 import { descuentoCompuesto, descuentoUnitario } from '@/lib/descuentos'
 import { money, pctDec, round2 } from '@/lib/format'
-import { rentabilidadDeMarkup } from '@/lib/selectors'
+import { rentabilidadDe } from '@/lib/selectors'
 import type { Producto } from '@/types'
 
 const PRECIO = 89440.15
 const FP = 6
+/** Costo Final y Flete del maestro: la rentabilidad se mide (precio − costo − flete) / costo. */
+const COSTO = 72_000
+const FLETE = 150
 
 const producto = {
   codigo: '2294',
   nombre: 'AGUA OXIGENADA 250 VOL. X 25 Kgs.',
   precio: PRECIO,
+  precioSinIva: PRECIO,
+  precioCosto: COSTO,
+  flete: FLETE,
   rentabilidad: 32,
   iva: 21,
   fisico: 0,
@@ -130,29 +136,31 @@ const rentDe = (h: string, marca: string, clase: string) =>
 const rentFicha = (h: string) => rentDe(h, 'Rentabilidad', 'cl-kpi-v')
 const rentFinal = (h: string) => rentDe(h, 'Rentabilidad Final', 'cl-metric-v')
 
-/* La ficha muestra la rentabilidad de CATÁLOGO: la ganancia sobre el precio de lista. `rentabilidad`
-   del maestro es el markup sobre el costo (32% → el producto rinde 24,24%), así que el esperado sale
-   de la conversión, no del número crudo del board. */
+/* La ficha muestra la rentabilidad BASE: la del precio de lista SIN IVA, sin descuentos, con el
+   flete restado —(89.440,15 − 72.000 − 150) / 72.000 = 24,01%—. Se CALCULA: el "Margen" del maestro
+   (32) no se muestra tal cual, porque no descuenta el flete. */
 assert.equal(
   rentFicha(html),
-  pctDec(rentabilidadDeMarkup(producto.rentabilidad)),
-  'la ficha debe mostrar la de catálogo',
+  pctDec(rentabilidadDe(PRECIO, COSTO, FLETE)),
+  'la ficha debe mostrar la rentabilidad base, con el flete restado',
 )
+assert.equal(rentFicha(html), pctDec(24.01), 'la base del caso es 24,01%')
 assert.notEqual(
   rentFinal(html),
   rentFicha(html),
   'con descuento por forma de pago las dos rentabilidades no pueden coincidir',
 )
+/* La final baja el PRECIO con el descuento total; el costo y el flete no se mueven. */
 assert.equal(
   rentFinal(html),
-  pctDec(rentabilidadDeMarkup(producto.rentabilidad, descuentoCompuesto(0, FP))),
+  pctDec(rentabilidadDe(PRECIO * (1 - descuentoCompuesto(0, FP) / 100), COSTO, FLETE)),
   'la Rentabilidad Final no aplica el descuento total',
 )
 // Sin ningún descuento, las dos coinciden: no hay bonificación que las separe.
 const sinDto = render({ descFormaPago: 0 })
 assert.equal(
   rentFicha(sinDto),
-  pctDec(rentabilidadDeMarkup(producto.rentabilidad)),
+  pctDec(rentabilidadDe(PRECIO, COSTO, FLETE)),
   'sin descuento, la ficha no cambia',
 )
 assert.equal(rentFinal(sinDto), rentFicha(sinDto), 'sin descuento las dos tienen que coincidir')

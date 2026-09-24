@@ -112,132 +112,413 @@ const CREDITO_FOOTER_CRITICO = 95
 export const totalLinea = (l: LineaPresupuesto): number =>
   round2(l.producto.precio * l.cantidad * (1 - l.descuento / 100))
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   RENTABILIDAD
+   ══════════════════════════════════════════════════════════════════════════════════════════════
+
+   Es la cuenta que definió el comercio (planilla "cálculo de rentab"), y es UNA sola para toda la
+   app: la ficha de la carga, la columna de la tabla, lo que se graba en Monday y la rentabilidad
+   general salen de las funciones de este bloque.
+
+   ── Cómo arma el maestro el precio de venta ──
+
+     L1, L7, L8:  Precio = Costo Final + Flete + Costo Final × Margen Lx
+     L2, L3:      Precio = Precio L1 × (1 − Descuento Lx)
+
+   El margen es un MARKUP SOBRE EL COSTO del producto; el flete se suma aparte, SIN margen encima:
+   es plata que se le paga al transportista, no ganancia del comercio. Las listas L2 y L3 son L1
+   con un descuento sobre el precio COMPLETO —flete incluido—, igual que cualquier otro descuento.
+
+   ── La fórmula ──
+
+     Resultado bruto = Precio de venta − Costo Final − Flete
+     Rentabilidad %  = Resultado bruto / Costo Final × 100
+
+   Tres reglas salen de acá, y las tres se respetan en todas las funciones:
+
+     1. El flete se RESTA del resultado, pero NO suma al denominador: se divide por el costo del
+        producto solo, no por costo + flete.
+     2. Todo va SIN IVA. El IVA no es ingreso ni costo del comercio: se le cobra al cliente y se le
+        paga al fisco. Por eso el precio que se mide es `precioSinIva`, nunca `precio` (que al
+        Monotributista, Consumidor Final y Exento le llega con la alícuota sumada).
+     3. Los descuentos —de lista, por forma de pago y manual— bajan el PRECIO; el costo y el flete
+        no se mueven. El flete se paga igual se venda a L1 o a L3.
+
+   Ejemplo de la planilla: Costo 102.162,35 · Flete 175 · Margen L1 23%
+     Precio L1       = 102.162,35 + 175 + 23.497,34 = 125.834,69
+     Resultado bruto = 125.834,69 − 102.162,35 − 175 = 23.497,34
+     Rentabilidad    = 23.497,34 / 102.162,35      = 23,00%
+   La cuenta que NO hay que hacer —y que la app hacía— es (125.834,69 / 102.162,35 − 1) = 23,17%:
+   se olvida del flete y lo cuenta como ganancia.
+
+   Con un 10% de descuento sobre ese mismo precio la rentabilidad no es (1,23 × 0,90 − 1) = 10,70%:
+   el descuento se come parte del precio pero el flete sigue costando lo mismo. La cuenta con
+   importes da (113.251,22 − 102.162,35 − 175) / 102.162,35 = 10,68%. */
+
+/** Flete por unidad del producto, SIN IVA. Sin dato cargado (o con un valor inválido) es 0. */
+export const fleteDe = (p: { flete?: number }): number =>
+  typeof p.flete === 'number' && Number.isFinite(p.flete) && p.flete > 0 ? p.flete : 0
+
+/** Un % de descuento acotado a [0, 100]. Un valor inválido no descuenta nada. */
+const pctDescuento = (pct: number): number =>
+  Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) : 0
+
 /**
- * RENTABILIDAD de un producto, en %. Es la fórmula del propio Maestro, la misma con la que el board
- * calcula sus columnas "🤖Margen L1/L2/L3":
+ * RENTABILIDAD de una venta, en %, a dos decimales:
  *
- *   rentabilidad = ROUND(((precio S/IVA / Costo Final) − 1) × 100, 2)
+ *   rentabilidad = (precio S/IVA − Costo Final − Flete) / Costo Final × 100
  *
- * Las dos puntas van SIN IVA: las columnas "🤖Precio S/Iva Lx" ya son netas y el "🤖Costo Final"
- * también, así que comparar contra un precio con la alícuota sumada inflaría el resultado.
+ * `precioVentaSinIva` es el precio que EFECTIVAMENTE se cobra, sin IVA y con todos los descuentos
+ * ya aplicados: el descuento no entra como parámetro. Al bajar el precio la rentabilidad cae sola,
+ * y por debajo de Costo + Flete da negativa —el producto se vende a pérdida—. Regalado (precio 0)
+ * pierde el costo Y el flete: −100% menos lo que pesa el flete sobre el costo.
  *
- * El descuento no entra como parámetro: ya viene aplicado en `precioVenta`. Al bajar el precio la
- * rentabilidad cae sola; regalado (precio 0) da −100%.
+ * Sin costo cargado no hay contra qué medir: devuelve 0, no se inventa una rentabilidad.
  */
-export function rentabilidadDe(precioVentaSinIva: number, costoSinIva: number): number {
+export function rentabilidadDe(
+  precioVentaSinIva: number,
+  costoSinIva: number,
+  fleteSinIva = 0,
+): number {
   if (!Number.isFinite(precioVentaSinIva) || !Number.isFinite(costoSinIva)) return 0
-  // Sin costo cargado no hay contra qué medir: no se inventa una rentabilidad.
   if (costoSinIva <= 0) return 0
-  if (precioVentaSinIva <= 0) return -100
-  return round2((precioVentaSinIva / costoSinIva - 1) * 100)
+  const precio = Math.max(precioVentaSinIva, 0)
+  const flete = fleteDe({ flete: fleteSinIva })
+  return round2(((precio - costoSinIva - flete) / costoSinIva) * 100)
 }
 
 /**
- * Rentabilidad de un producto con un descuento aplicado. El descuento baja el precio de venta; el
- * costo no se mueve.
+ * Rentabilidad con un descuento aplicado sobre el precio. El descuento baja el PRECIO; el costo y
+ * el flete no se mueven (regla 3). `descuentoPct` es el descuento TOTAL: si hay más de uno, ya
+ * compuesto en cascada (`descuentoCompuesto`), porque sumar los porcentajes daría de más.
  */
 export const rentabilidadConDescuento = (
   precioSinIva: number,
   costoSinIva: number,
+  fleteSinIva: number,
   descuentoPct: number,
 ): number =>
-  rentabilidadDe(precioSinIva * (1 - Math.min(Math.max(descuentoPct, 0), 100) / 100), costoSinIva)
+  rentabilidadDe(precioSinIva * (1 - pctDescuento(descuentoPct) / 100), costoSinIva, fleteSinIva)
 
 /**
- * Costo SIN IVA de un producto. Sale de "🤖Costo Final"; si el maestro no lo trajo, se despeja del
- * margen de su lista, que es la misma fórmula al revés: `precio = costo × (1 + margen/100)`.
+ * Costo SIN IVA y SIN flete de un producto: el "🤖Costo Final" del maestro.
+ *
+ * Si el maestro no lo trajo, se despeja del precio de lista y su "Margen", con la misma fórmula
+ * con la que el maestro arma el precio, dada vuelta:
+ *
+ *   precio = costo + flete + costo × margen   ⇒   costo = (precio − flete) / (1 + margen)
+ *
+ * Es un respaldo: es exacto para L1, L7 y L8, cuyo precio sale de ese margen. En L2 y L3 el precio
+ * sale de L1 con un descuento, así que despejar con su "Margen" es una aproximación. En la práctica
+ * el maestro siempre trae el Costo Final; el respaldo existe para no mostrar 0% cuando falta.
  */
 export function costoDe(p: {
   precioCosto?: number
   precioSinIva?: number
   precio: number
   rentabilidad: number
+  flete?: number
 }): number {
   if (p.precioCosto && p.precioCosto > 0) return p.precioCosto
   const precio = p.precioSinIva ?? p.precio
   const markup = 1 + p.rentabilidad / 100
-  return markup > 0 ? round2(precio / markup) : 0
+  return markup > 0 ? round2(Math.max(precio - fleteDe(p), 0) / markup) : 0
 }
 
 /** Precio de lista SIN IVA de un producto. Sin el dato cargado se cae al precio a secas. */
 export const precioNetoDe = (p: { precioSinIva?: number; precio: number }): number =>
   p.precioSinIva ?? p.precio
 
-/**
- * Rentabilidad recalculada a partir de la BASE del maestro, para los flujos que no traen el costo:
- * la venta sobre un presupuesto o una proforma y la entrega ANTERIOR leen el margen espejado, no el
- * "Costo Final".
- *
- * El costo se cancela solo. Con `precio = costo × (1 + base/100)` y un descuento `d` sobre el
- * precio, la rentabilidad del precio ya descontado es:
- *
- *   (1 + base) × (1 − d) − 1
- *
- * Da EXACTAMENTE lo mismo que `rentabilidadDe(precio, costo)`; es la misma cuenta sin los importes.
- */
-export function rentabilidadDeMarkup(basePct: number, descuentoPct = 0): number {
-  const d = Math.min(Math.max(descuentoPct, 0), 100) / 100
-  const base = 1 + (Number.isFinite(basePct) ? basePct : 0) / 100
-  if (base <= 0) return 0
-  return round2((base * (1 - d) - 1) * 100)
+/** Lo que las funciones de rentabilidad necesitan saber de un producto. */
+type ProductoRentable = {
+  precioCosto?: number
+  precioSinIva?: number
+  precio: number
+  rentabilidad: number
+  flete?: number
 }
 
 /**
- * El precio unitario vigente deja al producto EN PÉRDIDA: se vende por debajo de su costo. Mide el
- * precio TAL COMO quedó —con el override del administrador ya aplicado, que es de donde sale la
- * pérdida— contra el "Costo Final" del maestro, sin descuentos de por medio.
+ * Rentabilidad de UN producto a su precio de lista SIN IVA, con un descuento total opcional.
+ *
+ * Con `descuentoPct = 0` es la rentabilidad BASE: la que muestra la ficha de la carga y la que
+ * queda registrada en el remito. Se CALCULA —no se lee el "Margen" del maestro— para que la ficha,
+ * la "Rentabilidad Final" y la columna de la tabla salgan de la misma cuenta: sin descuentos, las
+ * tres dicen exactamente lo mismo. En L1 da el Margen L1 tal cual (23% en el ejemplo); en L2/L3,
+ * la rentabilidad real de esa lista; en L7/L8, que no publican su margen, deja de mostrar 0%.
+ */
+export const rentabilidadProductoDe = (p: ProductoRentable, descuentoPct = 0): number =>
+  rentabilidadConDescuento(precioNetoDe(p), costoDe(p), fleteDe(p), descuentoPct)
+
+/**
+ * El precio unitario vigente deja al producto EN PÉRDIDA: no alcanza a cubrir Costo + Flete. Mide
+ * el precio de lista SIN IVA TAL COMO quedó —con el override del administrador ya aplicado, que es
+ * de donde sale la pérdida—, sin descuentos de por medio.
+ *
+ * El flete cuenta: un precio que cubre el costo pero no el flete también pierde plata.
  *
  * Sin costo conocido devuelve `false`: `rentabilidadDe` no inventa una rentabilidad cuando no hay
  * contra qué medir, y una pérdida que no se puede probar no se afirma.
  */
-export const precioDaPerdida = (p: {
-  precioCosto?: number
-  precioSinIva?: number
-  precio: number
-  rentabilidad: number
-}): boolean => rentabilidadDe(precioNetoDe(p), costoDe(p)) < 0
+export const precioDaPerdida = (p: ProductoRentable): boolean => rentabilidadProductoDe(p) < 0
 
 /**
- * El producto recibe la rentabilidad forzada cuando el interruptor está encendido. Son DOS motivos
+ * El producto ACEPTA la rentabilidad forzada cuando el interruptor está encendido. Son DOS motivos
  * independientes, y alcanza con uno:
  *
  *   1. El maestro lo habilita ("🤖Rentabilidad Forzada" = "Con Rentab Forzada").
- *   2. Su precio unitario quedó por debajo del costo. Es el caso que la funcionalidad resuelve: al
- *      pisar el precio a mano la rentabilidad se va a negativo, y forzarla es lo que lo corrige.
+ *   2. Su precio unitario quedó por debajo de Costo + Flete. Es el caso que la funcionalidad
+ *      resuelve: al pisar el precio a mano la rentabilidad se va a negativo, y forzarla lo corrige.
  *
- * Es la ÚNICA fuente de esta regla: la usan el reducer —que es el que aplica— y la previsualización
+ * Es la ÚNICA fuente de esta regla: la usan el reducer —que marca la línea— y la previsualización
  * de la carga, así que lo que se muestra antes de agregar no puede diferir de lo que se aplica.
  */
-export const aceptaRentabForzada = (p: {
-  conRentabForzada?: boolean
-  precioCosto?: number
-  precioSinIva?: number
-  precio: number
+export const aceptaRentabForzada = (
+  p: ProductoRentable & { conRentabForzada?: boolean },
+): boolean => p.conRentabForzada === true || precioDaPerdida(p)
+
+/* ── Rentabilidad forzada ────────────────────────────────────────────────────────────────────
+
+   El comercio quiere asegurarse un % de rentabilidad en ciertos productos aunque el precio de
+   venta no lo alcance, y la diferencia la cubre el PROVEEDOR con una nota de crédito. El precio
+   que paga el cliente NO se toca. La pregunta que se contesta es:
+
+     "¿Cuánto nos tendría que haber costado este producto para ganar exactamente el % forzado?"
+
+   Ese costo es el NUEVO PRECIO DE COSTO, y lo que falta para llegar a él desde el costo real es la
+   NOTA DE CRÉDITO X COMISIÓN que el proveedor le reconoce al comercio.
+
+   Se despeja de la misma fórmula de la rentabilidad, con el precio fijo y el costo como incógnita:
+
+     % = (Precio − Nuevo Costo − Flete) / Nuevo Costo
+       ⇒  Nuevo Costo = (Precio − Flete) / (1 + %)
+
+     Nota de Crédito (por unidad) = Costo Final − Nuevo Costo
+
+   donde Precio es el precio que efectivamente se cobra: SIN IVA y con los descuentos aplicados.
+   Es un markup sobre el costo, igual que la rentabilidad: por eso se DIVIDE por (1 + %) y no se
+   multiplica por (1 − %), que sería ganar el % sobre el precio de venta.
+
+   Ejemplo: Costo 102.162,35 · Flete 175 · Precio (pisado por el administrador) 110.000 · 23%
+     Nuevo Costo     = (110.000 − 175) / 1,23             = 89.288,62
+     Nota de Crédito = 102.162,35 − 89.288,62             = 12.873,73 por unidad
+     Control         = (110.000 − 89.288,62 − 175) / 89.288,62 = 23,00%
+
+   Si el producto YA rinde el % forzado o más, el costo necesario sale igual o MAYOR al real y la
+   nota de crédito daría cero o negativa: el proveedor no le cobra al comercio por ganar de más. En
+   ese caso no hay nada que compensar —no se genera nota de crédito— y la línea muestra su
+   rentabilidad real, que ya supera el % pedido. */
+
+/** Lo que deja calculado la rentabilidad forzada sobre UNA unidad de producto. */
+export interface RentabForzadaCalculada {
+  /** Costo con el que el producto rinde exactamente el % forzado: (Precio − Flete) / (1 + %). */
+  nuevoCosto: number
+  /** Nota de Crédito x Comisión POR UNIDAD: Costo Final − Nuevo Costo. Siempre mayor a cero. */
+  notaCredito: number
+  /** La rentabilidad resultante: exactamente el % forzado. */
   rentabilidad: number
-}): boolean => p.conRentabForzada === true || precioDaPerdida(p)
+}
+
+/**
+ * Rentabilidad forzada de un producto al `pct` pedido, sobre su precio de lista SIN IVA con el
+ * `descuentoPct` total aplicado.
+ *
+ * Devuelve `null` —no hay nada que forzar— cuando:
+ *   · no hay costo conocido contra el cual calcular la nota de crédito, o
+ *   · el producto ya rinde `pct` o más (la nota de crédito saldría cero o negativa).
+ */
+export function rentabForzadaDe(
+  p: ProductoRentable,
+  pct: number,
+  descuentoPct = 0,
+): RentabForzadaCalculada | null {
+  const costo = costoDe(p)
+  if (!(costo > 0) || !Number.isFinite(pct) || pct < 0) return null
+  const precio = precioNetoDe(p) * (1 - pctDescuento(descuentoPct) / 100)
+  const nuevoCosto = round2((precio - fleteDe(p)) / (1 + pct / 100))
+  const notaCredito = round2(costo - nuevoCosto)
+  if (!(notaCredito > 0)) return null
+  return { nuevoCosto, notaCredito, rentabilidad: pct }
+}
+
+/* ── Rentabilidad de una línea de la selección de productos ──────────────────────────────── */
+
+/** Descuento TOTAL de la línea: el manual y el de forma de pago, compuestos en cascada. */
+export const descuentoTotalLinea = (l: LineaPresupuesto, descFormaPago = 0): number =>
+  descuentoCompuesto(l.descuento, descFormaPago)
 
 /** Rentabilidad BASE del producto de la línea: sin ningún descuento, sobre su precio de lista. */
 export const rentabilidadBaseLinea = (l: LineaPresupuesto): number =>
-  rentabilidadDe(precioNetoDe(l.producto), costoDe(l.producto))
+  rentabilidadProductoDe(l.producto)
 
-/** La rentabilidad de la línea, con su descuento manual aplicado. */
-export const rentabilidadLinea = (l: LineaPresupuesto): number =>
-  rentabilidadConDescuento(precioNetoDe(l.producto), costoDe(l.producto), l.descuento)
+/**
+ * Rentabilidad forzada EFECTIVA de la línea, o `null` si no corre.
+ *
+ * La línea guarda sólo el % pedido (`rentabForzadaAplicada`, que el reducer marca cuando el
+ * interruptor está encendido y el producto la acepta). El Nuevo Costo y la Nota de Crédito NO se
+ * guardan: se derivan acá, con el descuento vigente, cada vez que se leen. Guardados, quedaban
+ * viejos en cuanto el vendedor cambiaba el descuento o la forma de pago después de forzar.
+ */
+export const rentabForzadaLinea = (
+  l: LineaPresupuesto,
+  descFormaPago = 0,
+): RentabForzadaCalculada | null =>
+  l.rentabForzadaAplicada == null
+    ? null
+    : rentabForzadaDe(l.producto, l.rentabForzadaAplicada, descuentoTotalLinea(l, descFormaPago))
+
+/** Nota de Crédito x Comisión POR UNIDAD de la línea; `undefined` si no hay rentabilidad forzada. */
+export const notaCreditoLinea = (l: LineaPresupuesto, descFormaPago = 0): number | undefined =>
+  rentabForzadaLinea(l, descFormaPago)?.notaCredito
+
+/**
+ * TOTAL Nota de Crédito x Comisión de la operación: la nota de crédito por unidad de cada línea
+ * forzada, MULTIPLICADA POR SU CANTIDAD. Es lo que el proveedor le reconoce al comercio por toda
+ * la mercadería de la operación, no por una unidad de cada producto.
+ */
+export const notaCreditoTotal = (lineas: LineaPresupuesto[], descFormaPago = 0): number =>
+  round2(
+    lineas.reduce((acc, l) => acc + (notaCreditoLinea(l, descFormaPago) ?? 0) * l.cantidad, 0),
+  )
 
 /**
  * Rentabilidad FINAL de la línea: la ganancia sobre el precio que efectivamente se cobra, o sea con
  * los DOS descuentos ya aplicados (el manual y el de forma de pago, compuestos en cascada).
  *
- * Con la rentabilidad forzada aplicada es estrictamente el % forzado: ahí el precio se fijó para
- * dar ese número, así que reemplaza al cálculo.
+ * Con la rentabilidad forzada corriendo es exactamente el % forzado: el costo se recalculó para dar
+ * ese número. Si la línea tiene el % forzado marcado pero ya lo supera, se muestra la real.
+ *
+ * Es el número que ve el vendedor en "Rentabilidad Final" ANTES de agregar el producto, el de la
+ * columna de la tabla DESPUÉS de agregarlo, el que se graba en la línea en Monday y el que aporta
+ * la línea a la rentabilidad general.
  */
 export const rentabilidadFinalLinea = (l: LineaPresupuesto, descFormaPago = 0): number =>
-  l.rentabForzadaAplicada ??
-  rentabilidadConDescuento(
-    precioNetoDe(l.producto),
-    costoDe(l.producto),
-    descuentoCompuesto(l.descuento, descFormaPago),
+  rentabForzadaLinea(l, descFormaPago)?.rentabilidad ??
+  rentabilidadProductoDe(l.producto, descuentoTotalLinea(l, descFormaPago))
+
+/**
+ * Costo POR UNIDAD con el que se mide la línea: el Nuevo Costo si la rentabilidad forzada corre
+ * —la nota de crédito del proveedor baja lo que el producto le cuesta al comercio—, y el Costo
+ * Final del maestro si no. Es el peso de la línea en la rentabilidad general.
+ */
+export const costoEfectivoLinea = (l: LineaPresupuesto, descFormaPago = 0): number =>
+  rentabForzadaLinea(l, descFormaPago)?.nuevoCosto ?? costoDe(l.producto)
+
+/* ── Rentabilidad de líneas que vienen de un documento ya emitido ────────────────────────────
+
+   La venta CON PRESUPUESTO PREVIO, la VENTA PROFORMA y la entrega ANTERIOR no parten del
+   catálogo: parten de subelementos ya grabados, que traen su precio y un "Rentab %" registrado.
+   El Costo Final y el Flete se leen del producto del maestro conectado a cada subelemento
+   (`costo` / `flete` del ítem), así que se puede hacer la misma cuenta que en la venta DIRECTA. */
+
+/**
+ * Rentabilidad de una línea tomada de un PRESUPUESTO. El precio del presupuesto es SIEMPRE el de
+ * lista SIN IVA (el presupuesto no liquida IVA), así que con el costo y el flete del maestro se
+ * hace la cuenta con importes, con el descuento total que tenga la línea en la venta.
+ *
+ * Respaldo sin costo: se toma la rentabilidad registrada en el subelemento —la que quedó con el
+ * descuento del presupuesto— y se la lleva al descuento nuevo sin conocer el flete:
+ *   (1 + rent) × (1 − desc nuevo) / (1 − desc del presupuesto) − 1
+ */
+export function rentabilidadItemPresupuesto(
+  it: { precio: number; rent: number; descuento?: number; costo?: number; flete?: number },
+  descuentoTotalPct: number,
+): number {
+  if (it.costo && it.costo > 0) {
+    return rentabilidadConDescuento(it.precio, it.costo, it.flete ?? 0, descuentoTotalPct)
+  }
+  const registrado = 1 - pctDescuento(it.descuento ?? 0) / 100
+  if (!(registrado > 0)) return round2(it.rent)
+  return round2(
+    (((1 + it.rent / 100) * (1 - pctDescuento(descuentoTotalPct) / 100)) / registrado - 1) * 100,
   )
+}
+
+/**
+ * Rentabilidad de una línea REMITIDA que se factura (entrega ANTERIOR) con un descuento por forma
+ * de pago encima.
+ *
+ * El precio del remito puede venir CON IVA (al Monotributista se le remite al precio final), así
+ * que no se usa. Se parte de la rentabilidad registrada al remitir —base, sin descuento, medida
+ * sin IVA—, y con el costo y el flete se reconstruye el precio SIN IVA que la produjo:
+ *
+ *   rent = (P − C − F) / C   ⇒   P = C × (1 + rent) + F
+ *
+ * Ese precio se descuenta y se vuelve a medir. Sin costo conocido, el respaldo es la misma cuenta
+ * sin flete: (1 + rent) × (1 − desc) − 1.
+ */
+export function rentabilidadItemRemito(
+  it: { rent: number; costo?: number; flete?: number },
+  descuentoPct: number,
+): number {
+  const d = pctDescuento(descuentoPct)
+  if (d === 0) return round2(it.rent)
+  if (it.costo && it.costo > 0) {
+    const precioSinIva = it.costo * (1 + it.rent / 100) + fleteDe(it)
+    return rentabilidadConDescuento(precioSinIva, it.costo, fleteDe(it), d)
+  }
+  return round2(((1 + it.rent / 100) * (1 - d / 100) - 1) * 100)
+}
+
+/* ── Rentabilidad GENERAL ────────────────────────────────────────────────────────────────────
+
+   Como la rentabilidad de cada línea es Resultado / Costo, la de la operación entera es:
+
+     Rentabilidad general = Σ Resultado bruto de cada línea / Σ Costo de cada línea
+
+   que es EXACTAMENTE el promedio de la rentabilidad de cada línea PONDERADO POR SU COSTO (costo por
+   unidad × cantidad). Así la general sale del mismo % que se ve en cada línea.
+
+   NO se pondera por el importe de venta —como se hacía antes—: eso le da más peso a las líneas que
+   más ganan (su precio es más alto respecto del costo) y deforma la general. Ejemplo:
+     A: costo 100,  rent 50% → resultado 50,  venta 150
+     B: costo 1000, rent 10% → resultado 100, venta 1100
+     Correcto:  150 / 1100                        = 13,64%
+     Por venta: (50% × 150 + 10% × 1100) / 1250  = 14,80%
+   Ponderar por costo, además, deja el IVA afuera sin esfuerzo: el costo nunca lo lleva. */
+
+/** Lo que aporta una línea a la rentabilidad general: su % y su costo TOTAL (unidad × cantidad). */
+export interface AporteRentabilidad {
+  rentabilidad: number
+  costo: number
+}
+
+/**
+ * Costo total de una línea para ponderar la general. Con el costo por unidad conocido es costo ×
+ * cantidad; sin él se despeja del importe neto y de la rentabilidad de la línea —si rinde `r` sobre
+ * un importe `N`, el costo es N / (1 + r)—, que ignora el flete pero es el mejor dato disponible.
+ */
+export function costoParaPonderar(
+  costoUnitario: number | undefined,
+  cantidad: number,
+  neto: number,
+  rentabilidad: number,
+): number {
+  if (costoUnitario && costoUnitario > 0) return costoUnitario * cantidad
+  const markup = 1 + rentabilidad / 100
+  return markup > 0 && neto > 0 ? neto / markup : 0
+}
+
+/**
+ * Rentabilidad GENERAL de una operación, en %, a dos decimales: el promedio de la rentabilidad de
+ * cada línea ponderado por su costo. Las líneas sin costo (peso 0) no aportan: no hay contra qué
+ * medirlas. Sin ninguna línea medible devuelve 0.
+ */
+export function rentabilidadGeneral(aportes: AporteRentabilidad[]): number {
+  const costoTotal = aportes.reduce((acc, a) => acc + (a.costo > 0 ? a.costo : 0), 0)
+  if (!(costoTotal > 0)) return 0
+  const ponderada = aportes.reduce(
+    (acc, a) => acc + (a.costo > 0 ? a.rentabilidad * a.costo : 0),
+    0,
+  )
+  return round2(ponderada / costoTotal)
+}
+
+/** Aporte de una línea de la selección de productos: su rentabilidad FINAL y su costo efectivo. */
+export const aporteLinea = (l: LineaPresupuesto, descFormaPago = 0): AporteRentabilidad => ({
+  rentabilidad: rentabilidadFinalLinea(l, descFormaPago),
+  costo: costoEfectivoLinea(l, descFormaPago) * l.cantidad,
+})
 
 export const subtotalLinea = (l: LineaPresupuesto): number =>
   round2(l.producto.precio * l.cantidad)
@@ -259,7 +540,7 @@ export interface ResumenPresupuesto {
   iva: number
   /** Importe final del documento: neto + IVA. */
   total: number
-  /** Rentabilidad ponderada por importe de cada línea. */
+  /** Rentabilidad GENERAL: la de cada línea ponderada por su costo (ver `rentabilidadGeneral`). */
   rentabilidad: number
 }
 
@@ -286,18 +567,13 @@ export function resumenPresupuesto(
      total del documento es exactamente la suma de la columna Subtotal. */
   const totalCon = (l: LineaPresupuesto) =>
     netoLinea(l.producto.precio, l.cantidad, l.descuento, descFormaPago)
-  // La rentabilidad forzada, si está aplicada, reemplaza la final de la línea (no la base).
-  const rentCon = (l: LineaPresupuesto) => rentabilidadFinalLinea(l, descFormaPago)
   // Los dos suman líneas ya redondeadas: es lo mismo que se ve producto por producto.
   const subtotal = round2(lineas.reduce((acc, l) => acc + subtotalLinea(l), 0))
   const neto = round2(lineas.reduce((acc, l) => acc + totalCon(l), 0))
-  /* Cada línea pesa por su importe ya bonificado, y aporta su rentabilidad efectiva. Se redondea a
-     DOS DECIMALES, no a entero: una rentabilidad general de 36,17% es un valor real y perderlo
-     redondeando la deja diciendo 36%. */
-  const rentabilidad =
-    neto > 0
-      ? round2(lineas.reduce((acc, l) => acc + rentCon(l) * (totalCon(l) / neto), 0))
-      : 0
+  /* Cada línea aporta su rentabilidad FINAL —la misma de la columna de la tabla, con el % forzado
+     cuando corre— y pesa por su COSTO (Σ resultado / Σ costo). A dos decimales, no a entero: una
+     general de 36,17% es un valor real y redondearla la deja diciendo 36%. */
+  const rentabilidad = rentabilidadGeneral(lineas.map((l) => aporteLinea(l, descFormaPago)))
   /* El IVA se suma por línea, con la alícuota que esa línea va a declarar en el comprobante: es lo
      único que garantiza que el total del documento y el total facturado sean el mismo número. */
   const iva = conIva
@@ -335,7 +611,7 @@ export interface ResumenBimoneda {
   usd: TotalMoneda
   /** Neto total llevado a pesos: ARS + USD × tasa. Sólo para medir el impacto en el crédito. */
   netoProyectado: number
-  /** Rentabilidad ponderada por el importe de cada línea en pesos-equivalente. */
+  /** Rentabilidad GENERAL: la de cada línea ponderada por su costo en pesos-equivalente. */
   rentabilidad: number
   /** Hay al menos un producto en dólares en el presupuesto. */
   hayDolares: boolean
@@ -352,8 +628,8 @@ const totalMoneda = (r: ResumenPresupuesto): TotalMoneda => ({
  * Totales BIMONETARIOS del presupuesto. Los productos en dólares se presupuestan en su moneda
  * (no se convierten): se separan de los de pesos y cada grupo tiene su propio subtotal/descuento/
  * neto. El neto en dólares se lleva a pesos con la tasa del día SÓLO para `netoProyectado`, que es
- * lo que se resta del crédito disponible del cliente. La rentabilidad se pondera por el importe de
- * cada línea en pesos-equivalente para que el indicador tenga una sola escala.
+ * lo que se resta del crédito disponible del cliente. La rentabilidad general pondera cada línea por
+ * su COSTO llevado a pesos-equivalente, para que el indicador tenga una sola escala.
  *
  * `descFormaPago` es el descuento por pronto pago de la operación (0 si no aplica): se compone EN
  * CASCADA con el descuento manual de cada línea, las mismas fórmulas que usa la tabla de productos,
@@ -369,24 +645,16 @@ export function resumenPresupuestoBimoneda(
   const usdLineas = lineas.filter((l) => esDolar(l.producto.moneda))
   const ars = resumenPresupuesto(arsLineas, false, descFormaPago)
   const usd = resumenPresupuesto(usdLineas, false, descFormaPago)
-  /* Cada línea pesa por su importe YA bonificado en pesos: las de dólares, convertidas con la tasa
-     del día. Es la misma base que usa `resumenPresupuesto` para ponderar dentro de cada moneda. */
-  const netoDe = (l: LineaPresupuesto) =>
-    netoLinea(l.producto.precio, l.cantidad, l.descuento, descFormaPago)
-  const pesoLinea = (l: LineaPresupuesto) => (esDolar(l.producto.moneda) ? netoDe(l) * t : netoDe(l))
-  const base = lineas.reduce((acc, l) => acc + pesoLinea(l), 0)
   /* Cada línea aporta su rentabilidad FINAL —con los dos descuentos ya aplicados, y con el % forzado
-     cuando lo tiene—, igual que la rentabilidad de una sola moneda. A dos decimales: la general no
-     es un entero. */
-  const rentabilidad =
-    base > 0
-      ? round2(
-          lineas.reduce(
-            (acc, l) => acc + rentabilidadFinalLinea(l, descFormaPago) * (pesoLinea(l) / base),
-            0,
-          ),
-        )
-      : 0
+     cuando corre—, igual que la rentabilidad de una sola moneda, y pesa por su COSTO en pesos: el
+     de las líneas en dólares se convierte con la tasa del día. El % no cambia con la moneda (es un
+     cociente), pero el peso sí: sin convertir, un costo de 100 dólares pesaría como 100 pesos. */
+  const rentabilidad = rentabilidadGeneral(
+    lineas.map((l) => {
+      const aporte = aporteLinea(l, descFormaPago)
+      return esDolar(l.producto.moneda) ? { ...aporte, costo: aporte.costo * t } : aporte
+    }),
+  )
   return {
     ars: totalMoneda(ars),
     usd: totalMoneda(usd),
@@ -511,6 +779,36 @@ export function impactoCredito(
   }
 }
 
+/**
+ * La línea de venta viene de una PROFORMA. Sus subelementos son los únicos que traen grabado el
+ * descuento por forma de pago de la línea (`descFormaPago`); los de un presupuesto no lo tienen,
+ * porque el presupuesto no lo aplica.
+ */
+const esItemDeProforma = (it: VentaItem): boolean => it.descFormaPago != null
+
+/**
+ * Rentabilidad de una línea de la venta CON PRESUPUESTO PREVIO o de la VENTA PROFORMA. Usa el
+ * descuento por forma de pago de la operación (`descFormaPago`) cuando la línea no trae el suyo.
+ *
+ *   · PROFORMA: la proforma es de sólo lectura —ni el precio ni los descuentos se tocan—, así que su
+ *     rentabilidad es la que quedó registrada al emitirla, tal cual.
+ *   · PRESUPUESTO: el descuento se puede editar en la venta y el pronto pago es el de esta venta,
+ *     así que se recalcula con importes (`rentabilidadItemPresupuesto`).
+ *
+ * Es la ÚNICA fuente de la rentabilidad de estas líneas: la usan la tabla, el resumen y lo que se
+ * graba en Monday.
+ */
+export function rentabilidadVentaItem(it: VentaItem, descFormaPago = 0): number {
+  if (esItemDeProforma(it)) return round2(it.rent)
+  return rentabilidadItemPresupuesto(it, descuentoCompuesto(it.desc ?? 0, descFormaPago))
+}
+
+/** Aporte de una línea de venta a la rentabilidad general: su % y su costo total. */
+function aporteVentaItem(it: VentaItem, descFormaPago: number, neto: number): AporteRentabilidad {
+  const rentabilidad = rentabilidadVentaItem(it, descFormaPago)
+  return { rentabilidad, costo: costoParaPonderar(it.costo, it.aVender, neto, rentabilidad) }
+}
+
 export interface ResumenVenta {
   /** Suma de la columna Subtotal de la tabla: cantidad × precio, sin descuentos. */
   subtotal: number
@@ -556,7 +854,6 @@ export function resumenVenta(
      el neto y la rentabilidad igual que en la venta DIRECTA. La VENTA sobre PROFORMA trae su propio
      descuento por forma de pago por línea (it.descFormaPago); el resto usa el de la operación. */
   const descFpDe = (it: VentaItem) => it.descFormaPago ?? descFormaPago
-  const descTotal = (it: VentaItem) => descuentoCompuesto(it.desc ?? 0, descFpDe(it))
   // Cada línea entra ya bonificada, y aporta la rentabilidad que le queda tras el descuento.
   const importeItem = (it: VentaItem) =>
     netoLinea(it.precio, it.aVender, it.desc ?? 0, descFpDe(it))
@@ -568,9 +865,10 @@ export function resumenVenta(
   const iva = round2(
     items.reduce((acc, it) => acc + ivaLinea(importeItem(it), alicuotaDeclarada(it.iva)), 0),
   )
-  const rentPonderada = items.reduce(
-    (acc, it) => acc + rentabilidadDeMarkup(it.rent, descTotal(it)) * importeItem(it),
-    0,
+  /* Rentabilidad general: cada línea aporta la MISMA rentabilidad que muestra la tabla
+     (`rentabilidadVentaItem`) y pesa por su costo. */
+  const rentabilidad = rentabilidadGeneral(
+    items.map((it) => aporteVentaItem(it, descFormaPago, importeItem(it))),
   )
 
   /* Comisión: SÓLO los productos comisionables, con la tasa ÚNICA que rige la COMBINACIÓN de la
@@ -599,7 +897,7 @@ export function resumenVenta(
     iva,
     comision,
     // A dos decimales: redondear a entero mostraba 36% donde la venta rinde 36,17%.
-    rentabilidad: total > 0 ? round2(rentPonderada / total) : 0,
+    rentabilidad,
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,
@@ -698,7 +996,7 @@ export interface ResumenFactura {
   total: number
   /** Comisión del vendedor: sólo los productos comisionables, con la tasa del tipo de venta. */
   comision: number
-  /** Rentabilidad general de la venta, en %: ponderada por el importe de cada línea. */
+  /** Rentabilidad general de la venta, en %: la de cada línea ponderada por su costo. */
   rentabilidad: number
   disponible: number
   /** Uso de la cuenta corriente incluyendo esta factura: mismo criterio que PRESUPUESTAR. */
@@ -754,11 +1052,13 @@ export function resumenFactura(
       0,
     ),
   )
-  /* Rentabilidad general: cada línea aporta la que le queda DESPUÉS de bonificar y pesa por su
-     importe ya bonificado, igual que en el presupuesto y en la venta. */
-  const rentPonderada = items.reduce(
-    (acc, it) => acc + rentabilidadDeMarkup(it.rent, descuentoCompuesto(0, descFormaPago)) * netoDe(it),
-    0,
+  /* Rentabilidad general: cada línea aporta la que le queda DESPUÉS del descuento por forma de pago
+     (`rentabilidadItemRemito`) y pesa por su costo, igual que en el presupuesto y en la venta. */
+  const rentabilidad = rentabilidadGeneral(
+    items.map((it) => {
+      const rent = rentabilidadItemRemito(it, descFormaPago)
+      return { rentabilidad: rent, costo: costoParaPonderar(it.costo, it.aFacturar, netoDe(it), rent) }
+    }),
   )
 
   const limite = cliente?.limit ?? 0
@@ -776,7 +1076,7 @@ export function resumenFactura(
     total,
     comision,
     // A dos decimales, como el resto de las rentabilidades generales.
-    rentabilidad: neto > 0 ? round2(rentPonderada / neto) : 0,
+    rentabilidad,
     disponible,
     usadoPct: impacto.usadoPct,
     critico: impacto.critico,

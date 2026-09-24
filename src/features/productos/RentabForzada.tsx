@@ -1,19 +1,30 @@
 import { useEffect, useState } from 'react'
 import { money } from '@/lib/format'
+import { notaCreditoTotal, rentabForzadaLinea } from '@/lib/selectors'
 import { useApp, useDispatch } from '@/state/hooks'
 
 /**
  * Rentabilidad Forzada de la selección de productos (PRESUPUESTO y VENTA DIRECTA, salvo entrega
  * ANTERIOR). Es un INTERRUPTOR, no una acción por producto: el botón la enciende o la apaga.
  *
- * Encendida (botón resaltado) descuenta el % —precargado del tablero de config "Rentab Forzada"— a
- * cada producto que la acepta ("Con Rentab Forzada" en el maestro), tanto a los ya cargados como a
- * los que se agreguen después, hasta que el usuario la apague. Apagada, revierte el descuento.
+ * Encendida (botón resaltado) le fija el % —precargado del tablero de config "Rentab Forzada"— a
+ * cada producto que la acepta ("Con Rentab Forzada" en el maestro, o precio por debajo de Costo +
+ * Flete), tanto a los ya cargados como a los que se agreguen después, hasta que el usuario la
+ * apague. El precio de venta no cambia: lo que cambia es el costo, con la nota de crédito del
+ * proveedor (ver `rentabForzadaDe`). Apagada, se revierte.
  *
  * A la derecha del botón: mientras está encendida, la aclaración de que se está aplicando; y el
- * acumulado "TOTAL Nota de Crédito x Comisión $" (monto por unidad × cantidad de los afectados).
+ * acumulado "TOTAL Nota de Crédito x Comisión $" (nota de crédito por unidad × cantidad, sumado sobre
+ * los productos afectados).
  */
-export function RentabForzada({ bloqueado = false }: { bloqueado?: boolean }) {
+export function RentabForzada({
+  bloqueado = false,
+  descFormaPago = 0,
+}: {
+  bloqueado?: boolean
+  /** Descuento por forma de pago de la operación: baja el precio y con él el Nuevo Costo. */
+  descFormaPago?: number
+}) {
   const { rentabForzadaPct, rentabForzadaActiva, lineas } = useApp()
   const dispatch = useDispatch()
   const [pct, setPct] = useState(String(rentabForzadaPct || 0))
@@ -25,13 +36,10 @@ export function RentabForzada({ bloqueado = false }: { bloqueado?: boolean }) {
     setPct(String(rentabForzadaPct || 0))
   }, [rentabForzadaPct])
 
-  // Acumulado global: la suma de la Nota de Crédito x Comisión de cada producto (monto por unidad),
-  // igual que el TOTAL que se escribe en Monday (sin multiplicar por cantidad).
-  const totalNotaCredito = lineas.reduce(
-    (acc, l) => acc + (l.montoDifNotaDeCreditoComision ?? 0),
-    0,
-  )
-  const hayForzadas = lineas.some((l) => l.montoDifNotaDeCreditoComision != null)
+  /* Acumulado global: la Nota de Crédito x Comisión por unidad de cada producto MULTIPLICADA POR SU
+     CANTIDAD, igual que el TOTAL que se escribe en Monday (`notaCreditoTotal`). */
+  const totalNotaCredito = notaCreditoTotal(lineas, descFormaPago)
+  const hayForzadas = lineas.some((l) => rentabForzadaLinea(l, descFormaPago) != null)
 
   const alternar = () => {
     const valor = Number(pct.replace(',', '.'))

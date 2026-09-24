@@ -5,7 +5,7 @@ import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { PRODUCTOS } from '@/data/mock'
 import { TablaProductos, type FilaProducto } from '@/features/productos/TablaProductos'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
-import { resumenVenta, ventaItemUid } from '@/lib/selectors'
+import { rentabilidadVentaItem, resumenVenta, ventaItemUid } from '@/lib/selectors'
 import { getProformasCliente, type ProformaVigente } from '@/services/monday'
 import { hayDocumentoEmitido, type SeleccionVenta } from '@/state/appState'
 import { useApp, useDispatch } from '@/state/hooks'
@@ -116,6 +116,8 @@ export function VentaProformaView() {
         precio: it.precio,
         descuento: it.desc,
         rentabilidad: it.rent,
+        // La proforma es de sólo lectura: su rentabilidad es la registrada al emitirla.
+        rentabFinal: rentabilidadVentaItem(it),
         producto: PRODUCTOS.find((p) => p.codigo === it.codigo),
         impBonif: it.impBonificado,
         totalLinea: it.totalLinea,

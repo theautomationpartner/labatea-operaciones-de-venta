@@ -1,100 +1,212 @@
 /**
- * La RENTABILIDAD se calcula con la MISMA fórmula que el Maestro de Productos usa para sus
- * columnas "🤖Margen L1/L2/L3":
+ * La RENTABILIDAD de un producto es la cuenta que definió el comercio (planilla "cálculo de
+ * rentab"):
  *
- *   ROUND(((precio S/IVA / Costo Final) − 1) × 100, 2)
+ *   Resultado bruto = Precio de venta S/IVA − Costo Final − Flete
+ *   Rentabilidad %  = Resultado bruto / Costo Final × 100
  *
- * Las dos puntas son netas: las columnas "🤖Precio S/Iva Lx" ya vienen sin IVA y el "🤖Costo Final"
- * también.
+ * El flete se resta del resultado pero NO entra en el denominador; todo va SIN IVA; y los
+ * descuentos bajan el precio, no el costo ni el flete. Este test fija las tres reglas con el caso
+ * de la planilla, y además el error que la planilla marca: sin restar el flete, la rentabilidad da
+ * 23,17% en vez de 23,00% —el flete se cuenta como ganancia—.
  *
- * La BASE del producto sale del margen de la lista del cliente (L1 → numeric_mm58135k,
- * L2 → formula_mm51nqvz, L3 → formula_mm51fjf5); la FINAL se recalcula con el precio vigente —el
- * que quedó después de los descuentos o del override del administrador— sobre el mismo costo.
+ * Se corre con esbuild + node (`npm run test:rentabilidad`); vive fuera de `src/`.
  */
 import assert from 'node:assert/strict'
 import { round2 } from '@/lib/format'
 import { productoConPrecio } from '@/lib/precios'
-import { rentabilidadDe, rentabilidadDeMarkup, rentabilidadConDescuento } from '@/lib/selectors'
+import {
+  costoDe,
+  precioDaPerdida,
+  rentabilidadConDescuento,
+  rentabilidadDe,
+  rentabilidadItemPresupuesto,
+  rentabilidadItemRemito,
+  rentabilidadProductoDe,
+} from '@/lib/selectors'
 
-/** Productos REALES del Maestro: "🤖Costo Final", "✋Margen L1" y "🤖Precio S/Iva L1". */
+let asserts = 0
+const igual = (real: unknown, esperado: unknown, nombre: string) => {
+  assert.equal(real, esperado, nombre)
+  asserts++
+  console.log('  ✓', nombre)
+}
+
+/* ---------- 1) El caso de la planilla ---------- */
+
+console.log('Caso 1 · El ejemplo de la planilla:')
+
+const COSTO = 102_162.35
+const FLETE = 175
+const MARGEN_L1 = 23
+/** Precio L1 del maestro: ROUND(Costo + Flete + Costo × Margen L1, 3). */
+const PRECIO_L1 = Math.round((COSTO + FLETE + COSTO * (MARGEN_L1 / 100)) * 1000) / 1000
+
+// El maestro redondea a 3 decimales; la planilla lo muestra a 2 (125.834,69).
+igual(PRECIO_L1, 125_834.691, 'el precio L1 se arma como Costo + Flete + Costo × Margen')
+igual(rentabilidadDe(PRECIO_L1, COSTO, FLETE), 23, 'la rentabilidad es 23,00%: el Margen L1 tal cual')
+igual(
+  round2(((PRECIO_L1 - COSTO) / COSTO) * 100),
+  23.17,
+  'la cuenta vieja —sin restar el flete— daba 23,17% (el error que marca la planilla)',
+)
+igual(rentabilidadDe(PRECIO_L1, COSTO), 23.17, 'y es lo que da la fórmula si se le olvida el flete')
+igual(
+  round2(((PRECIO_L1 - COSTO - FLETE) / (COSTO + FLETE)) * 100),
+  22.96,
+  'dividir por Costo + Flete también da mal (22,96%): el flete NO va en el denominador',
+)
+
+/* ---------- 2) Un descuento baja el precio, no el costo ni el flete ---------- */
+
+console.log('\nCaso 2 · Descuentos (L2/L3 y los de la operación):')
+
+/* L2 = L1 × (1 − Descuento L2). Con 10%: 125.834,69 × 0,9 = 113.251,22.
+   Resultado = 113.251,22 − 102.162,35 − 175 = 10.913,87 → 10.913,87 / 102.162,35 = 10,68% */
+igual(
+  rentabilidadConDescuento(PRECIO_L1, COSTO, FLETE, 10),
+  10.68,
+  'L1 con 10% de descuento rinde 10,68% (el flete se sigue pagando entero)',
+)
+igual(
+  round2((1.23 * 0.9 - 1) * 100),
+  10.7,
+  'el atajo del markup —(1 + m)(1 − d) − 1— daba 10,70%: se olvida de que el flete no se descuenta',
+)
+igual(
+  rentabilidadConDescuento(PRECIO_L1, COSTO, FLETE, 0),
+  rentabilidadDe(PRECIO_L1, COSTO, FLETE),
+  'sin descuento, es la rentabilidad a precio de lista',
+)
+assert.ok(
+  rentabilidadConDescuento(PRECIO_L1, COSTO, FLETE, 5) < rentabilidadDe(PRECIO_L1, COSTO, FLETE),
+  'el descuento tiene que bajar la rentabilidad',
+)
+asserts++
+console.log('  ✓ el descuento baja la rentabilidad, nunca la sube')
+
+/* ---------- 3) Todo va SIN IVA ---------- */
+
+console.log('\nCaso 3 · El IVA no es ganancia:')
+
+/** El producto de la planilla, cargado para un Consumidor Final: el precio le llega con el 21%. */
+const CON_IVA = {
+  precio: round2(PRECIO_L1 * 1.21),
+  precioSinIva: PRECIO_L1,
+  precioCosto: COSTO,
+  flete: FLETE,
+  rentabilidad: MARGEN_L1,
+}
+igual(rentabilidadProductoDe(CON_IVA), 23, 'con el precio con IVA a la vista, la rentabilidad sigue siendo 23%')
+igual(
+  rentabilidadProductoDe({ ...CON_IVA, precio: PRECIO_L1 }),
+  rentabilidadProductoDe(CON_IVA),
+  'es la misma que la de un Responsable Inscripto (sin IVA en el precio)',
+)
+
+/* ---------- 4) Productos reales sin flete: se reproduce el Margen L1 del maestro ---------- */
+
+console.log('\nCaso 4 · Productos reales del maestro (flete 0):')
+
+/** "🤖Costo Final", "✋Margen L1" y "🤖Precio S/Iva L1" de productos reales. */
 const PRODUCTOS = [
   { nombre: 'ABRAZADERA TALA 8/16', costo: 727.935, margenL1: 99.39, precioL1: 1451.43 },
   { nombre: 'ACAY x 100 grs.', costo: 206.26, margenL1: 223.6, precioL1: 667.457 },
   { nombre: 'ACEDAN X 50 Ml', costo: 13184.75, margenL1: 30.58, precioL1: 17216.647 },
   { nombre: 'ACEITE CAMION x 20 lts', costo: 97115.26, margenL1: 10, precioL1: 106826.786 },
 ]
-
-// ---------- Sin descuento, la fórmula REPRODUCE el margen que publica el board ----------
 for (const p of PRODUCTOS) {
-  assert.equal(
-    rentabilidadDe(p.precioL1, p.costo),
-    p.margenL1,
-    `"${p.nombre}": la fórmula no reproduce el "✋Margen L1" del maestro`,
-  )
+  igual(rentabilidadDe(p.precioL1, p.costo, 0), p.margenL1, `"${p.nombre}" reproduce su Margen L1`)
 }
 
-// ---------- Con descuento se recalcula sobre el precio vigente ----------
-for (const p of PRODUCTOS) {
-  for (const desc of [0, 10, 25]) {
-    const precioConDesc = p.precioL1 * (1 - desc / 100)
-    const esperado = round2((precioConDesc / p.costo - 1) * 100)
-    assert.equal(
-      rentabilidadConDescuento(p.precioL1, p.costo, desc),
-      esperado,
-      `"${p.nombre}" con ${desc}%: no es (precio / costo − 1) × 100`,
-    )
-    /* El camino SIN costo —el de la venta sobre presupuesto/proforma, que sólo tiene el margen
-       espejado— tiene que dar el mismo número: el costo se cancela. */
-    assert.ok(
-      Math.abs(rentabilidadDeMarkup(p.margenL1, desc) - esperado) <= 0.02,
-      `"${p.nombre}" con ${desc}%: el camino sin costo da ${rentabilidadDeMarkup(p.margenL1, desc)}`,
-    )
-  }
-}
+/* ---------- 5) L7 y L8: sin columna de margen, la rentabilidad sale igual ---------- */
 
-// ---------- El descuento baja la rentabilidad, nunca la sube ----------
-for (const p of PRODUCTOS) {
-  const sin = rentabilidadConDescuento(p.precioL1, p.costo, 0)
-  const con = rentabilidadConDescuento(p.precioL1, p.costo, 10)
-  assert.ok(con < sin, `"${p.nombre}": el descuento tiene que bajar la rentabilidad`)
-}
+console.log('\nCaso 5 · Listas sin "Margen" publicado (L7/L8):')
 
-// ---------- Bordes ----------
-assert.equal(rentabilidadDe(200, 100), 100, 'precio al doble del costo → 100%')
-assert.equal(rentabilidadDe(100, 100), 0, 'vender al costo no deja rentabilidad')
-assert.equal(rentabilidadDe(80, 100), -20, 'vender bajo el costo da rentabilidad negativa')
-assert.equal(rentabilidadDe(0, 100), -100, 'regalado: se pierde el costo entero')
-assert.equal(rentabilidadDe(1000, 0), 0, 'sin costo cargado no se inventa rentabilidad')
-assert.equal(rentabilidadConDescuento(200, 100, 100), -100, '100% de descuento → −100%')
-assert.equal(rentabilidadDeMarkup(0), 0, 'sin margen base, sin rentabilidad')
+/* L7 = Costo + Flete + Costo × Margen L7. El maestro no publica el margen de L7 y el producto llega
+   con `rentabilidad: 0`: antes la ficha decía 0%. Ahora la cuenta sale del costo y el flete. */
+const L7 = { precio: 130_943.8, precioSinIva: 130_943.8, precioCosto: COSTO, flete: FLETE, rentabilidad: 0 }
+igual(
+  rentabilidadProductoDe(L7),
+  rentabilidadDe(130_943.8, COSTO, FLETE),
+  'la ficha de L7 muestra la rentabilidad real, no el 0% del margen que falta',
+)
+assert.ok(rentabilidadProductoDe(L7) > 0)
+asserts++
 
-// ---------- Pisar el precio: la BASE es intocable, la FINAL sigue al precio ----------
-/* La rentabilidad BASE es el dato de referencia del maestro. Ni los descuentos ni el override del
-   administrador la mueven: lo único que cambia es la FINAL, que no se guarda —se deriva del precio
-   vigente contra el costo cada vez que se muestra—. */
-const base = { precio: 204, precioSinIva: 204, precioCosto: 120, rentabilidad: 70 }
-assert.equal(rentabilidadDe(base.precioSinIva, base.precioCosto), base.rentabilidad, 'el caso parte de su propia base')
+/* ---------- 6) Bordes ---------- */
 
-const pisado = productoConPrecio(base, 100)
-assert.equal(pisado.rentabilidad, base.rentabilidad, 'pisar el precio movió la rentabilidad BASE')
-assert.equal(pisado.precioCosto, 120, 'pisar el precio movió el costo')
-assert.equal(
-  rentabilidadDe(pisado.precioSinIva!, pisado.precioCosto!),
-  round2((100 / 120 - 1) * 100),
-  'la FINAL no siguió al precio pisado',
+console.log('\nCaso 6 · Bordes:')
+
+igual(rentabilidadDe(200, 100), 100, 'precio al doble del costo, sin flete → 100%')
+igual(rentabilidadDe(110, 100, 10), 0, 'precio que cubre justo Costo + Flete → 0%')
+igual(rentabilidadDe(105, 100, 10), -5, 'cubre el costo pero no el flete → pierde plata')
+igual(rentabilidadDe(0, 100), -100, 'regalado sin flete: se pierde el costo entero')
+igual(rentabilidadDe(0, 100, 10), -110, 'regalado con flete: se pierden el costo Y el flete')
+igual(rentabilidadDe(1000, 0, 10), 0, 'sin costo cargado no se inventa rentabilidad')
+igual(rentabilidadConDescuento(200, 100, 0, 100), -100, '100% de descuento sin flete → −100%')
+igual(rentabilidadDe(200, 100, -5), 100, 'un flete negativo no suma ganancia: se toma como 0')
+igual(
+  precioDaPerdida({ precio: 105, precioCosto: 100, flete: 10, rentabilidad: 0 }),
+  true,
+  'un precio que no cubre Costo + Flete es PÉRDIDA, aunque cubra el costo',
 )
 
-// Dos overrides seguidos dan lo mismo que uno solo: el costo queda fijo desde el primero.
+/* ---------- 7) Pisar el precio: el costo y el flete no se mueven ---------- */
+
+console.log('\nCaso 7 · Override del administrador:')
+
+const base = { precio: 214, precioSinIva: 214, precioCosto: 120, flete: 10, rentabilidad: 70 }
+igual(rentabilidadProductoDe(base), 70, 'el caso parte de su propia base: (214 − 120 − 10) / 120 = 70%')
+
+const pisado = productoConPrecio(base, 130)
+igual(pisado.precioCosto, 120, 'pisar el precio no mueve el costo')
+igual(pisado.flete, 10, 'ni el flete')
+igual(rentabilidadProductoDe(pisado), 0, 'la rentabilidad sigue al precio: (130 − 120 − 10) / 120 = 0%')
+
 const dosVeces = productoConPrecio(pisado, 150)
 const unaVez = productoConPrecio(base, 150)
-assert.equal(dosVeces.precioCosto, unaVez.precioCosto, 'el costo se corrió tras dos overrides')
-assert.equal(dosVeces.precioSinIva, unaVez.precioSinIva, 'el precio neto no es idempotente')
-assert.equal(dosVeces.rentabilidad, base.rentabilidad, 'la BASE se corrió tras dos overrides')
+igual(dosVeces.precioCosto, unaVez.precioCosto, 'dos overrides seguidos dejan el mismo costo que uno')
+igual(dosVeces.precioSinIva, unaVez.precioSinIva, 'y el mismo precio neto')
 
-// Sin costo del maestro se despeja del precio y el margen ORIGINALES, y queda fijado.
-const sinCosto = { precio: 204, precioSinIva: 204, rentabilidad: 70 }
-const fijado = productoConPrecio(sinCosto, 100)
-assert.equal(fijado.precioCosto, 120, 'el costo se despeja del precio y el margen originales')
-assert.equal(fijado.rentabilidad, 70, 'la BASE tampoco se toca cuando el costo se despeja')
+/* Sin Costo Final, se despeja del precio y el margen ORIGINALES con la fórmula del maestro dada
+   vuelta: costo = (precio − flete) / (1 + margen) = (214 − 10) / 1,7 = 120. */
+const sinCosto = { precio: 214, precioSinIva: 214, flete: 10, rentabilidad: 70 }
+igual(costoDe(sinCosto), 120, 'sin Costo Final, el costo se despeja restando el flete')
+igual(productoConPrecio(sinCosto, 100).precioCosto, 120, 'y queda fijado al pisar el precio')
 
-console.log('OK · la rentabilidad usa la fórmula del Maestro y la BASE nunca se recalcula')
+/* ---------- 8) Líneas que vienen de un documento ya emitido ---------- */
+
+console.log('\nCaso 8 · Presupuesto previo y entrega ANTERIOR:')
+
+// Presupuesto: precio sin IVA + costo y flete del maestro → la cuenta con importes.
+const itPresupuesto = { precio: PRECIO_L1, rent: 23, descuento: 0, costo: COSTO, flete: FLETE }
+igual(
+  rentabilidadItemPresupuesto(itPresupuesto, 10),
+  10.68,
+  'la línea del presupuesto con 10% en la venta rinde lo mismo que en la venta DIRECTA',
+)
+// Sin costo: se lleva la registrada al descuento nuevo (sin flete, es lo mejor que hay).
+igual(
+  rentabilidadItemPresupuesto({ precio: 100, rent: 20, descuento: 0 }, 10),
+  8,
+  'sin costo conocido: (1,20 × 0,90) − 1 = 8%',
+)
+igual(
+  rentabilidadItemPresupuesto({ precio: 100, rent: 8, descuento: 10 }, 10),
+  8,
+  'sin costo, con el mismo descuento que tenía el presupuesto, queda la registrada',
+)
+
+/* Remito: el precio puede venir con IVA, así que se reconstruye el precio SIN IVA de la
+   rentabilidad registrada, el costo y el flete —P = C × (1 + r) + F— y se lo descuenta. */
+const itRemito = { rent: 23, costo: COSTO, flete: FLETE }
+igual(rentabilidadItemRemito(itRemito, 0), 23, 'sin descuento por forma de pago, queda la registrada')
+igual(
+  rentabilidadItemRemito(itRemito, 10),
+  10.68,
+  'con 10% por forma de pago rinde lo mismo que la venta DIRECTA',
+)
+igual(rentabilidadItemRemito({ rent: 20 }, 10), 8, 'sin costo conocido: (1,20 × 0,90) − 1 = 8%')
+
+console.log(`\nOK · rentabilidad = (precio S/IVA − costo − flete) / costo (${asserts} verificaciones)`)

@@ -10,6 +10,8 @@ import { creditoDeOperacion } from '@/lib/credito'
 import {
   comisionLineas,
   impactoCredito,
+  notaCreditoLinea,
+  rentabilidadBaseLinea,
   rentabilidadFinalLinea,
   resumenPresupuesto,
   resumenPresupuestoBimoneda,
@@ -120,14 +122,13 @@ export function ProductosView() {
         cantidad: l.cantidad,
         precio: l.producto.precio,
         descuento: l.descuento,
-        rentabilidad: l.producto.rentabilidad,
+        rentabilidad: rentabilidadBaseLinea(l),
         producto: l.producto,
         // Nota de Crédito x Comisión por unidad (rentabilidad forzada), para el "Detalle".
-        notaCredito: l.montoDifNotaDeCreditoComision,
-        // % forzado aplicado: es la rentabilidad FINAL de la línea (la base no se toca).
-        rentabForzada: l.rentabForzadaAplicada,
-        /* FINAL: el precio vigente —con el override del administrador y los dos descuentos— contra
-           el costo del producto. Mismo selector que alimenta la rentabilidad general del resumen. */
+        notaCredito: notaCreditoLinea(l, descFormaPago),
+        /* FINAL: el precio vigente —con el override del administrador y los dos descuentos— menos
+           costo y flete, sobre el costo; o el % forzado cuando corre. Es el MISMO selector que la
+           "Rentabilidad Final" de la carga y que alimenta la rentabilidad general del resumen. */
         rentabFinal: rentabilidadFinalLinea(l, descFormaPago),
       })),
     [lineas, descFormaPago],
@@ -218,7 +219,7 @@ export function ProductosView() {
             <FiltrosProductos />
           </div>
           {/* Rentabilidad Forzada: debajo de los filtros del buscador (PRESUPUESTO / VENTA DIRECTA). */}
-          {mostrarRentabForzada && <RentabForzada bloqueado={bloqueadoPorEmision} />}
+          {mostrarRentabForzada && <RentabForzada bloqueado={bloqueadoPorEmision} descFormaPago={descFormaPago} />}
           <CargaLinea
             key={seleccionado?.codigo ?? 'vacio'}
             producto={seleccionado}
@@ -262,8 +263,8 @@ export function ProductosView() {
 
       <ResumenBox
         titulo={esVenta ? 'Resumen de la venta' : 'Resumen del presupuesto'}
-        /* En el presupuesto, la rentabilidad del donut sale del cálculo bimonetario (ponderado en
-           pesos-equivalente); el resto de los totales los aporta `bimoneda`. */
+        /* En el presupuesto, la rentabilidad del donut sale del cálculo bimonetario (cada línea
+           ponderada por su costo en pesos-equivalente); el resto de los totales los aporta `bimoneda`. */
         resumen={esVenta ? resumen : { ...resumen, rentabilidad: bimoneda.rentabilidad }}
         credito={credito}
         limite={cliente.limit}
