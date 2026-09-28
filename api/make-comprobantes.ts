@@ -48,7 +48,7 @@ type Pedido = IncomingMessage & { body?: unknown }
 const ESCENARIOS: Record<string, { variable: string; servicio: string }> = {
   comprobantes: { variable: 'MAKE_WEBHOOK_COMPROBANTES', servicio: 'El servicio de lectura' },
   'envio-presupuesto': {
-    variable: 'MAKE_WEBHOOK_ENVIO_PRESUPUESTO',
+    variable: 'MAKE_WEBHOOK_URL',
     servicio: 'El servicio de envío de presupuestos',
   },
 }
