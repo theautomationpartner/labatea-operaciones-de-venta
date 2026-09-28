@@ -64,6 +64,7 @@ import {
   PRESUP_ENVIO_INDEX,
   PRESUP_ESTADO_VENTA_INDEX,
   PRESUP_ESTADO_EMITIR_LABEL,
+  PRESUP_ESTADO_EMITIDO_LABEL,
   PRESUP_VIGENCIA_LABEL,
 } from './columns'
 import {
@@ -78,7 +79,7 @@ import { esDolar } from '@/lib/moneda'
 import { precioConIva, precioListaSinRedondear } from '@/lib/precios'
 import { construirBulkSubitems } from './carritoSubitems'
 import { byId, num, numCol, sumaMirror, valor, type CV, type MondayItem } from './parse'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { mondayApi, mondayHabilitado, mondaySubirArchivo } from './sdk'
 
 /* ===== 1) Días de vigencia (config, no editable) ===== */
 
@@ -1504,6 +1505,38 @@ export async function emitirPresupuesto(itemId: string): Promise<void> {
       id: itemId,
       board: BOARDS.presupuestos,
       cv: JSON.stringify({ [COL.presupuesto.estadoPdf]: { label: PRESUP_ESTADO_EMITIR_LABEL } }),
+    },
+  )
+}
+
+/**
+ * Sube el PDF que generó la app (`generarPresupuestoPdf`) a la columna file del presupuesto
+ * (file_mkse56g9) y deja el estado del PDF en "Emitido". Reemplaza a `emitirPresupuesto` en la
+ * emisión: el PDF ya no lo arma Make.com, así que la columna de estado NO pasa por "Emitir" —eso
+ * dispararía el escenario y generaría un segundo PDF—.
+ *
+ * Primero el archivo y después el estado: "Emitido" sin archivo diría algo que no pasó.
+ */
+export async function adjuntarPdfPresupuesto(itemId: string, archivo: File): Promise<void> {
+  if (!mondayHabilitado()) return
+  /* El id va INLINE en la mutación: en un multipart la única variable es el archivo. Por eso se
+     exige que sea numérico, y no un texto cualquiera metido en la query. */
+  const id = Number(itemId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error(`Id de presupuesto inválido: ${itemId}`)
+  await mondaySubirArchivo(
+    `mutation ($file: File!) {
+      add_file_to_column(item_id: ${id}, column_id: "${COL.presupuesto.pdf}", file: $file) { id }
+    }`,
+    archivo,
+  )
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    {
+      id: itemId,
+      board: BOARDS.presupuestos,
+      cv: JSON.stringify({ [COL.presupuesto.estadoPdf]: { label: PRESUP_ESTADO_EMITIDO_LABEL } }),
     },
   )
 }

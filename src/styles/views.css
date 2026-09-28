@@ -1642,8 +1642,13 @@ kbd {
   font-size: 16px;
   padding: 4px;
 }
-.del:hover {
+.del:hover:not(:disabled) {
   color: var(--red);
+}
+/* Quitar bloqueado (ya se envió): el tacho queda apagado. */
+.del:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 /* Log */
@@ -1879,6 +1884,17 @@ kbd {
 }
 .cobro-ok.on {
   background: var(--green);
+}
+/* El envío a este contacto falló: rojo con cruz blanca (fila de contactos del envío). */
+.cobro-ok.err {
+  background: var(--red);
+}
+/* Mientras se envía: el mismo hueco de 24px, sin disco, con el anillo girando (como el de la
+   emisión de comprobantes), para que la fila no salte al pasar al tilde o a la cruz. */
+.cobro-ok--cargando {
+  background: transparent;
+  color: var(--text-gray);
+  font-size: 15px;
 }
 /* Formulario + tabla: un solo bloque, sin caja propia, a todo el ancho. */
 .cobro-carga {

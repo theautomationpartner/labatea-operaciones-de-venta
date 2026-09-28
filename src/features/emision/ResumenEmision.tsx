@@ -9,11 +9,15 @@ import { useApp } from '@/state/hooks'
 interface ResumenEmisionProps {
   resumen: ResumenPresupuesto
   vencimiento: string
-  /** El PDF se está generando (dispara loading en el visor y bloquea el botón). */
+  /** El PDF se está generando (bloquea el botón). */
   generando: boolean
-  /** El presupuesto ya se emitió: el botón queda en verde, como el de envío. */
+  /** El PDF del presupuesto ya se generó: el botón queda en verde, como el de envío. */
   emitido: boolean
+  /** react-pdf no pudo generar el PDF: el botón queda en rojo con "Error de emisión". */
+  errorPdf?: boolean
   onGenerar: () => void
+  /** Lo que va pegado debajo del botón de emisión: "Ver Presupuesto PDF". */
+  children?: ReactNode
 }
 
 interface FilaProps {
@@ -51,7 +55,9 @@ export function ResumenEmision({
   vencimiento,
   generando,
   emitido,
+  errorPdf = false,
   onGenerar,
+  children,
 }: ResumenEmisionProps) {
   const { vendedor, cliente, lineas, fechaEmision, nroPresupuesto, actividadesDocumento } =
     useApp()
@@ -86,10 +92,6 @@ export function ResumenEmision({
         <Fila label="Rentabilidad general" tono="verde">
           {pctDec(resumen.rentabilidad)}
         </Fila>
-        {/* Descuento general: por ahora fijo en 0%. */}
-        <Fila label="Descuento general" tono="verde">
-          0%
-        </Fila>
       </div>
 
       <hr className="rsep" />
@@ -114,16 +116,29 @@ export function ResumenEmision({
         onClick={onGenerar}
         disabled={generando || emitido}
         aria-busy={generando}
-        // Emitido: el botón pasa a verde para confirmar, como el de "Enviado".
-        style={emitido ? { backgroundColor: 'var(--green)', color: '#fff' } : undefined}
+        // En error sigue habilitado: el mismo botón reintenta, y el cartel lo dice.
+        title={errorPdf && !generando ? 'Tocá para reintentar la emisión' : undefined}
+        /* Emitido: verde para confirmar, como el de "Enviado". Error del PDF: rojo; sigue
+           habilitado por si el reintento anda. */
+        style={
+          emitido
+            ? { backgroundColor: 'var(--green)', color: '#fff' }
+            : errorPdf && !generando
+              ? { backgroundColor: 'var(--red)', color: '#fff' }
+              : undefined
+        }
       >
         {generando ? (
           <>
-            <i className="fas fa-circle-notch spin" /> Emitiendo...
+            <i className="fas fa-circle-notch spin" /> Generando PDF...
           </>
         ) : emitido ? (
           <>
             <i className="fas fa-check" /> Presupuesto emitido
+          </>
+        ) : errorPdf ? (
+          <>
+            <i className="fas fa-xmark" /> Error de emisión
           </>
         ) : (
           <>
@@ -131,6 +146,8 @@ export function ResumenEmision({
           </>
         )}
       </button>
+
+      {children}
     </div>
   )
 }

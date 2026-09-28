@@ -9,6 +9,7 @@ import { aceptaRentabForzada, rentabilidadProductoDe } from '@/lib/selectors'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
 import type {
+  CanalEnvio,
   ActividadListada,
   ActividadProyectada,
   ActividadState,
@@ -156,8 +157,32 @@ export interface AppState {
    * (La factura de venta usa `factura.comprobantes`, que ya persiste su emisión.)
    */
   documentoEmitido: boolean
+  /**
+   * El PDF del presupuesto que generó la app al emitir (ver `generarPresupuestoPdf`). Vive acá y no
+   * en la vista para que ir a otra etapa y volver no lo pierda: "Ver Presupuesto PDF" lo abre y
+   * "Registrar Presupuesto" lo sube al ítem. Se descarta con las mismas banderas de éxito.
+   */
+  presupuestoPdf: File | null
   /** Éxito PERSISTENTE del envío ("Confirmar y Enviar"): el documento ya se despachó a los contactos. */
   documentoEnviado: boolean
+  /**
+   * Lo que YA le llegó a cada contacto (por su pulseId), por canal. Existe por el envío PARCIAL del
+   * presupuesto: el email puede salir y el WhatsApp no, o el WhatsApp llegarle a un contacto y a otro
+   * no. El reintento pide sólo lo que faltó (`reenvio_*` y `canales` de cada destinatario), y esto
+   * sobrevive al stepper.
+   */
+  enviadosPorContacto: Record<string, CanalEnvio[]>
+  /**
+   * Contactos a los que el ÚLTIMO intento no les llegó, por pulseId, con el motivo. Es la cruz roja
+   * de su fila; el reintento se les manda sólo a ellos (y a los que todavía no se intentó).
+   */
+  contactosFallidos: Record<string, string>
+  /**
+   * Ya se disparó el envío al menos una vez (pasó las validaciones y salió el pedido). Desde ahí no
+   * se puede quitar ningún contacto de la lista: el tilde o la cruz de cada fila tiene que seguir
+   * diciendo la verdad sobre a quién se le mandó.
+   */
+  envioIniciado: boolean
   /** ID que va a llevar el presupuesto ("PRESUP-009"), leído del board al iniciar la operación. */
   nroPresupuesto: string | null
 
@@ -322,7 +347,11 @@ export const initialState: AppState = {
   proformaTipoEntrega: null,
   intentoAvanzar: false,
   documentoEmitido: false,
+  presupuestoPdf: null,
   documentoEnviado: false,
+  enviadosPorContacto: {},
+  contactosFallidos: {},
+  envioIniciado: false,
   nroPresupuesto: null,
 
   enviar: false,
@@ -414,6 +443,10 @@ export type Action =
   /** Se intentó avanzar sin la configuración completa: enciende la marca de los selectores. */
   | { type: 'intentoAvanzar' }
   | { type: 'setDocumentoEmitido'; value: boolean }
+  | { type: 'setPresupuestoPdf'; value: File | null }
+  | { type: 'setEnviadosPorContacto'; value: Record<string, CanalEnvio[]> }
+  | { type: 'setContactosFallidos'; value: Record<string, string> }
+  | { type: 'setEnvioIniciado' }
   | { type: 'setDocumentoEnviado'; value: boolean }
   | { type: 'setNroPresupuesto'; value: string | null }
   | { type: 'reset' }
@@ -612,7 +645,11 @@ export function reducer(state: AppState, action: Action): AppState {
         // Nueva operación: se reinicia el progreso navegable del stepper y las banderas de éxito.
         pasoMaxIdx: 0,
         documentoEmitido: false,
+        presupuestoPdf: null,
         documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
         paso: pasoDelModo(state.paso, action.operacion, state.tipoVenta, state.tipoEntrega),
       }
     }
@@ -679,7 +716,11 @@ export function reducer(state: AppState, action: Action): AppState {
            se está parado. Lo suyo se reinicia igual, pero abajo (`actividad`). */
         pasoMaxIdx: state.operacion === 'REGISTRO DE ACTIVIDADES' ? state.pasoMaxIdx : 0,
         documentoEmitido: false,
+        presupuestoPdf: null,
         documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
         lineas: [],
         // Otro cliente arranca de cero: la rentabilidad forzada vuelve a estar apagada.
         rentabForzadaActiva: false,
@@ -736,7 +777,11 @@ export function reducer(state: AppState, action: Action): AppState {
         paso,
         pasoMaxIdx: 0,
         documentoEmitido: false,
+        presupuestoPdf: null,
         documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
       }
     }
 
@@ -753,7 +798,11 @@ export function reducer(state: AppState, action: Action): AppState {
         paso,
         pasoMaxIdx: 0,
         documentoEmitido: false,
+        presupuestoPdf: null,
         documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
       }
     }
 
@@ -828,8 +877,20 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setDocumentoEmitido':
       return { ...state, documentoEmitido: action.value }
 
+    case 'setPresupuestoPdf':
+      return { ...state, presupuestoPdf: action.value }
+
     case 'setDocumentoEnviado':
       return { ...state, documentoEnviado: action.value }
+
+    case 'setEnviadosPorContacto':
+      return { ...state, enviadosPorContacto: action.value }
+
+    case 'setContactosFallidos':
+      return { ...state, contactosFallidos: action.value }
+
+    case 'setEnvioIniciado':
+      return state.envioIniciado ? state : { ...state, envioIniciado: true }
 
     case 'setNroPresupuesto':
       return { ...state, nroPresupuesto: action.value }

@@ -8,6 +8,8 @@
   --green-dark: #00874d;
   --red: #e2445c;
   --yellow: #ffcb00;
+  /* Amarillo oscuro de advertencia: se lee con texto blanco encima (envío parcial). */
+  --yellow-dark: #b7791f;
   --orange: #fdab3d;
   --text-dark: #323338;
   --text-gray: #676879;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
+import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { NRO_PRESUPUESTO } from '@/data/mock'
@@ -8,20 +9,34 @@ import { addDays } from '@/lib/dates'
 import { PASOS_PRESUPUESTO, indiceDePaso, pasoPrevioAEmision } from '@/lib/pasos'
 import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
-import {
-  crearPresupuesto,
-  emitirPresupuesto,
-  esperarPresupuestoPdf,
-  mondayHabilitado,
-} from '@/services/monday'
+import { adjuntarPdfPresupuesto, crearPresupuesto, mondayHabilitado } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
+import { LOGO_DOCUMENTOS } from './pdf/comun'
+import { generarPresupuestoPdf } from './pdf/generarPresupuestoPdf'
+import { leyendaPagosDe } from './pdf/leyendaPagos'
 import { PresupuestoAGenerar } from './PresupuestoAGenerar'
 import { ResumenEmision } from './ResumenEmision'
+import { VerPresupuestoPdf } from './VerPresupuestoPdf'
 
-/** Estado de la emisión: idle → generando (dispara Make.com) → listo, o error. */
-type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error'
+/**
+ * Estado de la emisión: idle → generando (la app arma el PDF) → listo.
+ *   · 'error': algo que el usuario puede corregir (sin productos, registro incompleto): modal.
+ *   · 'error-pdf': react-pdf no pudo generar el documento. No es del usuario: el botón queda en rojo
+ *     y se le pide contactar al soporte.
+ */
+type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error' | 'error-pdf'
 
-/** Paso 3 de PRESUPUESTAR: revisión, PDF y envío a los contactos. */
+
+/**
+ * Paso 3 de PRESUPUESTAR: revisión, PDF, envío a los contactos y registro.
+ *
+ * Son dos momentos separados:
+ *   1. "Emitir Presupuesto" genera el PDF EN LA APP, con la plantilla que usaba Make.com y los
+ *      importes de la card "Presupuesto a generar" (ver `PresupuestoPdf`). No toca Monday ni
+ *      Make.com. "Ver Presupuesto PDF" lo abre.
+ *   2. "Registrar Presupuesto" recién ahí escribe en Monday: crea el ítem con sus subitems, le
+ *      sube ese mismo PDF y cierra la operación.
+ */
 export function EmisionView() {
   const {
     lineas,
@@ -39,6 +54,8 @@ export function EmisionView() {
     tipoEntrega,
     descuentoPagoActivo,
     actividadesDocumento,
+    presupuestoPdf,
+    descuentosPago,
   } = useApp()
   const dispatch = useDispatch()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
@@ -61,8 +78,10 @@ export function EmisionView() {
     [fechaEmision, diasVigencia],
   )
 
-  /* Generación del PDF: crea el presupuesto en "Emitir" (dispara Make.com) y espera el archivo. */
+  /* Generación del PDF, en el navegador. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
+  // "Registrar Presupuesto" en curso: tapa la pantalla con la ventana de espera.
+  const [registrando, setRegistrando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Datos que faltan para escribir el presupuesto en Monday; frenan la generación.
   const [faltantes, setFaltantes] = useState<string[] | null>(null)
@@ -80,15 +99,16 @@ export function EmisionView() {
   const bloqueo = useBloqueoCredito(resumen.neto, { bloqueante: false })
 
   /**
-   * "Emitir Presupuesto" es el ÚNICO disparador de la creación en Monday (ejecución diferida):
-   * a este paso se llega sin ítem creado. Acá se crea el ítem con todos sus productos, se
-   * `await`ea su confirmación, y recién entonces se pasa a "Emitir" —lo que dispara Make.com— y
-   * se espera el PDF. Un ítem ya creado (reintento tras un fallo del PDF) no se vuelve a crear.
+   * "Emitir Presupuesto": valida y genera el PDF con lo que muestra la card. NO escribe en Monday
+   * —eso lo hace `registrar`—, así que se puede emitir sin dejar nada a medias en el tablero.
+   *
+   * Al emitir, los pasos anteriores quedan en solo lectura (`hayDocumentoEmitido`): el PDF es la
+   * foto de la card, y lo que se registre después tiene que ser lo mismo que dice el documento.
    */
   const generar = async () => {
     if (!cliente) return
-    // Anti-duplicado: si el presupuesto ya se emitió con éxito (incluso tras volver con el stepper),
-    // la acción se anula internamente y NO se vuelve a crear/emitir el documento.
+    // Anti-duplicado: si el presupuesto ya se emitió (incluso tras volver con el stepper), no se
+    // vuelve a generar.
     if (documentoEmitido) return
     if (estado === 'generando') return
     if (bloqueo.frenar()) return
@@ -97,7 +117,8 @@ export function EmisionView() {
       setEstado('error')
       return
     }
-    // Nada se manda a Monday si falta un dato del ítem o de sus subitems.
+    /* Se valida ACÁ y no al registrar: el PDF lleva los mismos datos que después van al ítem y a
+       sus subitems, y no tiene sentido emitir un documento que no se va a poder registrar. */
     const faltan = faltantesPresupuesto(
       { cliente, lineas, fechaEmision, fechaVencimiento: vencimiento, diasVigencia },
       mondayHabilitado(),
@@ -109,8 +130,43 @@ export function EmisionView() {
     setEstado('generando')
     setError(null)
     try {
-      /* La creación del ítem se difiere hasta acá: nace al emitir, no al entrar al paso. Se
-         `await`ea y se corta si algún producto no entró. Idempotente: si ya existe, no se recrea. */
+      const archivo = await generarPresupuestoPdf({
+        numero: nroPresupuesto ?? NRO_PRESUPUESTO,
+        cliente,
+        fechaEmision,
+        fechaVencimiento: vencimiento,
+        lineas,
+        /* La leyenda de formas de pago sólo si el vendedor la tildó en la etapa de productos
+           ("¿Desea aplicar la leyenda de descuentos por forma de pago?"). */
+        leyendaPagos: descuentoPagoActivo ? leyendaPagosDe(descuentosPago) : null,
+        logoSrc: LOGO_DOCUMENTOS,
+      })
+      if (!activo.current) return
+      dispatch({ type: 'setPresupuestoPdf', value: archivo })
+      // Bandera GLOBAL de emisión exitosa: persiste al navegar con el stepper.
+      dispatch({ type: 'setDocumentoEmitido', value: true })
+      setEstado('listo')
+    } catch (e) {
+      if (!activo.current) return
+      console.error('No se pudo generar el PDF del presupuesto', e)
+      setEstado('error-pdf')
+    }
+  }
+
+  /**
+   * "Registrar Presupuesto": el ÚNICO lugar donde el presupuesto nace en Monday. Todo se `await`ea
+   * en orden, con la ventana de espera arriba:
+   *   1. el ítem con su cabecera y TODOS sus productos como subitems (`crearPresupuesto`), y se
+   *      corta si alguno no entró;
+   *   2. el PDF emitido, a la columna file del ítem (`adjuntarPdfPresupuesto`).
+   * Recién con los dos confirmados se cierra la operación.
+   *
+   * Idempotente: si el ítem ya se creó y falló la subida del PDF, reintentar sólo sube el PDF.
+   */
+  const registrar = async () => {
+    if (!cliente || !presupuestoPdf || registrando) return
+    setRegistrando(true)
+    try {
       let id = presupuestoId
       if (!id) {
         const creado = await crearPresupuesto({
@@ -131,8 +187,10 @@ export function EmisionView() {
           actividadesIds: actividadesDocumento.map((a) => a.id),
         })
         if (creado.subitemsCreados !== lineas.length) {
+          if (!activo.current) return
+          setRegistrando(false)
           setError(
-            `El presupuesto se creó pero quedó incompleto: entraron ${creado.subitemsCreados} de ${lineas.length} productos. Revisalo en Monday antes de emitirlo.`,
+            `El presupuesto se creó pero quedó incompleto: entraron ${creado.subitemsCreados} de ${lineas.length} productos. Revisalo en Monday antes de registrarlo.`,
           )
           setEstado('error')
           return
@@ -140,27 +198,15 @@ export function EmisionView() {
         id = creado.id
         dispatch({ type: 'setPresupuestoId', value: id })
       }
-      await emitirPresupuesto(id)
-      const generado = await esperarPresupuestoPdf(id)
-      if (!activo.current) return
-      if (generado) {
-        setEstado('listo')
-        // Bandera GLOBAL de emisión exitosa: persiste al navegar con el stepper.
-        dispatch({ type: 'setDocumentoEmitido', value: true })
-      } else if (mondayHabilitado()) {
-        setError('El PDF está tardando más de lo esperado. Reintentá en unos segundos.')
-        setEstado('error')
-      } else {
-        // Modo local (sin token): no hay archivo real, se muestra la maqueta.
-        setEstado('listo')
-        dispatch({ type: 'setDocumentoEmitido', value: true })
-      }
+      await adjuntarPdfPresupuesto(id, presupuestoPdf)
+      // Registrado con su PDF: se cierra la operación y se reinicia la app.
+      dispatch({ type: 'reset' })
     } catch {
       if (!activo.current) return
       /* Fallo de la API: lo comunica la ventana global de error de Monday. Acá sólo se libera el
-         botón para poder reintentar; no se deja un mensaje propio. */
-      setEstado('idle')
-      dispatch({ type: 'errorMonday', accion: 'emitir el presupuesto' })
+         botón para poder reintentar. */
+      setRegistrando(false)
+      dispatch({ type: 'errorMonday', accion: 'registrar el presupuesto' })
     }
   }
 
@@ -183,8 +229,20 @@ export function EmisionView() {
             vencimiento={vencimiento}
             generando={estado === 'generando'}
             emitido={emitido}
+            errorPdf={estado === 'error-pdf'}
             onGenerar={generar}
-          />
+          >
+            {/* Siempre debajo de emitir: se habilita cuando el PDF ya está generado. El aviso de
+                error va DEBAJO de los dos botones, nunca entre ellos. */}
+            <VerPresupuestoPdf archivo={presupuestoPdf} />
+            {estado === 'error-pdf' && (
+              <div className="pres-pdf-aviso" role="alert">
+                <i className="fas fa-circle-exclamation" /> La app no está pudiendo generar el PDF
+                del presupuesto. Tocá el botón para reintentar; si vuelve a fallar, contactate con el
+                soporte de TAP.
+              </div>
+            )}
+          </ResumenEmision>
         </div>
 
         {/* Bajo `.factura-v2` para reutilizar el desplegable de comprobantes (clases `comp-*` y sus
@@ -214,18 +272,26 @@ export function EmisionView() {
         >
           <i className="fas fa-arrow-left" /> Volver
         </button>
-        {/* Cierra el presupuesto y reinicia la app. Alcanza con el PDF EMITIDO: el envío al cliente
-            es una gestión aparte y puede quedar pendiente. */}
+        {/* Registra el presupuesto en Monday (ítem, subitems y PDF) y cierra la operación. Pide el
+            PDF EMITIDO: es el archivo que se sube al ítem. */}
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!emitido}
-          title={emitido ? undefined : 'Emití el presupuesto para poder finalizar la operación.'}
-          onClick={() => dispatch({ type: 'reset' })}
+          disabled={!presupuestoPdf || registrando}
+          title={presupuestoPdf ? undefined : 'Emití el presupuesto para poder registrarlo.'}
+          onClick={() => void registrar()}
         >
-          <i className="fas fa-flag-checkered" /> Finalizar Operación
+          <i className="fas fa-flag-checkered" /> Registrar Presupuesto
         </button>
       </div>
+
+      {/* Tapa la pantalla mientras se `await`ea el registro en Monday. */}
+      {registrando && (
+        <ModalCargando
+          titulo="Registrando presupuesto..."
+          detalle="Estamos registrando el presupuesto en el sistema junto a sus productos y su PDF. Espera unos segundos"
+        />
+      )}
 
       {faltantes && (
         <AvisoModal
@@ -237,10 +303,10 @@ export function EmisionView() {
         </AvisoModal>
       )}
 
-      {/* La emisión ya no tiene visor: un fallo del PDF se avisa en el mismo modal reutilizado. */}
+      {/* Un fallo al generar el PDF o un registro incompleto se avisan en el mismo modal. */}
       {estado === 'error' && error && (
         <AvisoModal
-          titulo="No se pudo emitir el presupuesto"
+          titulo="No se pudo completar el presupuesto"
           onClose={() => {
             setError(null)
             setEstado('idle')

@@ -881,18 +881,17 @@
 .btn-block--enviar {
   width: 275px;
 }
-/* Fila del botón de envío: el botón y —a su derecha— el detalle del error. */
+/* Fila del botón de envío: el botón y —debajo— el detalle de lo que pasó. */
 .enviar-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   margin-top: 16px;
 }
-/* Detalle de lo último que pasó con el envío, a la derecha del botón. Ocupa el resto del renglón y
-   se lleva la línea entera cuando no entra, en vez de apretar al botón. */
+/* Detalle de lo último que pasó con el envío, debajo del botón y a todo el ancho de la card. */
 .enviar-avisos {
-  flex: 1 1 320px;
+  align-self: stretch;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -917,6 +916,9 @@
 }
 .enviar-aviso--ok {
   color: var(--green-dark);
+}
+.enviar-aviso--warn {
+  color: var(--yellow-dark);
 }
 .enviar-aviso--info i {
   color: var(--primary-blue);

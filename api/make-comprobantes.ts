@@ -35,6 +35,32 @@ export const config = { maxDuration: 60 }
 /** El cuerpo puede venir ya leído por el runtime, según el `Content-Type` que haya reconocido. */
 type Pedido = IncomingMessage & { body?: unknown }
 
+/**
+ * Escenarios de Make a los que este proxy sabe llegar, cada uno con la variable de entorno que guarda
+ * su webhook. El cliente elige cuál con `?escenario=`; sin parámetro es la lectura de comprobantes,
+ * que es lo que hacía esta función desde el principio.
+ *
+ * Es una lista CERRADA a propósito: el nombre que manda el navegador sólo sirve para elegir una de
+ * estas entradas, nunca para armar el destino. Se comparte la función —en vez de una por escenario—
+ * porque el guardián, el reenvío del multipart y el tope de duración son los mismos, y cada función
+ * nueva cuenta contra el cupo del plan de Vercel.
+ */
+const ESCENARIOS: Record<string, { variable: string; servicio: string }> = {
+  comprobantes: { variable: 'MAKE_WEBHOOK_COMPROBANTES', servicio: 'El servicio de lectura' },
+  'envio-presupuesto': {
+    variable: 'MAKE_WEBHOOK_ENVIO_PRESUPUESTO',
+    servicio: 'El servicio de envío de presupuestos',
+  },
+}
+
+/** El escenario que pide la URL (`?escenario=`), o `null` si no es uno de la lista. */
+function escenarioDe(req: IncomingMessage): (typeof ESCENARIOS)[string] | null {
+  const nombre = new URL(req.url ?? '/', 'http://localhost').searchParams.get('escenario')
+  return Object.prototype.hasOwnProperty.call(ESCENARIOS, nombre ?? 'comprobantes')
+    ? ESCENARIOS[nombre ?? 'comprobantes']
+    : null
+}
+
 export default async function handler(req: Pedido, res: ServerResponse): Promise<void> {
   if (req.method !== 'POST') {
     return responder(res, 405, { error: 'Method Not Allowed' })
@@ -50,14 +76,21 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     return responder(res, status, cuerpo)
   }
 
-  const webhook = process.env.MAKE_WEBHOOK_COMPROBANTES?.trim()
+  const escenario = escenarioDe(req)
+  if (!escenario) {
+    return responder(res, 404, { error: 'Escenario desconocido.' })
+  }
+  const webhook = process.env[escenario.variable]?.trim()
   if (!webhook) {
-    return responder(res, 500, { error: 'El servicio de lectura no está configurado.' })
+    return responder(res, 500, { error: `${escenario.servicio} no está configurado.` })
   }
 
   const contentType = req.headers['content-type']
-  if (!contentType?.startsWith('multipart/form-data')) {
-    return responder(res, 400, { error: 'El comprobante tiene que viajar como multipart.' })
+  /* Multipart para la lectura de comprobantes (el archivo va binario) y JSON para el envío del
+     presupuesto (Make lo parsea solo en su estructura; ver `src/services/make/envioPresupuesto.ts`).
+     Los dos se reenvían tal cual, con su `Content-Type`. */
+  if (!contentType?.startsWith('multipart/form-data') && !contentType?.startsWith('application/json')) {
+    return responder(res, 400, { error: 'El documento tiene que viajar como multipart o JSON.' })
   }
 
   const body = await leerCuerpo(req)
@@ -73,7 +106,7 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
     /* No se pudo llegar a Make. Se responde 502 —y no 500— porque el sdk trata los 5xx como fallo
        transitorio y reintenta, que es exactamente lo que corresponde acá. El detalle del error no se
        reenvía: diría el hostname del hook, que es justo lo que esta función existe para no mostrar. */
-    return responder(res, 502, { error: 'No se pudo contactar el servicio de lectura.' })
+    return responder(res, 502, { error: `No se pudo contactar ${escenario.servicio.toLowerCase()}.` })
   }
 
   /* La respuesta del escenario se devuelve intacta —cuerpo y status—: el cliente ya sabe leerla,
@@ -99,6 +132,8 @@ export default async function handler(req: Pedido, res: ServerResponse): Promise
 async function leerCuerpo(req: Pedido): Promise<ArrayBuffer> {
   if (Buffer.isBuffer(req.body)) return bytes(req.body)
   if (typeof req.body === 'string') return bytes(Buffer.from(req.body))
+  /* Un JSON el runtime ya lo parseó a objeto y el stream quedó consumido: se vuelve a serializar. */
+  if (req.body && typeof req.body === 'object') return bytes(Buffer.from(JSON.stringify(req.body)))
 
   const partes: Buffer[] = []
   for await (const trozo of req) partes.push(Buffer.from(trozo))

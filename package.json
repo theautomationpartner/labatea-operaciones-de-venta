@@ -95,9 +95,13 @@
     "test:personas-sync": "esbuild tests/personas-sync.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/personas-sync.test.mjs && node node_modules/.cache/personas-sync.test.mjs",
     "test:db-ssl": "esbuild tests/db-ssl.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/db-ssl.test.mjs && node node_modules/.cache/db-ssl.test.mjs",
     "test:buscador-cliente-teclado": "esbuild tests/buscador-cliente-teclado.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=node_modules/.cache/buscador-cliente-teclado.test.mjs && node node_modules/.cache/buscador-cliente-teclado.test.mjs",
-    "test:asociar-actividades": "esbuild tests/asociar-actividades.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/asociar-actividades.test.cjs && node node_modules/.cache/asociar-actividades.test.cjs"
+    "test:asociar-actividades": "esbuild tests/asociar-actividades.test.tsx --bundle --platform=node --format=cjs --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/asociar-actividades.test.cjs && node node_modules/.cache/asociar-actividades.test.cjs",
+    "test:presupuesto-pdf": "esbuild tests/presupuesto-pdf.test.tsx --bundle --platform=node --format=esm --packages=external --jsx=automatic --tsconfig=tsconfig.json --outfile=node_modules/.cache/presupuesto-pdf.test.mjs && node node_modules/.cache/presupuesto-pdf.test.mjs",
+    "test:envio-presupuesto": "esbuild tests/envio-presupuesto-make.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/envio-presupuesto.test.mjs && node node_modules/.cache/envio-presupuesto.test.mjs",
+    "test:whatsapp-estado": "esbuild tests/whatsapp-estado.test.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --define:import.meta.env.DEV=false --define:import.meta.env.VITE_MONDAY_TOKEN=undefined --outfile=node_modules/.cache/whatsapp-estado.test.mjs && node node_modules/.cache/whatsapp-estado.test.mjs"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.9.0",
     "jsonwebtoken": "^9.0.3",
     "monday-sdk-js": "^1.0.0-beta",
     "otplib": "^13.5.0",

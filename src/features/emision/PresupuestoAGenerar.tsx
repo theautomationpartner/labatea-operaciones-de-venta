@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { CompBody } from '@/features/shared/CompBody'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
-import { descuentoUnitario } from '@/lib/descuentos'
 import { money, moneyU, round2 } from '@/lib/format'
-import { esDolar } from '@/lib/moneda'
+import { bonifUnitDe, esUsd, totalDe, totalesPresupuesto } from '@/lib/presupuestoDoc'
 import type { LineaPresupuesto } from '@/types'
 
 interface PresupuestoAGenerarProps {
@@ -22,32 +21,6 @@ interface PresupuestoAGenerarProps {
 /** Verde de los importes en dólares (mismo tono que la tabla y el resumen del presupuesto). */
 const VERDE_USD = 'var(--green-dark)'
 
-/** La línea está cotizada en dólares. */
-const esUsd = (l: LineaPresupuesto): boolean => esDolar(l.producto.moneda)
-
-/** Importe bonificado por unidad: TODO lo que se descuenta (forma de pago + manual, en cascada).
- *  Es el "Descuento TOTAL" del subelemento (`numeric_mm5w6h1x`). En la moneda del producto. */
-const bonifUnitDe = (l: LineaPresupuesto): number =>
-  descuentoUnitario(l.producto.precio, l.descuento).total
-
-/** Total de la línea, ya bonificado: (precio − bonif) × cantidad. En la moneda del producto. */
-const totalDe = (l: LineaPresupuesto): number =>
-  round2(descuentoUnitario(l.producto.precio, l.descuento).precioFinal * l.cantidad)
-
-/** Suma de los totales (ya bonificados) de las líneas de una moneda (pesos o dólares). */
-const totalMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
-  round2(
-    lineas.filter((l) => esUsd(l) === usd).reduce((acc, l) => acc + totalDe(l), 0),
-  )
-
-/** Suma del BRUTO (precio × cantidad, sin bonificar) de las líneas de una moneda. */
-const brutoMoneda = (lineas: LineaPresupuesto[], usd: boolean): number =>
-  round2(
-    lineas
-      .filter((l) => esUsd(l) === usd)
-      .reduce((acc, l) => acc + l.producto.precio * l.cantidad, 0),
-  )
-
 /**
  * El presupuesto a registrar, con el mismo desplegable que los comprobantes de la factura: una
  * card plegable (mismas clases `comp-*` del sistema de diseño) con la cabecera siempre visible
@@ -65,13 +38,8 @@ export function PresupuestoAGenerar({
 }: PresupuestoAGenerarProps) {
   const [abierta, setAbierta] = useState(true)
 
-  const totalPesos = totalMoneda(lineas, false)
-  const totalUsd = totalMoneda(lineas, true)
-  const hayDolares = lineas.some(esUsd)
-  // Totales estándar en pesos: bruto, descuento (bruto − neto) y gravado (= neto). El presupuesto
-  // NO liquida IVA, así que el IVA es 0 y el Total coincide con el Gravado.
-  const brutoPesos = brutoMoneda(lineas, false)
-  const descuentoPesos = round2(brutoPesos - totalPesos)
+  // Los mismos totales que lleva el PDF (ver `lib/presupuestoDoc`).
+  const { totalPesos, totalUsd, hayDolares, brutoPesos, descuentoPesos } = totalesPresupuesto(lineas)
 
   return (
     <div className="comprobantes">

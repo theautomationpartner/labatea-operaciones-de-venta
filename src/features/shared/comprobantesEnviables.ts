@@ -11,33 +11,69 @@
  * se emitió y que ejecute el envío.
  */
 import {
-  asignarDestinatarios,
   asignarDestinatariosFactura,
   asignarDestinatariosRemito,
   comprobanteFacturaGenerado,
-  dispararEnvio,
   dispararEnvioFactura,
   dispararEnvioRemito,
   enviarProforma,
-  ENVIO_ESTADO,
   ENVIO_FACTURA_ESTADO,
-  getPresupuestoPdf,
   getRemitoPdf,
-  seguirEnvio,
   seguirEnvioFactura,
   seguirEnvioRemito,
 } from '@/services/monday'
+import {
+  armarEnvioPresupuesto,
+  canalesPedidos,
+  detalleFallas,
+  evaluarEnvio,
+  fallidosDe,
+  mensajeParcial,
+  tituloError,
+  type EnviadosPorContacto,
+  type TipoDocumentoMake,
+  type ResultadoEntrega,
+} from '@/lib/envioPresupuesto'
+import { NRO_PRESUPUESTO } from '@/data/mock'
+import { addDays } from '@/lib/dates'
+import { resumenPresupuestoBimoneda } from '@/lib/selectors'
+import { enviarPresupuestoMake, nuevoJobId } from '@/services/make'
+import { confirmarWhatsapp } from '@/services/whatsapp/estadoMensaje'
 import type { AppState } from '@/state/appState'
 import type { MedioEnvio } from '@/types'
 
 /** Cómo terminó el intento de envío. Cada motivo lo comunica el componente a su manera. */
 export type ResultadoEnvio =
-  /** Salió: la automatización del tablero cerró el envío sin error. */
-  | { estado: 'ok' }
+  /**
+   * Salió: la automatización cerró el envío sin error. `enviados`: qué le llegó a cada contacto,
+   * cuando el comprobante lo informa (el presupuesto); el componente lo guarda en el estado.
+   */
+  | { estado: 'ok'; enviados?: EnviadosPorContacto }
+  /**
+   * Algo salió y algo no (presupuesto): un canal entero, o un canal para algunos contactos. El botón
+   * queda en amarillo y habilitado: reintentar pide sólo lo que faltó.
+   */
+  | {
+      estado: 'parcial'
+      enviados: EnviadosPorContacto
+      mensaje: string
+      /** Contactos a los que no les llegó (pulseId → motivo): la cruz roja de su fila. */
+      fallidos: Record<string, string>
+    }
   /** El PDF todavía no existe en su columna. No es un fallo: hay que esperar y reintentar. */
   | { estado: 'sin-documento' }
-  /** El tablero reportó un error de envío (destinatarios, medio, la automatización). */
-  | { estado: 'error-envio' }
+  /**
+   * El envío falló (destinatarios, medio, la automatización). Con `mensaje`, el motivo ya viene
+   * redactado para el usuario —lo manda el escenario de Make— y se muestra tal cual al lado del
+   * botón. Sin él, es un fallo del tablero y lo comunica la ventana global de error de Monday.
+   */
+  | {
+      estado: 'error-envio'
+      mensaje?: string
+      titulo?: string
+      /** Contactos a los que no les llegó, cuando el comprobante lo informa (el presupuesto). */
+      fallidos?: Record<string, string>
+    }
 
 /** Lo que el envío necesita saber para despachar UN comprobante. */
 export interface ComprobanteEnviable {
@@ -58,6 +94,25 @@ export interface ComprobanteEnviable {
    * enviar (el comprobante no se emitió).
    */
   itemId: (state: AppState) => string | null
+  /**
+   * `false` cuando el envío NO sale de un ítem de Monday: el presupuesto se manda por Make con el PDF
+   * que generó la app, antes de registrarse en el tablero. Ahí `itemId` puede ser `null` y no frena.
+   */
+  despachaDesdeItem?: false
+  /**
+   * Antes de enviar, exige que TODOS los contactos elegidos acepten el comprobante y tengan el dato
+   * que pide el medio; si no, se frena con una ventana que dice qué cambiar. Sin esto, sólo se frena
+   * por el dato faltante y se avisa al lado del botón.
+   */
+  validaContactos?: boolean
+  /**
+   * El resultado se informa contacto por contacto (el presupuesto): cada fila muestra su estado
+   * —cargando, tilde verde o cruz roja—, el reintento va sólo a los que faltan y, desde el primer
+   * envío, no se puede quitar a nadie de la lista.
+   */
+  estadoPorContacto?: boolean
+  /** Ventana que se muestra al querer enviar sin haber emitido. Sin esto, se usa la genérica. */
+  avisoNoEmitido?: { titulo: string; texto: string }
   /**
    * El comprobante ya se emitió y por lo tanto se puede enviar. Es una pregunta aparte del
    * `itemId` porque no siempre coinciden: la factura se emite en varios comprobantes y el ítem
@@ -87,22 +142,116 @@ export interface ComprobanteEnviable {
 
 /* ===== Los comprobantes que hoy se envían ===== */
 
+/**
+ * El presupuesto se envía por un escenario de Make, NO desde Monday: el PDF lo genera la app al
+ * emitir y el ítem recién nace al registrar, así que al momento de enviar no hay ítem del cual
+ * despachar. Se le manda al escenario el PDF y los datos del envío (ver `EnvioPresupuestoMake`), y
+ * el escenario contesta 200 o 400.
+ */
 const PRESUPUESTO: ComprobanteEnviable = {
   id: 'presupuesto',
   articulo: 'el',
   nombre: 'presupuesto',
   itemId: (s) => s.presupuestoId,
-  emitido: (s) => s.documentoEmitido,
+  despachaDesdeItem: false,
+  estadoPorContacto: true,
+  // Emitido = el PDF ya se generó en la app.
+  emitido: (s) => s.presupuestoPdf != null,
+  validaContactos: true,
+  avisoNoEmitido: {
+    titulo: 'Primero generá el presupuesto PDF',
+    texto:
+      'Todavía no se generó el PDF del presupuesto, así que no hay nada que enviar. Tocá "Emitir Presupuesto" y, cuando esté listo, volvé a enviar.',
+  },
   // El presupuesto no compromete crédito: se envía aunque el cliente esté excedido.
   frenaPorCredito: false,
-  async enviar({ itemId, contactoIds, medio, onProgreso }) {
-    // El PDF vive en la columna file del propio ítem.
-    if (!(await getPresupuestoPdf(itemId))) return { estado: 'sin-documento' }
-    await asignarDestinatarios(itemId, contactoIds, medio)
-    await dispararEnvio(itemId)
-    const final = await seguirEnvio(itemId, onProgreso)
-    return final === ENVIO_ESTADO.error ? { estado: 'error-envio' } : { estado: 'ok' }
+  async enviar({ state, medio }) {
+    const pdf = state.presupuestoPdf
+    if (!pdf || !state.cliente) return { estado: 'sin-documento' }
+    const bimoneda = resumenPresupuestoBimoneda(state.lineas, state.tasaCambio ?? 0)
+    return enviarPorMake(state, medio, pdf, {
+      tipo: 'PRESUPUESTO',
+      numero: state.nroPresupuesto ?? NRO_PRESUPUESTO,
+      fechaVencimiento: addDays(state.fechaEmision, state.diasVigencia),
+      totalPesos: bimoneda.ars.neto,
+      totalDolares: bimoneda.usd.neto,
+    })
   },
+}
+
+/**
+ * Envío de un documento que generó la app por el escenario de Make: el mismo para el presupuesto y
+ * el remito. Arma el pedido (sólo lo que le falta a cada contacto), lo manda, confirma cada WhatsApp
+ * contra 360Messenger y evalúa contacto por contacto.
+ */
+async function enviarPorMake(
+  state: AppState,
+  medio: MedioEnvio,
+  pdf: File,
+  doc: {
+    tipo: TipoDocumentoMake
+    numero: string
+    fechaVencimiento: string | null
+    totalPesos: number | null
+    totalDolares: number | null
+  },
+): Promise<ResultadoEnvio> {
+  if (!state.cliente) return { estado: 'sin-documento' }
+  const datos = armarEnvioPresupuesto({
+    jobId: nuevoJobId(),
+    tipo: doc.tipo,
+    numero: doc.numero,
+    fechaEmision: state.fechaEmision,
+    fechaVencimiento: doc.fechaVencimiento,
+    archivo: pdf.name,
+    totalPesos: doc.totalPesos,
+    totalDolares: doc.totalDolares,
+    cliente: state.cliente,
+    vendedor: state.vendedor,
+    medio,
+    contactos: state.contactos,
+    // Tras un envío parcial, lo que ya le llegó a cada contacto no se vuelve a pedir.
+    yaEnviados: state.enviadosPorContacto,
+  })
+  // Ya le llegó a cada uno todo lo que pide el medio actual: no hay nada que mandar.
+  if (canalesPedidos(datos).length === 0) return { estado: 'ok', enviados: state.enviadosPorContacto }
+  const respuesta = await enviarPresupuestoMake(datos, pdf)
+  /* No se sabe qué pasó del otro lado: a nadie de este pedido se lo da por enviado, y todos llevan
+     la cruz con el motivo. */
+  if (respuesta.tipo === 'fallo') {
+    return {
+      estado: 'error-envio',
+      mensaje: respuesta.mensaje,
+      fallidos: Object.fromEntries(datos.destinatarios.map((d) => [d.pulseId, respuesta.mensaje])),
+    }
+  }
+
+  /* Un 200 no alcanza: cuenta cada ítem de `enviosEmail` / `enviosWhatsapp`. Y que Make diga que
+     mandó un WhatsApp tampoco: cada uno se confirma contra 360Messenger. */
+  const resultados = {
+    email: respuesta.resultados.email,
+    whatsapp: await verificarWhatsapps(respuesta.resultados.whatsapp),
+  }
+  const evaluacion = evaluarEnvio(datos, resultados, state.enviadosPorContacto)
+  if (evaluacion.estado === 'ok') return { estado: 'ok', enviados: evaluacion.enviados }
+  if (evaluacion.estado === 'parcial') {
+    return {
+      estado: 'parcial',
+      enviados: evaluacion.enviados,
+      mensaje: mensajeParcial(evaluacion.fallas, evaluacion.enviados, respuesta.mensaje),
+      fallidos: fallidosDe(evaluacion.fallas),
+    }
+  }
+  return {
+    estado: 'error-envio',
+    titulo: tituloError(evaluacion.fallas),
+    fallidos: fallidosDe(evaluacion.fallas),
+    mensaje:
+      respuesta.mensaje ||
+      (evaluacion.fallas.some((f) => f.motivo)
+        ? `No llegó: ${detalleFallas(evaluacion.fallas)}.`
+        : 'El servicio no confirmó el envío. Probá de nuevo en unos minutos.'),
+  }
 }
 
 const FACTURA: ComprobanteEnviable = {
@@ -156,6 +305,49 @@ const PROFORMA: ComprobanteEnviable = {
     await enviarProforma(itemId, contactoIds, medio)
     return { estado: 'ok' }
   },
+}
+
+/**
+ * Confirma contra 360Messenger cada WhatsApp que Make dio por enviado. Se consultan todos a la vez.
+ *
+ * Un WhatsApp cuenta como enviado SÓLO si 360Messenger lo confirma. Si dice que falló, o si no se
+ * puede confirmar (sin `messageId`, sin la key, 360Messenger caído, o sigue en cola al terminar la
+ * espera), ese envío queda como no enviado —y el total, según el caso, en error o parcial— con un
+ * motivo que lo distingue. Antes, lo que no se podía confirmar se daba por bueno, y un número
+ * inexistente salió como "enviado exitosamente".
+ */
+export async function verificarWhatsapps(
+  items: readonly ResultadoEntrega[],
+  /** Cada cuánto y cuántas veces se pregunta mientras siga en cola (ver `confirmarWhatsapp`). */
+  espera?: { intentos?: number; intervalo?: number },
+): Promise<ResultadoEntrega[]> {
+  return Promise.all(
+    items.map(async (item): Promise<ResultadoEntrega> => {
+      if (!item.ok) return item
+      if (!item.messageId) {
+        console.warn('Make confirmó un WhatsApp sin messageId: no se puede verificar en 360Messenger.')
+        return { ...item, ok: false, motivo: 'no se pudo confirmar el envío en 360Messenger' }
+      }
+      const confirmacion = await confirmarWhatsapp(item.messageId, espera)
+      if (confirmacion.estado === 'enviado') return item
+      if (confirmacion.estado === 'fallido') return { ...item, ok: false, motivo: confirmacion.motivo }
+      /* Sin confirmar no es lo mismo que fallido: el mensaje puede salir igual un rato después. El
+         motivo lo dice, para que el vendedor revise antes de reintentar y no lo mande dos veces. */
+      console.warn(
+        `WhatsApp ${item.messageId} sin confirmar en 360Messenger (${
+          confirmacion.estado === 'pendiente' ? 'sigue en cola' : confirmacion.motivo
+        }).`,
+      )
+      return {
+        ...item,
+        ok: false,
+        motivo:
+          confirmacion.estado === 'pendiente'
+            ? 'WhatsApp todavía no confirmó la entrega; revisá en unos minutos si llegó antes de reintentar'
+            : 'no se pudo confirmar el envío en 360Messenger',
+      }
+    }),
+  )
 }
 
 /** Todos los comprobantes enviables, por su clave. */

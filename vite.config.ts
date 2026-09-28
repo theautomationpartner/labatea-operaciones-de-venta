@@ -27,6 +27,37 @@ export default defineConfig(({ mode }) => {
       }
     : {}
 
+  /* Envío del presupuesto a los contactos. En producción lo resuelve la misma función
+     (`/api/make-comprobantes?escenario=envio-presupuesto`), con `MAKE_WEBHOOK_ENVIO_PRESUPUESTO`. */
+  const webhookEnvio = env.MAKE_WEBHOOK_ENVIO_PRESUPUESTO?.trim()
+  const proxyEnvio: Record<string, ProxyOptions> = webhookEnvio
+    ? {
+        '/make-envio-presupuesto': {
+          target: new URL(webhookEnvio).origin,
+          changeOrigin: true,
+          rewrite: () => new URL(webhookEnvio).pathname,
+          timeout: 120_000,
+          proxyTimeout: 120_000,
+        },
+      }
+    : {}
+
+  /* Estado de un WhatsApp enviado por 360Messenger. En producción lo resuelve `api/whatsapp-estado.ts`
+     con la misma variable; acá el proxy de Vite pone la API key del lado del servidor, así tampoco
+     llega al navegador. `/messenger360-estado?id=…` → `/v2/message/status?id=…`. */
+  // La de producción si está; si no, la del número de testeo (ver `api/whatsapp-estado.ts`).
+  const clave360 = (env.WHATSAPP_API_KEY || env.WHATSAPP_API_KEY_TEST)?.trim()
+  const proxy360: Record<string, ProxyOptions> = clave360
+    ? {
+        '/messenger360-estado': {
+          target: 'https://api.360messenger.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/messenger360-estado/, '/v2/message/status'),
+          headers: { Authorization: `Bearer ${clave360}` },
+        },
+      }
+    : {}
+
   return {
   plugins: [react()],
   resolve: {
@@ -41,6 +72,8 @@ export default defineConfig(({ mode }) => {
     // Proxy hacia la API de Monday en desarrollo: evita CORS al pegar desde el navegador.
     proxy: {
       ...proxyMake,
+      ...proxyEnvio,
+      ...proxy360,
       /* Subida de archivos a columnas `file`. Va ANTES de '/monday-api' porque Vite matchea por
          prefijo y '/monday-api-file' también empieza con '/monday-api'. */
       '/monday-api-file': {

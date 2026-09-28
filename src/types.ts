@@ -694,7 +694,11 @@ export interface Contacto {
   ok: boolean
 }
 
-export type LogTipo = 'ok' | 'err' | 'info'
+/** Canal por el que sale un documento a UN contacto. */
+export type CanalEnvio = 'email' | 'whatsapp'
+
+/** 'warn': algo salió a medias (el envío parcial del presupuesto). */
+export type LogTipo = 'ok' | 'err' | 'info' | 'warn'
 
 export interface LogEntry {
   id: string

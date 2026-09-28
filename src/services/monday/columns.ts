@@ -1425,6 +1425,11 @@ export const MONEDA_LABEL: Record<'Pesos' | 'Dólares', string> = {
 
 /** Label de "Emitir" en la columna de estado del PDF (color_mkw81a0d). */
 export const PRESUP_ESTADO_EMITIR_LABEL = 'Emitir'
+/**
+ * Label de "Emitido" en la misma columna. Lo pone la app al subir el PDF que genera ella misma
+ * (`adjuntarPdfPresupuesto`): el estado queda igual que cuando lo cerraba el escenario de Make.
+ */
+export const PRESUP_ESTADO_EMITIDO_LABEL = 'Emitido'
 /** Label de vigencia al crear el presupuesto (color_mm57cmkt). */
 export const PRESUP_VIGENCIA_LABEL = 'Vigente'
 /** Índice de "A Enviar" en la columna de estado de envío (color_mm48mc2p). Se usa el índice

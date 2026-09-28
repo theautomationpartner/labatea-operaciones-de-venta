@@ -23,7 +23,7 @@ const ENDPOINT = import.meta.env.DEV ? '/make-comprobantes' : '/api/make-comprob
  * escenario, que gasta operaciones de la cuenta. En desarrollo no hay iframe ni sesión, y el proxy
  * de Vite pega derecho al webhook, así que la cabecera simplemente no viaja.
  */
-async function cabeceraSesion(): Promise<Record<string, string>> {
+export async function cabeceraSesion(): Promise<Record<string, string>> {
   const sesion = await getSessionToken()
   const device = leerDeviceToken()
   return {
