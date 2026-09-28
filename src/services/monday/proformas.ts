@@ -14,7 +14,7 @@ import { memoPorCliente } from './cache'
 import type { MedioEnvio, PresupuestoProducto, TipoEntrega, TipoVenta } from '@/types'
 import { BOARDS, COL, MEDIO_ENVIO_LABELS, personCol } from './columns'
 import type { LineaVenta } from './venta'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { mondayApi, mondayHabilitado, mondaySubirArchivo } from './sdk'
 
 /** Una proforma del cliente, con todos sus productos. */
 export interface ProformaVigente {
@@ -284,6 +284,11 @@ const numId = (v?: string): number | null => {
 
 /** Datos para materializar la proforma en Monday. Vienen del cobro de contado. */
 export interface DatosProforma {
+  /**
+   * `false`: crear el ítem y sus subitems SIN poner el estado del PDF en "Emitir" (el PDF lo generó la
+   * app y se sube aparte, ver `adjuntarPdfProforma`). Por defecto se dispara, como siempre.
+   */
+  dispararPdf?: boolean
   clienteId: string
   /** ID del vendedor de la operación (usuario de Monday). Se asigna en la columna Person. */
   vendedorId?: string | null
@@ -310,6 +315,55 @@ export interface DatosProforma {
 /* La alícuota de cada línea sale de `alicuotaDeclarada`: la del producto resuelta contra las tasas
    que acepta el comprobante. Es la MISMA que usan la card de la proforma y la factura que después
    se emite, así el total de la proforma no puede divergir de ninguna de las dos. */
+
+/**
+ * El número que va a llevar la próxima proforma ("PROFORMA-037"): el "🤖ID Proforma" de la última
+ * creada, más uno. El número lo asigna la customKey del tablero AL CREAR el ítem, pero el PDF se
+ * genera antes; igual que el del presupuesto (`getProximoNroPresupuesto`), se anticipa. Si otra
+ * proforma se registra en el medio, el número del PDF y el del tablero pueden no coincidir.
+ */
+export async function getProximoNroProforma(): Promise<string | null> {
+  if (!mondayHabilitado()) return null
+  const data = await mondayApi<{
+    boards: { items_page: { items: { column_values: { text: string | null }[] }[] } }[]
+  }>(
+    `query {
+      boards(ids: [${BOARDS.proformas}]) {
+        items_page(limit: 1, query_params: {order_by: [{column_id: "__creation_log__", direction: desc}]}) {
+          items { column_values(ids: ["${COL.proforma.pulseId}"]) { text } }
+        }
+      }
+    }`,
+  )
+  const ultimo = data.boards[0]?.items_page?.items[0]?.column_values[0]?.text?.trim()
+  const m = ultimo ? /^(.*?)(\d+)$/.exec(ultimo) : null
+  if (!m) return null
+  const [, prefijo, numero] = m
+  return `${prefijo}${String(Number(numero) + 1).padStart(numero.length, '0')}`
+}
+
+/**
+ * Sube el PDF que generó la app a "🤖PDF Proforma" y deja "🤖Estado Emision Prof" en "Emitido". Nunca
+ * en "Emitir": eso dispara el escenario que genera otro PDF. Primero el archivo, después el estado.
+ */
+export async function adjuntarPdfProforma(itemId: string, archivo: File): Promise<void> {
+  if (!mondayHabilitado()) return
+  /* El id va INLINE en la mutación: en un multipart la única variable es el archivo. */
+  const id = Number(itemId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error(`Id de proforma inválido: ${itemId}`)
+  await mondaySubirArchivo(
+    `mutation ($file: File!) { add_file_to_column(item_id: ${id}, column_id: "${COL.proforma.pdf}", file: $file) { id } }`,
+    archivo,
+  )
+  const idx = await indiceEstadoProforma(COL.proforma.estadoPdf, 'Emitido')
+  if (idx == null) return
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    { id: itemId, board: BOARDS.proformas, cv: JSON.stringify({ [COL.proforma.estadoPdf]: { index: idx } }) },
+  )
+}
 
 /** Resultado de crear la proforma: su id y cuántos subelementos entraron. */
 export interface ProformaCreada {
@@ -450,7 +504,10 @@ export async function crearProforma(datos: DatosProforma): Promise<ProformaCread
     }
   }
 
-  // 3) Trigger PDF: estado "Emitir" (por índice dinámico de la metadata).
+  /* 3) Trigger PDF: estado "Emitir" (por índice dinámico de la metadata). Desde que el PDF de la
+     venta CONTADO lo genera la app, ese flujo lo saltea (`dispararPdf: false`): "Emitir" haría que el
+     escenario generara un segundo PDF. */
+  if (datos.dispararPdf === false) return { id: itemId, subitemsCreados }
   const idx = await indiceEstadoProforma(COL.proforma.estadoPdf, PROFORMA_PDF_EMITIR)
   if (idx != null) {
     await mondayApi(

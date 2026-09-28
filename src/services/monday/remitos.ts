@@ -31,7 +31,7 @@ import {
   REMITO_VENTA_INDEX,
 } from './columns'
 import { byId, numCol, valor, type MondayItem } from './parse'
-import { mondayApi, mondayHabilitado } from './sdk'
+import { mondayApi, mondayHabilitado, mondaySubirArchivo } from './sdk'
 
 /** Un remito del cliente con mercadería entregada que todavía hay que facturar. */
 export interface RemitoPendiente {
@@ -827,6 +827,56 @@ export async function emitirRemito(
     }`,
     { id: itemId, board: BOARDS.remitos, cv: JSON.stringify(cv) },
   )
+}
+
+/**
+ * Registra el remito que emitió la app: el reemplazo de `emitirRemito` desde que los PDF los genera
+ * la app y no Make.com. En UNA mutación escribe las observaciones, vincula la hoja del talonario, el
+ * "🤖Nro Remito" ("Nº00000007", como lo dejaba el escenario) y deja "🤖Estado Emision Remito" en
+ * "Emitido". NUNCA en "Emitir": eso dispara la automatización que genera otro PDF.
+ */
+export async function registrarRemito(
+  itemId: string,
+  datos: { observaciones: string; hojaTalonarioId: string; numeroHoja: string },
+): Promise<void> {
+  if (!mondayHabilitado()) return
+  const idx = await indiceEstadoRemito(COL.remito.estadoEmision, REMITO_EMISION_ESTADO.emitido)
+  const cv: Record<string, unknown> = {
+    [COL.remito.observaciones]: datos.observaciones ?? '',
+    [COL.remito.nroRemito]: datos.numeroHoja ? `Nº${datos.numeroHoja}` : '',
+  }
+  if (idx != null) cv[COL.remito.estadoEmision] = { index: idx }
+  if (Number.isFinite(Number(datos.hojaTalonarioId))) {
+    cv[COL.remito.numRemitoTalonario] = { item_ids: [Number(datos.hojaTalonarioId)] }
+  }
+  await mondayApi(
+    `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
+      change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }
+    }`,
+    { id: itemId, board: BOARDS.remitos, cv: JSON.stringify(cv) },
+  )
+}
+
+/**
+ * Sube los dos PDF que generó la app a sus columnas del remito: el de VENTA a "🤖RTO Enviar PDF" y
+ * el PREIMPRESO a "🤖RTO PDF PREIMPRESO". Se `await`ean los dos: si uno falla, el registro falla y
+ * se puede reintentar.
+ */
+export async function adjuntarPdfsRemito(
+  itemId: string,
+  pdfs: { venta: File; preimpreso: File },
+): Promise<void> {
+  if (!mondayHabilitado()) return
+  /* El id va INLINE en la mutación: en un multipart la única variable es el archivo. Por eso se
+     exige que sea numérico, y no un texto cualquiera metido en la query. */
+  const id = Number(itemId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error(`Id de remito inválido: ${itemId}`)
+  const subir = (columna: string, archivo: File) =>
+    mondaySubirArchivo(
+      `mutation ($file: File!) { add_file_to_column(item_id: ${id}, column_id: "${columna}", file: $file) { id } }`,
+      archivo,
+    )
+  await Promise.all([subir(COL.remito.pdf, pdfs.venta), subir(COL.remito.pdfPreimpreso, pdfs.preimpreso)])
 }
 
 /* ===== Conciliación del remito ANTERIOR: Pendientes de Entrega + subelemento de la Venta ===== */

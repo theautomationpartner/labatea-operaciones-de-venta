@@ -99,19 +99,39 @@ nroEnElTablero = ''
 assert.equal(await leerNroRemito(REMITO_ID), '', 'un remito sin número devuelve vacío, no un error')
 
 /* ---------- 4) El ORDEN, en la vista ----------
-   La lectura tiene que ir DESPUÉS de esperar el PDF —que es la señal de que la emisión terminó— y
-   ANTES de la conciliación. Se afirma sobre el código de la vista porque el orden vive ahí, y
-   moverlo no rompe el typecheck ni ningún otro test: simplemente el número deja de existir al
-   momento de leerlo y todos los subítems nacen en blanco, en silencio. */
+   Desde que los PDF los genera la app, el número del remito ya no lo asigna el tablero al terminar
+   la emisión: es el de la HOJA del talonario, reservada al emitir. La conciliación tiene que recibir
+   ese número y correr DESPUÉS de registrar el remito y subirle los PDF. Se afirma sobre el código de
+   la vista porque el orden vive ahí, y moverlo no rompe el typecheck ni ningún otro test. */
 const vista = (await import('node:fs')).readFileSync(
   'src/features/remitir/RemitoEmisionView.tsx',
   'utf8',
 )
-const espera = vista.indexOf('await esperarRemitoPdf(')
-const lectura = vista.indexOf('leerNroRemito(')
+const registra = vista.indexOf('await registrarRemito(')
+const adjunta = vista.indexOf('await adjuntarPdfsRemito(')
 const concilia = vista.indexOf('afectarEntregaAnterior(')
-assert.ok(espera > 0 && lectura > 0 && concilia > 0, 'las tres piezas siguen en la vista')
-assert.ok(espera < lectura, 'el número se lee DESPUÉS de que la emisión termina')
-assert.ok(lectura < concilia, 'y la conciliación corre DESPUÉS de tener el número')
+assert.ok(registra > 0 && adjunta > 0 && concilia > 0, 'las tres piezas siguen en la vista')
+assert.ok(registra < concilia && adjunta < concilia, 'la conciliación corre DESPUÉS de registrar el remito con sus PDF')
+assert.ok(
+  vista.slice(concilia, vista.indexOf('.catch(', concilia)).includes('`Nº${numeroHoja}`'),
+  'y lleva el número de la hoja del talonario, en el formato del tablero ("Nº00000007")',
+)
+assert.ok(!vista.includes('esperarRemitoPdf('), 'ya no se espera el PDF de Make: lo genera la app')
+
+/* ---------- 5) La hoja del talonario, en dos pasos ----------
+   Emitir sólo la ASIGNA (numera los PDF); registrar confirma que siga libre y la TOMA, antes de crear
+   el remito. Si emitir la tomara, una operación abandonada dejaría hojas gastadas sin remito. */
+const emitir = vista.slice(vista.indexOf('const emitir = async'), vista.indexOf('const registrar = async'))
+const registrar = vista.slice(vista.indexOf('const registrar = async'), vista.indexOf('if (!cliente) return null'))
+assert.ok(!emitir.includes('marcarHojaUsada('), 'emitir no toma la hoja en Monday')
+const valida = registrar.indexOf('await hojaDisponible(')
+const toma = registrar.indexOf('await marcarHojaUsada(')
+const crea = registrar.indexOf('await crearRemito(')
+assert.ok(valida > 0 && toma > 0 && crea > 0, 'registrar valida, toma la hoja y crea el remito')
+assert.ok(valida < toma && toma < crea, 'primero confirma que siga libre, la toma, y recién ahí crea el remito')
+assert.ok(
+  registrar.slice(valida, toma).includes("dispatch({ type: 'descartarEmisionRemito' })"),
+  'si la hoja está ocupada, se descarta la emisión para volver a emitir con otra',
+)
 
 console.log('OK · el subelemento del pendiente nace con el Nro de Remito del papel ya emitido')

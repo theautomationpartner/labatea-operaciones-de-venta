@@ -51,8 +51,6 @@ const base = {
   fechaEmision: '28/09/2026',
   fechaVencimiento: '13/10/2026',
   archivo: 'Agropecuaria Ñandú S.A.-PRESUP-009.pdf',
-  totalPesos: 434101.354,
-  totalDolares: 1188.21,
   cliente: { id: '111', name: 'Agropecuaria Ñandú S.A.', cuit: '30-71234567-8' },
   vendedor: { id: '222', name: 'Martín Gómez' },
 } as const
@@ -67,19 +65,67 @@ async function main() {
     fechaEmision: '2026-09-28',
     fechaVencimiento: '2026-10-13',
     archivo: 'Agropecuaria Ñandú S.A.-PRESUP-009.pdf',
-    totalPesos: 434101.35,
-    totalDolares: 1188.21,
-  }, 'documento con fechas ISO e importes a dos decimales')
+  }, 'documento con fechas ISO y sin importes')
   igual(datos.appJobId, 'job_1', 'el id del envío viaja como appJobId')
   igual(datos.vendedor, { pulseId: '222', nombre: 'Martín Gómez' }, 'vendedor')
   igual(datos.cliente, { pulseId: '111', razonSocial: 'Agropecuaria Ñandú S.A.', cuit: '30-71234567-8' }, 'cliente')
-  igual(datos.destinatarios[0], {
+  const { mensaje: mensajeAna, ...ana0 } = datos.destinatarios[0]
+  igual(ana0, {
     pulseId: '91',
     nombre: 'Ana',
     email: 'ana@campo.com',
     whatsapp: '+5492494000001',
     canales: ['email', 'whatsapp'],
   }, 'con "Ambos" y los dos datos, va por los dos canales')
+
+  console.log('\nCaso 1b · El mensaje que acompaña al PDF, ya completo en cada destinatario:')
+  igual(
+    mensajeAna.whatsapp,
+    '👋*¡Hola Agropecuaria Ñandú S.A. !*\n' +
+      'Te adjuntamos el *PRESUPUESTO* emitido el dia 28-09-2026. Cualquier duda estamos a tu disposicion.\n' +
+      '\n' +
+      '*Fecha de Vencimiento:* 13-10-2026\n' +
+      '\n' +
+      '*LA BATEA*',
+    'presupuesto por WhatsApp: saluda al cliente, con las dos fechas en DD-MM-YYYY',
+  )
+  igual(
+    mensajeAna.email,
+    '👋<b>¡Hola Agropecuaria Ñandú S.A.!</b><br>' +
+      'Te adjuntamos el <b>presupuesto</b> emitido el <b>Fecha de Emisión:</b> 28-09-2026. Cualquier duda estamos a tu disposición.<br><br>' +
+      '<b>Fecha de Vencimiento:</b> 13-10-2026<br><br>' +
+      '<b>LA BATEA</b>',
+    'presupuesto por email, en HTML',
+  )
+  igual(
+    datos.destinatarios[1].mensaje.whatsapp.split('\n')[0],
+    '👋*¡Hola Agropecuaria Ñandú S.A. !*',
+    'en el presupuesto, todos los contactos reciben el saludo al cliente',
+  )
+  const remitoMsj = armarEnvioPresupuesto({
+    ...base,
+    tipo: 'REMITO',
+    numero: '0091-00000007',
+    fechaVencimiento: null,
+    medio: 'Ambos',
+    contactos: [ana, beto],
+  })
+  igual(
+    remitoMsj.destinatarios[0].mensaje.whatsapp,
+    '👋*¡Hola Ana!*\n' +
+      'Te adjuntamos el *REMITO* con 📅*Fecha de emision: 28-09-2026*. \n' +
+      'Cualquier consulta estamos a tu disposicion.\n' +
+      '\n' +
+      '*LA BATEA*',
+    'remito por WhatsApp: saluda a cada contacto por su nombre',
+  )
+  igual(
+    remitoMsj.destinatarios[1].mensaje.email,
+    '👋 <b>¡Hola Beto!</b><br>' +
+      'Te adjuntamos el <b>remito</b> emitido el 📅 <b>Fecha de Emisión:</b> 28-09-2026. Cualquier duda estamos a tu disposición.<br><br>' +
+      '<b>LA BATEA</b>',
+    'remito por email: el de Beto lo saluda a él',
+  )
   igual(datos.destinatarios[1].canales, ['email'], 'con "Ambos" y sólo email, va sólo por email')
   igual(datos.destinatarios[1].whatsapp, null, 'el dato que falta viaja como null, no como ""')
   igual(datos.destinatarios[2].canales, ['whatsapp'], 'con "Ambos" y sólo WhatsApp, va sólo por WhatsApp')
@@ -171,8 +217,6 @@ async function main() {
     numero: '0091-00000007',
     archivo: 'Agropecuaria Ñandú S.A.-REMITO 0091-00000007.pdf',
     fechaVencimiento: null,
-    totalPesos: null,
-    totalDolares: null,
     medio: 'Email',
     contactos: [ana],
   })
@@ -184,10 +228,8 @@ async function main() {
       fechaEmision: '2026-09-28',
       fechaVencimiento: null,
       archivo: 'Agropecuaria Ñandú S.A.-REMITO 0091-00000007.pdf',
-      totalPesos: null,
-      totalDolares: null,
     },
-    'documento.tipo = "REMITO", sin vencimiento ni importes',
+    'documento.tipo = "REMITO", sin vencimiento',
   )
   igual(datos.documento.tipo, 'PRESUPUESTO', 'el presupuesto sigue saliendo como "PRESUPUESTO"')
 

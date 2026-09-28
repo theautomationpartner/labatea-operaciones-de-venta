@@ -8,6 +8,24 @@
 import { BOARDS, COL } from './columns'
 import { mondayApi, mondayHabilitado } from './sdk'
 
+/**
+ * Lo que el talonario imprime en los PDF del remito: el número y el pie de imprenta con el CAI.
+ * Las fechas van en dd/MM/yyyy, como las muestra la app.
+ */
+export interface DatosImprenta {
+  /** "0091". */
+  puntoVenta: string
+  /** El correlativo de la hoja: "00000007". */
+  numeroHoja: string
+  /** Rango de numeración del talonario, con los ceros del papel: "00000001" / "00000020". */
+  desde: string
+  hasta: string
+  habilitacionImprenta: string
+  cai: string
+  vencimientoCai: string
+  fechaImpresion: string
+}
+
 /** Talonario activo + primera hoja disponible, listos para numerar el remito. */
 export interface HojaTalonario {
   /** ID del subítem (hoja) a linkear en el remito. */
@@ -16,6 +34,45 @@ export interface HojaTalonario {
   hojaNombre: string
   /** Nombre del talonario activo (ítem principal "En USO"). */
   talonarioNombre: string
+  /** Número y pie de imprenta, para los PDF. */
+  imprenta: DatosImprenta
+}
+
+/**
+ * El número del remito en los PDF: punto de venta y correlativo, como un comprobante con CAI
+ * ("0091-00000007").
+ */
+export const numeroRemito = (d: Pick<DatosImprenta, 'puntoVenta' | 'numeroHoja'>): string =>
+  [d.puntoVenta, d.numeroHoja].filter(Boolean).join('-')
+
+/** yyyy-MM-dd (columna date de Monday) → dd/MM/yyyy. Vacío si no hay fecha. */
+const fechaAr = (iso: string | null | undefined): string => {
+  const [y, m, d] = (iso ?? '').split('-')
+  return y && m && d ? `${d}/${m}/${y}` : ''
+}
+
+/** Un número del rango, con los 8 dígitos del papel (en Monday puede estar cargado como "1"). */
+const conCeros = (v: string): string => (/^\d+$/.test(v) ? v.padStart(8, '0') : v)
+
+/** Lo que devuelve Monday de una columna de estas: el texto y, en las fechas, el valor crudo. */
+interface CV {
+  id: string
+  text?: string | null
+  value?: string | null
+  index?: number | null
+}
+
+const texto = (cvs: CV[], id: string): string => (cvs.find((c) => c.id === id)?.text ?? '').trim()
+
+/** Fecha de una columna date: se lee del `value` ({"date":"2026-10-30"}), no del texto formateado. */
+const fecha = (cvs: CV[], id: string): string => {
+  const cv = cvs.find((c) => c.id === id)
+  try {
+    const v = cv?.value ? (JSON.parse(cv.value) as { date?: string }) : null
+    return fechaAr(v?.date ?? cv?.text ?? '')
+  } catch {
+    return fechaAr(cv?.text ?? '')
+  }
 }
 
 /**
@@ -40,15 +97,31 @@ const indiceDeLabel = (settingsStr: string | undefined, label: string): number |
 interface SubHoja {
   id: string
   name: string
-  column_values: { id: string; index?: number | null }[]
+  column_values: CV[]
 }
 
 /** Un talonario con su estado (color_mm5hmyaj) y sus hojas, tal como vuelve de la consulta. */
 interface TalonarioItem {
   id: string
   name: string
-  column_values: { id: string; index?: number | null }[]
+  column_values: CV[]
   subitems: SubHoja[]
+}
+
+/** Los datos de imprenta de un talonario y una de sus hojas. */
+function imprentaDe(t: TalonarioItem, h: SubHoja): DatosImprenta {
+  const c = t.column_values
+  return {
+    puntoVenta: texto(c, COL.talonario.puntoVenta),
+    // El correlativo sale de la hoja; si faltara, del final de su nombre ("RTO 0091 - 00000007").
+    numeroHoja: texto(h.column_values, COL.talonarioSub.numero) || (h.name.match(/(\d+)\s*$/)?.[1] ?? ''),
+    desde: conCeros(texto(c, COL.talonario.desde)),
+    hasta: conCeros(texto(c, COL.talonario.hasta)),
+    habilitacionImprenta: texto(c, COL.talonario.habilitacionImprenta),
+    cai: texto(c, COL.talonario.cai),
+    vencimientoCai: fecha(c, COL.talonario.vencimientoCai),
+    fechaImpresion: fecha(c, COL.talonario.fechaImpresion),
+  }
 }
 
 /**
@@ -61,7 +134,21 @@ export async function getHojaTalonario(): Promise<ResultadoTalonario> {
   if (!mondayHabilitado()) {
     return {
       estado: 'ok',
-      hoja: { hojaId: 'mock-hoja', hojaNombre: 'NRTO-01', talonarioNombre: 'TALON-01' },
+      hoja: {
+        hojaId: 'mock-hoja',
+        hojaNombre: 'RTO 0091 - 00000001',
+        talonarioNombre: 'TALON-01',
+        imprenta: {
+          puntoVenta: '0091',
+          numeroHoja: '00000001',
+          desde: '00000001',
+          hasta: '00000020',
+          habilitacionImprenta: '06/2027',
+          cai: '1234567890123',
+          vencimientoCai: '30/10/2026',
+          fechaImpresion: '24/07/2026',
+        },
+      },
     }
   }
 
@@ -95,14 +182,14 @@ export async function getHojaTalonario(): Promise<ResultadoTalonario> {
         ) {
           items {
             id name
-            column_values(ids: ["${COL.talonario.estado}"]) {
-              id
+            column_values(ids: ["${COL.talonario.estado}", "${COL.talonario.puntoVenta}", "${COL.talonario.desde}", "${COL.talonario.hasta}", "${COL.talonario.habilitacionImprenta}", "${COL.talonario.cai}", "${COL.talonario.vencimientoCai}", "${COL.talonario.fechaImpresion}"]) {
+              id text value
               ... on StatusValue { index }
             }
             subitems {
               id name
-              column_values(ids: ["${COL.talonarioSub.estado}"]) {
-                id
+              column_values(ids: ["${COL.talonarioSub.estado}", "${COL.talonarioSub.numero}"]) {
+                id text
                 ... on StatusValue { index }
               }
             }
@@ -136,22 +223,42 @@ export async function getHojaTalonario(): Promise<ResultadoTalonario> {
 
   return {
     estado: 'ok',
-    hoja: { hojaId: elegido.h.id, hojaNombre: elegido.h.name, talonarioNombre: elegido.t.name },
+    hoja: {
+      hojaId: elegido.h.id,
+      hojaNombre: elegido.h.name,
+      talonarioNombre: elegido.t.name,
+      imprenta: imprentaDe(elegido.t, elegido.h),
+    },
   }
 }
 
 /**
- * Cierra la hoja del talonario tras consumirla: pone su "🤖Estado Rto" (status) en "Usado", por
- * índice dinámico (metadata). Se llama al emitir el remito, ya vinculada la hoja al documento, para
- * mantener el correlativo de talonario. Best-effort: no frena la emisión.
+ * La hoja sigue libre ("🤖Estado Rto" en "Pend de Usar"). Al emitir la app sólo la ASIGNA —la lee y
+ * numera los PDF con ella—; la toma recién al registrar. Entre una cosa y la otra otro remito pudo
+ * usarla, y por eso se vuelve a mirar antes de tomarla. Se compara por la etiqueta, no por el índice.
+ */
+export async function hojaDisponible(hojaId: string): Promise<boolean> {
+  if (!mondayHabilitado() || hojaId === 'mock-hoja') return true
+  const data = await mondayApi<{ items: { column_values: { text?: string | null }[] }[] }>(
+    `query ($ids: [ID!]) { items(ids: $ids) { column_values(ids: ["${COL.talonarioSub.estado}"]) { text } } }`,
+    { ids: [hojaId] },
+  )
+  return (data.items[0]?.column_values[0]?.text ?? '').trim() === 'Pend de Usar'
+}
+
+/**
+ * Consume la hoja del talonario: pone su "🤖Estado Rto" (status) en "Usado", por índice dinámico
+ * (metadata). Se llama al REGISTRAR el remito, después de confirmar que la hoja sigue libre
+ * (`hojaDisponible`). Lanza si no puede: sin la hoja tomada, el remito no se registra.
  */
 export async function marcarHojaUsada(hojaId: string): Promise<void> {
-  if (!mondayHabilitado() || !hojaId || !Number.isFinite(Number(hojaId))) return
+  if (!mondayHabilitado() || hojaId === 'mock-hoja') return
+  if (!hojaId || !Number.isFinite(Number(hojaId))) throw new Error(`Hoja de talonario inválida: ${hojaId}`)
   const meta = await mondayApi<{ boards: { columns: { settings_str: string }[] }[] }>(
     `query { boards(ids: [${BOARDS.talonariosSub}]) { columns(ids: ["${COL.talonarioSub.estado}"]) { settings_str } } }`,
   )
   const idx = indiceDeLabel(meta.boards[0]?.columns?.[0]?.settings_str, 'Usado')
-  if (idx == null) return
+  if (idx == null) throw new Error('El tablero de talonarios no tiene el estado "Usado".')
   await mondayApi(
     `mutation ($id: ID!, $board: ID!, $cv: JSON!) {
       change_multiple_column_values(item_id: $id, board_id: $board, column_values: $cv) { id }

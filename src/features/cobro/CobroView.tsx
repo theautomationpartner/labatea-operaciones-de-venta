@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { Modal } from '@/components/ui/Modal'
+import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import {
   balancePagos,
@@ -21,7 +22,8 @@ import {
   pasosDe,
   registraActividad,
 } from '@/lib/pasos'
-import { totalVentaOperacion } from '@/lib/selectors'
+import { documentoDeVentaItem, totalVentaOperacion } from '@/lib/selectors'
+import { adjuntarPdfProforma, crearProforma, getActividadesDePresupuestos } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { CabeceraCobro } from './CabeceraCobro'
@@ -30,6 +32,7 @@ import { CobroTarjetas } from './CobroTarjetas'
 import { ImpactoCtaCte } from './ImpactoCtaCte'
 import { FormularioCobro } from './FormularioCobro'
 import { TablaMovimientos } from './TablaMovimientos'
+import { useProformaVenta } from './useProformaVenta'
 
 /**
  * Compara dos importes SIN considerar los centavos: se toman como iguales cuando difieren en
@@ -44,7 +47,9 @@ const mismoImporte = (a: number, b: number): boolean => Math.abs(a - b) < 1
  */
 export function CobroView() {
   const state = useApp()
-  const { cliente, operacion, tipoVenta, tipoEntrega, cobro, formaPago, proformaId } = state
+  const { cliente, operacion, tipoVenta, tipoEntrega, cobro, formaPago, proformaId, proformaPdf } = state
+  // Los números de la proforma CONTADO: los mismos que su card y su PDF (se registran tal cual).
+  const proformaVenta = useProformaVenta()
   const dispatch = useDispatch()
   /* Débito y crédito son dos formas de pago, pero un mismo ramal de cobro: el formulario de
      tarjeta. Qué tipo es sale de la forma elegida, ya no de un selector aparte. */
@@ -118,8 +123,68 @@ export function CobroView() {
   const bloqueo = useBloqueoCredito(aCredito)
   /* Forma de pago CONTADO: el vendedor elige entre emitir una proforma o registrar el cobro. */
   const [contadoTab, setContadoTab] = useState<'proforma' | 'cobro'>('cobro')
-  /* Modal de cierre de la venta con proforma (Guardar Venta): al aceptar limpia todo el estado. */
+  /* Registro de la proforma ("Registrar Proforma"): mientras se escribe en Monday, la ventana de
+     espera; al terminar, la de confirmación, que al aceptar limpia todo el estado. */
+  const [registrandoProforma, setRegistrandoProforma] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const [errorProforma, setErrorProforma] = useState<string | null>(null)
+
+  /**
+   * "Registrar Proforma": el ÚNICO lugar donde la proforma nace en Monday. Todo se `await`ea en
+   * orden, con la ventana de espera arriba:
+   *   1. el ítem con su cabecera y un subelemento por producto (`crearProforma`), SIN pasar el
+   *      estado del PDF por "Emitir" —eso disparaba el escenario que generaba otro—; se corta si
+   *      algún producto no entró;
+   *   2. el PDF que generó la app, a "🤖PDF Proforma", y el estado en "Emitido".
+   * Idempotente: si la proforma ya se creó y falló la subida, reintentar sólo sube el PDF.
+   */
+  const registrarProforma = async () => {
+    if (!cliente || !proformaPdf || registrandoProforma) return
+    setRegistrandoProforma(true)
+    try {
+      let id = proformaId
+      if (!id) {
+        /* Sólo CON PRESUPUESTO PREVIO hereda actividad: la de los presupuestos que aportaron algún
+           producto. La DIRECTA nace sin actividad propia. */
+        const actividadesIds =
+          tipoVenta === 'CON PRESUPUESTO PREVIO'
+            ? await getActividadesDePresupuestos(
+                [...new Set(state.ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
+              )
+            : []
+        const creada = await crearProforma({
+          clienteId: cliente.id,
+          vendedorId: state.vendedor?.id ?? null,
+          nombre: cliente.name,
+          tipoVenta: tipoVenta ?? 'DIRECTA',
+          tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
+          rentabilidad: proformaVenta.rentabilidadGeneral,
+          descFormaPago: proformaVenta.descFormaPago,
+          tasaCambio: state.tasaCambio,
+          lineas: proformaVenta.productos,
+          actividadesIds,
+          dispararPdf: false,
+        })
+        if (creada.subitemsCreados < proformaVenta.productos.length) {
+          setRegistrandoProforma(false)
+          setErrorProforma(
+            `La proforma se creó pero quedó incompleta: entraron ${creada.subitemsCreados} de ${proformaVenta.productos.length} productos. Revisala en Monday antes de registrarla.`,
+          )
+          return
+        }
+        id = creada.id
+        dispatch({ type: 'setProformaId', value: id })
+      }
+      await adjuntarPdfProforma(id, proformaPdf)
+      setRegistrandoProforma(false)
+      setGuardando(true)
+    } catch {
+      /* Fallo de la API: lo comunica la ventana global de error de Monday. Acá sólo se libera el
+         botón para poder reintentar. */
+      setRegistrandoProforma(false)
+      dispatch({ type: 'errorMonday', accion: 'registrar la proforma' })
+    }
+  }
   /* Aviso al intentar continuar con la diferencia sin cancelar: falta cobrar (>0) o se cobró de más (<0). */
   const [avisoDif, setAvisoDif] = useState<'falta' | 'exceso' | null>(null)
 
@@ -383,11 +448,11 @@ export function CobroView() {
               <button
                 type="button"
                 className="cobro-btn cobro-btn--primary"
-                onClick={() => setGuardando(true)}
-                disabled={!proformaId}
-                title={proformaId ? undefined : 'Emití la proforma para poder guardar la venta.'}
+                onClick={() => void registrarProforma()}
+                disabled={!proformaPdf || registrandoProforma}
+                title={proformaPdf ? undefined : 'Emití la proforma para poder registrarla.'}
               >
-                <i className="fas fa-floppy-disk" /> Guardar Venta
+                <i className="fas fa-floppy-disk" /> Registrar Proforma
               </button>
             )}
             <button
@@ -399,7 +464,7 @@ export function CobroView() {
               disabled={continuarDeshabilitado}
               title={
                 enProforma
-                  ? 'La venta con proforma se cierra con "Guardar Venta", no continúa a otra etapa.'
+                  ? 'La venta con proforma se cierra con "Registrar Proforma", no continúa a otra etapa.'
                   : conTarjeta && !tarjetaCobrada
                     ? 'La DIFERENCIA tiene que quedar en $ 0 para continuar: cargá o ajustá las tarjetas.'
                     : undefined
@@ -430,11 +495,26 @@ export function CobroView() {
           </AvisoModal>
         )}
 
+        {/* Tapa la pantalla mientras se `await`ea el registro de la proforma en Monday. */}
+        {registrandoProforma && (
+          <ModalCargando
+            titulo="Registrando proforma..."
+            detalle="Estamos registrando la factura proforma en el sistema junto a sus productos y su PDF. Espera unos segundos"
+          />
+        )}
+
+        {/* La proforma quedó a medias en el tablero: no se cierra la operación hasta resolverlo. */}
+        {errorProforma && (
+          <AvisoModal titulo="No se pudo registrar la proforma" onClose={() => setErrorProforma(null)}>
+            {errorProforma}
+          </AvisoModal>
+        )}
+
         {/* Cierre de la venta con proforma: informa que quedó registrada y, al aceptar, limpia todo
             el estado global (vuelve al inicio). La factura se emitirá luego sobre esa proforma. */}
         {guardando && (
           <Modal
-            title="Venta guardada"
+            title="Proforma registrada"
             icon={<i className="fas fa-circle-check" style={{ color: 'var(--green)' }} />}
             onClose={() => setGuardando(false)}
             actions={

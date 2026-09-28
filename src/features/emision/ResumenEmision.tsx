@@ -16,7 +16,7 @@ interface ResumenEmisionProps {
   /** react-pdf no pudo generar el PDF: el botón queda en rojo con "Error de emisión". */
   errorPdf?: boolean
   onGenerar: () => void
-  /** Lo que va pegado debajo del botón de emisión: "Ver Presupuesto PDF". */
+  /** Lo que va pegado debajo del botón de emisión: "Ver / Imprimir (1)". */
   children?: ReactNode
 }
 
@@ -114,10 +114,18 @@ export function ResumenEmision({
         type="button"
         className="btn-generar btn-mayus"
         onClick={onGenerar}
-        disabled={generando || emitido}
+        // Emitido sigue habilitado: se puede volver a emitir para corregir un error.
+        disabled={generando}
         aria-busy={generando}
-        // En error sigue habilitado: el mismo botón reintenta, y el cartel lo dice.
-        title={errorPdf && !generando ? 'Tocá para reintentar la emisión' : undefined}
+        title={
+          generando
+            ? undefined
+            : emitido
+              ? 'Tocá para volver a emitir con los datos actuales'
+              : errorPdf
+                ? 'Tocá para reintentar la emisión'
+                : undefined
+        }
         /* Emitido: verde para confirmar, como el de "Enviado". Error del PDF: rojo; sigue
            habilitado por si el reintento anda. */
         style={

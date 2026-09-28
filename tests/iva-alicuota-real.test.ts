@@ -197,9 +197,15 @@ assert.equal(
   'la proforma vale lo mismo que la factura que sale de ella',
 )
 
-/* ---------- 4) El cableado de la card: que no vuelva a sumar los descuentos ---------- */
+/* ---------- 4) El cableado de la card: que no vuelva a sumar los descuentos ----------
+   Los números de la proforma viven en `useProformaVenta`: los usan la card, el PDF que genera la app
+   y el registro en Monday, así que es ahí donde se verifica el cálculo. */
 
-const vista = readFileSync('src/features/cobro/CobroProforma.tsx', 'utf8')
+const vista = readFileSync('src/features/cobro/useProformaVenta.ts', 'utf8')
+assert.ok(
+  readFileSync('src/features/cobro/CobroProforma.tsx', 'utf8').includes('useProformaVenta()'),
+  'la card toma sus números del hook compartido',
+)
 assert.ok(
   /descuentoUnitario\(l\.precioUnitario, l\.descuento, descFormaPago\)\.total/.test(vista),
   'la card compone los descuentos en CASCADA, con la misma función que el resto de la app',

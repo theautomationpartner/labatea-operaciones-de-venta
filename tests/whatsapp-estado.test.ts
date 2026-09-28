@@ -222,8 +222,6 @@ async function main() {
     fechaEmision: '28/09/2026',
     fechaVencimiento: '12/10/2026',
     archivo: 'The Automation Partner S.A TEST-PRESUP-009.pdf',
-    totalPesos: 1000,
-    totalDolares: 0,
     cliente: { id: '111', name: 'The Automation Partner S.A TEST', cuit: '30-1' },
     vendedor: null,
     medio: 'Ambos',

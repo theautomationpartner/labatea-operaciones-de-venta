@@ -1,20 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ActividadesDelDocumento } from '@/features/actividad/ActividadesDelDocumento'
+import { generarProformaPdf, importe, lineasProformaPdf } from '@/features/emision/pdf/generarProformaPdf'
 import { CompBody } from '@/features/shared/CompBody'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { TotalesDoc } from '@/features/shared/TotalesDoc'
-import { descuentoDeFormaPago } from '@/lib/cobros'
-import { alicuotaDeclarada, descuentoUnitario, ivaLinea } from '@/lib/descuentos'
-import { money, round2 } from '@/lib/format'
-import { lineasDeVenta, rentabilidadGeneralDeLineas } from '@/lib/lineasVenta'
+import { VerImprimirPdf } from '@/features/shared/VerImprimirPdf'
+import { nombreSinCodigo } from '@/lib/busquedaClientes'
+import { money } from '@/lib/format'
 import { documentoDeVentaItem } from '@/lib/selectors'
-import {
-  crearProforma,
-  getActividadesDePresupuestos,
-  getActividadesHeredadasDePresupuestos,
-} from '@/services/monday'
+import { getActividadesHeredadasDePresupuestos, getProximoNroProforma } from '@/services/monday'
+import { useReemision } from '@/features/shared/useReemision'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { ActividadListada } from '@/types'
+import { useProformaVenta } from './useProformaVenta'
 
 /** Muestra el valor, o «Sin especificar» si viene vacío. */
 const oSinEsp = (v: string | null | undefined) => (v && v.trim() ? v : 'Sin especificar')
@@ -28,84 +26,34 @@ const direccionHastaCiudad = (addr: string | null | undefined): string => {
   return partes.length === 0 ? 'Sin especificar' : partes.slice(0, 2).join(', ')
 }
 
+/** Tipo de entrega como lo escribe la proforma. */
+export const entregaDe = (t: string | null | undefined): string =>
+  t === 'POSTERIOR' ? 'Posterior' : t === 'ANTERIOR' ? 'Anterior' : 'Simultánea'
+
 /**
- * Bloque "Emitir Proforma" de la etapa de Cobro (forma de pago CONTADO). Trae lo que antes vivía en
- * la etapa "Proforma y Retenciones": a la izquierda los datos de la proforma + el botón de emisión;
- * a la derecha la card de la factura proforma y el despacho a contactos.
+ * Bloque "Emitir Proforma" de la etapa de Cobro (forma de pago CONTADO): a la izquierda los datos de
+ * la proforma, el botón de emisión y "Ver / Imprimir (1)"; a la derecha la card de la factura proforma
+ * y el envío a los contactos.
+ *
+ * Mismo esquema que el presupuesto: "Emitir Factura Proforma" genera el PDF EN LA APP —no toca
+ * Monday—, el envío lo manda por el escenario de Make y "Registrar Proforma" (en el pie de la etapa,
+ * ver `CobroView`) crea la proforma en el tablero y le sube ese PDF.
  */
 export function CobroProforma() {
   const state = useApp()
   const dispatch = useDispatch()
-  const { cliente, operacion, tipoVenta, tipoEntrega, entregaVenta, formaPago, descuentosPago, proformaId } =
-    state
+  const { cliente, tipoVenta, tipoEntrega, entregaVenta, proformaPdf } = state
 
-  /* La proforma ya está emitida si hay un id de proforma en el estado GLOBAL (lo setea la emisión).
-     Se deriva de ahí —no de un estado local— para no perder el estado al volver a un paso anterior
-     y volver: el componente se desmonta, pero el `proformaId` global sobrevive. */
-  const emitida = Boolean(proformaId)
+  /* Emitida = el PDF ya se generó. Se deriva del estado GLOBAL —no de uno local— para no perderlo
+     al volver a un paso anterior: el componente se desmonta, pero el PDF sobrevive. */
+  const emitida = Boolean(proformaPdf)
 
-  /* Descuento por forma de pago (pronto pago): se compone con el descuento manual de cada línea,
-     igual que en la tabla de "Seleccionar productos" del paso anterior, y entra en la rentabilidad
-     de cada línea que se graba en la proforma. */
-  const descFormaPago = descuentoDeFormaPago(formaPago, descuentosPago)
-
-  const productos = useMemo(
-    () =>
-      lineasDeVenta({
-        operacion,
-        tipoVenta,
-        tipoEntrega,
-        lineas: state.lineas,
-        ventaItems: state.ventaItems,
-        facturaItems: state.facturaItems,
-        descFormaPago,
-      }),
-    [
-      operacion,
-      tipoVenta,
-      tipoEntrega,
-      state.lineas,
-      state.ventaItems,
-      state.facturaItems,
-      descFormaPago,
-    ],
-  )
-
-  /* Filas de la factura proforma con los MISMOS valores que va a escribir `crearProforma`, que es
-     lo que termina en el tablero y en el PDF que ve el cliente:
-       · Importe Bonif. por unidad = los dos descuentos compuestos EN CASCADA (`descuentoUnitario`),
-         no sumados. Sumarlos daba de más —4% + 6% = 10% contra el 9,64% real—, así que la pantalla
-         mostraba un total más barato que el que quedaba emitido.
-       · IVA de la línea = su neto ya bonificado por la alícuota DECLARADA del producto, no un 21%
-         plano: con un producto al 10,5% el total de la pantalla tampoco cerraba contra el emitido. */
-  const filas = useMemo(
-    () =>
-      productos.map((l) => {
-        const bonifUnit = descuentoUnitario(l.precioUnitario, l.descuento, descFormaPago).total
-        const totalLinea = round2((l.precioUnitario - bonifUnit) * l.cantidad)
-        return { ...l, bonifUnit, totalLinea, ivaLinea: ivaLinea(totalLinea, alicuotaDeclarada(l.iva)) }
-      }),
-    [productos, descFormaPago],
-  )
-
-  /* Totales de la factura: el bruto es Σ (precio × cantidad); el neto (gravado), la suma de los
-     "Total" de cada línea; el descuento, su diferencia; y el IVA, la suma del de cada línea. Son
-     exactamente los cuatro que `crearProforma` guarda en la cabecera del ítem. */
-  const { bruto, neto, descuento, iva, total } = useMemo(() => {
-    const n = round2(filas.reduce((acc, f) => acc + f.totalLinea, 0))
-    const b = round2(filas.reduce((acc, f) => acc + f.precioUnitario * f.cantidad, 0))
-    const impuesto = round2(filas.reduce((acc, f) => acc + f.ivaLinea, 0))
-    return { bruto: b, neto: n, descuento: round2(b - n), iva: impuesto, total: round2(n + impuesto) }
-  }, [filas])
-
-  /* Rentabilidad general: la de cada línea ponderada por su costo, con la misma función que la
-     venta. Con decimales: redondear a entero asignaba una rentabilidad incorrecta en la proforma. */
-  const rentabilidadGeneral = useMemo(
-    () => rentabilidadGeneralDeLineas(productos, descFormaPago),
-    [productos, descFormaPago],
-  )
+  // Los números de la proforma: los mismos que lleva el PDF y que se registran en Monday.
+  const { productos, filas, bruto, neto, descuento, iva, total } = useProformaVenta()
 
   const [emitiendo, setEmitiendo] = useState(false)
+  // react-pdf no pudo generar el PDF: botón en rojo y aviso de soporte.
+  const [errorPdf, setErrorPdf] = useState(false)
   const [abierta, setAbierta] = useState(true)
 
   /* La gestión comercial que hereda esta proforma: sólo CON PRESUPUESTO PREVIO trae algo que
@@ -131,56 +79,57 @@ export function CobroProforma() {
   }, [tipoVenta, state.ventaItems])
 
   /**
-   * Emite la proforma: crea el ítem cabecera en el board de Proformas, un subelemento por producto
-   * y dispara la generación del PDF. Al terminar bien, guarda el id de la proforma (para el envío)
-   * y deja la operación lista para finalizarse.
+   * "Emitir Factura Proforma": genera el PDF con lo que muestra la card. No escribe en Monday: la
+   * proforma nace al registrarla. El número del tablero se anticipa (el último "PROFORMA-###" + 1),
+   * porque el tablero recién lo asigna al crear el ítem.
    */
   const emitir = async () => {
-    if (emitiendo || emitida || productos.length === 0) return
+    /* Emitida, se puede volver a emitir (para corregir un error): el PDF nuevo reemplaza al anterior
+       y el envío vuelve a cero. Lo que no se permite es emitir dos veces a la vez. */
+    if (!cliente || emitiendo || productos.length === 0) return
     setEmitiendo(true)
+    setErrorPdf(false)
     try {
-      /* Sólo CON PRESUPUESTO PREVIO hereda actividad: la gestión ya se completó al presupuestar, y
-         esta factura proforma la arrastra de los presupuestos que aportaron algún producto. La
-         DIRECTA nace sin actividad propia —esa se elige recién en "Registrar Actividad", más
-         adelante, en la venta que termine emitiendo esta misma operación—. */
-      const actividadesIds =
-        tipoVenta === 'CON PRESUPUESTO PREVIO'
-          ? await getActividadesDePresupuestos(
-              [...new Set(state.ventaItems.map((it) => documentoDeVentaItem(it.uid)))],
-            )
-          : []
-      const creada = await crearProforma({
-        clienteId: cliente!.id,
-        vendedorId: state.vendedor?.id ?? null,
-        nombre: cliente!.name,
-        tipoVenta: tipoVenta ?? 'DIRECTA',
-        tipoEntrega: tipoEntrega ?? 'SIMULTANEA',
-        rentabilidad: rentabilidadGeneral,
-        descFormaPago,
-        tasaCambio: state.tasaCambio,
-        lineas: productos,
-        actividadesIds,
+      const numero = (await getProximoNroProforma().catch(() => null)) ?? 'PROFORMA'
+      const pdf = await generarProformaPdf({
+        numero,
+        fechaEmision: state.fechaEmision,
+        cliente: {
+          codigo: cliente.codigo,
+          razonSocial: nombreSinCodigo(cliente.name),
+          addr: cliente.addr,
+          condicionIva: cliente.status,
+          cuit: cliente.cuit,
+        },
+        vendedor: state.vendedor?.name ?? '',
+        tipoEntrega: entregaDe(tipoEntrega),
+        // La proforma sale de la venta CONTADO.
+        condicion: 'Contado',
+        lineas: lineasProformaPdf(filas),
+        gravado: importe(neto),
+        iva: importe(iva),
+        // La app no liquida percepciones de IIBB.
+        percIb: importe(0),
+        total: importe(total),
+        tipoCambio: state.tasaCambio ? importe(state.tasaCambio) : '—',
       })
-      // El estado de "emitida" se deriva de este id global: sobrevive a la navegación entre pasos.
-      dispatch({ type: 'setProformaId', value: creada.id })
-    } catch {
-      /* Si falla, el botón vuelve a habilitarse para reintentar; el porqué lo explica la ventana
-         global de error de Monday, no un texto suelto debajo del botón. */
-      dispatch({ type: 'errorMonday', accion: 'emitir la factura proforma' })
+      dispatch({ type: 'setProformaPdf', pdf, numero, firma })
+    } catch (e) {
+      console.error('No se pudo generar el PDF de la proforma', e)
+      setErrorPdf(true)
     } finally {
       setEmitiendo(false)
     }
   }
 
+  /* Reemisión: el botón de emitir sigue habilitado, y un PDF que quedó viejo (se cambiaron datos en
+     un paso anterior) se descarta solo. `firma` va guardada con el PDF. */
+  const { firma, pedirEmision, modal: modalReemision } = useReemision('proforma', emitida, () => void emitir())
+
   if (!cliente) return null
 
   const entregaTexto = () => {
-    const t =
-      tipoEntrega === 'POSTERIOR'
-        ? 'Posterior'
-        : tipoEntrega === 'ANTERIOR'
-          ? 'Anterior'
-          : 'Simultánea'
+    const t = entregaDe(tipoEntrega)
     if (entregaVenta.responsable === 'LA_BATEA' && entregaVenta.rutaNombre)
       return `${t} · La Batea (${entregaVenta.rutaNombre})`
     if (entregaVenta.responsable === 'COMISIONISTA' && entregaVenta.comisionistaNombre)
@@ -230,19 +179,39 @@ export function CobroProforma() {
           <button
             type="button"
             className="btn btn-primary proforma-emitir btn-mayus"
-            onClick={emitir}
-            disabled={emitiendo || emitida || productos.length === 0}
+            onClick={pedirEmision}
+            // Emitida sigue habilitado: se puede volver a emitir para corregir un error.
+            disabled={emitiendo || productos.length === 0}
             aria-busy={emitiendo}
-            style={emitida ? { background: 'var(--green)', color: '#fff' } : undefined}
+            title={
+              emitiendo
+                ? undefined
+                : emitida
+                  ? 'Tocá para volver a emitir con los datos actuales'
+                  : errorPdf
+                    ? 'Tocá para reintentar la emisión'
+                    : undefined
+            }
+            style={
+              emitida
+                ? { background: 'var(--green)', color: '#fff' }
+                : errorPdf && !emitiendo
+                  ? { background: 'var(--red)', color: '#fff' }
+                  : undefined
+            }
           >
             {emitiendo ? (
               <>
-                <i className="fas fa-circle-notch spin" /> Emitiendo…
+                <i className="fas fa-circle-notch spin" /> Generando PDF…
               </>
             ) : emitida ? (
               // Emitida: botón verde con el texto y el tilde en blanco.
               <>
                 <i className="fas fa-check" style={{ color: '#fff' }} /> Proforma emitida
+              </>
+            ) : errorPdf ? (
+              <>
+                <i className="fas fa-xmark" /> Error de emisión
               </>
             ) : (
               <>
@@ -250,6 +219,16 @@ export function CobroProforma() {
               </>
             )}
           </button>
+
+          {/* Siempre debajo de emitir: se habilita con el PDF generado. El aviso de error va debajo. */}
+          <VerImprimirPdf archivos={proformaPdf ? [proformaPdf] : null} />
+          {errorPdf && (
+            <div className="pres-pdf-aviso" role="alert">
+              <i className="fas fa-circle-exclamation" /> La app no está pudiendo generar el PDF de la
+              proforma. Tocá el botón para reintentar; si vuelve a fallar, contactate con el soporte de
+              TAP.
+            </div>
+          )}
 
         </aside>
 
@@ -277,7 +256,7 @@ export function CobroProforma() {
                 </div>
               </div>
 
-              {/* Check de emisión: verde cuando la proforma ya se emitió en el tablero (proformaId). */}
+              {/* Check de emisión: verde cuando el PDF de la proforma ya se generó. */}
               <span className="comp-estado">
                 <span
                   className={`cobro-ok ${emitida ? 'on' : ''}`}
@@ -349,7 +328,9 @@ export function CobroProforma() {
             </CompBody>
           </div>
 
-          <EnviarDocumento documento="proforma" />
+          {/* Por PDF emitido: uno nuevo es otro documento, y el envío arranca de cero. */}
+          <EnviarDocumento key={`emision-${state.emisionNro}`} documento="proforma" />
+          {modalReemision}
         </div>
       </div>
     </div>

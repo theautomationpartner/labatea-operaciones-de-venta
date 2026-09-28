@@ -648,6 +648,10 @@ export const COL = {
     estadoVenta: 'color_mm5smnqe',
     /** Estado de emisión del PDF: ponerlo en "Emitir" dispara la generación del documento. */
     estadoPdf: 'color_mm4dqxq3',
+    /** "🤖PDF Proforma": el PDF que genera la app (antes lo subía el escenario de Make). */
+    pdf: 'file_mm4dtc6y',
+    /** "🤖ID Proforma" (customKey, "PROFORMA-036"): se lee para anticipar el número de la próxima. */
+    pulseId: 'pulse_id_mkw8wzn1',
     /** "Contactos" (board_relation): destinatarios del envío de la proforma. */
     contactos: 'board_relation_mm5njnad',
     /** Medio de envío (dropdown): Whatsapp / Email. */
@@ -1064,6 +1068,8 @@ export const COL = {
     estadoEmision: 'color_mkwb12n1',
     /** "🤖RTO PDF": el archivo que sube la automatización al emitir. */
     pdf: 'file_mkwbmr11',
+    /** "🤖RTO PDF PREIMPRESO": la réplica del formulario en papel que genera la app. */
+    pdfPreimpreso: 'file_mm5h2a3f',
     /** "👤Contactos": destinatarios del envío del remito (conectada a Contactos). */
     contactos: 'board_relation_mm5g8hdv',
     /** "🤖Enviar por:": dropdown Whatsapp / Email, igual que el presupuesto. */
@@ -1147,11 +1153,26 @@ export const COL = {
   talonario: {
     /** "🤖Estado Talonario": marca cuál está "En USO". */
     estado: 'color_mm5hmyaj',
+    /* Datos de imprenta del talonario: salen impresos en el pie de los PDF del remito. */
+    /** "✋Punto de Venta Rto" (dropdown): "0091". Va delante del número del remito. */
+    puntoVenta: 'dropdown_mm5hhnjq',
+    /** "✋DESDE" / "✋HASTA": el rango de numeración del talonario. */
+    desde: 'numeric_mm5he4ag',
+    hasta: 'numeric_mm5h66n1',
+    /** "✋Habilitacion de la imprenta". */
+    habilitacionImprenta: 'text_mm5jqspy',
+    /** "✋CAI" y "✋Vencimiento CAI". */
+    cai: 'text_mm5hcv43',
+    vencimientoCai: 'date_mm5h4hg2',
+    /** "🤖Fecha Impresion". */
+    fechaImpresion: 'date_mm5h9mpy',
   },
   // Subelemento del talonario (board 18423468575): una hoja/folio de remito.
   talonarioSub: {
     /** "🤖Estado Rto": "Pend de Usar" hasta que se consume la hoja. */
     estado: 'status',
+    /** "🤖Numero Rto": el correlativo de la hoja ("00000007"). Es el número del remito. */
+    numero: 'text_mm5jk9jb',
   },
   // Ítem de "Pends de Entrega" (board 18421035527): un producto vendido pendiente de entregar.
   pendienteEntregaItem: {

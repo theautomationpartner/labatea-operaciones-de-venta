@@ -8,6 +8,7 @@ import { productoConPrecio } from '@/lib/precios'
 import { aceptaRentabForzada, rentabilidadProductoDe } from '@/lib/selectors'
 import { DESCUENTO_PAGO_DEFAULT, type DescuentosPago } from '@/lib/cobros'
 import { TOPES_DESCUENTO_DEFAULT, type TopesDescuento } from '@/lib/validaciones'
+import type { HojaTalonario } from '@/services/monday/talonarios'
 import type {
   CanalEnvio,
   ActividadListada,
@@ -159,10 +160,47 @@ export interface AppState {
   documentoEmitido: boolean
   /**
    * El PDF del presupuesto que generó la app al emitir (ver `generarPresupuestoPdf`). Vive acá y no
-   * en la vista para que ir a otra etapa y volver no lo pierda: "Ver Presupuesto PDF" lo abre y
+   * en la vista para que ir a otra etapa y volver no lo pierda: "Ver / Imprimir (1)" lo abre y
    * "Registrar Presupuesto" lo sube al ítem. Se descarta con las mismas banderas de éxito.
    */
   presupuestoPdf: File | null
+  /**
+   * Los dos PDF del remito que generó la app al emitir (VENTA y PREIMPRESO). Igual que el del
+   * presupuesto: "Ver" los abre, el envío manda el de VENTA y "Registrar Remito" sube los dos.
+   */
+  remitoPdfs: { venta: File; preimpreso: File } | null
+  /**
+   * El PDF de la factura proforma (venta CONTADO) que generó la app al emitir, y el número con que se
+   * generó ("PROFORMA-037", anticipado: lo asigna el tablero al registrar). Igual que el del
+   * presupuesto: "Ver / Imprimir (1)" lo abre, el envío lo manda y "Registrar Proforma" lo sube.
+   */
+  proformaPdf: File | null
+  nroProforma: string | null
+  /**
+   * La hoja del talonario ASIGNADA al emitir: numera los PDF. Todavía no está tomada en Monday —eso
+   * pasa al registrar, si sigue libre—. Se guarda para registrar con esa misma hoja: volver a
+   * consultar el talonario podría dar otra.
+   */
+  remitoHoja: HojaTalonario | null
+  /**
+   * Cuántos de los PDF emitidos ya se abrieron con "Ver / Imprimir". El botón muestra los que faltan
+   * (presupuesto: 1; remito: 2, VENTA y PREIMPRESO) y cada clic abre el siguiente. Vive acá para que
+   * ir a otra etapa y volver no reinicie la cuenta; una emisión nueva la pone en cero.
+   */
+  pdfsAbiertos: number
+  /**
+   * "Firma" de los datos con los que se generó el PDF emitido (ver `firmaDocumento`). Emitir ya no
+   * deja los pasos anteriores en solo lectura —hasta "Registrar" no se escribe nada en Monday—, así
+   * que se puede volver y corregir; si al volver a la emisión los datos no coinciden con esta firma,
+   * el PDF quedó viejo y se descarta: no se envía ni se registra un documento que dice otra cosa.
+   */
+  firmaPdf: string | null
+  /**
+   * Cuenta las emisiones de la operación: sube con cada PDF nuevo (o descartado). La etapa de envío
+   * se monta por este número, así una reemisión arranca el envío de cero aunque los datos —y la
+   * firma— sean los mismos.
+   */
+  emisionNro: number
   /** Éxito PERSISTENTE del envío ("Confirmar y Enviar"): el documento ya se despachó a los contactos. */
   documentoEnviado: boolean
   /**
@@ -348,6 +386,13 @@ export const initialState: AppState = {
   intentoAvanzar: false,
   documentoEmitido: false,
   presupuestoPdf: null,
+  remitoPdfs: null,
+  proformaPdf: null,
+  nroProforma: null,
+  remitoHoja: null,
+  pdfsAbiertos: 0,
+  firmaPdf: null,
+  emisionNro: 0,
   documentoEnviado: false,
   enviadosPorContacto: {},
   contactosFallidos: {},
@@ -443,7 +488,12 @@ export type Action =
   /** Se intentó avanzar sin la configuración completa: enciende la marca de los selectores. */
   | { type: 'intentoAvanzar' }
   | { type: 'setDocumentoEmitido'; value: boolean }
-  | { type: 'setPresupuestoPdf'; value: File | null }
+  | { type: 'setPresupuestoPdf'; value: File | null; firma?: string }
+  | { type: 'setRemitoPdfs'; pdfs: { venta: File; preimpreso: File }; hoja: HojaTalonario; firma: string }
+  | { type: 'descartarPdf' }
+  | { type: 'descartarEmisionRemito' }
+  | { type: 'setProformaPdf'; pdf: File; numero: string; firma: string }
+  | { type: 'setPdfsAbiertos'; value: number }
   | { type: 'setEnviadosPorContacto'; value: Record<string, CanalEnvio[]> }
   | { type: 'setContactosFallidos'; value: Record<string, string> }
   | { type: 'setEnvioIniciado' }
@@ -563,13 +613,51 @@ export function convertirProductoAPesos(
  * quedan en solo lectura para que la base de datos y la interfaz no queden desincronizadas.
  */
 export const hayDocumentoEmitido = (s: AppState): boolean =>
-  s.documentoEmitido ||
+  /* El presupuesto, el remito y la proforma de la venta CONTADO NO bloquean al emitir: su PDF lo
+     genera la app y hasta "Registrar" no se escribe nada en Monday, así que se puede volver,
+     corregir y reemitir. Que el PDF no quede viejo lo cuida `firmaPdf`. */
   Boolean(s.proformaId) ||
   s.factura.comprobantes.length > 0 ||
   s.remito.emitido ||
   /* La devolución no emite un PDF, pero sí escribe en el stock y en los remitos imputados: una vez
      registrada, cambiar productos o cantidades dejaría la pantalla mintiendo sobre el tablero. */
   s.remito.devolucionRegistrada
+
+/** Qué documento genera la app en la etapa de emisión. */
+export type DocumentoGenerado = 'presupuesto' | 'remito' | 'proforma'
+
+/**
+ * La "firma" de los datos que lleva el PDF de un documento: si cambia algo que el PDF muestra
+ * (productos, cantidades, precios, descuentos, cliente, fechas, COT…), cambia la firma. Se guarda al
+ * emitir (`firmaPdf`) y se compara al volver a la etapa: distinta, el PDF quedó viejo.
+ */
+export function firmaDocumento(s: AppState, doc: DocumentoGenerado): string {
+  const base = { doc, cliente: s.cliente?.id ?? null, vendedor: s.vendedor?.id ?? null, fecha: s.fechaEmision }
+  if (doc === 'presupuesto') {
+    return JSON.stringify({
+      ...base,
+      lineas: s.lineas,
+      diasVigencia: s.diasVigencia,
+      nro: s.nroPresupuesto,
+      leyenda: s.descuentoPagoActivo,
+      descuentos: s.descuentoPagoActivo ? s.descuentosPago : null,
+    })
+  }
+  if (doc === 'remito') {
+    return JSON.stringify({ ...base, items: s.remito.items, cot: s.remito.envio.cot })
+  }
+  return JSON.stringify({
+    ...base,
+    lineas: s.lineas,
+    ventaItems: s.ventaItems,
+    facturaItems: s.facturaItems,
+    tipoVenta: s.tipoVenta,
+    tipoEntrega: s.tipoEntrega,
+    formaPago: s.formaPago,
+    descuentos: s.descuentosPago,
+    tasa: s.tasaCambio,
+  })
+}
 
 /**
  * Los selectores de operación viven en todos los pasos, así que el modo puede cambiar
@@ -646,6 +734,12 @@ export function reducer(state: AppState, action: Action): AppState {
         pasoMaxIdx: 0,
         documentoEmitido: false,
         presupuestoPdf: null,
+        remitoPdfs: null,
+        proformaPdf: null,
+        nroProforma: null,
+        remitoHoja: null,
+        pdfsAbiertos: 0,
+        firmaPdf: null,
         documentoEnviado: false,
         enviadosPorContacto: {},
         contactosFallidos: {},
@@ -717,6 +811,12 @@ export function reducer(state: AppState, action: Action): AppState {
         pasoMaxIdx: state.operacion === 'REGISTRO DE ACTIVIDADES' ? state.pasoMaxIdx : 0,
         documentoEmitido: false,
         presupuestoPdf: null,
+        remitoPdfs: null,
+        proformaPdf: null,
+        nroProforma: null,
+        remitoHoja: null,
+        pdfsAbiertos: 0,
+        firmaPdf: null,
         documentoEnviado: false,
         enviadosPorContacto: {},
         contactosFallidos: {},
@@ -778,6 +878,12 @@ export function reducer(state: AppState, action: Action): AppState {
         pasoMaxIdx: 0,
         documentoEmitido: false,
         presupuestoPdf: null,
+        remitoPdfs: null,
+        proformaPdf: null,
+        nroProforma: null,
+        remitoHoja: null,
+        pdfsAbiertos: 0,
+        firmaPdf: null,
         documentoEnviado: false,
         enviadosPorContacto: {},
         contactosFallidos: {},
@@ -799,6 +905,12 @@ export function reducer(state: AppState, action: Action): AppState {
         pasoMaxIdx: 0,
         documentoEmitido: false,
         presupuestoPdf: null,
+        remitoPdfs: null,
+        proformaPdf: null,
+        nroProforma: null,
+        remitoHoja: null,
+        pdfsAbiertos: 0,
+        firmaPdf: null,
         documentoEnviado: false,
         enviadosPorContacto: {},
         contactosFallidos: {},
@@ -878,7 +990,97 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, documentoEmitido: action.value }
 
     case 'setPresupuestoPdf':
-      return { ...state, presupuestoPdf: action.value }
+      return {
+        ...state,
+        emisionNro: state.emisionNro + 1,
+        presupuestoPdf: action.value,
+        firmaPdf: action.firma ?? null,
+        pdfsAbiertos: 0,
+        // Un PDF nuevo es otro documento: el envío del anterior no cuenta, se vuelve a enviar.
+        documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
+        log: null,
+      }
+
+    /* El PDF emitido quedó viejo (se cambiaron datos después de emitir) o se lo reemplaza: se
+       descarta, con su envío, y la etapa vuelve a "Emitir". Vale para los tres documentos que
+       genera la app; ninguno escribió todavía nada en Monday. */
+    case 'descartarPdf':
+      return {
+        ...state,
+        emisionNro: state.emisionNro + 1,
+        presupuestoPdf: null,
+        remitoPdfs: null,
+        remitoHoja: null,
+        proformaPdf: null,
+        nroProforma: null,
+        firmaPdf: null,
+        pdfsAbiertos: 0,
+        documentoEmitido: false,
+        // Un PDF nuevo es otro documento: el envío del anterior no cuenta, se vuelve a enviar.
+        documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
+        log: null,
+      }
+
+    case 'setPdfsAbiertos':
+      return { ...state, pdfsAbiertos: action.value }
+
+    case 'setProformaPdf':
+      return {
+        ...state,
+        emisionNro: state.emisionNro + 1,
+        proformaPdf: action.pdf,
+        nroProforma: action.numero,
+        firmaPdf: action.firma,
+        pdfsAbiertos: 0,
+        // Un PDF nuevo es otro documento: el envío del anterior no cuenta, se vuelve a enviar.
+        documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
+        log: null,
+      }
+
+    case 'setRemitoPdfs':
+      return {
+        ...state,
+        emisionNro: state.emisionNro + 1,
+        remitoPdfs: action.pdfs,
+        remitoHoja: action.hoja,
+        firmaPdf: action.firma,
+        pdfsAbiertos: 0,
+        // Un PDF nuevo es otro documento: el envío del anterior no cuenta, se vuelve a enviar.
+        documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
+        log: null,
+      }
+
+    /* La hoja asignada al emitir la tomó otro remito antes de registrar este: los PDF llevan un
+       número que ya no es suyo. Se descarta la emisión —y con ella el envío, que mandó ese PDF— para
+       volver a emitir con la próxima hoja libre. */
+    case 'descartarEmisionRemito':
+      return {
+        ...state,
+        remitoPdfs: null,
+        proformaPdf: null,
+        nroProforma: null,
+        remitoHoja: null,
+        pdfsAbiertos: 0,
+        firmaPdf: null,
+        documentoEmitido: false,
+        documentoEnviado: false,
+        enviadosPorContacto: {},
+        contactosFallidos: {},
+        envioIniciado: false,
+        log: null,
+      }
 
     case 'setDocumentoEnviado':
       return { ...state, documentoEnviado: action.value }
@@ -1278,6 +1480,8 @@ export function reducer(state: AppState, action: Action): AppState {
           // Relacionales para afectar pendiente de entrega y stock al emitir el remito.
           pendienteEntregaId: s.prod.pendienteEntregaId,
           stockId: s.prod.stockId,
+          // La factura de la venta: se imprime en la línea de los PDF del remito.
+          nroFactura: s.prod.nroFactura,
         }))
       if (nuevos.length === 0) return state
       return {

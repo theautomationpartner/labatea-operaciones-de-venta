@@ -685,6 +685,11 @@ export interface Contacto {
   /** ID del ítem en Monday: el que se linkea en la columna conectada del presupuesto. */
   itemId?: string
   name: string
+  /**
+   * Sólo el nombre de pila ("✋Nombre", sin el apellido). Lo usa el saludo del WhatsApp de la proforma.
+   * Sin él, se toma la primera palabra de `name`.
+   */
+  primerNombre?: string
   phone: string
   email: string
   ini: string
@@ -757,6 +762,8 @@ export interface VentaEntregaProducto {
   pendienteEntregaId?: string
   /** ID del ítem de "Stock y Movimientos" (board_relation_mm5pz6kz): afectado al emitir el remito. */
   stockId?: string
+  /** "🤖Nro Factura" del pendiente: con qué factura se vendió. Va a la línea del remito. */
+  nroFactura?: string
 }
 
 /** Venta facturada con entrega pendiente: origen del remito de emisión ANTERIOR. */
@@ -825,6 +832,11 @@ export interface RemitoItem {
   pendienteEntregaId?: string
   /** ANTERIOR: ítem de "Stock y Movimientos" del producto. Se afecta al emitir el remito. */
   stockId?: string
+  /**
+   * ANTERIOR: la factura con la que se vendió la línea ("N° Factura - N° Comprobante"). Sale impresa
+   * en la columna de factura de los PDF del remito; en POSTERIOR no hay factura todavía.
+   */
+  nroFactura?: string
 }
 
 /** Destino de entrega asociado a un cliente. */

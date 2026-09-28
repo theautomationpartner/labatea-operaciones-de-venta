@@ -1,5 +1,5 @@
 import { nombreSinCodigo } from '@/lib/busquedaClientes'
-import { round2 } from '@/lib/format'
+import { mensajesDe, type MensajesEnvio } from '@/lib/mensajesEnvio'
 import { faltaParaMedio } from '@/lib/validaciones'
 import type { CanalEnvio, Contacto, MedioEnvio } from '@/types'
 
@@ -35,9 +35,6 @@ export interface EnvioPresupuestoMake {
     fechaVencimiento: string | null
     /** Nombre del PDF adjunto ("Razón social-PRESUP-009.pdf"): el mismo que la parte `pdf`. */
     archivo: string
-    /** El remito no lleva importes: `null`. */
-    totalPesos: number | null
-    totalDolares: number | null
   }
   cliente: {
     /** Ítem del cliente en Monday. */
@@ -70,6 +67,11 @@ export interface DestinatarioMake {
    * así que puede venir vacío: ese contacto no recibe nada esta vez.
    */
   canales: CanalEnvio[]
+  /**
+   * Los textos que acompañan al PDF para ESTE contacto, ya completos: `whatsapp` con el formato de
+   * WhatsApp y `email` en HTML. El escenario los usa tal cual (ver `lib/mensajesEnvio`).
+   */
+  mensaje: MensajesEnvio
 }
 
 /** dd/MM/yyyy (como la app muestra las fechas) → yyyy-MM-dd. Si no se puede, queda como vino. */
@@ -88,7 +90,7 @@ export function canalesDe(contacto: Pick<Contacto, 'phone' | 'email'>, medio: Me
 }
 
 /** Qué documento se envía. El escenario lo usa para el texto del mensaje y dónde guardar el PDF. */
-export type TipoDocumentoMake = 'PRESUPUESTO' | 'REMITO'
+export type TipoDocumentoMake = 'PRESUPUESTO' | 'REMITO' | 'PROFORMA'
 
 /** Lo que hace falta para armar el envío. Sale del estado de la app. */
 export interface DatosEnvioPresupuesto {
@@ -99,8 +101,6 @@ export interface DatosEnvioPresupuesto {
   fechaEmision: string
   fechaVencimiento: string | null
   archivo: string
-  totalPesos: number | null
-  totalDolares: number | null
   cliente: { id: string; name: string; cuit: string }
   vendedor: { id: string; name: string } | null
   medio: MedioEnvio
@@ -133,6 +133,8 @@ export function recibioTodo(
 export function armarEnvioPresupuesto(d: DatosEnvioPresupuesto): EnvioPresupuestoMake {
   const dato = (v: string): string | null => v.trim() || null
   const yaEnviados = d.yaEnviados ?? {}
+  const tipo = d.tipo ?? 'PRESUPUESTO'
+  const razonSocial = nombreSinCodigo(d.cliente.name)
   /* Sólo los contactos a los que les falta algo: en un reintento, al que ya le llegó todo no se lo
      manda, ni siquiera sin canales (el escenario no tiene que saltearlo). */
   const destinatarios = d.contactos
@@ -145,6 +147,14 @@ export function armarEnvioPresupuesto(d: DatosEnvioPresupuesto): EnvioPresupuest
         email: dato(c.email),
         whatsapp: dato(c.phone),
         canales: canalesDe(c, d.medio).filter((canal) => !recibio.includes(canal)),
+        // Los textos del mensaje, ya completos para este contacto (el remito lo saluda por su nombre).
+        mensaje: mensajesDe(tipo, {
+          razonSocial,
+          contacto: c.name,
+          contactoNombre: c.primerNombre || c.name.split(' ')[0] || c.name,
+          fechaEmision: d.fechaEmision,
+          fechaVencimiento: d.fechaVencimiento,
+        }),
       }
     })
     .filter((x) => x.canales.length > 0)
@@ -158,16 +168,14 @@ export function armarEnvioPresupuesto(d: DatosEnvioPresupuesto): EnvioPresupuest
   return {
     appJobId: d.jobId,
     documento: {
-      tipo: d.tipo ?? 'PRESUPUESTO',
+      tipo,
       numero: d.numero,
       fechaEmision: fechaIso(d.fechaEmision),
       fechaVencimiento: d.fechaVencimiento == null ? null : fechaIso(d.fechaVencimiento),
       archivo: d.archivo,
-      totalPesos: d.totalPesos == null ? null : round2(d.totalPesos),
-      totalDolares: d.totalDolares == null ? null : round2(d.totalDolares),
     },
     // El código del cliente es un dato interno: no viaja.
-    cliente: { pulseId: d.cliente.id, razonSocial: nombreSinCodigo(d.cliente.name), cuit: d.cliente.cuit },
+    cliente: { pulseId: d.cliente.id, razonSocial, cuit: d.cliente.cuit },
     vendedor: d.vendedor ? { pulseId: d.vendedor.id, nombre: d.vendedor.name } : null,
     medio: d.medio,
     reenvio_email: pide('email'),
@@ -316,6 +324,8 @@ export function mensajeParcial(
   fallas: readonly Falla[],
   enviados: EnviadosPorContacto,
   motivo?: string,
+  /** Cómo se nombra el documento en el aviso, con su artículo: "El presupuesto", "La proforma". */
+  sujeto = 'El presupuesto',
 ): string {
   const ok = (['email', 'whatsapp'] as const).filter((c) => Object.values(enviados).some((l) => l.includes(c)))
   const faltan = canalesDeFallas(fallas)
@@ -325,11 +335,11 @@ export function mensajeParcial(
        cuando es uno solo: si difieren por contacto, no entran en una frase por canal. */
     const motivos = [...new Set(fallas.map((f) => f.motivo).filter((m): m is string => Boolean(m)))]
     const porque = motivo || (motivos.length === 1 ? capitalizar(motivos[0]) : undefined)
-    return `El presupuesto se envió por ${nombrarCanales(ok)}, pero no por ${nombrarCanales(faltan)}.${conMotivo(
+    return `${sujeto} se envió por ${nombrarCanales(ok)}, pero no por ${nombrarCanales(faltan)}.${conMotivo(
       porque,
     )} Volvé a tocar el botón para completar el envío por ${nombrarCanales(faltan)}: por ${nombrarCanales(ok)} no se manda de nuevo.`
   }
-  return `El presupuesto no les llegó a todos. Faltó: ${detalleFallas(fallas)}.${conMotivo(
+  return `${sujeto} no les llegó a todos. Faltó: ${detalleFallas(fallas)}.${conMotivo(
     motivo,
   )} Volvé a tocar el botón para reintentar sólo lo que faltó: lo que ya salió no se manda de nuevo.`
 }

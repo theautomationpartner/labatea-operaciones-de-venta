@@ -748,6 +748,8 @@ function mapPendienteEntrega(item: MondayItem): VentaEntregaProducto {
     peso: producto ? numCol(prodCols[COL.producto.peso]) : 0,
     // Ítem de "Pends de Entrega": es el padre del subítem de historial de entrega que se crea al emitir.
     pendienteEntregaId: item.id,
+    // La factura con la que se vendió: sale impresa en la línea del remito (columna "factura").
+    nroFactura: valor(c[COL.pendienteEntregaItem.nroFactura]) || undefined,
   }
 }
 
@@ -782,7 +784,7 @@ async function getVentasEntregaPendienteImpl(clienteId: string): Promise<VentaEn
         ) {
           items {
             id name
-            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.ruta}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}"]) {
+            column_values(ids: ["${COL.pendienteEntregaItem.producto}","${COL.pendienteEntregaItem.ventaSubelemento}","${COL.pendienteEntregaItem.ruta}","${COL.pendienteEntregaItem.cantidad}","${COL.pendienteEntregaItem.unidadMedida}","${COL.pendienteEntregaItem.entregada}","${COL.pendienteEntregaItem.pendiente}","${COL.pendienteEntregaItem.estado}","${COL.pendienteEntregaItem.nroFactura}"]) {
               id text
               ... on StatusValue { index }
               ... on FormulaValue { display_value }

@@ -1225,6 +1225,7 @@ function mapContacto(item: { id: string; name: string; column_values?: CV[] }, d
     id: c[COL.contacto.codigo]?.text || item.id,
     itemId: item.id,
     name: completo,
+    ...(nombre ? { primerNombre: nombre } : {}),
     phone: c[COL.contacto.telefono]?.text ?? '',
     email: c[COL.contacto.email]?.text ?? '',
     // Iniciales: la del nombre y la del apellido cuando existen.

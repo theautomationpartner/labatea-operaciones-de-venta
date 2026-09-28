@@ -10,13 +10,14 @@ import { PASOS_PRESUPUESTO, indiceDePaso, pasoPrevioAEmision } from '@/lib/pasos
 import { resumenPresupuesto, resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { faltantesPresupuesto } from '@/lib/validaciones'
 import { adjuntarPdfPresupuesto, crearPresupuesto, mondayHabilitado } from '@/services/monday'
+import { VerImprimirPdf } from '@/features/shared/VerImprimirPdf'
+import { useReemision } from '@/features/shared/useReemision'
 import { useApp, useDispatch } from '@/state/hooks'
 import { LOGO_DOCUMENTOS } from './pdf/comun'
 import { generarPresupuestoPdf } from './pdf/generarPresupuestoPdf'
 import { leyendaPagosDe } from './pdf/leyendaPagos'
 import { PresupuestoAGenerar } from './PresupuestoAGenerar'
 import { ResumenEmision } from './ResumenEmision'
-import { VerPresupuestoPdf } from './VerPresupuestoPdf'
 
 /**
  * Estado de la emisión: idle → generando (la app arma el PDF) → listo.
@@ -33,7 +34,7 @@ type EstadoPdf = 'idle' | 'generando' | 'listo' | 'error' | 'error-pdf'
  * Son dos momentos separados:
  *   1. "Emitir Presupuesto" genera el PDF EN LA APP, con la plantilla que usaba Make.com y los
  *      importes de la card "Presupuesto a generar" (ver `PresupuestoPdf`). No toca Monday ni
- *      Make.com. "Ver Presupuesto PDF" lo abre.
+ *      Make.com. "Ver / Imprimir (1)" lo abre.
  *   2. "Registrar Presupuesto" recién ahí escribe en Monday: crea el ítem con sus subitems, le
  *      sube ese mismo PDF y cierra la operación.
  */
@@ -58,6 +59,7 @@ export function EmisionView() {
     descuentosPago,
   } = useApp()
   const dispatch = useDispatch()
+  const state = useApp()
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
      el botón "Emitir Presupuesto" no se reactiva al volver a esta etapa. */
   const emitido = documentoEmitido
@@ -107,9 +109,8 @@ export function EmisionView() {
    */
   const generar = async () => {
     if (!cliente) return
-    // Anti-duplicado: si el presupuesto ya se emitió (incluso tras volver con el stepper), no se
-    // vuelve a generar.
-    if (documentoEmitido) return
+    /* Emitido, se puede volver a emitir (para corregir un error): el PDF nuevo reemplaza al anterior
+       y el envío vuelve a cero. Lo que no se permite es emitir dos veces a la vez. */
     if (estado === 'generando') return
     if (bloqueo.frenar()) return
     if (lineas.length === 0) {
@@ -142,7 +143,7 @@ export function EmisionView() {
         logoSrc: LOGO_DOCUMENTOS,
       })
       if (!activo.current) return
-      dispatch({ type: 'setPresupuestoPdf', value: archivo })
+      dispatch({ type: 'setPresupuestoPdf', value: archivo, firma })
       // Bandera GLOBAL de emisión exitosa: persiste al navegar con el stepper.
       dispatch({ type: 'setDocumentoEmitido', value: true })
       setEstado('listo')
@@ -210,6 +211,10 @@ export function EmisionView() {
     }
   }
 
+  /* Reemisión: el botón de emitir sigue habilitado, y un PDF que quedó viejo (se cambiaron datos en
+     un paso anterior) se descarta solo. `firma` va guardada con el PDF. */
+  const { firma, pedirEmision, modal: modalReemision } = useReemision('presupuesto', emitido, () => void generar())
+
   return (
     <section className="view emision-v2 paso-layout">
       <PasoHeader pasos={PASOS_PRESUPUESTO} actual={indiceDePaso('emision', operacion, tipoVenta, tipoEntrega)} />
@@ -230,11 +235,11 @@ export function EmisionView() {
             generando={estado === 'generando'}
             emitido={emitido}
             errorPdf={estado === 'error-pdf'}
-            onGenerar={generar}
+            onGenerar={pedirEmision}
           >
             {/* Siempre debajo de emitir: se habilita cuando el PDF ya está generado. El aviso de
                 error va DEBAJO de los dos botones, nunca entre ellos. */}
-            <VerPresupuestoPdf archivo={presupuestoPdf} />
+            <VerImprimirPdf archivos={presupuestoPdf ? [presupuestoPdf] : null} />
             {estado === 'error-pdf' && (
               <div className="pres-pdf-aviso" role="alert">
                 <i className="fas fa-circle-exclamation" /> La app no está pudiendo generar el PDF
@@ -253,7 +258,8 @@ export function EmisionView() {
             lineas={lineas}
             emitido={emitido}
           />
-          <EnviarDocumento documento="presupuesto" />
+          {/* Por PDF emitido: uno nuevo es otro documento, y el envío arranca de cero. */}
+          <EnviarDocumento key={`emision-${state.emisionNro}`} documento="presupuesto" />
         </div>
       </div>
 
@@ -317,6 +323,7 @@ export function EmisionView() {
       )}
 
       {bloqueo.modal}
+      {modalReemision}
     </section>
   )
 }

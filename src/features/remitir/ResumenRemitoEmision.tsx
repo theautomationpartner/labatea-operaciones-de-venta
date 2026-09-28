@@ -4,11 +4,13 @@ import { round2 } from '@/lib/format'
 import { useApp, useDispatch } from '@/state/hooks'
 
 interface ResumenRemitoEmisionProps {
-  /** El PDF se está generando (dispara loading en el visor y bloquea el botón). */
+  /** Los PDF se están generando (bloquea el botón). */
   generando: boolean
-  /** El remito ya se emitió: el botón queda en verde, como el de envío. */
+  /** Los PDF del remito ya se generaron: el botón queda en verde, como el de envío. */
   emitido: boolean
-  /** Emite el remito: escribe observaciones + estado "Emitir" y espera el PDF. */
+  /** react-pdf no pudo generar los PDF: el botón queda en rojo con "Error de emisión". */
+  errorPdf?: boolean
+  /** Emite el remito: reserva la hoja del talonario y genera los dos PDF en la app. */
   onEmitir: () => void
   /** Talonario activo con el que se numera el remito (ítem "En USO"). */
   talonarioNombre?: string
@@ -16,6 +18,8 @@ interface ResumenRemitoEmisionProps {
   hojaNombre?: string
   /** Bloquea "Emitir Remito": sin talonario/hoja disponibles o mientras se valida. */
   bloqueado?: boolean
+  /** Lo que va pegado debajo del botón de emisión: los botones "Ver" de cada PDF. */
+  children?: ReactNode
 }
 
 interface FilaProps {
@@ -46,6 +50,8 @@ export function ResumenRemitoEmision({
   talonarioNombre,
   hojaNombre,
   bloqueado = false,
+  errorPdf = false,
+  children,
 }: ResumenRemitoEmisionProps) {
   const { vendedor, cliente, remito } = useApp()
   const dispatch = useDispatch()
@@ -147,18 +153,38 @@ export function ResumenRemitoEmision({
         type="button"
         className="btn-generar btn-mayus"
         onClick={onEmitir}
-        disabled={generando || emitido || bloqueado}
+        // Emitido sigue habilitado: se puede volver a emitir para corregir un error.
+        disabled={generando || (!emitido && bloqueado)}
         aria-busy={generando}
-        // Emitido: el botón pasa a verde para confirmar, como el de "Enviado".
-        style={emitido ? { backgroundColor: 'var(--green)', color: '#fff' } : undefined}
+        title={
+          generando
+            ? undefined
+            : emitido
+              ? 'Tocá para volver a emitir con los datos actuales'
+              : errorPdf
+                ? 'Tocá para reintentar la emisión'
+                : undefined
+        }
+        /* Emitido: verde para confirmar, como el de "Enviado". Error de los PDF: rojo. */
+        style={
+          emitido
+            ? { backgroundColor: 'var(--green)', color: '#fff' }
+            : errorPdf && !generando
+              ? { backgroundColor: 'var(--red)', color: '#fff' }
+              : undefined
+        }
       >
         {generando ? (
           <>
-            <i className="fas fa-circle-notch spin" /> Emitiendo...
+            <i className="fas fa-circle-notch spin" /> Generando PDF...
           </>
         ) : emitido ? (
           <>
             <i className="fas fa-check" /> Remito emitido
+          </>
+        ) : errorPdf ? (
+          <>
+            <i className="fas fa-xmark" /> Error de emisión
           </>
         ) : (
           <>
@@ -166,6 +192,8 @@ export function ResumenRemitoEmision({
           </>
         )}
       </button>
+
+      {children}
     </div>
   )
 }

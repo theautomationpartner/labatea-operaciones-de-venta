@@ -12,15 +12,11 @@
  */
 import {
   asignarDestinatariosFactura,
-  asignarDestinatariosRemito,
   comprobanteFacturaGenerado,
   dispararEnvioFactura,
-  dispararEnvioRemito,
-  enviarProforma,
   ENVIO_FACTURA_ESTADO,
-  getRemitoPdf,
+  numeroRemito,
   seguirEnvioFactura,
-  seguirEnvioRemito,
 } from '@/services/monday'
 import {
   armarEnvioPresupuesto,
@@ -36,7 +32,6 @@ import {
 } from '@/lib/envioPresupuesto'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { addDays } from '@/lib/dates'
-import { resumenPresupuestoBimoneda } from '@/lib/selectors'
 import { enviarPresupuestoMake, nuevoJobId } from '@/services/make'
 import { confirmarWhatsapp } from '@/services/whatsapp/estadoMensaje'
 import type { AppState } from '@/state/appState'
@@ -168,15 +163,19 @@ const PRESUPUESTO: ComprobanteEnviable = {
   async enviar({ state, medio }) {
     const pdf = state.presupuestoPdf
     if (!pdf || !state.cliente) return { estado: 'sin-documento' }
-    const bimoneda = resumenPresupuestoBimoneda(state.lineas, state.tasaCambio ?? 0)
     return enviarPorMake(state, medio, pdf, {
       tipo: 'PRESUPUESTO',
       numero: state.nroPresupuesto ?? NRO_PRESUPUESTO,
       fechaVencimiento: addDays(state.fechaEmision, state.diasVigencia),
-      totalPesos: bimoneda.ars.neto,
-      totalDolares: bimoneda.usd.neto,
     })
   },
+}
+
+/** Cómo se nombra cada documento en los avisos del envío. */
+const SUJETO: Record<TipoDocumentoMake, string> = {
+  PRESUPUESTO: 'El presupuesto',
+  REMITO: 'El remito',
+  PROFORMA: 'La proforma',
 }
 
 /**
@@ -192,8 +191,6 @@ async function enviarPorMake(
     tipo: TipoDocumentoMake
     numero: string
     fechaVencimiento: string | null
-    totalPesos: number | null
-    totalDolares: number | null
   },
 ): Promise<ResultadoEnvio> {
   if (!state.cliente) return { estado: 'sin-documento' }
@@ -204,8 +201,6 @@ async function enviarPorMake(
     fechaEmision: state.fechaEmision,
     fechaVencimiento: doc.fechaVencimiento,
     archivo: pdf.name,
-    totalPesos: doc.totalPesos,
-    totalDolares: doc.totalDolares,
     cliente: state.cliente,
     vendedor: state.vendedor,
     medio,
@@ -238,7 +233,12 @@ async function enviarPorMake(
     return {
       estado: 'parcial',
       enviados: evaluacion.enviados,
-      mensaje: mensajeParcial(evaluacion.fallas, evaluacion.enviados, respuesta.mensaje),
+      mensaje: mensajeParcial(
+        evaluacion.fallas,
+        evaluacion.enviados,
+        respuesta.mensaje,
+        SUJETO[doc.tipo],
+      ),
       fallidos: fallidosDe(evaluacion.fallas),
     }
   }
@@ -272,38 +272,70 @@ const FACTURA: ComprobanteEnviable = {
   },
 }
 
+/**
+ * El remito, igual que el presupuesto: los PDF los genera la app al emitir y el de VENTA se manda por
+ * el mismo escenario de Make (`documento.tipo = "REMITO"`), antes de que el remito exista en el
+ * tablero. El PREIMPRESO no se envía: se guarda en el remito al registrarlo.
+ */
 const REMITO: ComprobanteEnviable = {
   id: 'remito',
   articulo: 'el',
   nombre: 'remito',
   itemId: (s) => s.remito.remitoId,
-  emitido: (s) => s.documentoEmitido,
+  despachaDesdeItem: false,
+  estadoPorContacto: true,
+  // Emitido = los PDF ya se generaron en la app.
+  emitido: (s) => s.remitoPdfs != null,
+  validaContactos: true,
+  avisoNoEmitido: {
+    titulo: 'Primero generá el remito PDF',
+    texto:
+      'Todavía no se generó el PDF del remito, así que no hay nada que enviar. Tocá "Emitir Remito" y, cuando esté listo, volvé a enviar.',
+  },
   frenaPorCredito: true,
-  async enviar({ state, itemId, contactoIds, medio, onProgreso }) {
-    if (!(await getRemitoPdf(itemId))) return { estado: 'sin-documento' }
-    // Ventas de origen de la mercadería remitada: se aseguran en el link del remito al enviarlo.
-    const ventaIds = Array.from(
-      new Set(state.remito.items.map((it) => it.ventaId).filter((v): v is string => !!v)),
-    )
-    await asignarDestinatariosRemito(itemId, contactoIds, medio, ventaIds)
-    await dispararEnvioRemito(itemId)
-    const final = await seguirEnvioRemito(itemId, onProgreso)
-    return /error/i.test(final) ? { estado: 'error-envio' } : { estado: 'ok' }
+  async enviar({ state, medio }) {
+    const pdf = state.remitoPdfs?.venta
+    const hoja = state.remitoHoja
+    if (!pdf || !hoja) return { estado: 'sin-documento' }
+    return enviarPorMake(state, medio, pdf, {
+      tipo: 'REMITO',
+      numero: numeroRemito(hoja.imprenta),
+      // El remito no vence.
+      fechaVencimiento: null,
+    })
   },
 }
 
+/**
+ * La factura proforma de la venta CONTADO, igual que el presupuesto: el PDF lo genera la app al
+ * emitir y se manda por el mismo escenario de Make (`documento.tipo = "PROFORMA"`), antes de que la
+ * proforma exista en el tablero. Se registra después, con "Registrar Proforma".
+ */
 const PROFORMA: ComprobanteEnviable = {
   id: 'proforma',
   articulo: 'la',
   nombre: 'proforma',
   itemId: (s) => s.proformaId,
-  emitido: (s) => Boolean(s.proformaId),
+  despachaDesdeItem: false,
+  estadoPorContacto: true,
+  // Emitida = el PDF ya se generó en la app.
+  emitido: (s) => s.proformaPdf != null,
+  validaContactos: true,
+  avisoNoEmitido: {
+    titulo: 'Primero generá la proforma PDF',
+    texto:
+      'Todavía no se generó el PDF de la factura proforma, así que no hay nada que enviar. Tocá "Emitir Factura Proforma" y, cuando esté listo, volvé a enviar.',
+  },
   frenaPorCredito: true,
-  /* La proforma no expone columna de estado que seguir: la mutación deja el ítem en "Enviar" y la
-     automatización se encarga. Sin estado que consultar, se da por despachada. */
-  async enviar({ itemId, contactoIds, medio }) {
-    await enviarProforma(itemId, contactoIds, medio)
-    return { estado: 'ok' }
+  async enviar({ state, medio }) {
+    const pdf = state.proformaPdf
+    if (!pdf) return { estado: 'sin-documento' }
+    return enviarPorMake(state, medio, pdf, {
+      tipo: 'PROFORMA',
+      numero: state.nroProforma ?? 'PROFORMA',
+      // La proforma no vence.
+      fechaVencimiento: null,
+    })
   },
 }
 
