@@ -2,7 +2,7 @@
  * Envío del presupuesto PDF a los contactos, por el escenario de Make.com.
  *
  * Igual que la lectura de comprobantes, NUNCA se pega directo al webhook: en producción pasa por
- * `api/make-comprobantes.ts` (`?escenario=envio-presupuesto`, con `MAKE_WEBHOOK_URL`)
+ * `api/make-comprobantes.ts` (`?escenario=envio-presupuesto`, con `MAKE_WEBHOOK_ENVIOS_URL`)
  * y en desarrollo por el proxy de Vite. La dirección del hook no llega al bundle.
  *
  * El cuerpo es JSON —no multipart— para que el webhook de Make lo reciba YA estructurado:

@@ -28,8 +28,8 @@ export default defineConfig(({ mode }) => {
     : {}
 
   /* Envío del presupuesto a los contactos. En producción lo resuelve la misma función
-     (`/api/make-comprobantes?escenario=envio-presupuesto`), con `MAKE_WEBHOOK_URL`. */
-  const webhookEnvio = env.MAKE_WEBHOOK_URL?.trim()
+     (`/api/make-comprobantes?escenario=envio-presupuesto`), con `MAKE_WEBHOOK_ENVIOS_URL`. */
+  const webhookEnvio = env.MAKE_WEBHOOK_ENVIOS_URL?.trim()
   const proxyEnvio: Record<string, ProxyOptions> = webhookEnvio
     ? {
         '/make-envio-presupuesto': {
