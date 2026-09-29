@@ -58,6 +58,7 @@ const BORRADOR_VACIO: Borrador = {
   comprobanteArchivo: null,
   anioRetencion: '',
   nroComprobanteRetencion: '',
+  titularTarjeta: '',
   bancoTarjeta: '',
   tipoTarjeta: null,
   vencimientoTarjeta: '',
@@ -84,6 +85,8 @@ export const ROTULO_CUIT: Record<EstadoCuit, string> = {
 
 /** Dígitos del año de la retención: se pide el ejercicio completo (2026), no dos cifras. */
 const ANIO_DIGITOS = 4
+/** Largo máximo del titular de la tarjeta, como en la app de cobros y recibos. */
+const TITULAR_LARGO = 60
 
 /** Tope del número de certificado. Holgado: acota el desborde, no la forma del comprobante. */
 const NRO_COMPROBANTE_DIGITOS = 20
@@ -122,6 +125,7 @@ const ROTULO_CAMPO: Record<string, string> = {
   anioRet: 'Año de la retención',
   nroCompRet: 'Nro de Comprobante',
   // TARJETA
+  titularTarjeta: 'Titular Tarjeta',
   bancoTarjeta: 'Banco Emisor',
   tipoTarjeta: 'Tipo Tarjeta',
   vencTarjeta: 'Fecha de Venc.',
@@ -444,6 +448,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     anioRet: esRet && (borrador.anioRetencion ?? '').length !== ANIO_DIGITOS,
     nroCompRet: esRet && !borrador.nroComprobanteRetencion?.trim(),
     // TARJETA (débito y crédito)
+    titularTarjeta: esTarjeta && !borrador.titularTarjeta?.trim(),
     bancoTarjeta: esTarjeta && !borrador.bancoTarjeta?.trim(),
     tipoTarjeta: esTarjeta && !borrador.tipoTarjeta,
     vencTarjeta: esTarjeta && !borrador.vencimientoTarjeta,
@@ -667,6 +672,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     if (esTarjeta)
       return new Set([
         'importe',
+        'titularTarjeta',
         'bancoTarjeta',
         'tipoTarjeta',
         'vencimientoTarjeta',
@@ -729,6 +735,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
       if (d.nroComprobanteTransferencia) {
         s.nroComprobanteTransferencia = d.nroComprobanteTransferencia
       }
+      if (d.titularTarjeta) s.titularTarjeta = d.titularTarjeta
       if (d.bancoTarjeta) s.bancoTarjeta = deCatalogo(d.bancoTarjeta, BANCOS_EMISORES_BASE)
       if (d.tipoTarjeta) s.tipoTarjeta = deCatalogo(d.tipoTarjeta, tiposTarjeta)
       if (d.vencimientoTarjeta) s.vencimientoTarjeta = d.vencimientoTarjeta
@@ -1263,6 +1270,32 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* TITULAR del plástico: a nombre de quién está la tarjeta. Va a "🤖Titular Tarjeta" del
+                  subelemento del recibo y de la tarjeta pendiente de acreditar. */}
+              <div className="cobro-form-campo cobro-form-campo--val cobro-campo--titular">
+                <label htmlFor="cobro-tarj-titular">
+                  Titular Tarjeta
+                  <Req />
+                </label>
+                <input
+                  id="cobro-tarj-titular"
+                  className={`cobro-in ${mal('titularTarjeta') ? 'cobro-in--error' : ''}`}
+                  autoComplete="off"
+                  maxLength={TITULAR_LARGO}
+                  placeholder="Como figura en la tarjeta"
+                  aria-invalid={mal('titularTarjeta') || undefined}
+                  value={borrador.titularTarjeta ?? ''}
+                  onChange={(e) =>
+                    setBorrador({ ...borrador, titularTarjeta: e.target.value.slice(0, TITULAR_LARGO) })
+                  }
+                />
+                {mal('titularTarjeta') && (
+                  <span className="cobro-in-err" role="alert">
+                    {textoFalta('Ingresá el titular')}
+                  </span>
+                )}
               </div>
 
               <div className="cobro-form-campo cobro-form-campo--val">

@@ -19,6 +19,9 @@ const Fila = ({ children }: { children: React.ReactNode }) => (
   <div className="cobro-fila">{children}</div>
 )
 
+/** Largo máximo del titular de la tarjeta, como en la app de cobros y recibos. */
+const TITULAR_LARGO = 60
+
 const borradorVacio = (tipo: TipoTarjetaCobro): Borrador => ({
   formaPago: formaPagoTarjeta(tipo),
   importe: 0,
@@ -28,6 +31,7 @@ const borradorVacio = (tipo: TipoTarjetaCobro): Borrador => ({
   cuentaPropiaId: null,
   comprobanteNombre: '',
   comprobanteArchivo: null,
+  titularTarjeta: '',
   bancoTarjeta: '',
   tipoTarjeta: null,
   vencimientoTarjeta: '',
@@ -93,10 +97,11 @@ export function FormularioTarjeta({
     setImporteTexto(sugerido > 0 ? importeATexto(sugerido) : '')
   }
 
-  /* Campos obligatorios del movimiento. El plástico se identifica por banco y tipo: ni el número
-     de tarjeta ni el titular se piden —son datos sensibles que el recibo no necesita—. */
+  /* Campos obligatorios del movimiento. El plástico se identifica por titular, banco y tipo; el
+     número de tarjeta no se pide —es un dato sensible que el recibo no necesita—. */
   const faltantes: Record<string, boolean> = {
     importe: borrador.importe <= 0,
+    titular: !borrador.titularTarjeta?.trim(),
     banco: !borrador.bancoTarjeta?.trim(),
     tipoTarjeta: !borrador.tipoTarjeta,
     vencimiento: !borrador.vencimientoTarjeta,
@@ -166,6 +171,29 @@ export function FormularioTarjeta({
 
       {/* FILA 2 · los datos del plástico: banco, tipo y vencimiento. */}
       <Fila>
+      {/* TITULAR del plástico: a nombre de quién está la tarjeta. */}
+      <div className="cobro-form-campo cobro-form-campo--val cobro-campo--titular">
+        <label htmlFor="tarj-titular">
+          Titular Tarjeta
+          <Req />
+        </label>
+        <input
+          id="tarj-titular"
+          className={`cobro-in ${mal('titular') ? 'cobro-in--error' : ''}`}
+          autoComplete="off"
+          maxLength={TITULAR_LARGO}
+          placeholder="Como figura en la tarjeta"
+          aria-invalid={mal('titular') || undefined}
+          value={borrador.titularTarjeta ?? ''}
+          onChange={(e) => setBorrador({ ...borrador, titularTarjeta: e.target.value.slice(0, TITULAR_LARGO) })}
+        />
+        {mal('titular') && (
+          <span className="cobro-in-err" role="alert">
+            Ingresá el titular
+          </span>
+        )}
+      </div>
+
       <div className="cobro-form-campo cobro-form-campo--val">
         <label htmlFor="tarj-banco">
           Banco Emisor

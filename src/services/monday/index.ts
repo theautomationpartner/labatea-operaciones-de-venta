@@ -1,5 +1,6 @@
 export * from './presupuestar'
 export * from './cobrar'
+export * from './registroCobro'
 export * from './chequesCartera'
 export * from './venta'
 export * from './remitos'

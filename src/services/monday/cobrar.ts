@@ -29,7 +29,6 @@ import type { MovimientoPago } from '@/types'
 import {
   BOARDS,
   CAJA_INDEX,
-  COBRO_REGISTRO_INDEX,
   COL,
   personCol,
   FACT_PENDIENTE_ESTADO_INDEX,
@@ -37,6 +36,7 @@ import {
   FORMA_PAGO_LABEL,
   TIPO_COBRO_LABEL,
 } from './columns'
+import type { LineaReciboCreada } from './registroCobro'
 import { mondayApi, mondayHabilitado, mondaySubirArchivo } from './sdk'
 import { leerIdVenta } from './venta'
 
@@ -134,6 +134,9 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     /* Número de cupón del posnet: es la referencia con la que se concilia la acreditación. Va a
        "🤖Nro Comprobante", la MISMA columna que el nro de cheque y el del certificado. */
     if (m.numeroCupon?.trim()) cv[COL.cobroSub.nroComprobante] = m.numeroCupon.trim()
+    // A nombre de quién está la tarjeta: "🤖Titular Tarjeta" del subelemento.
+    const titular = m.titularTarjeta?.trim()
+    if (titular) cv[COL.cobroSub.titularTarjeta] = titular
     const tipo = dropdown(m.tipoTarjeta)
     if (tipo) cv[COL.cobroSub.tipoTarjeta] = tipo
     // "🤖Fecha Venc" es la MISMA columna que usa el vencimiento del cheque.
@@ -182,27 +185,6 @@ const columnasFactura = (f: FacturaCancelada): Record<string, unknown> => {
   if (comprobante) cv[COL.cobroSub.factCancelada] = comprobante
   return cv
 }
-
-/**
- * Pone el recibo en "Registrar": el disparador de la automatización que lo asienta en el sistema.
- *
- * Va por ÍNDICE (ver `COBRO_REGISTRO_INDEX`) y no se espera: a partir de acá el circuito es del
- * tablero, y la app no tiene nada que hacer con el resultado. Un fallo se traga —el recibo ya está
- * creado y completo, así que el estado se puede volver a poner a mano desde Monday—.
- */
-const dispararRegistro = (itemId: string): Promise<unknown> =>
-  mondayApi(
-    `mutation ($board: ID!, $item: ID!, $cv: JSON!) {
-       change_multiple_column_values(board_id: $board, item_id: $item, column_values: $cv) { id }
-     }`,
-    {
-      board: BOARDS.cobros,
-      item: itemId,
-      cv: JSON.stringify({
-        [COL.cobro.estadoRegistro]: { index: COBRO_REGISTRO_INDEX.registrar },
-      }),
-    },
-  ).catch(() => null)
 
 /** Nombre del subelemento del anticipo, igual que la etiqueta de "✋Caja". */
 const ANTICIPO_LABEL = 'Anticipo'
@@ -287,7 +269,9 @@ export class ReciboDesbalanceado extends Error {
  * La venta a CUENTA CORRIENTE no deja recibo —no hay nada que recibir todavía—, sólo su deuda en
  * "💰Fact Vtas Pends de Cobro".
  */
-export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }> {
+export async function registrarCobro(
+  datos: DatosCobro,
+): Promise<{ id: string; lineas: LineaReciboCreada[] }> {
   const {
     clienteId,
     nombreCliente,
@@ -325,7 +309,7 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
      se escribe. */
   if (anticipo > 0 && diferencia !== 0) throw new ReciboDesbalanceado(cancelado, recibido)
 
-  if (!mondayHabilitado()) return { id: `mock-cobro-${Date.now()}` }
+  if (!mondayHabilitado()) return { id: `mock-cobro-${Date.now()}`, lineas: [] }
 
   const cabecera: Record<string, unknown> = {
     [COL.cobro.tipoCobro]: { label: TIPO_COBRO_LABEL.SIMULTANEO },
@@ -347,6 +331,7 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
     { boardId: BOARDS.cobros, name: nombreCliente, cv: JSON.stringify(cabecera) },
   )
   const itemId = creado.create_item.id
+  let lineas: LineaReciboCreada[] = []
 
   /* Los subelementos del recibo, en el orden en que se leen: PRIMERO qué se cancela (un
      subelemento por factura emitida, que con división de mercadería es más de una) y DESPUÉS con
@@ -374,19 +359,21 @@ export async function registrarCobro(datos: DatosCobro): Promise<{ id: string }>
   if (subitems.length > 0) {
     const subitemIds = await crearSubitems(itemId, subitems)
 
-    /* RECIÉN ACÁ se dispara el registro del cobro en el sistema, con el ítem y TODOS sus
-       subelementos ya creados —las dos creaciones quedaron awaiteadas más arriba—. El orden es la
-       razón de ser de este bloque: puesto antes, la automatización del tablero correría sobre un
-       recibo sin facturas ni movimientos y asentaría un cobro vacío.
-       Sólo se dispara si hubo movimientos: un recibo sin cobros cargados no tiene nada que
-       registrar. La subida de los comprobantes NO se espera —son archivos que se adjuntan a
-       subelementos que ya existen—, y el disparo tampoco: la venta no se queda esperando a que la
-       automatización termine. */
-    if (cobros.length > 0) void dispararRegistro(itemId)
+    /* Los subelementos, con de qué salió cada uno: es lo que el REGISTRO del cobro necesita para
+       impactar cajas, cheques, tarjetas, retenciones y el anticipo (ver `registrarCobroSimultaneo`).
+       El registro lo encadena quien llama, con el recibo ya completo: antes lo hacía el escenario de
+       Make al poner el recibo en "Registrar", y ese disparo ya no se escribe —si no, el escenario lo
+       haría de nuevo—. */
+    lineas = subitems.flatMap((sub, i): LineaReciboCreada[] => {
+      const id = subitemIds[i] ?? ''
+      if (sub.balance) return [{ id, clase: 'pago', movimiento: sub.balance.movimiento }]
+      if (sub.nombre === ANTICIPO_LABEL) return [{ id, clase: 'anticipo', importe: anticipo }]
+      return []
+    })
     await subirComprobantes(subitemIds, subitems)
   }
 
-  return { id: itemId }
+  return { id: itemId, lineas }
 }
 
 /**

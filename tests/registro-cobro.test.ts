@@ -1,12 +1,13 @@
 /**
- * El recibo se pone en "Registrar" RECIÉN cuando está completo.
+ * El recibo YA NO se pone en "Registrar".
  *
- * "🤖Estado Registro de Cobro" (color_mm5zkr61) no es un dato: es el DISPARADOR de la automatización
- * que asienta el cobro en el sistema. Puesto antes de que existan los subelementos, la automatización
- * corre sobre un recibo sin facturas ni movimientos y registra un cobro vacío —y nada falla: el
- * ítem existe, el estado es válido y el error recién se ve en la caja—.
+ * "🤖Estado Registro de Cobro" (color_mm5zkr61) era el DISPARADOR del escenario de Make que asentaba
+ * el cobro (movimientos de caja, cheques, tarjetas, retenciones, anticipo). Ahora eso lo hace la app
+ * (`registrarCobroSimultaneo`, ver tests/registro-cobro-simultaneo.test.ts): si `registrarCobro`
+ * siguiera escribiendo "Registrar", el escenario registraría el mismo cobro por segunda vez.
  *
- * Por eso lo que se verifica es el ORDEN de las llamadas, no sólo el payload.
+ * Lo que se verifica: el ítem y después sus subelementos, ningún disparo, y que se devuelva cada
+ * subelemento con lo que lo originó —es lo que el registro necesita—.
  *
  * Se corre con esbuild + node (`npm run test:registro-cobro`); vive fuera de `src/`.
  */
@@ -54,41 +55,37 @@ await registrarCobro({
   balances: cobro(10000),
 })
 
-/* El orden es la regla: primero el ítem, después sus subelementos, y el estado AL FINAL. */
+/* Primero el ítem, después sus subelementos, y NINGÚN estado: el disparo del escenario se terminó. */
 assert.equal(orden[0], 'item', 'primero se crea el recibo')
 assert.equal(orden[1], 'subitems', 'después sus subelementos')
-assert.equal(orden[2], 'estado', 'y RECIÉN ahí se dispara el registro')
+assert.ok(!orden.includes('estado'), 'y no se escribe "Registrar": el escenario de Make registraría el cobro de nuevo')
 assert.ok(
-  orden.indexOf('estado') > orden.indexOf('subitems'),
-  'el disparo nunca puede adelantarse a los subelementos: registraría un cobro vacío',
+  !cuerpos.some((c) => JSON.stringify(c.variables).includes(`"index":${COBRO_REGISTRO_INDEX.registrar}`) && JSON.stringify(c.variables).includes(COL.cobro.estadoRegistro)),
+  'en ninguna llamada',
 )
 
-/* ---------- El payload del disparo ---------- */
-const disparo = cuerpos[orden.indexOf('estado')]
-assert.equal(disparo.variables.item, '123', 'sobre el recibo recién creado')
-const cv = JSON.parse(disparo.variables.cv as string) as Record<string, unknown>
-/* Va por ÍNDICE: es una columna de sistema y el rótulo se renombra desde Monday sin avisar. */
-assert.deepEqual(
-  cv[COL.cobro.estadoRegistro],
-  { index: COBRO_REGISTRO_INDEX.registrar },
-  'se pone en "Registrar", por índice',
+/* "🤖Estado de Envio" (color_mkwbzd3f) no se asigna al crear el recibo: sus etiquetas de emisión
+   ("Emitido", "A emitir") no existen en el tablero, y con `create_labels_if_missing` se crearían. */
+assert.ok(
+  !cuerpos.some((c) => JSON.stringify(c.variables).includes('color_mkwbzd3f')),
+  'ninguna llamada asigna "🤖Estado de Envio"',
 )
-assert.equal(COBRO_REGISTRO_INDEX.registrar, 4, 'que es el 4 en este tablero')
-assert.deepEqual(Object.keys(cv), [COL.cobro.estadoRegistro], 'y no toca ninguna otra columna')
 
-/* ---------- Sin movimientos NO se dispara ----------
-   Un recibo sin cobros cargados no tiene nada que registrar: pedirle a la automatización que lo
-   asiente sería mandarla a trabajar sobre la nada. */
-orden = []
-cuerpos = []
-await registrarCobro({
-  clienteId: '111',
-  nombreCliente: 'AGRO LUCIA S.A.',
-  totalVenta: 10000,
-  facturas: [{ facturaId: '501', importe: 10000 }],
-  balances: [],
-})
-assert.ok(orden.includes('subitems'), 'la factura cancelada sí deja su subelemento')
-assert.ok(!orden.includes('estado'), 'pero el registro no se dispara sin un cobro cargado')
+/* ---------- Lo que devuelve: cada subelemento con su origen ---------- */
+const hecho = await (async () => {
+  orden = []
+  cuerpos = []
+  return registrarCobro({
+    clienteId: '111',
+    nombreCliente: 'AGRO LUCIA S.A.',
+    totalVenta: 10000,
+    facturas: [{ facturaId: '501', importe: 10000 }],
+    balances: cobro(10000),
+  })
+})()
+assert.equal(hecho.id, '123', 'el id del recibo')
+assert.equal(hecho.lineas.length, 1, 'un movimiento de pago (la factura cancelada no se registra aparte)')
+assert.equal(hecho.lineas[0].clase, 'pago', 'el efectivo')
+assert.equal(hecho.lineas[0].id, '901', 'con el id de SU subelemento (el 900 es el de la factura)')
 
-console.log('OK · el recibo se pone en "Registrar" recién con sus subelementos ya creados')
+console.log('OK · el recibo se crea con sus subelementos y ya no dispara "Registrar"')

@@ -837,6 +837,8 @@ export const COL = {
     tipoTarjeta: 'dropdown_mm5rx800',
     /** "🤖Cupon" (file): el comprobante del cobro con tarjeta. */
     cupon: 'file_mm5yy4je',
+    /** "🤖Titular Tarjeta" (text): a nombre de quién está la tarjeta. */
+    titularTarjeta: 'text_mm5yr164',
     /* El número del cupón NO va a "🤖Numero Cupon" (text_mm5zs69e, que sigue existiendo en el
        board pero quedó sin uso): va a `nroComprobante`, la misma columna que el nro de cheque y el
        del certificado de retención. Los tres son "el número del papel que respalda el movimiento",
@@ -1614,6 +1616,116 @@ export const ANTICIPO_ESTADO_INDEX = {
  * La app SÓLO escribe "Registrar". Los demás estados los va poniendo la automatización, y están
  * acá para que se lea el circuito completo de un vistazo.
  */
+/* ===== REGISTRO DEL COBRO SIMULTÁNEO =====
+   Lo que "Registrar Cobro" escribe en los tableros que impacta un recibo simultáneo —lo que antes
+   hacía el escenario de Make "[TAP] Se crea un item en Recibo y Cobro Vta SIMULT -> Crear
+   Movimiento de Caja/tarjetas/cheque"—. Los ids son los de la app de cobros y recibos, verificados
+   contra el esquema de cada tablero. */
+export const BOARDS_REGISTRO = {
+  /** "💰Cajas 📄" y sus subelementos (cada movimiento de caja). */
+  cajas: 18421035505,
+  cajasSub: 18421035566,
+  /** "💳Tarjetas Pend de Acreditar". */
+  tarjetas: 18425243669,
+  /** "🔃Retenciones". */
+  retenciones: 18426092199,
+  /** "💵Cta Cte Cliente". */
+  ctaCte: 18421858736,
+} as const
+
+/** El ítem "Efectivo" de "💰Cajas 📄": fijo, igual que en el escenario de Make. */
+export const CAJA_EFECTIVO_ID = '12476858661'
+
+export const COL_REGISTRO = {
+  /* "⚙️Configuracion - Sistema": la cuenta bancaria propia apunta a SU caja. */
+  config: { caja: 'board_relation_mm5zmhxq' },
+  /* Subelementos de "💰Cajas 📄": un movimiento de caja. */
+  cajaSub: {
+    fecha: 'date0',
+    saldoInicial: 'numeric_mksexfxq',
+    ingresos: 'numeric_mkse4dzs',
+    egresos: 'numeric_mksetyds',
+    bancoEmisor: 'dropdown_mm5z78dy',
+    comprobante: 'file_mm5xmpnc',
+    ventas: 'board_relation_mm5yexr3',
+    comprobanteOrigen: 'board_relation_mm5x77s6',
+    cobrado: 'color_mkwb3v95',
+  },
+  /* "🧾Cheques/eCheq en Cartera". */
+  cheque: {
+    numero: 'text_mm5y2nqc',
+    cuitEmisor: 'text_mm5ye31b',
+    estado: 'color_mm5y74q2',
+    emision: 'date_mm5yzd17',
+    vencimiento: 'date_mm5y67wr',
+    fechaPago: 'date_mm6vr6g5',
+    importe: 'numeric_mm5yxq0',
+    tipo: 'dropdown_mm5ye3k3',
+    banco: 'dropdown_mm5zgtbe',
+    persona: 'board_relation_mm643x5f',
+    ventas: 'board_relation_mm5ydk2c',
+    subRecibo: 'board_relation_mm5ysy5w',
+  },
+  /* "💳Tarjetas Pend de Acreditar". */
+  tarjeta: {
+    fechaEmision: 'date_mm5yq9nc',
+    nroCupon: 'text_mm5yxc7j',
+    titular: 'text_mm5zvdjj',
+    estado: 'color_mm5ykwtq',
+    monto: 'numeric_mm5yt61n',
+    tipo: 'dropdown_mm5ybkgf',
+    bancoEmisor: 'dropdown_mm5z9jz3',
+    tipoTarjeta: 'dropdown_mm5zra4w',
+    cupon: 'file_mm5ybwj8',
+    subRecibo: 'board_relation_mm5y1912',
+    ventas: 'board_relation_mm65h5vn',
+    persona: 'board_relation_mm64z9kk',
+  },
+  /* "🔃Retenciones". (La "🤖Año Retencion" del escenario ya no existe en el tablero.) */
+  retencion: {
+    sufridaAplicada: 'dropdown_mm6n5vw',
+    tipo: 'color_mm65rxsy',
+    nro: 'text_mm79nmzs',
+    monto: 'numeric_mm64rg47',
+    fecha: 'date_mm64vv7b',
+    pdf: 'file_mm64e4d8',
+    subRecibo: 'board_relation_mm64n3we',
+    ventas: 'board_relation_mm65zrvg',
+    sujeto: 'board_relation_mm64kd99',
+  },
+  /* "💰Anticipos y Credito x pase de Saldo Pends de Aplicar": lo que se suma a `COL.anticipo`. */
+  anticipo: { subRecibo: 'board_relation_mm65rg9m' },
+  /* "💵Cta Cte Cliente". */
+  ctaCte: {
+    cliente: 'board_relation_mm58dyn',
+    /** "Anticipo pend de Aplicar" (numbers): el saldo a favor sin usar. */
+    anticiposPendAplicar: 'numeric_mm67j0rv',
+  },
+  /* Los subelementos del recibo. (La app no escribe "🤖Estado de Envio", color_mkwbzd3f: sólo
+     tiene las etiquetas del envío —Enviar, Enviando, Enviado, Error - Enviar—; "A emitir" y
+     "Emitido" ya no existen.) */
+  recibo: {
+    /** "🤖ID Mov Recibo" de cada subelemento ("MOVRECIBO-12"). */
+    idMov: 'pulse_id_mkwbrvf5',
+  },
+} as const
+
+/** "✋Cobrado" en el movimiento de caja. */
+export const CAJA_SUB_COBRADO_INDEX = 1
+/** "🤖Estado Acreditacion" → "Pend de Acreditacion" en la tarjeta. */
+export const TARJETA_PEND_ACREDITACION_INDEX = 0
+/** "🤖Estado del Cheque" → "Pendiente". */
+export const CHEQUE_PENDIENTE_INDEX = 17
+/** "🤖Retencion" → "Sufrida": la que el cliente nos practicó al pagarnos. */
+export const RETENCION_SUFRIDA_ID = 1
+/** "🤖Tipo Retencion" por forma de pago. */
+export const RETENCION_TIPO_INDEX: Record<string, number> = {
+  'Retencion IVA': 0,
+  'Retencion GAN': 1,
+  'Retencion CCSS': 2,
+  'Retencion IIBB': 3,
+}
+
 export const COBRO_REGISTRO_INDEX = {
   /** Lo ÚNICO que escribe la app: "andá y registrá este cobro, que ya está completo". */
   registrar: 4,

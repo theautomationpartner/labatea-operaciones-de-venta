@@ -29,6 +29,7 @@ import {
   crearVenta,
   marcarProformaUsada,
   registrarCobro,
+  registrarCobroSimultaneo,
   registrarDeudaPosterior,
   registrarFacturacionVtasPend,
   vincularVentaAComprobantes,
@@ -404,11 +405,27 @@ export function FacturaView() {
         totalVenta,
         facturas: facturasCanceladas,
         balances,
-      }).catch(() => {
+      })
+        /* Con el recibo completo, se REGISTRA el cobro: movimientos de caja, cheques en cartera,
+           cupones de tarjeta, retenciones y anticipo (ver `registrarCobroSimultaneo`). Lo que no
+           entra deja el recibo en "Error - Ver Update" con el detalle, y se avisa acá. */
+        .then(({ id, lineas }) =>
+          lineas.length > 0
+            ? registrarCobroSimultaneo({
+                reciboId: id,
+                clienteId: cliente.id,
+                ventaId: vId,
+                facturaIds: facturasCanceladas.map((f) => f.facturaId),
+                fechaCobro: state.cobro.fecha || fechaEmision,
+                lineas,
+              })
+            : undefined,
+        )
+        .catch(() => {
         /* El recibo del cobro es best-effort: un fallo no revierte la venta ya creada. Se avisa
            igual: un recibo que no se creó deja la caja sin el asiento de esta venta, y enterarse
            recién al buscarlo en el tablero es peor que un cartel. */
-        dispatch({ type: 'errorMonday', accion: 'registrar el recibo del cobro' })
+        dispatch({ type: 'errorMonday', accion: 'registrar el cobro (recibo y movimientos de caja)' })
       })
       dispararComisiones(vId)
     } else {

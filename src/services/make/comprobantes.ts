@@ -86,6 +86,7 @@ export interface DatosComprobante {
   nroComprobanteTransferencia?: string
   // Tarjeta
   bancoTarjeta?: string
+  titularTarjeta?: string
   tipoTarjeta?: string
   vencimientoTarjeta?: string
   numeroCupon?: string
@@ -307,6 +308,7 @@ const ALIAS: Record<keyof DatosComprobante, string[]> = {
     'operacion',
   ],
   bancoTarjeta: ['bancoTarjeta', 'bancoEmisorTarjeta', 'bancoDeLaTarjeta'],
+  titularTarjeta: ['titularTarjeta', 'titular', 'nombreTitular', 'cardHolder'],
   tipoTarjeta: ['tipoTarjeta', 'marcaTarjeta', 'tarjeta', 'cardBrand'],
   vencimientoTarjeta: [
     'vencimientoTarjeta',
@@ -371,6 +373,7 @@ function normalizar(fuente: Record<string, unknown>): DatosComprobante {
      operación de un banco puede llevar letras o guiones que son parte del dato. */
   poner('nroComprobanteTransferencia', aTexto(leer('nroComprobanteTransferencia')))
   poner('bancoTarjeta', aTexto(leer('bancoTarjeta')))
+  poner('titularTarjeta', aTexto(leer('titularTarjeta')))
   poner('tipoTarjeta', aTexto(leer('tipoTarjeta')))
   poner('vencimientoTarjeta', aVencimientoTarjeta(leer('vencimientoTarjeta')))
   poner('numeroCupon', aTexto(leer('numeroCupon')))

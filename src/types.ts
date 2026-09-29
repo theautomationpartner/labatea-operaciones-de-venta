@@ -613,6 +613,8 @@ export interface MovimientoPago {
   comprobanteArchivo?: File | null
   /** Tarjeta (débito/crédito): banco emisor y tipo de tarjeta. */
   bancoTarjeta?: string
+  /** A nombre de quién está la tarjeta (débito o crédito). */
+  titularTarjeta?: string
   tipoTarjeta?: TarjetaTipo | null
   /** Tarjeta: vencimiento del plástico (dd/mm/aaaa). */
   vencimientoTarjeta?: string
