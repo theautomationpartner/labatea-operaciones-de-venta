@@ -22,7 +22,12 @@
  * mandaría el presupuesto dos veces a los mismos contactos. El reintento lo decide el usuario.
  */
 import { notificarErrorSeguridad } from '@/lib/errorSeguridad'
-import type { EnvioPresupuestoMake, ResultadoEntrega, ResultadosEnvio } from '@/lib/envioPresupuesto'
+import type {
+  EnvioPresupuestoMake,
+  MensajeWhatsapp,
+  ResultadoEntrega,
+  ResultadosEnvio,
+} from '@/lib/envioPresupuesto'
 import { cabeceraSesion, mensajeDelEscenario } from './sdk'
 
 const ENDPOINT = import.meta.env.DEV
@@ -51,9 +56,16 @@ export type ResultadoEnvioMake =
  *     "operacion": "ENVIO PRESUPUESTO",
  *     "medio": "Ambos",
  *     "mensajeError": null,
- *     "enviosWhatsapp": [{ "messageId": "f4376401-…", "envio_whatsapp": true }],
+ *     "enviosWhatsapp": [{
+ *       "nombre": "Luciano 1",
+ *       "pulseId": "12587733631",
+ *       "envio_mensaje_texto": { "phonenumber": "5492494014611", "id": "17c38bea-…" },
+ *       "envio_mensaje_documentos": [{ "data": { "phonenumber": "5492494014611", "id": "388de5da-…" } }]
+ *     }],
  *     "enviosEmail": [{ "envio_email": true }]
  *   }
+ * Los WhatsApp pueden venir en `enviosWhatsapp` o `enviados_whatsapp` (el nombre de la salida del
+ * módulo). También se acepta el formato anterior de cada ítem: `{ "envio_whatsapp", "messageId" }`.
  */
 interface RespuestaEscenario {
   operacion?: unknown
@@ -61,6 +73,7 @@ interface RespuestaEscenario {
   mensajeError?: unknown
   enviosEmail?: unknown
   enviosWhatsapp?: unknown
+  enviados_whatsapp?: unknown
 }
 
 /** El texto de un campo, o `''` si no vino, es `null` o no es texto. */
@@ -85,15 +98,72 @@ function items(v: unknown): Record<string, unknown>[] {
   return lista.filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
 }
 
-/** Un ítem del escenario → el resultado de ese envío. `clave`: "envio_email" o "envio_whatsapp". */
-function entrega(item: Record<string, unknown>, clave: string): ResultadoEntrega {
-  const pulseId = campo(item.pulseId) || (typeof item.pulseId === 'number' ? String(item.pulseId) : '')
-  const messageId = campo(item.messageId)
+/** El `pulseId` de un ítem, venga como texto o como número. */
+const pulseIdDe = (item: Record<string, unknown>): string =>
+  campo(item.pulseId) || (typeof item.pulseId === 'number' ? String(item.pulseId) : '')
+
+/** Un ítem de `enviosEmail` → el resultado de ese envío. */
+function entregaEmail(item: Record<string, unknown>): ResultadoEntrega {
+  const pulseId = pulseIdDe(item)
   const motivo = campo(item.mensajeError) || campo(item.motivo)
   return {
-    ok: bandera(item[clave]),
+    ok: bandera(item.envio_email),
     ...(pulseId ? { pulseId } : {}),
-    ...(messageId ? { messageId } : {}),
+    ...(motivo ? { motivo } : {}),
+  }
+}
+
+/** El id de un mensaje de 360Messenger: `{ id }` o `{ data: { id } }`. */
+const idMensaje = (v: unknown): string => {
+  if (!v || typeof v !== 'object') return ''
+  const o = v as { id?: unknown; data?: unknown }
+  return campo(o.id) || idMensaje(o.data)
+}
+
+/**
+ * Un ítem de los WhatsApp → el resultado de ese contacto, con los mensajes a confirmar: el de texto
+ * (`envio_mensaje_texto`) y uno por documento (`envio_mensaje_documentos`). El escenario da el envío
+ * por hecho si mandó los dos; que salieron de verdad lo confirma después 360Messenger, uno por uno.
+ *
+ * Si falta el id del texto o de algún documento, el WhatsApp no cuenta como enviado: lo que no se
+ * puede confirmar no se da por hecho. El formato anterior (`envio_whatsapp` + `messageId`) se lee
+ * igual, con su bandera.
+ */
+function entregaWhatsapp(item: Record<string, unknown>): ResultadoEntrega {
+  const pulseId = pulseIdDe(item)
+  const motivoEscenario = campo(item.mensajeError) || campo(item.motivo)
+  const texto = idMensaje(item.envio_mensaje_texto)
+  const documentos = items(item.envio_mensaje_documentos).map(idMensaje)
+  const formatoNuevo = 'envio_mensaje_texto' in item || 'envio_mensaje_documentos' in item
+
+  let ok: boolean
+  let mensajes: MensajeWhatsapp[]
+  let motivo = motivoEscenario
+  if (formatoNuevo) {
+    mensajes = [
+      ...(texto ? [{ id: texto, parte: 'texto' as const }] : []),
+      ...documentos.filter(Boolean).map((id) => ({ id, parte: 'documento' as const })),
+    ]
+    const faltaTexto = !texto
+    const faltaDocumento = documentos.length === 0 || documentos.some((id) => !id)
+    ok = !faltaTexto && !faltaDocumento && (!('envio_whatsapp' in item) || bandera(item.envio_whatsapp))
+    if (!ok && !motivo) {
+      motivo =
+        faltaTexto && faltaDocumento
+          ? 'no se envió el WhatsApp'
+          : faltaTexto
+            ? 'no se envió el mensaje de texto del WhatsApp'
+            : 'no se envió el PDF por WhatsApp'
+    }
+  } else {
+    const messageId = campo(item.messageId)
+    ok = bandera(item.envio_whatsapp)
+    mensajes = messageId ? [{ id: messageId, parte: 'documento' }] : []
+  }
+  return {
+    ok,
+    ...(pulseId ? { pulseId } : {}),
+    ...(mensajes.length > 0 ? { mensajes } : {}),
     ...(motivo ? { motivo } : {}),
   }
 }
@@ -109,8 +179,8 @@ function leerRespuesta(cuerpo: unknown): ResultadoEnvioMake {
   return {
     tipo: 'respuesta',
     resultados: {
-      email: items(r.enviosEmail).map((i) => entrega(i, 'envio_email')),
-      whatsapp: items(r.enviosWhatsapp).map((i) => entrega(i, 'envio_whatsapp')),
+      email: items(r.enviosEmail).map(entregaEmail),
+      whatsapp: items(r.enviosWhatsapp ?? r.enviados_whatsapp).map(entregaWhatsapp),
     },
     ...(mensaje ? { mensaje } : {}),
   }
@@ -132,8 +202,15 @@ export interface PdfAdjunto {
   data: string
 }
 
-/** Lo que viaja al webhook: la estructura del envío con el PDF adjunto. */
-export type CuerpoEnvioPresupuesto = EnvioPresupuestoMake & { pdf: PdfAdjunto }
+/**
+ * Lo que viaja al webhook: la estructura del envío y los archivos para los contactos.
+ *
+ *   · `adjuntos`: TODOS los documentos a enviar, siempre como array aunque sea uno (el presupuesto,
+ *     el remito de venta, la proforma; las facturas de venta, una por comprobante).
+ *   · `pdf`: el primero de `adjuntos`, como viajaba antes. Queda mientras el escenario pasa a leer
+ *     `adjuntos`; después se saca, para no mandar el mismo archivo dos veces.
+ */
+export type CuerpoEnvioPresupuesto = EnvioPresupuestoMake & { adjuntos: PdfAdjunto[]; pdf: PdfAdjunto }
 
 /** Bytes → base64, por tandas: `String.fromCharCode(...bytes)` de un archivo entero rompe la pila. */
 function aBase64(bytes: Uint8Array): string {
@@ -145,19 +222,28 @@ function aBase64(bytes: Uint8Array): string {
   return btoa(binario)
 }
 
-/** Arma el cuerpo: los datos del envío en la raíz y el PDF en `pdf`. */
+/** Un archivo como lo recibe el escenario: nombre, tipo y contenido en base64. */
+async function adjunto(archivo: File): Promise<PdfAdjunto> {
+  const data = aBase64(new Uint8Array(await archivo.arrayBuffer()))
+  return { name: archivo.name, mime: archivo.type || 'application/pdf', data }
+}
+
+/** Arma el cuerpo: los datos del envío en la raíz y los archivos en `adjuntos` (y el primero en `pdf`). */
 export async function cuerpoEnvioPresupuesto(
   datos: EnvioPresupuestoMake,
-  pdf: File,
+  archivos: File | readonly File[],
 ): Promise<CuerpoEnvioPresupuesto> {
-  const data = aBase64(new Uint8Array(await pdf.arrayBuffer()))
-  return { ...datos, pdf: { name: pdf.name, mime: pdf.type || 'application/pdf', data } }
+  const lista = Array.isArray(archivos) ? archivos : [archivos as File]
+  if (lista.length === 0) throw new Error('No hay documentos para enviar.')
+  const adjuntos = await Promise.all(lista.map(adjunto))
+  return { ...datos, adjuntos, pdf: adjuntos[0] }
 }
 
 /** Dispara el escenario y espera su respuesta. Sólo lanza por un rechazo de acceso (401/403). */
 export async function enviarPresupuestoMake(
   datos: EnvioPresupuestoMake,
-  pdf: File,
+  /** Los documentos para los contactos (van en `adjuntos`). */
+  archivos: File | readonly File[],
 ): Promise<ResultadoEnvioMake> {
   const ctrl = new AbortController()
   let vencio = false
@@ -169,7 +255,7 @@ export async function enviarPresupuestoMake(
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
-      body: JSON.stringify(await cuerpoEnvioPresupuesto(datos, pdf)),
+      body: JSON.stringify(await cuerpoEnvioPresupuesto(datos, archivos)),
       headers: { 'Content-Type': 'application/json', ...(await cabeceraSesion()) },
       signal: ctrl.signal,
     })

@@ -74,8 +74,9 @@ async function main() {
       '*LA BATEA*',
     'WhatsApp: sólo el nombre de pila, fecha DD-MM-YYYY',
   )
+  igual(m.email.subject, 'LA BATEA - Factura Proforma: 28-09-2026', 'asunto del email con la fecha de emisión')
   igual(
-    m.email,
+    m.email.content,
     '👋 <b>¡Hola Luciano Torres!</b><br>' +
       'Te adjuntamos la <b>factura Proforma</b> emitida el 📅 <b>Fecha de Emisión:</b> 28/09/2026. Cualquier duda estamos a tu disposición.<br><br>' +
       '<b>LA BATEA</b>',

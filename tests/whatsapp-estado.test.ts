@@ -148,70 +148,72 @@ async function main() {
     'el mensaje del reintento reportado ("OK" / "read") → enviado',
   )
 
-  console.log('\nCaso 3 · Un WhatsApp cuenta como enviado sólo si 360Messenger lo confirma:')
-  contesta(NUMERO_INEXISTENTE)
-  igual(
-    await verificarWhatsapps([{ ok: true, messageId: 'e4a2efa2' }], rapido),
-    [
-      {
-        ok: false,
-        messageId: 'e4a2efa2',
-        motivo: 'WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto',
-      },
+  console.log('\nCaso 3 · Un WhatsApp cuenta como enviado sólo si 360Messenger confirma TODOS sus mensajes:')
+  /** Un contacto con su mensaje de texto y sus documentos, como los devuelve el escenario. */
+  const wa = (texto: string, ...docs: string[]) => ({
+    ok: true,
+    mensajes: [
+      { id: texto, parte: 'texto' as const },
+      ...docs.map((id) => ({ id, parte: 'documento' as const })),
     ],
-    'el caso reportado: Make dijo que sí, 360Messenger dice ERROR → no enviado',
-  )
-  contesta({ status: 'OK', delivery: 'device' })
+  })
+  let consultas = contesta({ status: 'OK', delivery: 'device' })
   igual(
-    await verificarWhatsapps([{ ok: true, messageId: 'abc12345' }], rapido),
-    [{ ok: true, messageId: 'abc12345' }],
-    '360Messenger confirma → enviado',
+    await verificarWhatsapps([wa('t1', 'd1')], rapido),
+    [wa('t1', 'd1')],
+    'texto y PDF confirmados → enviado',
   )
-  contesta({ status: 'PENDING' })
+  igual(consultas.length, 2, '(una consulta por mensaje: el texto y el PDF)')
+
+  contesta({ status: 'OK', delivery: 'device' }, NUMERO_INEXISTENTE)
   igual(
-    await verificarWhatsapps([{ ok: true, messageId: 'abc12345' }], { ...rapido, intentos: 2 }),
-    [
-      {
-        ok: false,
-        messageId: 'abc12345',
-        motivo: 'WhatsApp todavía no confirmó la entrega; revisá en unos minutos si llegó antes de reintentar',
-      },
-    ],
-    'sigue en cola al terminar la espera → no enviado, avisando que puede llegar igual',
+    await verificarWhatsapps([wa('t1', 'd1')], rapido),
+    [{ ...wa('t1', 'd1'), ok: false, motivo: 'el PDF: WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto' }],
+    'el texto salió pero el PDF falló → no enviado, y dice que fue el PDF',
+  )
+  contesta(NUMERO_INEXISTENTE, { status: 'OK', delivery: 'device' })
+  igual(
+    (await verificarWhatsapps([wa('t1', 'd1')], rapido))[0].motivo,
+    'el mensaje de texto: WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto',
+    'y si falló el texto, dice que fue el texto',
+  )
+  contesta({ status: 'OK', delivery: 'device' }, { status: 'PENDING' })
+  igual(
+    (await verificarWhatsapps([wa('t1', 'd1')], { ...rapido, intentos: 2 }))[0],
+    {
+      ...wa('t1', 'd1'),
+      ok: false,
+      motivo: 'WhatsApp todavía no confirmó la entrega de el PDF; revisá en unos minutos si llegó antes de reintentar',
+    },
+    'el PDF sigue en cola al terminar la espera → no enviado, avisando que puede llegar igual',
   )
   contesta(500)
   igual(
-    await verificarWhatsapps([{ ok: true, messageId: 'abc12345' }], rapido),
-    [{ ok: false, messageId: 'abc12345', motivo: 'no se pudo confirmar el envío en 360Messenger' }],
+    (await verificarWhatsapps([wa('t1', 'd1')], rapido))[0].motivo,
+    'no se pudo confirmar en 360Messenger el envío de el mensaje de texto',
     'no se puede consultar → no enviado',
   )
 
-  let consultas = contesta({ status: 'OK' }, NUMERO_INEXISTENTE)
+  consultas = contesta({ status: 'OK' }, { status: 'OK' }, NUMERO_INEXISTENTE, NUMERO_INEXISTENTE)
   igual(
-    (await verificarWhatsapps(
-      [
-        { ok: true, messageId: 'aaaa1111' },
-        { ok: true, messageId: 'bbbb2222' },
-      ],
-      rapido,
-    )).map((i) => i.ok),
+    (await verificarWhatsapps([wa('a1', 'a2'), wa('b1', 'b2')], rapido)).map((i) => i.ok),
     [true, false],
-    'con varios contactos se confirma cada uno por su messageId',
+    'con varios contactos, cada uno por sus propios mensajes',
   )
-  igual(consultas.length, 2, '(una consulta por WhatsApp)')
+  igual(consultas.length, 4, '(dos consultas por contacto)')
 
   consultas = contesta({ status: 'FAILED' })
   igual(
-    await verificarWhatsapps([{ ok: false, messageId: 'abc12345' }], rapido),
-    [{ ok: false, messageId: 'abc12345' }],
-    'con envio_whatsapp en false no se consulta nada',
+    await verificarWhatsapps([{ ...wa('t1', 'd1'), ok: false }], rapido),
+    [{ ...wa('t1', 'd1'), ok: false }],
+    'si el escenario ya dijo que no, no se consulta nada',
   )
   igual(consultas.length, 0, '(ni una consulta)')
   consultas = contesta({ status: 'OK' })
   igual(
     await verificarWhatsapps([{ ok: true }], rapido),
     [{ ok: false, motivo: 'no se pudo confirmar el envío en 360Messenger' }],
-    'sin messageId no se puede confirmar → no enviado',
+    'sin ids no se puede confirmar → no enviado',
   )
   igual(consultas.length, 0, '(y no consulta)')
 
@@ -242,19 +244,22 @@ async function main() {
   contesta(NUMERO_INEXISTENTE)
   const resultados = {
     email: [{ ok: true }],
-    whatsapp: await verificarWhatsapps([{ ok: true, messageId: 'e4a2efa2-05d4-4a43-9eec-e05e7079aee2' }], rapido),
+    whatsapp: await verificarWhatsapps(
+      [{ ok: true, mensajes: [{ id: 'e4a2efa2-05d4-4a43-9eec-e05e7079aee2', parte: 'documento' }] }],
+      rapido,
+    ),
   }
   const evaluacion = evaluarEnvio(envio, resultados)
   igual(evaluacion.estado, 'parcial', 'Make dijo envio_whatsapp: true, pero el resultado es PARCIALMENTE ENVIADO')
   igual(
     evaluacion.estado === 'parcial' && mensajeParcial(evaluacion.fallas, evaluacion.enviados),
-    'El presupuesto se envió por email, pero no por WhatsApp. WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto. Volvé a tocar el botón para completar el envío por WhatsApp: por email no se manda de nuevo.',
+    'El presupuesto se envió por email, pero no por WhatsApp. El PDF: WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto. Volvé a tocar el botón para completar el envío por WhatsApp: por email no se manda de nuevo.',
     'con el aviso de que el WhatsApp no salió y por qué',
   )
   igual(
     evaluacion.estado === 'parcial' && evaluacion.fallas[0]?.motivo,
-    'WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto',
-    'y el motivo queda en la falla',
+    'el PDF: WhatsApp no pudo entregar el mensaje; revisá que el número sea correcto',
+    'y el motivo queda en la falla, con la parte que falló',
   )
 
   console.log(`\nOK · confirmación del WhatsApp en 360Messenger (${asserts} verificaciones)`)

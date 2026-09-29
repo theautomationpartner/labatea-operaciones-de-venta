@@ -27,6 +27,7 @@ import {
   mensajeParcial,
   tituloError,
   type EnviadosPorContacto,
+  type MensajeWhatsapp,
   type TipoDocumentoMake,
   type ResultadoEntrega,
 } from '@/lib/envioPresupuesto'
@@ -163,7 +164,7 @@ const PRESUPUESTO: ComprobanteEnviable = {
   async enviar({ state, medio }) {
     const pdf = state.presupuestoPdf
     if (!pdf || !state.cliente) return { estado: 'sin-documento' }
-    return enviarPorMake(state, medio, pdf, {
+    return enviarPorMake(state, medio, [pdf], {
       tipo: 'PRESUPUESTO',
       numero: state.nroPresupuesto ?? NRO_PRESUPUESTO,
       fechaVencimiento: addDays(state.fechaEmision, state.diasVigencia),
@@ -186,7 +187,11 @@ const SUJETO: Record<TipoDocumentoMake, string> = {
 async function enviarPorMake(
   state: AppState,
   medio: MedioEnvio,
-  pdf: File,
+  /**
+   * Los documentos para los contactos, en el orden en que se adjuntan (`adjuntos`). El primero da el
+   * `documento.archivo`.
+   */
+  archivos: readonly File[],
   doc: {
     tipo: TipoDocumentoMake
     numero: string
@@ -200,7 +205,7 @@ async function enviarPorMake(
     numero: doc.numero,
     fechaEmision: state.fechaEmision,
     fechaVencimiento: doc.fechaVencimiento,
-    archivo: pdf.name,
+    archivo: archivos[0]?.name ?? '',
     cliente: state.cliente,
     vendedor: state.vendedor,
     medio,
@@ -210,7 +215,7 @@ async function enviarPorMake(
   })
   // Ya le llegó a cada uno todo lo que pide el medio actual: no hay nada que mandar.
   if (canalesPedidos(datos).length === 0) return { estado: 'ok', enviados: state.enviadosPorContacto }
-  const respuesta = await enviarPresupuestoMake(datos, pdf)
+  const respuesta = await enviarPresupuestoMake(datos, archivos)
   /* No se sabe qué pasó del otro lado: a nadie de este pedido se lo da por enviado, y todos llevan
      la cruz con el motivo. */
   if (respuesta.tipo === 'fallo') {
@@ -297,7 +302,8 @@ const REMITO: ComprobanteEnviable = {
     const pdf = state.remitoPdfs?.venta
     const hoja = state.remitoHoja
     if (!pdf || !hoja) return { estado: 'sin-documento' }
-    return enviarPorMake(state, medio, pdf, {
+    // Sólo el de VENTA: el PREIMPRESO no se le manda al cliente.
+    return enviarPorMake(state, medio, [pdf], {
       tipo: 'REMITO',
       numero: numeroRemito(hoja.imprenta),
       // El remito no vence.
@@ -330,7 +336,7 @@ const PROFORMA: ComprobanteEnviable = {
   async enviar({ state, medio }) {
     const pdf = state.proformaPdf
     if (!pdf) return { estado: 'sin-documento' }
-    return enviarPorMake(state, medio, pdf, {
+    return enviarPorMake(state, medio, [pdf], {
       tipo: 'PROFORMA',
       numero: state.nroProforma ?? 'PROFORMA',
       // La proforma no vence.
@@ -339,14 +345,17 @@ const PROFORMA: ComprobanteEnviable = {
   },
 }
 
+/** Cómo se nombra cada parte del WhatsApp en los motivos. */
+const PARTE: Record<MensajeWhatsapp['parte'], string> = { texto: 'el mensaje de texto', documento: 'el PDF' }
+
 /**
- * Confirma contra 360Messenger cada WhatsApp que Make dio por enviado. Se consultan todos a la vez.
+ * Confirma contra 360Messenger cada WhatsApp que Make dio por enviado. Un contacto recibe DOS o más
+ * mensajes —el de texto y uno por documento—, y el WhatsApp cuenta como enviado sólo si 360Messenger
+ * confirma TODOS. Se consultan todos a la vez.
  *
- * Un WhatsApp cuenta como enviado SÓLO si 360Messenger lo confirma. Si dice que falló, o si no se
- * puede confirmar (sin `messageId`, sin la key, 360Messenger caído, o sigue en cola al terminar la
- * espera), ese envío queda como no enviado —y el total, según el caso, en error o parcial— con un
- * motivo que lo distingue. Antes, lo que no se podía confirmar se daba por bueno, y un número
- * inexistente salió como "enviado exitosamente".
+ * Si alguno falló, o no se puede confirmar (sin id, sin la key, 360Messenger caído, o sigue en cola
+ * al terminar la espera), ese envío queda como no enviado —y el total, según el caso, en error o
+ * parcial— con un motivo que dice qué parte fue: "el PDF: el número no tiene WhatsApp".
  */
 export async function verificarWhatsapps(
   items: readonly ResultadoEntrega[],
@@ -356,27 +365,36 @@ export async function verificarWhatsapps(
   return Promise.all(
     items.map(async (item): Promise<ResultadoEntrega> => {
       if (!item.ok) return item
-      if (!item.messageId) {
-        console.warn('Make confirmó un WhatsApp sin messageId: no se puede verificar en 360Messenger.')
+      const mensajes = item.mensajes ?? []
+      if (mensajes.length === 0) {
+        console.warn('Make confirmó un WhatsApp sin ids de mensaje: no se puede verificar en 360Messenger.')
         return { ...item, ok: false, motivo: 'no se pudo confirmar el envío en 360Messenger' }
       }
-      const confirmacion = await confirmarWhatsapp(item.messageId, espera)
-      if (confirmacion.estado === 'enviado') return item
-      if (confirmacion.estado === 'fallido') return { ...item, ok: false, motivo: confirmacion.motivo }
-      /* Sin confirmar no es lo mismo que fallido: el mensaje puede salir igual un rato después. El
-         motivo lo dice, para que el vendedor revise antes de reintentar y no lo mande dos veces. */
+      const confirmaciones = await Promise.all(mensajes.map((m) => confirmarWhatsapp(m.id, espera)))
+      const conParte = confirmaciones.map((c, i) => ({ c, m: mensajes[i] }))
+
+      // Manda el fallo: si una parte falló, el WhatsApp no llegó entero.
+      const fallida = conParte.find((x) => x.c.estado === 'fallido')
+      if (fallida && fallida.c.estado === 'fallido') {
+        return { ...item, ok: false, motivo: `${PARTE[fallida.m.parte]}: ${fallida.c.motivo}` }
+      }
+      const sinConfirmar = conParte.find((x) => x.c.estado !== 'enviado')
+      if (!sinConfirmar) return item
+
+      /* Sin confirmar no es lo mismo que fallido: puede salir igual un rato después. El motivo lo
+         dice, para que el vendedor revise antes de reintentar y no lo mande dos veces. */
       console.warn(
-        `WhatsApp ${item.messageId} sin confirmar en 360Messenger (${
-          confirmacion.estado === 'pendiente' ? 'sigue en cola' : confirmacion.motivo
+        `WhatsApp ${sinConfirmar.m.id} (${sinConfirmar.m.parte}) sin confirmar en 360Messenger (${
+          sinConfirmar.c.estado === 'pendiente' ? 'sigue en cola' : 'no se pudo consultar'
         }).`,
       )
       return {
         ...item,
         ok: false,
         motivo:
-          confirmacion.estado === 'pendiente'
-            ? 'WhatsApp todavía no confirmó la entrega; revisá en unos minutos si llegó antes de reintentar'
-            : 'no se pudo confirmar el envío en 360Messenger',
+          sinConfirmar.c.estado === 'pendiente'
+            ? `WhatsApp todavía no confirmó la entrega de ${PARTE[sinConfirmar.m.parte]}; revisá en unos minutos si llegó antes de reintentar`
+            : `no se pudo confirmar en 360Messenger el envío de ${PARTE[sinConfirmar.m.parte]}`,
       }
     }),
   )

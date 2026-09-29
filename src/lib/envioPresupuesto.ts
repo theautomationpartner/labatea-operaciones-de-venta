@@ -47,6 +47,11 @@ export interface EnvioPresupuestoMake {
   vendedor: { pulseId: string; nombre: string } | null
   /** Lo que eligió el usuario en "Medio de envío". El detalle por contacto está en `canales`. */
   medio: MedioEnvio
+  /**
+   * Por dónde sale el mail: "gmail" para presupuesto, remito y proforma; "labatea" para las facturas
+   * de venta (ver `TIPO_ENVIO_EMAIL`).
+   */
+  tipo_de_envio_email: TipoEnvioEmail
   /** Hay que mandar por email en este pedido. */
   reenvio_email: boolean
   /** Hay que mandar por WhatsApp en este pedido. */
@@ -91,6 +96,20 @@ export function canalesDe(contacto: Pick<Contacto, 'phone' | 'email'>, medio: Me
 
 /** Qué documento se envía. El escenario lo usa para el texto del mensaje y dónde guardar el PDF. */
 export type TipoDocumentoMake = 'PRESUPUESTO' | 'REMITO' | 'PROFORMA'
+
+/** La cuenta por la que el escenario manda el mail. */
+export type TipoEnvioEmail = 'gmail' | 'labatea'
+
+/**
+ * Qué cuenta de mail usa cada documento. La factura de venta todavía se envía por el tablero, no
+ * por este escenario; su valor queda definido para cuando pase a enviarse por acá.
+ */
+export const TIPO_ENVIO_EMAIL: Record<TipoDocumentoMake | 'FACTURA', TipoEnvioEmail> = {
+  PRESUPUESTO: 'gmail',
+  REMITO: 'gmail',
+  PROFORMA: 'gmail',
+  FACTURA: 'labatea',
+}
 
 /** Lo que hace falta para armar el envío. Sale del estado de la app. */
 export interface DatosEnvioPresupuesto {
@@ -178,6 +197,7 @@ export function armarEnvioPresupuesto(d: DatosEnvioPresupuesto): EnvioPresupuest
     cliente: { pulseId: d.cliente.id, razonSocial, cuit: d.cliente.cuit },
     vendedor: d.vendedor ? { pulseId: d.vendedor.id, nombre: d.vendedor.name } : null,
     medio: d.medio,
+    tipo_de_envio_email: TIPO_ENVIO_EMAIL[tipo],
     reenvio_email: pide('email'),
     reenvio_whatsapp: pide('whatsapp'),
     destinatarios,
@@ -205,10 +225,20 @@ export interface ResultadoEntrega {
   ok: boolean
   /** A qué contacto corresponde. Sin él, el ítem se empareja por orden (ver `repartir`). */
   pulseId?: string
-  /** Id del WhatsApp en 360Messenger, para confirmarlo. */
-  messageId?: string
+  /**
+   * Los mensajes de WhatsApp que se mandaron a este contacto, con su id en 360Messenger: el de texto y
+   * uno por documento. El WhatsApp cuenta como enviado sólo si 360Messenger confirma TODOS.
+   */
+  mensajes?: MensajeWhatsapp[]
   /** Por qué no salió, en palabras del usuario. */
   motivo?: string
+}
+
+/** Un mensaje de WhatsApp de un envío, para confirmarlo en 360Messenger. */
+export interface MensajeWhatsapp {
+  id: string
+  /** Qué parte del envío es: el mensaje de texto o un documento (el PDF). */
+  parte: 'texto' | 'documento'
 }
 
 /** Lo que dijo el escenario de cada canal: un ítem por contacto. */

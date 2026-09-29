@@ -89,8 +89,9 @@ async function main() {
       '*LA BATEA*',
     'presupuesto por WhatsApp: saluda al cliente, con las dos fechas en DD-MM-YYYY',
   )
+  igual(mensajeAna.email.subject, 'LA BATEA - Presupuesto Emitido: 28-09-2026', 'asunto del email del presupuesto')
   igual(
-    mensajeAna.email,
+    mensajeAna.email.content,
     '👋<b>¡Hola Agropecuaria Ñandú S.A.!</b><br>' +
       'Te adjuntamos el <b>presupuesto</b> emitido el <b>Fecha de Emisión:</b> 28-09-2026. Cualquier duda estamos a tu disposición.<br><br>' +
       '<b>Fecha de Vencimiento:</b> 13-10-2026<br><br>' +
@@ -120,11 +121,17 @@ async function main() {
     'remito por WhatsApp: saluda a cada contacto por su nombre',
   )
   igual(
-    remitoMsj.destinatarios[1].mensaje.email,
+    remitoMsj.destinatarios[1].mensaje.email.content,
     '👋 <b>¡Hola Beto!</b><br>' +
       'Te adjuntamos el <b>remito</b> emitido el 📅 <b>Fecha de Emisión:</b> 28-09-2026. Cualquier duda estamos a tu disposición.<br><br>' +
       '<b>LA BATEA</b>',
     'remito por email: el de Beto lo saluda a él',
+  )
+  igual(remitoMsj.destinatarios[1].mensaje.email.subject, 'LA BATEA - Remito Emitido: 28-09-2026', 'asunto del email del remito')
+  igual(
+    [datos.tipo_de_envio_email, remitoMsj.tipo_de_envio_email],
+    ['gmail', 'gmail'],
+    'tipo_de_envio_email: gmail para presupuesto y remito',
   )
   igual(datos.destinatarios[1].canales, ['email'], 'con "Ambos" y sólo email, va sólo por email')
   igual(datos.destinatarios[1].whatsapp, null, 'el dato que falta viaja como null, no como ""')
@@ -156,7 +163,7 @@ async function main() {
   const cuerpo = await cuerpoEnvioPresupuesto(datos, pdf)
   igual(
     Object.keys(cuerpo),
-    ['appJobId', 'documento', 'cliente', 'vendedor', 'medio', 'reenvio_email', 'reenvio_whatsapp', 'destinatarios', 'pdf'],
+    ['appJobId', 'documento', 'cliente', 'vendedor', 'medio', 'tipo_de_envio_email', 'reenvio_email', 'reenvio_whatsapp', 'destinatarios', 'adjuntos', 'pdf'],
     'las claves de la raíz son las de la estructura, más "pdf"',
   )
   igual(
@@ -164,6 +171,15 @@ async function main() {
     { name: 'Agropecuaria Ñandú S.A.-PRESUP-009.pdf', mime: 'application/pdf', data: 'JVBERg==' },
     'el PDF con su nombre, su tipo y el contenido en base64 ("%PDF" → JVBERg==)',
   )
+  igual(cuerpo.adjuntos, [cuerpo.pdf], 'adjuntos: un array aunque haya un solo documento, y `pdf` es el primero')
+  const segundo = new File([new Uint8Array([37, 80, 68, 70, 45])], 'Factura A 0003-00000124.pdf', { type: 'application/pdf' })
+  const conDos = await cuerpoEnvioPresupuesto(datos, [pdf, segundo])
+  igual(
+    conDos.adjuntos.map((a) => a.name),
+    ['Agropecuaria Ñandú S.A.-PRESUP-009.pdf', 'Factura A 0003-00000124.pdf'],
+    'con varios documentos (p. ej. las facturas de una venta con consignada), van todos, en orden',
+  )
+  igual(conDos.adjuntos[1].data, 'JVBERi0=', 'cada uno con su propio contenido')
 
   let pedido: { tipo: string | null; cuerpo: unknown } | null = null
   globalThis.fetch = (async (_url: string, init: RequestInit) => {
@@ -370,9 +386,62 @@ async function main() {
     await enviarPresupuestoMake(datos, pdf),
     {
       tipo: 'respuesta',
-      resultados: { email: [{ ok: true }], whatsapp: [{ ok: false, messageId: 'f4376401-c710' }] },
+      resultados: {
+        email: [{ ok: true }],
+        whatsapp: [{ ok: false, mensajes: [{ id: 'f4376401-c710', parte: 'documento' }] }],
+      },
     },
-    'los arrays serializados como texto y las banderas "true"/"false" valen igual',
+    'formato anterior: los arrays serializados como texto y las banderas "true"/"false" valen igual',
+  )
+
+  // El bundle real del módulo 65: un mensaje de texto y los documentos, cada uno con su id.
+  const modulo65 = [
+    {
+      nombre: 'Luciano 1',
+      pulseId: '12587733631',
+      envio_mensaje_texto: { phonenumber: '5492494014611', id: '17c38bea-edd2-40ac-bba9-d3382595dbf4' },
+      envio_mensaje_documentos: [{ data: { phonenumber: '5492494014611', id: '388de5da-4aeb-4314-b05e-97c638fc93ef' } }],
+    },
+  ]
+  for (const clave of ['enviosWhatsapp', 'enviados_whatsapp']) {
+    responde(200, JSON.stringify({ operacion: 'ENVIO', medio: 'Ambos', mensajeError: null, enviosEmail: [], [clave]: modulo65 }))
+    igual(
+      await enviarPresupuestoMake(datos, pdf),
+      {
+        tipo: 'respuesta',
+        resultados: {
+          email: [],
+          whatsapp: [
+            {
+              ok: true,
+              pulseId: '12587733631',
+              mensajes: [
+                { id: '17c38bea-edd2-40ac-bba9-d3382595dbf4', parte: 'texto' },
+                { id: '388de5da-4aeb-4314-b05e-97c638fc93ef', parte: 'documento' },
+              ],
+            },
+          ],
+        },
+      },
+      `formato nuevo (en "${clave}"): el id del texto y el de cada documento, para confirmarlos todos`,
+    )
+  }
+  responde(
+    200,
+    JSON.stringify({
+      enviosWhatsapp: [{ pulseId: '1', envio_mensaje_texto: { id: 't1' }, envio_mensaje_documentos: [] }],
+    }),
+  )
+  igual(
+    await enviarPresupuestoMake(datos, pdf),
+    {
+      tipo: 'respuesta',
+      resultados: {
+        email: [],
+        whatsapp: [{ ok: false, pulseId: '1', mensajes: [{ id: 't1', parte: 'texto' }], motivo: 'no se envió el PDF por WhatsApp' }],
+      },
+    },
+    'si falta el documento, el WhatsApp no cuenta como enviado',
   )
   responde(200, 'Accepted')
   igual(

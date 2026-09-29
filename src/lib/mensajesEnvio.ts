@@ -8,7 +8,8 @@ import type { TipoDocumentoMake } from './envioPresupuesto'
  */
 export interface MensajesEnvio {
   whatsapp: string
-  email: string
+  /** El mail: el asunto y el cuerpo en HTML. */
+  email: { subject: string; content: string }
 }
 
 /** Lo que completa los mensajes. */
@@ -40,11 +41,14 @@ const PLANTILLAS: Record<TipoDocumentoMake, (d: DatosMensaje) => MensajesEnvio> 
       '',
       '*LA BATEA*',
     ].join('\n'),
-    email:
-      `👋<b>¡Hola ${d.razonSocial}!</b><br>` +
-      `Te adjuntamos el <b>presupuesto</b> emitido el <b>Fecha de Emisión:</b> ${fechaMensaje(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
-      `<b>Fecha de Vencimiento:</b> ${fechaMensaje(d.fechaVencimiento)}<br><br>` +
-      '<b>LA BATEA</b>',
+    email: {
+      subject: `LA BATEA - Presupuesto Emitido: ${fechaMensaje(d.fechaEmision)}`,
+      content:
+        `👋<b>¡Hola ${d.razonSocial}!</b><br>` +
+        `Te adjuntamos el <b>presupuesto</b> emitido el <b>Fecha de Emisión:</b> ${fechaMensaje(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
+        `<b>Fecha de Vencimiento:</b> ${fechaMensaje(d.fechaVencimiento)}<br><br>` +
+        '<b>LA BATEA</b>',
+    },
   }),
   REMITO: (d) => ({
     whatsapp: [
@@ -54,10 +58,13 @@ const PLANTILLAS: Record<TipoDocumentoMake, (d: DatosMensaje) => MensajesEnvio> 
       '',
       '*LA BATEA*',
     ].join('\n'),
-    email:
-      `👋 <b>¡Hola ${d.contacto}!</b><br>` +
-      `Te adjuntamos el <b>remito</b> emitido el 📅 <b>Fecha de Emisión:</b> ${fechaMensaje(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
-      '<b>LA BATEA</b>',
+    email: {
+      subject: `LA BATEA - Remito Emitido: ${fechaMensaje(d.fechaEmision)}`,
+      content:
+        `👋 <b>¡Hola ${d.contacto}!</b><br>` +
+        `Te adjuntamos el <b>remito</b> emitido el 📅 <b>Fecha de Emisión:</b> ${fechaMensaje(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
+        '<b>LA BATEA</b>',
+    },
   }),
   PROFORMA: (d) => ({
     whatsapp: [
@@ -66,10 +73,14 @@ const PLANTILLAS: Record<TipoDocumentoMake, (d: DatosMensaje) => MensajesEnvio> 
       '',
       '*LA BATEA*',
     ].join('\n'),
-    email:
-      `👋 <b>¡Hola ${d.contacto}!</b><br>` +
-      `Te adjuntamos la <b>factura Proforma</b> emitida el 📅 <b>Fecha de Emisión:</b> ${conBarras(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
-      '<b>LA BATEA</b>',
+    email: {
+      // En Make era `formatDate(now; …)`: la proforma se envía el día que se emite.
+      subject: `LA BATEA - Factura Proforma: ${fechaMensaje(d.fechaEmision)}`,
+      content:
+        `👋 <b>¡Hola ${d.contacto}!</b><br>` +
+        `Te adjuntamos la <b>factura Proforma</b> emitida el 📅 <b>Fecha de Emisión:</b> ${conBarras(d.fechaEmision)}. Cualquier duda estamos a tu disposición.<br><br>` +
+        '<b>LA BATEA</b>',
+    },
   }),
 }
 
