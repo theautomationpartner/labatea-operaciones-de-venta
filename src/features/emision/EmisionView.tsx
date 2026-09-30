@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
+import { motivoAccionEnCurso, useAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { NRO_PRESUPUESTO } from '@/data/mock'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
@@ -60,6 +61,9 @@ export function EmisionView() {
   } = useApp()
   const dispatch = useDispatch()
   const state = useApp()
+  /* No se registra con el PDF emitiéndose (una reemisión lo reemplaza) ni enviándose: registrar
+     cierra la operación. */
+  const enCurso = motivoAccionEnCurso(state)
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
      el botón "Emitir Presupuesto" no se reactiva al volver a esta etapa. */
   const emitido = documentoEmitido
@@ -82,6 +86,7 @@ export function EmisionView() {
 
   /* Generación del PDF, en el navegador. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
+  useAccionEnCurso('emitiendo', estado === 'generando')
   // "Registrar Presupuesto" en curso: tapa la pantalla con la ventana de espera.
   const [registrando, setRegistrando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -165,7 +170,7 @@ export function EmisionView() {
    * Idempotente: si el ítem ya se creó y falló la subida del PDF, reintentar sólo sube el PDF.
    */
   const registrar = async () => {
-    if (!cliente || !presupuestoPdf || registrando) return
+    if (!cliente || !presupuestoPdf || registrando || enCurso) return
     setRegistrando(true)
     try {
       let id = presupuestoId
@@ -283,8 +288,8 @@ export function EmisionView() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!presupuestoPdf || registrando}
-          title={presupuestoPdf ? undefined : 'Emití el presupuesto para poder registrarlo.'}
+          disabled={!presupuestoPdf || registrando || enCurso !== null}
+          title={presupuestoPdf ? (enCurso ?? undefined) : 'Emití el presupuesto para poder registrarlo.'}
           onClick={() => void registrar()}
         >
           <i className="fas fa-flag-checkered" /> Registrar Presupuesto

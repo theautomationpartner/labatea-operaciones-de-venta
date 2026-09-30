@@ -9,6 +9,7 @@ import { nombreSinCodigo } from '@/lib/busquedaClientes'
 import { money } from '@/lib/format'
 import { documentoDeVentaItem } from '@/lib/selectors'
 import { getActividadesHeredadasDePresupuestos, getProximoNroProforma } from '@/services/monday'
+import { useAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { useReemision } from '@/features/shared/useReemision'
 import { useApp, useDispatch } from '@/state/hooks'
 import type { ActividadListada } from '@/types'
@@ -52,6 +53,8 @@ export function CobroProforma() {
   const { productos, filas, bruto, neto, descuento, iva, total } = useProformaVenta()
 
   const [emitiendo, setEmitiendo] = useState(false)
+  // "Registrar Proforma" vive en CobroView: se entera de la emisión por el estado global.
+  useAccionEnCurso('emitiendo', emitiendo)
   // react-pdf no pudo generar el PDF: botón en rojo y aviso de soporte.
   const [errorPdf, setErrorPdf] = useState(false)
   const [abierta, setAbierta] = useState(true)
@@ -124,7 +127,12 @@ export function CobroProforma() {
 
   /* Reemisión: el botón de emitir sigue habilitado, y un PDF que quedó viejo (se cambiaron datos en
      un paso anterior) se descarta solo. `firma` va guardada con el PDF. */
-  const { firma, pedirEmision, modal: modalReemision } = useReemision('proforma', emitida, () => void emitir())
+  const {
+    firma,
+    pedirEmision,
+    modal: modalReemision,
+    enviando,
+  } = useReemision('proforma', emitida, () => void emitir())
 
   if (!cliente) return null
 
@@ -180,17 +188,20 @@ export function CobroProforma() {
             type="button"
             className="btn btn-primary proforma-emitir btn-mayus"
             onClick={pedirEmision}
-            // Emitida sigue habilitado: se puede volver a emitir para corregir un error.
-            disabled={emitiendo || productos.length === 0}
+            /* Emitida sigue habilitado: se puede volver a emitir para corregir un error. Mientras se
+               envía, no: cambiaría el PDF que se está mandando. */
+            disabled={emitiendo || enviando || productos.length === 0}
             aria-busy={emitiendo}
             title={
               emitiendo
                 ? undefined
-                : emitida
-                  ? 'Tocá para volver a emitir con los datos actuales'
-                  : errorPdf
-                    ? 'Tocá para reintentar la emisión'
-                    : undefined
+                : enviando
+                  ? 'Esperá a que termine el envío para volver a emitir.'
+                  : emitida
+                    ? 'Tocá para volver a emitir con los datos actuales'
+                    : errorPdf
+                      ? 'Tocá para reintentar la emisión'
+                      : undefined
             }
             style={
               emitida

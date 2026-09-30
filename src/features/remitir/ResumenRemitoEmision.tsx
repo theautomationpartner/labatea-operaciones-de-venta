@@ -53,7 +53,7 @@ export function ResumenRemitoEmision({
   errorPdf = false,
   children,
 }: ResumenRemitoEmisionProps) {
-  const { vendedor, cliente, remito } = useApp()
+  const { vendedor, cliente, remito, enviandoDocumento: enviando } = useApp()
   const dispatch = useDispatch()
   const { envio, items } = remito
 
@@ -153,17 +153,20 @@ export function ResumenRemitoEmision({
         type="button"
         className="btn-generar btn-mayus"
         onClick={onEmitir}
-        // Emitido sigue habilitado: se puede volver a emitir para corregir un error.
-        disabled={generando || (!emitido && bloqueado)}
+        /* Emitido sigue habilitado: se puede volver a emitir para corregir un error. Mientras se
+           envía, no: cambiaría los PDF que se están mandando. */
+        disabled={generando || enviando || (!emitido && bloqueado)}
         aria-busy={generando}
         title={
           generando
             ? undefined
-            : emitido
-              ? 'Tocá para volver a emitir con los datos actuales'
-              : errorPdf
-                ? 'Tocá para reintentar la emisión'
-                : undefined
+            : enviando
+              ? 'Esperá a que termine el envío para volver a emitir.'
+              : emitido
+                ? 'Tocá para volver a emitir con los datos actuales'
+                : errorPdf
+                  ? 'Tocá para reintentar la emisión'
+                  : undefined
         }
         /* Emitido: verde para confirmar, como el de "Enviado". Error de los PDF: rojo. */
         style={

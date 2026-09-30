@@ -3,6 +3,7 @@ import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ModalCargando } from '@/components/ui/ModalCargando'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
+import { motivoAccionEnCurso, useAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { addDays } from '@/lib/dates'
 import { netoLinea } from '@/lib/descuentos'
 import { round2 } from '@/lib/format'
@@ -54,6 +55,9 @@ export function FacturaView() {
   const dispatch = useDispatch()
 
   const [emitiendo, setEmitiendo] = useState(false)
+  useAccionEnCurso('emitiendo', emitiendo)
+  /* No se finaliza con la factura enviándose: finalizar reinicia la app y dejaría el envío colgado. */
+  const enCurso = motivoAccionEnCurso(state)
   const [errorEmision, setErrorEmision] = useState<string | null>(null)
   /* Creación de la venta al "Finalizar Operación": tapa la pantalla con "Registrando venta"
      mientras se `await`ea el ítem principal en el board 18421035510. */
@@ -508,7 +512,7 @@ export function FacturaView() {
    * esperan, para que la ventana se cierre y el usuario finalice sin aguardar al resto de la API.
    */
   const finalizar = async () => {
-    if (creandoVenta) return
+    if (creandoVenta || enCurso) return
     setCreandoVenta(true)
     setErrorVenta(null)
     try {
@@ -666,9 +670,11 @@ export function FacturaView() {
         <button
           type="button"
           className="btn-primary"
-          disabled={!factura.emitida || creandoVenta}
+          disabled={!factura.emitida || creandoVenta || enCurso !== null}
           aria-busy={creandoVenta}
-          title={factura.emitida ? undefined : 'Emití la factura para poder finalizar la operación.'}
+          title={
+            factura.emitida ? (enCurso ?? undefined) : 'Emití la factura para poder finalizar la operación.'
+          }
           onClick={finalizar}
         >
           <i className="fas fa-flag-checkered" /> Finalizar Operación

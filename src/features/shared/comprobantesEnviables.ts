@@ -107,7 +107,10 @@ export interface ComprobanteEnviable {
    * envío, no se puede quitar a nadie de la lista.
    */
   estadoPorContacto?: boolean
-  /** Ventana que se muestra al querer enviar sin haber emitido. Sin esto, se usa la genérica. */
+  /**
+   * Qué falta para poder enviar sin haber emitido: su `titulo` va debajo del botón de envío, que
+   * queda apagado. Sin esto, se usa el genérico.
+   */
   avisoNoEmitido?: { titulo: string; texto: string }
   /**
    * El comprobante ya se emitió y por lo tanto se puede enviar. Es una pregunta aparte del

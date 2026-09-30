@@ -221,6 +221,14 @@ export interface AppState {
    * diciendo la verdad sobre a quién se le mandó.
    */
   envioIniciado: boolean
+  /**
+   * Hay un documento EMITIÉNDOSE (generando su PDF) o ENVIÁNDOSE en este momento. Lo marca la vista
+   * que hace el trabajo (ver `useAccionEnCurso`) y lo leen los botones que viven en OTRO componente:
+   * no se registra en Monday ni se envía un documento a medio emitir, ni se registra uno a medio
+   * enviar (registrar cierra la operación y dejaría el envío colgado).
+   */
+  emitiendoDocumento: boolean
+  enviandoDocumento: boolean
   /** ID que va a llevar el presupuesto ("PRESUP-009"), leído del board al iniciar la operación. */
   nroPresupuesto: string | null
 
@@ -397,6 +405,8 @@ export const initialState: AppState = {
   enviadosPorContacto: {},
   contactosFallidos: {},
   envioIniciado: false,
+  emitiendoDocumento: false,
+  enviandoDocumento: false,
   nroPresupuesto: null,
 
   enviar: false,
@@ -497,6 +507,7 @@ export type Action =
   | { type: 'setEnviadosPorContacto'; value: Record<string, CanalEnvio[]> }
   | { type: 'setContactosFallidos'; value: Record<string, string> }
   | { type: 'setEnvioIniciado' }
+  | { type: 'setAccionEnCurso'; accion: 'emitiendo' | 'enviando'; value: boolean }
   | { type: 'setDocumentoEnviado'; value: boolean }
   | { type: 'setNroPresupuesto'; value: string | null }
   | { type: 'reset' }
@@ -1093,6 +1104,11 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'setEnvioIniciado':
       return state.envioIniciado ? state : { ...state, envioIniciado: true }
+
+    case 'setAccionEnCurso': {
+      const campo = action.accion === 'emitiendo' ? 'emitiendoDocumento' : 'enviandoDocumento'
+      return state[campo] === action.value ? state : { ...state, [campo]: action.value }
+    }
 
     case 'setNroPresupuesto':
       return { ...state, nroPresupuesto: action.value }

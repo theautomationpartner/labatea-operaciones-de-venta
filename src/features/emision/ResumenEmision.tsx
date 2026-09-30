@@ -59,8 +59,15 @@ export function ResumenEmision({
   onGenerar,
   children,
 }: ResumenEmisionProps) {
-  const { vendedor, cliente, lineas, fechaEmision, nroPresupuesto, actividadesDocumento } =
-    useApp()
+  const {
+    vendedor,
+    cliente,
+    lineas,
+    fechaEmision,
+    nroPresupuesto,
+    actividadesDocumento,
+    enviandoDocumento: enviando,
+  } = useApp()
 
   return (
     <div className="card card--flush resumen-emision">
@@ -114,17 +121,20 @@ export function ResumenEmision({
         type="button"
         className="btn-generar btn-mayus"
         onClick={onGenerar}
-        // Emitido sigue habilitado: se puede volver a emitir para corregir un error.
-        disabled={generando}
+        /* Emitido sigue habilitado: se puede volver a emitir para corregir un error. Mientras se
+           envía, no: cambiaría el PDF que se está mandando. */
+        disabled={generando || enviando}
         aria-busy={generando}
         title={
           generando
             ? undefined
-            : emitido
-              ? 'Tocá para volver a emitir con los datos actuales'
-              : errorPdf
-                ? 'Tocá para reintentar la emisión'
-                : undefined
+            : enviando
+              ? 'Esperá a que termine el envío para volver a emitir.'
+              : emitido
+                ? 'Tocá para volver a emitir con los datos actuales'
+                : errorPdf
+                  ? 'Tocá para reintentar la emisión'
+                  : undefined
         }
         /* Emitido: verde para confirmar, como el de "Enviado". Error del PDF: rojo; sigue
            habilitado por si el reintento anda. */

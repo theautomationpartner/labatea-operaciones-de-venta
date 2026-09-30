@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AvisoModal } from '@/components/ui/AvisoModal'
 import { ContactosPicker } from '@/features/shared/ContactosPicker'
+import { useAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import {
   contactosSinVia,
@@ -107,8 +108,10 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
   const articulo = comprobante.articulo
   // ¿Ya fue emitido? De eso depende poder enviarlo.
   const emitido = comprobante.emitido(state)
-  // Aviso al intentar enviar sin haber emitido el comprobante todavía.
-  const [avisoNoEmitido, setAvisoNoEmitido] = useState(false)
+  /* Sin documento emitido, o con uno emitiéndose (una reemisión reemplaza al PDF que hay), no se
+     envía: el botón queda apagado y el motivo se dice debajo, en vez de dejar tocarlo y avisar
+     recién ahí. */
+  const sinDocumento = !emitido || state.emitiendoDocumento
   // Contactos elegidos que no pueden recibir el comprobante: qué cambiar, un renglón por problema.
   const [problemasContactos, setProblemasContactos] = useState<string[] | null>(null)
   /* El envío no consume línea nueva: el bloqueo sólo mira el estado del cliente, no un importe
@@ -122,6 +125,8 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
   const [, setEstadoMonday] = useState('')
   // Detalle del error, que se muestra a la derecha del botón cuando el envío falla.
   const enviando = estadoEnvio === 'enviando'
+  // Mientras se envía, "Registrar" y "Finalizar Operación" (en otra vista) quedan bloqueados.
+  useAccionEnCurso('enviando', enviando)
   /* Éxito PERSISTENTE: el envío ya se completó (bandera global) o se acaba de completar (estado
      local). Sobrevive a la navegación con el stepper, así el botón NO vuelve a habilitarse ni pierde
      su color de éxito al volver a esta etapa. */
@@ -275,12 +280,9 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
     // Anti-duplicado: si el envío ya se ejecutó con éxito (incluso tras navegar con el stepper), la
     // acción se anula internamente y NO se vuelve a disparar la mutación de envío.
     if (enviando || enviadoOk) return
-    /* MÓDULO 1 · sin el comprobante emitido NO se envía: early return sin tocar la API de Monday, y
-       se avisa por modal que primero hay que emitirlo. */
-    if (!emitido) {
-      setAvisoNoEmitido(true)
-      return
-    }
+    /* MÓDULO 1 · sin el comprobante emitido NO se envía: el botón ya está apagado, y esto es el
+       resguardo para no tocar la API de Monday. */
+    if (sinDocumento) return
     /* Validación estricta (presupuesto): todos los elegidos tienen que aceptar el comprobante y
        tener el dato del medio. Se frena con una ventana que lista qué cambiar, antes de llamar al
        escenario. */
@@ -565,18 +567,20 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
                         : 'var(--primary-blue)',
                   ...(enviadoOk ? { opacity: 1 } : {}),
                 }}
-                disabled={contactos.length === 0 || enviando || enviadoOk}
+                disabled={contactos.length === 0 || enviando || enviadoOk || sinDocumento}
                 aria-busy={enviando}
                 /* En error y en parcial sigue habilitado: el mismo botón reintenta, con las mismas
                    validaciones. */
                 title={
                   enviando || enviadoOk
                     ? undefined
-                    : parcial
-                      ? 'Tocá para completar el envío'
-                      : estadoEnvio === 'error'
-                        ? 'Tocá para reintentar el envío'
-                        : undefined
+                    : sinDocumento
+                      ? 'Emití el documento para poder enviarlo.'
+                      : parcial
+                        ? 'Tocá para completar el envío'
+                        : estadoEnvio === 'error'
+                          ? 'Tocá para reintentar el envío'
+                          : undefined
                 }
                 onClick={confirmar}
               >
@@ -607,6 +611,30 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
 
               {/* Detalle de lo último que pasó. `role="status"` y no `alert`: acompaña a una acción
                   que el usuario acaba de hacer, no interrumpe. */}
+              {/* Por qué el botón está apagado: todavía no hay documento, o se está generando. */}
+              {sinDocumento && !enviadoOk && (
+                <div className="enviar-avisos" role="status" aria-live="polite">
+                  <p className="enviar-aviso enviar-aviso--info">
+                    <i
+                      className={`fas ${state.emitiendoDocumento ? 'fa-circle-notch spin' : ICONO_LOG.info}`}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      {state.emitiendoDocumento ? (
+                        <>
+                          <strong>Generando el documento.</strong> Vas a poder enviarlo cuando termine
+                          de emitirse.
+                        </>
+                      ) : (
+                        <>
+                          <strong>{comprobante.avisoNoEmitido?.titulo ?? 'Falta emitir el comprobante'}.</strong>{' '}
+                          Emitilo para poder enviarlo.
+                        </>
+                      )}
+                    </span>
+                  </p>
+                </div>
+              )}
               {log && log.length > 0 && (
                 <div className="enviar-avisos" role="status" aria-live="polite">
                   {log.map((e) => (
@@ -624,17 +652,6 @@ export function EnviarDocumento({ documento, onEnviado }: EnviarDocumentoProps) 
         )}
 
       {bloqueo.modal}
-
-      {/* MÓDULO 1 · aviso al intentar enviar sin haber emitido el comprobante. */}
-      {avisoNoEmitido && (
-        <AvisoModal
-          titulo={comprobante.avisoNoEmitido?.titulo ?? 'Falta emitir el comprobante'}
-          onClose={() => setAvisoNoEmitido(false)}
-        >
-          {comprobante.avisoNoEmitido?.texto ??
-            'No es posible realizar el envío. Primero debe emitir el comprobante para poder enviarlo.'}
-        </AvisoModal>
-      )}
 
       {/* Contactos que no pueden recibir el comprobante: se dice a quién y qué cambiar. */}
       {problemasContactos && (

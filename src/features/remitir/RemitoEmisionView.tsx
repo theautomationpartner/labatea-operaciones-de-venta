@@ -8,6 +8,7 @@ import { generarRemitoPdfs } from '@/features/emision/pdf/generarRemitoPdfs'
 import { VerImprimirPdf } from '@/features/shared/VerImprimirPdf'
 import { EnviarDocumento } from '@/features/shared/EnviarDocumento'
 import { PasoHeader, PasoTitulo } from '@/features/shared/PasoHeader'
+import { motivoAccionEnCurso, useAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
 import { round2 } from '@/lib/format'
 import { indiceDePaso, pasosDe } from '@/lib/pasos'
@@ -61,14 +62,20 @@ export function RemitoEmisionView() {
     remitoHoja,
     fechaEmision,
     emisionNro,
+    emitiendoDocumento,
+    enviandoDocumento,
   } = useApp()
   const dispatch = useDispatch()
+  /* No se registra con los PDF emitiéndose (una reemisión los reemplaza) ni enviándose: registrar
+     cierra la operación. */
+  const enCurso = motivoAccionEnCurso({ emitiendoDocumento, enviandoDocumento })
   /* Éxito PERSISTENTE de la emisión: la bandera global sobrevive a la navegación con el stepper, así
      el botón "Emitir Remito" no se reactiva al volver a esta etapa. */
   const emitido = documentoEmitido
 
   /* Generación de los PDF, en el navegador. */
   const [estado, setEstado] = useState<EstadoPdf>('idle')
+  useAccionEnCurso('emitiendo', estado === 'generando')
   const [error, setError] = useState<string | null>(null)
   // "Registrar Remito" en curso: tapa la pantalla con la ventana de espera.
   const [registrando, setRegistrando] = useState(false)
@@ -232,7 +239,7 @@ export function RemitoEmisionView() {
    * Idempotente: si el remito ya se creó y falló un paso posterior, reintentar no lo vuelve a crear.
    */
   const registrar = async () => {
-    if (!cliente || !remitoPdfs || !remitoHoja || registrando) return
+    if (!cliente || !remitoPdfs || !remitoHoja || registrando || enCurso) return
     setRegistrando(true)
     try {
       if (!hojaTomada.current) {
@@ -444,8 +451,8 @@ export function RemitoEmisionView() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!remitoPdfs || registrando}
-          title={remitoPdfs ? undefined : 'Emití el remito para poder registrarlo.'}
+          disabled={!remitoPdfs || registrando || enCurso !== null}
+          title={remitoPdfs ? (enCurso ?? undefined) : 'Emití el remito para poder registrarlo.'}
           onClick={() => void registrar()}
         >
           <i className="fas fa-flag-checkered" /> Registrar Remito

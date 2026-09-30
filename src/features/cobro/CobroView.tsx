@@ -26,6 +26,7 @@ import { documentoDeVentaItem, totalVentaOperacion } from '@/lib/selectors'
 import { adjuntarPdfProforma, crearProforma, getActividadesDePresupuestos } from '@/services/monday'
 import { useApp, useDispatch } from '@/state/hooks'
 import { useBloqueoCredito } from '@/features/shared/useBloqueoCredito'
+import { motivoAccionEnCurso } from '@/features/shared/useAccionEnCurso'
 import { CabeceraCobro } from './CabeceraCobro'
 import { CobroProforma } from './CobroProforma'
 import { CobroTarjetas } from './CobroTarjetas'
@@ -126,6 +127,9 @@ export function CobroView() {
   /* Registro de la proforma ("Registrar Proforma"): mientras se escribe en Monday, la ventana de
      espera; al terminar, la de confirmación, que al aceptar limpia todo el estado. */
   const [registrandoProforma, setRegistrandoProforma] = useState(false)
+  /* No se registra con la proforma emitiéndose (una reemisión reemplaza el PDF) ni enviándose:
+     registrar cierra la operación. */
+  const enCurso = motivoAccionEnCurso(state)
   const [guardando, setGuardando] = useState(false)
   const [errorProforma, setErrorProforma] = useState<string | null>(null)
 
@@ -139,7 +143,7 @@ export function CobroView() {
    * Idempotente: si la proforma ya se creó y falló la subida, reintentar sólo sube el PDF.
    */
   const registrarProforma = async () => {
-    if (!cliente || !proformaPdf || registrandoProforma) return
+    if (!cliente || !proformaPdf || registrandoProforma || enCurso) return
     setRegistrandoProforma(true)
     try {
       let id = proformaId
@@ -449,8 +453,8 @@ export function CobroView() {
                 type="button"
                 className="cobro-btn cobro-btn--primary"
                 onClick={() => void registrarProforma()}
-                disabled={!proformaPdf || registrandoProforma}
-                title={proformaPdf ? undefined : 'Emití la proforma para poder registrarla.'}
+                disabled={!proformaPdf || registrandoProforma || enCurso !== null}
+                title={proformaPdf ? (enCurso ?? undefined) : 'Emití la proforma para poder registrarla.'}
               >
                 <i className="fas fa-floppy-disk" /> Registrar Proforma
               </button>
