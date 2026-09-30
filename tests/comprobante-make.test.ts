@@ -46,7 +46,34 @@ assert.equal(cheque.datos.bancoEmisor, 'GALICIA')
 assert.equal(cheque.datos.cuitEmisor, '20-45037195-6', 'el CUIT se arma con guiones')
 /* "$ 1.234,56" es mil doscientos treinta y cuatro con 56, no 1,23456. */
 assert.equal(cheque.datos.importe, 1234.56, 'el importe con formato AR')
-assert.ok(cheque.respondioJson && cheque.campos === 6, 'y se cuentan los campos que entraron')
+/* 7 y no 6: "Fecha de Emisión" alimenta TAMBIÉN la emisión de la retención, que comparte alias con
+   la del cheque. No se mezclan en pantalla: el formulario se queda sólo con los del medio elegido. */
+assert.equal(cheque.datos.fechaEmisionRetencion, '01/08/2026', 'la emisión comparte alias')
+assert.ok(cheque.respondioJson && cheque.campos === 7, 'y se cuentan los campos que entraron')
+
+/* ---------- Retención: la respuesta REAL del escenario (contrato RETENCION_V1) ----------
+   Trae la fecha de emisión del certificado, que va a "Fecha Emisión" del subelemento. */
+responder({
+  contrato: 'RETENCION_V1',
+  resultado: 'PROCESADO',
+  tiene_incidencias: false,
+  documento_valido: true,
+  datos_completos: true,
+  datos: {
+    tipo_retencion: 'IVA',
+    cuit_emisor: '30-50431221-2',
+    cuit_sujeto_retenido: '30-70906788-1',
+    numero_comprobante: 'RIV-00006373',
+    fecha_emision: '2026-03-23',
+    anio_emision: 2026,
+    importe_retencion: 57002.4,
+  },
+  incidencias: [],
+})
+const ret = await procesarComprobante(archivo, 'Retencion IVA')
+assert.equal(ret.datos.fechaEmisionRetencion, '23/03/2026', 'la fecha de emisión del certificado')
+assert.equal(ret.datos.anioRetencion, '2026', 'el año')
+assert.equal(ret.datos.importe, 57002.4, 'el importe retenido')
 
 /* ---------- Un campo vacío NO es un dato ----------
    Volcar un "" borraría lo que el usuario ya hubiera cargado a mano. */

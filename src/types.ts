@@ -598,6 +598,12 @@ export interface MovimientoPago {
   anioRetencion?: string
   nroComprobanteRetencion?: string
   /**
+   * Retenciones: fecha de emisión del certificado (dd/mm/aaaa). La trae la lectura del comprobante
+   * (`fecha_emision` en la respuesta del escenario) y va a "Fecha Emisión" (date_mm5rxdpk) del
+   * subelemento, la MISMA columna que usa la emisión del cheque.
+   */
+  fechaEmisionRetencion?: string
+  /**
    * Transferencia: número de la operación que figura en el comprobante bancario. Es la referencia
    * con la que se concilia el movimiento contra el extracto, y viaja a la misma columna
    * "🤖Nro Comprobante" que el número del cheque, el del cupón y el del certificado.

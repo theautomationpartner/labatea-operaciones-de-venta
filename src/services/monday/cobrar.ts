@@ -158,6 +158,9 @@ const columnasMovimiento = (b: BalancePago): Record<string, unknown> => {
     if (nro) cv[COL.cobroSub.nroComprobante] = nro
     const anio = (m.anioRetencion ?? '').replace(/\D/g, '')
     if (anio) cv[COL.cobroSub.anioRet] = anio
+    /* La emisión del certificado va a "Fecha Emisión", la MISMA columna que la del cheque. */
+    const emision = fechaCol(m.fechaEmisionRetencion)
+    if (emision) cv[COL.cobroSub.fechaEmisionCheque] = emision
     return cv
   }
 

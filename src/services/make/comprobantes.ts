@@ -82,6 +82,7 @@ export interface DatosComprobante {
   // Retenciones
   anioRetencion?: string
   nroComprobanteRetencion?: string
+  fechaEmisionRetencion?: string
   /** Transferencia: número de la operación que figura en el comprobante bancario. */
   nroComprobanteTransferencia?: string
   // Tarjeta
@@ -283,6 +284,9 @@ const ALIAS: Record<keyof DatosComprobante, string[]> = {
     'periodo',
     'year',
   ],
+  /* Mismos alias que la emisión del cheque —los dos son "la fecha de emisión del papel"— y no se
+     mezclan: cuál de los dos se carga lo decide el medio de cobro (ver `camposDelMedio`). */
+  fechaEmisionRetencion: ['fechaEmisionRetencion', 'fechaEmision', 'emision', 'issueDate'],
   nroComprobanteRetencion: [
     'nroComprobanteRetencion',
     'numeroComprobanteRetencion',
@@ -369,6 +373,7 @@ function normalizar(fuente: Record<string, unknown>): DatosComprobante {
   poner('formatoCheque', aFormatoCheque(leer('formatoCheque')))
   poner('anioRetencion', aAnio(leer('anioRetencion')))
   poner('nroComprobanteRetencion', aDigitos(leer('nroComprobanteRetencion')))
+  poner('fechaEmisionRetencion', aFecha(leer('fechaEmisionRetencion')))
   /* El de la transferencia va TAL CUAL: su columna en el tablero es de texto, y el número de
      operación de un banco puede llevar letras o guiones que son parte del dato. */
   poner('nroComprobanteTransferencia', aTexto(leer('nroComprobanteTransferencia')))

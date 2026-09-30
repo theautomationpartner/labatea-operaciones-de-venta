@@ -812,6 +812,10 @@ export const COL = {
     // CHEQUE
     /** "🤖CUIT" del emisor del cheque. Es de TEXTO, así que va con guiones: "20-45037195-6". */
     cuit: 'text_mm5ydwp2',
+    /**
+     * "Fecha Emisión": COMPARTIDA por el cheque (fecha en que se libró) y la retención (fecha del
+     * certificado). Cada movimiento es de un solo medio, así que nunca compiten.
+     */
     fechaEmisionCheque: 'date_mm5rxdpk',
     /** "🤖Origen Cheque" (dropdown): "Cheque" o "eCheq", las dos etiquetas del tablero. */
     origenCheque: 'dropdown_mm5yveka',

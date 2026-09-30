@@ -45,6 +45,7 @@ function detalleDe(m: MovimientoPago): Dato[] {
      todas por igual, porque se reconocen por el prefijo del medio de cobro. */
   if (esRetencion(m.formaPago)) {
     return [
+      { label: 'Fecha de emisión', valor: m.fechaEmisionRetencion || '—' },
       { label: 'Año', valor: m.anioRetencion || '—' },
       { label: 'Nro. de comprobante', valor: m.nroComprobanteRetencion || '—' },
       { label: 'Comprobante', valor: m.comprobanteNombre || '—' },

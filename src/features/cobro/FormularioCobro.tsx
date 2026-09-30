@@ -58,6 +58,7 @@ const BORRADOR_VACIO: Borrador = {
   comprobanteArchivo: null,
   anioRetencion: '',
   nroComprobanteRetencion: '',
+  fechaEmisionRetencion: '',
   titularTarjeta: '',
   bancoTarjeta: '',
   tipoTarjeta: null,
@@ -122,6 +123,7 @@ const ROTULO_CAMPO: Record<string, string> = {
   // TRANSFERENCIA
   nroCompTransf: 'Nro de Comprobante',
   // RETENCIÓN
+  fechaEmiRet: 'Fecha de Emisión',
   anioRet: 'Año de la retención',
   nroCompRet: 'Nro de Comprobante',
   // TARJETA
@@ -445,6 +447,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     // RETENCIÓN
     /* El año va completo: con menos de cuatro dígitos no se sabe de qué ejercicio es el
        certificado, así que se pide entero y no "lo que se haya tipeado". */
+    fechaEmiRet: esRet && !borrador.fechaEmisionRetencion?.trim(),
     anioRet: esRet && (borrador.anioRetencion ?? '').length !== ANIO_DIGITOS,
     nroCompRet: esRet && !borrador.nroComprobanteRetencion?.trim(),
     // TARJETA (débito y crédito)
@@ -668,7 +671,13 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
     /* La CUENTA no está: el comprobante de una transferencia dice de dónde salió el dinero, no en
        cuál de las cuentas de La Batea entró. Eso lo elige el usuario. */
     if (esTransferencia) return new Set(['importe', 'nroComprobanteTransferencia'] as const)
-    if (esRet) return new Set(['importe', 'anioRetencion', 'nroComprobanteRetencion'] as const)
+    if (esRet)
+      return new Set([
+        'importe',
+        'fechaEmisionRetencion',
+        'anioRetencion',
+        'nroComprobanteRetencion',
+      ] as const)
     if (esTarjeta)
       return new Set([
         'importe',
@@ -730,6 +739,7 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
       if (d.bancoEmisor) s.bancoEmisor = deCatalogo(d.bancoEmisor, BANCOS_EMISORES_BASE)
       if (d.cuitEmisor) s.cuitEmisor = d.cuitEmisor
       if (d.formatoCheque) s.formatoCheque = d.formatoCheque
+      if (d.fechaEmisionRetencion) s.fechaEmisionRetencion = d.fechaEmisionRetencion
       if (d.anioRetencion) s.anioRetencion = d.anioRetencion
       if (d.nroComprobanteRetencion) s.nroComprobanteRetencion = d.nroComprobanteRetencion
       if (d.nroComprobanteTransferencia) {
@@ -1179,6 +1189,33 @@ export function FormularioCobro({ bloqueado = false, diferencia = 0 }: Formulari
 
               {/* AÑO y NRO DE COMPROBANTE del certificado: son los datos con los que la retención se
               identifica ante el fisco, y el archivo de al lado es su respaldo. */}
+              {/* FECHA DE EMISIÓN del certificado: la trae la lectura y va a la misma columna del
+              recibo que la emisión del cheque. */}
+              <div className="cobro-form-campo cobro-form-campo--val cobro-campo--fecha">
+                <label htmlFor="cobro-ret-emision">
+                  Fecha de Emisión
+                  <Req />
+                </label>
+                <input
+                  id="cobro-ret-emision"
+                  type="date"
+                  className={`cobro-in ${mal('fechaEmiRet') ? 'cobro-in--error' : ''}`}
+                  aria-invalid={mal('fechaEmiRet') || undefined}
+                  value={aIso(borrador.fechaEmisionRetencion ?? '')}
+                  onChange={(e) =>
+                    setBorrador({
+                      ...borrador,
+                      fechaEmisionRetencion: desdeIso(e.target.value),
+                    })
+                  }
+                />
+                {mal('fechaEmiRet') && (
+                  <span className="cobro-in-err" role="alert">
+                    {textoFalta('Ingresá la fecha')}
+                  </span>
+                )}
+              </div>
+
               <div className="cobro-form-campo cobro-form-campo--val cobro-campo--anio">
                 <label htmlFor="cobro-ret-anio">
                   Año de la retención

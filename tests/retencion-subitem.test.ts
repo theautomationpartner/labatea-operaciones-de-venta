@@ -40,6 +40,7 @@ const retencion = (formaPago: FormaPago): MovimientoPago =>
     anioRetencion: '2026',
     // Con guiones y ceros a la izquierda: es lo que el vendedor puede llegar a tipear.
     nroComprobanteRetencion: '0001-00001234',
+    fechaEmisionRetencion: '23/03/2026',
   }) as MovimientoPago
 
 /* Las CUATRO retenciones del catálogo + una que no existe todavía: el ramal se resuelve por el
@@ -77,6 +78,11 @@ FORMAS.forEach((forma, n) => {
     `${forma}: el nro de comprobante, tal cual se cargó`,
   )
   assert.equal(cv['numeric_mm63j1mv'], '5000', `${forma}: el importe recibido`)
+  assert.deepEqual(
+    cv['date_mm5rxdpk'],
+    { date: '2026-03-23' },
+    `${forma}: la fecha de emisión del certificado, en la columna compartida con el cheque`,
+  )
   assert.ok(!('numeric_mm4e61yk' in cv), `${forma}: no cancela una factura`)
 })
 
@@ -95,6 +101,7 @@ await registrarCobro({
 const sinCert = JSON.parse(llamadas[1].variables.c0 as string) as Record<string, unknown>
 assert.ok(!('numeric_mm64dwpx' in sinCert), 'sin año la columna no viaja')
 assert.ok(!('text_mm654900' in sinCert), 'sin número la columna no viaja')
+assert.ok(!('date_mm5rxdpk' in sinCert), 'sin fecha de emisión la columna no viaja')
 const efectivo = JSON.parse(llamadas[1].variables.c1 as string) as Record<string, unknown>
 assert.ok(!('numeric_mm64dwpx' in efectivo), 'el efectivo no declara certificado')
 assert.ok(!('text_mm654900' in efectivo), 'el efectivo no declara certificado')
