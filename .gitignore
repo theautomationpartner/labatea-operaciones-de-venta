@@ -6,3 +6,4 @@ dist-ssr
 .DS_Store
 dist-demo
 .claude/settings.local.json
+*.tsbuildinfo
